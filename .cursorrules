@@ -1,0 +1,25 @@
+---
+description: Coding standards and technology stack rules for the dag-tools common resource repository.
+---
+
+# `dag-tools` Tech Stack & Rules
+
+This project serves as the central hub for common Dagster utilities, resources, I/O managers, sensors, and asset wrappers used across our external repositories.
+
+## 1. Dependency Management (`uv`)
+- **Rule**: NEVER use `pip`, `poetry`, or `conda` directly. 
+- **Tool**: Always use `uv` for all environment and dependency management.
+- **Commands**: 
+  - Install dependencies: `uv add <package>`
+  - Run scripts: `uv run <script>`
+  - Sync lockfile: `uv sync`
+  - Start Dagster: `uv run dagster dev`
+
+## 2. Shared Dagster Resources
+- **Rule**: All assets and resources here must be highly generic and reusable. This repo does not execute domain-specific business pipelines.
+- **Purpose**: Any IO Manager (e.g., S3, DuckDB), custom Sensor, Resource (e.g., dlt wrappers, API clients), or partition definitions used across multiple projects should be housed here.
+
+## 3. Python Style
+- **Type Hinting**: All function signatures and classes must include strict Python type hints (e.g., `def create_s3_io_manager(bucket: str) -> IOManagerDefinition:`).
+- **Docstrings**: Provide a brief Google-style or standard docstring explaining the configuration kwargs and usage examples for all shared components. This is critical because other repositories will depend on these docstrings.
+- **Imports**: Ensure all public-facing common tools are neatly exported in `dag_tools/__init__.py` so they are easily importable by downstream consumers (e.g., `from dag_tools import CommonS3IOManager`).

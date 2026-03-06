@@ -1,0 +1,20 @@
+# dag_tools Project Context
+This document provides high-level context for AI tools and agents exploring this repository.
+
+## Domain
+`dag_tools` is the foundational, shared library for all of our Dagster data engineering projects. It does not run specific ETL pipelines itself. Instead, it provides the generalized infrastructure that other projects (like `pub-tools`) rely upon.
+
+## Architecture
+This repository contains:
+1.  **IO Managers**: Custom Dagster IO Managers for handling data serialization/deserialization across cloud storage (S3) and databases (DuckDB, Postgres).
+2.  **Resources**: Reusable clients and connections (e.g., API clients, database connection pools, `dlt` pipeline wrappers).
+3.  **Sensors & Schedules**: Generalized sensors (e.g., S3 bucket sensors for new file arrivals) and common schedule definitions.
+4.  **Asset Wrappers**: Factory functions or decorators that standardize how we define repetitive `@asset` patterns across the organization.
+5.  **Utilities**: Helper functions for logging, metadata formatting, and testing.
+
+## Local Development
+Other projects will typically install this repository as a dependency. When developing `dag-tools` locally:
+```bash
+uv run dagster dev
+```
+All new common tools should be accompanied by a small "example" usage asset to ensure they load properly in the local UI.
