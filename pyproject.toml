@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
 dependencies = [
+    "acryl-datahub[dagster]>=1.4.0.5",
     "dagster",
     "dagster-cloud",
     "dagster-components>=0.1.0",
@@ -29,4 +30,4 @@ module_name = "dag_tools.definitions"
 code_location_name = "dag_tools"
 
 [tool.dagster.components]
-register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project"]
+register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage"]

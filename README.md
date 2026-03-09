@@ -14,6 +14,43 @@ Other projects (e.g., `pub-tools`) rely on this repository for their core pipeli
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
 - `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
 
+## Component Configuration Examples
+
+### Datahub Global Lineage Tracking
+To enable instance-wide asset materialization tracking for DataHub, downstream projects should define the `DatahubLineageComponent` in their `components/` directory (e.g. `components/datahub_lineage/component.yaml`):
+
+```yaml
+type: dag_tools.components.datahub_lineage.DatahubLineageComponent
+
+attributes:
+  datahub_config:
+    server: "{{ env.DATAHUB_URL }}"
+    
+  # (Optional) Override known environment prefixes 
+  environments:
+    - prod
+    - uat
+    - sandbox
+    - dev
+    - test
+    
+  # (Optional) Override standard database platforms
+  platforms:
+    - clickhouse
+    - snowflake
+    - postgres
+    
+  # (Optional) Override which schemas act as filesystems vs databases (impacts dot notation)
+  filesystem_platforms:
+    - s3
+    - abs
+    - filesystem
+    
+  # (Optional) Dynamic mappings from dict metadata keys out of the dagster log into datahub labels
+  log_platform_mappings:
+    "Databricks Job Run ID": "databricks"
+```
+
 ## Setup & Development
 
 We use `uv` for all dependency management.

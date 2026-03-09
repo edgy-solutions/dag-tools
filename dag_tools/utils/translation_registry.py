@@ -21,6 +21,15 @@ class AssetNormalizationRegistry:
         cls.PREFIX_MAPPING[prefix] = lineage
 
     @classmethod
+    def get_known_asset_prefixes(cls) -> List[str]:
+        """Returns the list of top-level asset prefixes (e.g., 'dbt', 'dlt', 'airbyte') known to the registry."""
+        prefixes = {"dbt"}
+        for lineage in cls.PREFIX_MAPPING.values():
+            if lineage:
+                prefixes.add(lineage[0])
+        return list(prefixes)
+
+    @classmethod
     def apply(cls, node_info: Mapping[str, Any]) -> AssetKey:
         """Translates a DBT node's physical model name into a standardized Dagster AssetKey."""
         path: List[str] = ["dbt"]
