@@ -18,6 +18,51 @@ try:
 except ImportError:
     pass
 
+def asset_keys_to_dataset_urn_converter(
+    asset_key: Sequence[str],
+    platform: Optional[str] = None,
+    environments: Optional[List[str]] = None,
+    platforms: Optional[List[str]] = None,
+    filesystem_platforms: Optional[List[str]] = None
+) -> Optional[DatasetUrn]:
+    """Convert asset key back to dataset urn for generic unmapped lineage."""
+    environments = environments or ["prod", "uat", "sandbox", "dev", "test"]
+    platforms = platforms or ["clickhouse", "snowflake", "postgres"]
+    filesystem_platforms = filesystem_platforms or ["s3", "abs", "filesystem"]
+
+    fabric_present = asset_key[0] in environments
+    platform_value = asset_key[1] if fabric_present else asset_key[0]
+    platform_present = platform_value in platforms
+    
+    # Strip prefixed generic ingestion tags dynamically configured in the registry
+    known_prefixes = AssetNormalizationRegistry.get_known_asset_prefixes()
+    asset_key = asset_key[1:] if asset_key[0] in known_prefixes else asset_key
+    asset_key = asset_key[1:] if platform_present else asset_key
+    
+    platform = platform if platform else platform_value if platform_present else 'unknown'
+    
+    path = "/".join(asset_key[1:]).lower()
+    name = ".".join(asset_key).lower() if platform not in filesystem_platforms else f"{asset_key[0].lower()}.{path}"
+    
+    # Use the specified environment fabric if present, else fallback to 'prod'
+    env = asset_key[0] if fabric_present else 'prod'
+    
+    return DatasetUrn(
+        platform=platform,
+        env=env,
+        name=name,
+    )
+
+def get_datahub_metadata(source_keys: Sequence[Sequence[str]], platform: str) -> Dict[str, List[str]]:
+    """Generates the metadata dictionary required to tag Dagster assets with upstream Datahub urns."""
+    urns = []
+    for source_key in source_keys:
+        dataset_urn = asset_keys_to_dataset_urn_converter(source_key, platform=platform)
+        if dataset_urn:
+            urns.append(dataset_urn.urn())
+            
+    return {"datahub.inputs": urns}
+
 @dataclass
 class DatahubLineageComponent(Component):
     """A Dagster Declarative Component that activates global Datahub lineage tracking.
@@ -58,32 +103,13 @@ class DatahubLineageComponent(Component):
             # but we can resolve the full registry at runtime.
             return context.defs
             
-        def asset_keys_to_dataset_urn_converter(
-            asset_key: Sequence[str],
-            platform: Optional[str] = None
-        ) -> Optional[DatasetUrn]:
-            """Convert asset key back to dataset urn for generic unmapped lineage."""
-            fabric_present = asset_key[0] in self.environments
-            platform_value = asset_key[1] if fabric_present else asset_key[0]
-            platform_present = platform_value in self.platforms
-            
-            # Strip prefixed generic ingestion tags dynamically configured in the registry
-            known_prefixes = AssetNormalizationRegistry.get_known_asset_prefixes()
-            asset_key = asset_key[1:] if asset_key[0] in known_prefixes else asset_key
-            asset_key = asset_key[1:] if platform_present else asset_key
-            
-            platform = platform if platform else platform_value if platform_present else 'unknown'
-            
-            path = "/".join(asset_key[1:]).lower()
-            name = ".".join(asset_key).lower() if platform not in self.filesystem_platforms else f"{asset_key[0].lower()}.{path}"
-            
-            # Use the specified environment fabric if present, else fallback to 'prod'
-            env = asset_key[0] if fabric_present else 'prod'
-            
-            return DatasetUrn(
-                platform=platform,
-                env=env,
-                name=name,
+        def _bound_converter(asset_key: Sequence[str], platform: Optional[str] = None) -> Optional[DatasetUrn]:
+            return asset_keys_to_dataset_urn_converter(
+                asset_key, 
+                platform=platform, 
+                environments=self.environments, 
+                platforms=self.platforms, 
+                filesystem_platforms=self.filesystem_platforms
             )
         
         def asset_lineage_extractor(
@@ -131,7 +157,7 @@ class DatahubLineageComponent(Component):
                                 platform = mapped_platform
                                 break
                         
-                    asset_downstream_urn = asset_keys_to_dataset_urn_converter(asset_key_path, platform)
+                    asset_downstream_urn = _bound_converter(asset_key_path, platform)
                     sensor_context.log.info(f"Resolved URN from asset key: {asset_downstream_urn}")
 
                 if not asset_downstream_urn:
@@ -179,7 +205,7 @@ class DatahubLineageComponent(Component):
         
         # Override the defaults
         dh_config = dh_config.model_copy(update={
-            'asset_keys_to_dataset_urn_converter': asset_keys_to_dataset_urn_converter, 
+            'asset_keys_to_dataset_urn_converter': _bound_converter, 
             'asset_lineage_extractor': asset_lineage_extractor, 
             'capture_asset_materialization': False
         })

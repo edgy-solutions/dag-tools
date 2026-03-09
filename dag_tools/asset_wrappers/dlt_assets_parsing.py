@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import dlt
 from dlt.extract.source import DltSource
@@ -30,10 +30,10 @@ from dag_tools.asset_wrappers.dlt_assets_factory import (
     write_env_vars,
     DltAssetConfig,
 )
-from orch.assets.sources.sql_ct_database import sql_ct_database
+# from orch.assets.sources.sql_ct_database import sql_ct_database
 from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
-from orch.helpers.credential_provider import get_credentials
+from dag_tools.utils.credentials import get_credentials
 
 
 def add_element(

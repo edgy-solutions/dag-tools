@@ -1,3 +1,3 @@
-from .component import DatahubLineageComponent
+from .component import DatahubLineageComponent, get_datahub_metadata
 
-__all__ = ["DatahubLineageComponent"]
+__all__ = ["DatahubLineageComponent", "get_datahub_metadata"]

@@ -23,7 +23,7 @@ from dagster import (
     define_asset_job,
 )
 from dagster_dlt.translator import DagsterDltTranslator, DltResourceTranslatorData
-from orch.helpers.datahub import get_datahub_metadata
+from dag_tools.components.datahub_lineage import get_datahub_metadata
 
 logger = logging.getLogger("dlt_manager")
 
