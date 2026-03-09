@@ -1,0 +1,6 @@
+type: dag_tools.components.dbt_project.CustomDbtProjectComponent
+
+attributes:
+  project: "../../dbt_projects/project_one" # Relative to where component.yaml lives
+  datahub_config:
+    server: "{{ env.DATAHUB_URL }}"

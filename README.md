@@ -8,10 +8,11 @@ Rather than duplicating infrastructure logic (such as configuring connection str
 Other projects (e.g., `pub-tools`) rely on this repository for their core pipeline scaffolding.
 
 ## Structure
+- `dag_tools/components/`: Formal Dagster Declarative Components (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`) that allow users to deploy complex workloads via `.yaml`.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
-- `dag_tools/utils/`: Assorted helper functions and logging utilities.
+- `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
 
 ## Setup & Development
 

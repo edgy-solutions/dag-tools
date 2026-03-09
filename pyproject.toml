@@ -8,6 +8,7 @@ dependencies = [
     "dagster",
     "dagster-cloud",
     "dagster-components>=0.1.0",
+    "dagster-dbt>=0.28.18",
     "dagster-dlt>=0.28.18",
     "dagster-embedded-elt>=0.28.18",
     "dlt>=1.23.0",
@@ -28,4 +29,4 @@ module_name = "dag_tools.definitions"
 code_location_name = "dag_tools"
 
 [tool.dagster.components]
-register_components = ["dag_tools.components.dlt_pipeline"]
+register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project"]

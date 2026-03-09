@@ -14,7 +14,11 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - **DO NOT** hardcode project-specific logic, bucket names, or table names into this repository. 
 - All resources, IO Managers, and sensors must accept configuration at runtime via Dagster's `ConfigurableResource` or `ConfigurableIOManager` patterns so downstream projects can inject their own values.
 
-### 2. Backwards Compatibility
+### 2. Declarative Component First
+- When building new data integration wrappers (e.g., DLT, DBT, Airbyte), prefer adopting the `dagster-components` custom component layout.
+- Pipeline metadata, hints, and configurations should be offloaded to YAML structure rather than hardcoded Python factory kwargs.
+
+### 3. Backwards Compatibility
 - Since other repositories (like `pub-tools`) depend on `dag-tools`, **DO NOT** make breaking changes to function signatures or export names without explicit approval from the user. 
 - If adding a new feature to an existing shared component, make the new parameters optional with sensible defaults.
 
