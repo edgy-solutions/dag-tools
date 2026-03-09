@@ -1,0 +1,33 @@
+type: dag_tools.DltPipelineComponent
+
+attributes:
+  source_config:
+    drivername: "mssql+pyodbc"
+    database: "mydatabase"
+    schema: "dbo"
+
+  dest_config:
+    drivername: "snowflake"
+    database: "analytics"
+    schema: "raw_zone"
+
+  pipelines:
+    fast_refresh:
+      io_manager_key: "snowflake_io_manager"
+      pipeline_kwargs:
+        write_disposition: "append"
+      hints:
+        daily_production:
+          incremental: 
+            cursor_path: "production_date"
+      sources:
+        - "production"
+        - "consumption"
+
+    slow_refresh:
+      io_manager_key: "snowflake_io_manager"
+      pipeline_kwargs:
+        write_disposition: "merge"
+      sources:
+        - "inspections"
+        - "mappings"
