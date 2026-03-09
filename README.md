@@ -51,6 +51,44 @@ attributes:
     "Databricks Job Run ID": "databricks"
 ```
 
+```
+
+### 3. S3 to Arrow Storage Component
+This component tracks an S3 Bucket and registers dynamic partitions for new incoming files chronologically. It triggers a PyArrow job that converts the raw bytes natively through your specified `io_manager`.
+
+```yaml
+type: dag_tools.components.s3_sensor
+
+attributes:
+  partition_name: "daily_ingestion_logs"
+  bucket: "my-production-lake"
+  prefix: "raw_data/logs/2026"
+  io_manager_key: "parquet_io_manager"
+  delimiter: ","
+```
+
+### 4. PyArrow DataFrame IO Manager
+The `ConfigurableArrowIOManager` connects Python's memory to Datalake storage using optimized `pyarrow.fs` clients. It abstracts S3 and Local mounts seamlessly while transparently coercing results into `pa.Table`, `pa.dataset.Dataset`, or `pd.DataFrame` directly into your downstream assets.
+
+```python
+from dag_tools.io_managers import ConfigurableArrowIOManager
+
+# Define in your Definitions resources dictionary
+resources = {
+    "parquet_io_manager": ConfigurableArrowIOManager(
+        uri_base="s3://my-datalake/gold-tier",
+        fs={
+            "type_": "s3",
+            "common": {
+                "access_key_id": {"env": "AWS_ACCESS_KEY_ID"},
+                "secret_access_key": {"env": "AWS_SECRET_ACCESS_KEY"},
+                "end_point": "s3.amazonaws.com"
+            }
+        }
+    )
+}
+```
+
 ## Setup & Development
 
 We use `uv` for all dependency management.

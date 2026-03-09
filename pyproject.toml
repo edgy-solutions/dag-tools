@@ -6,13 +6,18 @@ readme = "README.md"
 requires-python = ">=3.10,<3.15"
 dependencies = [
     "acryl-datahub[dagster]>=1.4.0.5",
+    "boto3>=1.42.64",
     "dagster",
+    "dagster-aws>=0.28.18",
     "dagster-cloud",
     "dagster-components>=0.1.0",
     "dagster-dbt>=0.28.18",
     "dagster-dlt>=0.28.18",
     "dagster-embedded-elt>=0.28.18",
     "dlt>=1.23.0",
+    "pandas>=2.3.3",
+    "pyarrow>=23.0.1",
+    "s3fs>=0.4.2",
 ]
 
 [project.optional-dependencies]
