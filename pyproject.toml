@@ -15,8 +15,13 @@ dependencies = [
     "dagster-dlt>=0.28.18",
     "dagster-embedded-elt>=0.28.18",
     "dlt>=1.23.0",
+    "httpx>=0.28.1",
+    "oracledb>=3.4.2",
     "pandas>=2.3.3",
     "pyarrow>=23.0.1",
+    "pyodbc>=5.3.0",
+    "requests>=2.32.5",
+    "restate-sdk>=0.15.0",
     "s3fs>=0.4.2",
 ]
 
@@ -35,4 +40,4 @@ module_name = "dag_tools.definitions"
 code_location_name = "dag_tools"
 
 [tool.dagster.components]
-register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage"]
+register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage", "dag_tools.components.s3_sensor", "dag_tools.components.restate_dlt_sync", "dag_tools.components.restate_api_sync"]

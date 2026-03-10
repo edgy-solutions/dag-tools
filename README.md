@@ -89,6 +89,59 @@ resources = {
 }
 ```
 
+### 5. Restate DLT Data Sync Component
+Instantiate generic Oracle-to-Postgres syncing and auto-chunked Restate acking by writing a single YAML component definition:
+
+```yaml
+type: dag_tools.components.restate_dlt_sync
+
+attributes:
+  restate_endpoint: "http://restate-server:8080/GenericOracleAckService/mark_as_processed/send"
+  
+  source_config:
+    drivername: "oracle+oracledb"
+    database: "MY_COMPANY_DB"
+    schema: "HR"
+    
+  dest_config:
+    drivername: "postgres"
+    schema: "ingested_hr"
+    
+  pipelines:
+    hr_employee_data:
+      primary_key: "EMP_ID"
+      sources:
+        - "EMPLOYEE_MASTER"
+        - "DEPARTMENT_MASTER"
+```
+
+### 6. Restate DLT API Sync Component
+Instantiate generic SQL Server-to-External REST API syncing using stateful row-level Restate acks by defining a single YAML configuration:
+
+```yaml
+type: dag_tools.components.restate_api_sync
+
+attributes:
+  restate_endpoint: "http://restate-server:8080/GenericApiSyncService/process_record/send"
+  
+  source_config:
+    drivername: "mssql+pyodbc"
+    database: "INTERNAL_ERP"
+    schema: "dbo"
+    
+  # Staging configuration holding new rows temporarily for API fanning
+  dest_config:
+    drivername: "postgres"
+    schema: "api_staging_buffer"
+    
+  pipelines:
+    sap_api_dispatch:
+      primary_key: "PO_NUMBER"
+      api_path: "/v1/orders"
+      sources:
+        - "PURCHASE_ORDERS"
+```
+
 ## Setup & Development
 
 We use `uv` for all dependency management.
