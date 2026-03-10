@@ -23,3 +23,9 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Type Hinting**: All function signatures and classes must include strict Python type hints (e.g., `def create_s3_io_manager(bucket: str) -> IOManagerDefinition:`).
 - **Docstrings**: Provide a brief Google-style or standard docstring explaining the configuration kwargs and usage examples for all shared components. This is critical because other repositories will depend on these docstrings.
 - **Imports**: Ensure all public-facing common tools are neatly exported in `dag_tools/__init__.py` so they are easily importable by downstream consumers (e.g., `from dag_tools import CommonS3IOManager`).
+
+## 4. Ecosystem & Integrations Stack
+- **Dependencies**: The framework explicitly supports `pyarrow`, `pandas`, `s3fs`, `httpx`, `pyodbc`, `oracledb`, and the `restate-sdk`. Do not reinstall duplicative dependencies natively (e.g. `requests` instead of `httpx`).
+- **Restate SDK Constrains**: 
+  - Never hardcode API Keys or DB passwords into Dagster `kwargs` mapped to Restate. Always pull from `os.environ.get()` inside Restate `ctx.run` blocks for strict Kubernetes injection isolation.
+  - When fan-out querying DB sources during Restate extraction syncs, chunk Database executions strictly (e.g. 10,000 max size for HTTP DAG dispatches, 1,000 max size for legacy Oracle `IN` clauses).

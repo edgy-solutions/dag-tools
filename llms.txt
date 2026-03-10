@@ -6,12 +6,13 @@ This document provides high-level context for AI tools and agents exploring this
 
 ## Architecture
 This repository contains:
-1.  **IO Managers**: Custom Dagster IO Managers for handling data serialization/deserialization across cloud storage (S3) and databases (DuckDB, Postgres).
-2.  **Resources**: Reusable clients and connections (e.g., API clients, database connection pools, `dlt` pipeline wrappers).
-3.  **Sensors & Schedules**: Generalized sensors (e.g., S3 bucket sensors for new file arrivals) and common schedule definitions.
+1.  **IO Managers**: Custom Dagster IO Managers for handling data serialization/deserialization across cloud storage (S3) and databases (DuckDB, Postgres). Includes advanced native `ArrowIOManager` coercing S3 PyArrow formats into Pandas DataFrames.
+2.  **Resources**: Reusable clients and connections (e.g., API clients, database connection pools, `dlt` pipeline wrappers, `ArrowResource`, `S3SensorResource`).
+3.  **Sensors & Schedules**: Generalized sensors (e.g., S3 bucket sensors parsing `.metadata` flags for Chronological PyArrow partitioning) and common schedule definitions.
 4.  **Asset Wrappers**: Traditional Python factory functions or decorators that standardize repetitive `@asset` patterns across the organization.
-5.  **Components**: Formal Dagster Declarative Components (`dagster-components`). This allows downstream users to deploy complex pipelines (like DLT extractions or DBT datahub ingestion) using pure YAML.
+5.  **Components**: Formal Dagster Declarative Components (`dagster-components`). This allows downstream users to deploy complex pipelines (e.g. `s3_sensor`, `dlt_pipeline`, `datahub_lineage`, `restate_dlt_sync`, `restate_api_sync`) using pure YAML architecture.
 6.  **Utilities**: Helper functions for logging, metadata formatting, AssetKey normalization (`AssetNormalizationRegistry`), and testing.
+7.  **Restate Handlers**: Generic durable execution handlers (`GenericOracleAckService`, `GenericApiSyncService`) that execute isolated API pushes and Database commits durably to enforce 1:1 or chunked execution idempotency mappings.
 
 ## Local Development
 Other projects will typically install this repository as a dependency. When developing `dag-tools` locally:

@@ -16,7 +16,41 @@ Other projects (e.g., `pub-tools`) rely on this repository for their core pipeli
 
 ## Component Configuration Examples
 
-### Datahub Global Lineage Tracking
+### 1. DLT Pipeline Component
+Deploy declarative full `dlt` extraction pipelines from YAML definitions natively mapped to `dag-tools/components/dlt_pipeline`. Includes IO Manager and incremental hints mappings:
+
+```yaml
+type: dag_tools.components.dlt_pipeline
+
+attributes:
+  source_config:
+    drivername: "mssql+pyodbc"
+    database: "mydatabase"
+    schema: "dbo"
+  dest_config:
+    drivername: "snowflake"
+    database: "analytics"
+  pipelines:
+    fast_refresh:
+      io_manager_key: "snowflake_io_manager"
+      sources:
+        - "production"
+        - "consumption"
+```
+
+### 2. DBT Project Component
+Expose fully compiled DBT projects directly to Dagster with automatic Datahub integration native to the project component:
+
+```yaml
+type: dag_tools.components.dbt_project
+
+attributes:
+  project: "../../dbt_projects/project_one"
+  datahub_config:
+    server: "{{ env.DATAHUB_URL }}"
+```
+
+### 3. Datahub Global Lineage Tracking
 To enable instance-wide asset materialization tracking for DataHub, downstream projects should define the `DatahubLineageComponent` in their `components/` directory (e.g. `components/datahub_lineage/component.yaml`):
 
 ```yaml
@@ -49,8 +83,6 @@ attributes:
   # (Optional) Dynamic mappings from dict metadata keys out of the dagster log into datahub labels
   log_platform_mappings:
     "Databricks Job Run ID": "databricks"
-```
-
 ```
 
 ### 3. S3 to Arrow Storage Component

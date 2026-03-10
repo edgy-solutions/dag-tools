@@ -16,6 +16,7 @@ Before modifying *any* code or executing external network commands, you **MUST**
 
 ### 2. Declarative Component First
 - When building new data integration wrappers (e.g., DLT, DBT, Airbyte), prefer adopting the `dagster-components` custom component layout.
+- When integrating with event-driven or stateful engines like **Restate**, avoid loose programmatic Python factory scripts. Wrap the existing extractors inside Declarative Components (like `restate_dlt_sync` and `restate_api_sync`).
 - Pipeline metadata, hints, and configurations should be offloaded to YAML structure rather than hardcoded Python factory kwargs.
 
 ### 3. Backwards Compatibility
