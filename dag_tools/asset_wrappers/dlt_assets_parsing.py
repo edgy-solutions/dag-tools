@@ -34,6 +34,7 @@ from dag_tools.asset_wrappers.sources.sql_ct_database import sql_ct_database
 from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
 from dag_tools.utils.credentials import get_credentials
+from sqlalchemy import create_engine, inspect
 
 
 def add_element(
@@ -206,17 +207,66 @@ def instantiate_assets(
 
         source = filesystem_source()
     else:
-        func = sql_ct_database if "mssql" in base["creds"].drivername else sql_database
-        source = func(
-            defer_table_reflect=defer_table_reflect,
-            credentials=base["creds"],
-            table_names=base["tables"],
-            schema=schema,
-            backend=config.backend,
-            detect_precision_hints=True,
-            backend_kwargs=config.backend_kwargs,
-            query_adapter_callback=query_callback,
-        ).parallelize()
+        # 1. AUTO-DISCERN: Ask SQL Server which names are views
+        conn_str = base["creds"].to_native_representation()
+        engine = create_engine(conn_str)
+        inspector = inspect(engine)
+        
+        db_views = inspector.get_view_names(schema=schema)
+        
+        actual_tables = []
+        actual_views = []
+        
+        for obj in base["tables"]:
+            if obj in db_views:
+                actual_views.append(obj)
+            else:
+                actual_tables.append(obj)
+                
+        print(f"--- [AUTO-DISCERN] Found {len(actual_tables)} Tables and {len(actual_views)} Views in schema '{schema}' ---")
+
+        # 2. ROUTE AND COMBINE SOURCES
+        final_sources = []
+        
+        # Route Tables to the appropriate source (CT if MSSQL, else standard)
+        if actual_tables:
+            func = sql_ct_database if "mssql" in base["creds"].drivername else sql_database
+            ct_source = func(
+                defer_table_reflect=defer_table_reflect, 
+                credentials=base["creds"], 
+                table_names=actual_tables, 
+                schema=schema, 
+                backend=config.backend,
+                detect_precision_hints=True, 
+                backend_kwargs=config.backend_kwargs, 
+                query_adapter_callback=query_callback
+            )
+            final_sources.append(ct_source)
+            
+        # Route Views to the standard dlt source and FORCE view reflection
+        if actual_views:
+            view_source = sql_database(
+                defer_table_reflect=defer_table_reflect, 
+                credentials=base["creds"], 
+                table_names=actual_views, 
+                schema=schema, 
+                backend=config.backend,
+                detect_precision_hints=True, 
+                backend_kwargs=config.backend_kwargs, 
+                query_adapter_callback=query_callback,
+                include_views=True # CRITICAL: Tells SQLAlchemy to look for views
+            )
+            final_sources.append(view_source)
+
+        # 3. Combine them into a single source
+        if len(final_sources) == 2:
+            source = final_sources[0] + final_sources[1]
+        elif len(final_sources) == 1:
+            source = final_sources[0]
+        else:
+            raise ValueError("No tables or views found to process.")
+            
+        source = source.parallelize()
 
     for table, columns in config.select_columns.items():
         if table in source.resources:
