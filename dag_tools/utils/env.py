@@ -29,12 +29,15 @@ class ExpandedEnvVar(EnvVar):
         return f"{self.prefix}{value}{self.postfix}"
 
 
-def update_from_env(config: Dict[str, Any], eval: bool = False) -> Dict[str, Any]:
+def update_from_env(config: Optional[Dict[str, Any]], eval: bool = False) -> Optional[Dict[str, Any]]:
     """Recursively checks a dictionary for 'env' keys and translates them into Dagster EnvVar objects.
     
     If eval is True, the environment variables are instantly resolved to their system values.
     Returns a deepcopy of the configuration, ensuring no unexpected state mutation occurs.
     """
+    if config is None:
+        return None
+        
     config_copy = copy.deepcopy(config)
     
     for key, value in config_copy.items():

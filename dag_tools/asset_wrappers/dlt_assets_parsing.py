@@ -34,6 +34,7 @@ from dag_tools.asset_wrappers.sources.sql_ct_database import sql_ct_database
 from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
 from dag_tools.utils.credentials import get_credentials
+from dag_tools.utils.env import update_from_env
 
 
 def add_element(
@@ -105,9 +106,7 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             return dlt.destinations.snowflake(staging_dataset_name_layout=credentials.staging, credentials=credentials, **config)
         elif credentials.drivername == "filesystem":
             if database and "bucket_url" in config:
-                bucket_url = config["bucket_url"]
-                base_url = bucket_url.get_value() if isinstance(bucket_url, EnvVar) else bucket_url
-                config["bucket_url"] = f"{base_url}/{database}"
+                config["bucket_url"] = f"{config['bucket_url']}/{database}"
 
             config["destination_name"] = "s3" if credentials.__class__.__name__ == "AwsCredentials" else "abs"
             return dlt.destinations.filesystem(credentials=credentials, **config)
@@ -300,6 +299,10 @@ def create_dlt_assets(
         staging: Optional staging object mapping mapping.
         staging_config: Config for intermediate staging areas.
     """
+    
+    dest_config = update_from_env(dest_config, True)
+    source_config = update_from_env(source_config, True)
+    staging_config = update_from_env(staging_config, True)
     
     mapping: Dict[str, Any] = {}
     _assets: List[Union[AssetsDefinition, AssetSpec]] = []

@@ -18,7 +18,6 @@ from dagster import (
     AutoMaterializePolicy,
     BackfillPolicy,
     Config,
-    EnvVar,
     ScheduleDefinition,
     define_asset_job,
 )
@@ -158,8 +157,7 @@ def config_to_credentials(
 
     for key, item in config.items():
         if key not in ["destination", "drivername"]:
-            val = item.get_value() if isinstance(item, EnvVar) else item
-            setattr(creds, key, val)
+            setattr(creds, key, item)
 
     return creds
 
@@ -286,8 +284,7 @@ def write_env_vars() -> None:
     if using_dagster_dev():
         with open(".env.dlt", "w") as f:
             for key, item in ENV_VARS.items():
-                val = item.get_value() if isinstance(item, EnvVar) else item
-                f.write(f"{key}={val}\n")
+                f.write(f"{key}={item}\n")
 
 
 class DltAssetConfig(Config):
