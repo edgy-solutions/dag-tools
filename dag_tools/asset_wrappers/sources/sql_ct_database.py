@@ -1,6 +1,7 @@
 from typing import Iterable, List, Optional, Union, Any, Dict, Callable
 import dlt
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from dlt.extract.source import DltResource
 
 # 1. Import the OFFICIAL dlt source for fallback
@@ -24,7 +25,6 @@ except ImportError:
                 # specific to dlt credentials objects
                 return sa.create_engine(credentials.to_native_representation()[0])
             return sa.create_engine(str(credentials))
-
 
 # INTERNAL CT IMPLEMENTATION
 # We define this separately so we can decorate it properly as a source.
@@ -70,6 +70,7 @@ def _internal_ct_source(
         meta.reflect(bind=engine, schema=schema)
         tables_to_process = list(meta.tables.values())
     else:
+        # Tables have already been filtered of views by the dispatcher
         meta.reflect(bind=engine, schema=schema, only=table_names)
         tables_to_process = []
         for name in table_names:
@@ -158,7 +159,7 @@ def sql_ct_database(
 ):
     """
     A Smart Proxy for MSSQL. Matches the exact signature of dlt.sources.sql_database.
-    Returns either the Official SQL Source OR the Custom CT Source.
+    Returns either the Official SQL Source OR the Custom CT Source, handling Views cleanly.
     """
     
     # 1. Check for Change Tracking Capability (Silent Fail)
@@ -175,23 +176,42 @@ def sql_ct_database(
         print(f"WARNING: Change Tracking check failed (assuming disabled). Error: {e}")
         ct_enabled = False
 
-    # 2. Branching Logic
+    # 2. AUTO-DISCERN: Separate Tables from Views
+    actual_tables = []
+    actual_views = []
+    
+    if table_names and engine:
+        try:
+            inspector = inspect(engine)
+            db_views = inspector.get_view_names(schema=schema)
+            for t in table_names:
+                if t in db_views:
+                    actual_views.append(t)
+                else:
+                    actual_tables.append(t)
+            print(f"--- [AUTO-DISCERN] Found {len(actual_tables)} Tables and {len(actual_views)} Views ---")
+        except Exception as e:
+            print(f"--- [WARNING] Could not auto-discern views: {e}. Treating all objects as tables. ---")
+            actual_tables = table_names
+    else:
+        actual_tables = table_names
+
+    # Clean up kwargs for official source
+    clean_kwargs = kwargs.copy()
+    if 'write_disposition' in clean_kwargs:
+        del clean_kwargs['write_disposition']
+
+    # 3. Branching & Source Generation
+    final_sources = []
+    
+    # If CT is disabled globally, route EVERYTHING to the official source
     if not ct_enabled:
-        print("--- INFO: Reverting to Standard sql_database ---")
-        
-        # Clean up kwargs for official source
-        clean_kwargs = kwargs.copy()
-        if 'write_disposition' in clean_kwargs:
-            del clean_kwargs['write_disposition']
-            
-        # DIRECT RETURN: We return the official source object directly.
-        # Since 'official_sql_database' is a @dlt.source, this returns a DltSource object.
-        # Its default name is 'sql_database', so state history is preserved.
-        source = official_sql_database(
+        print("--- INFO: Reverting to Standard sql_database for all objects ---")
+        return official_sql_database(
             credentials=credentials,
             schema=schema,
             metadata=metadata,
-            table_names=table_names,
+            table_names=table_names, # Pass the original list
             chunk_size=chunk_size,
             backend=backend,
             detect_precision_hints=detect_precision_hints,
@@ -199,7 +219,7 @@ def sql_ct_database(
             defer_table_reflect=defer_table_reflect,
             table_adapter_callback=table_adapter_callback,
             backend_kwargs=backend_kwargs,
-            include_views=include_views,
+            include_views=True if actual_views else include_views, # FORCE views if found
             type_adapter_callback=type_adapter_callback,
             query_adapter_callback=query_adapter_callback,
             resolve_foreign_keys=resolve_foreign_keys,
@@ -216,20 +236,52 @@ def sql_ct_database(
             pass # Don't crash if resources aren't iterable yet
             
         return source
+    # CT is enabled. Route standard tables to our custom source
+    if actual_tables:
+        ct_source = _internal_ct_source(
+            credentials=credentials,
+            schema=schema,
+            table_names=actual_tables, # Only tables
+            chunk_size=chunk_size,
+            write_disposition=write_disposition,
+            engine=engine,
+            defer_table_reflect=defer_table_reflect,
+            **kwargs
+        )
+        final_sources.append(ct_source)
 
-    # 3. Change Tracking Logic
-    # We call our internal source function.
-    # We pass the engine we already created to avoid reconnecting.
-    return _internal_ct_source(
-        credentials=credentials,
-        schema=schema,
-        table_names=table_names,
-        chunk_size=chunk_size,
-        write_disposition=write_disposition,
-        engine=engine,
-        # We pass other args but _internal_ct_source will handle reflection immediately
-        **kwargs
-    )
+    # Route views to the official dlt source (as views cannot have CT)
+    if actual_views:
+        print(f"--- INFO: Routing {len(actual_views)} Views to Standard sql_database ---")
+        view_source = official_sql_database(
+            credentials=credentials,
+            schema=schema,
+            metadata=metadata,
+            table_names=actual_views, # Only views
+            chunk_size=chunk_size,
+            backend=backend,
+            detect_precision_hints=detect_precision_hints,
+            reflection_level=reflection_level,
+            defer_table_reflect=defer_table_reflect,
+            table_adapter_callback=table_adapter_callback,
+            backend_kwargs=backend_kwargs,
+            include_views=True, # CRITICAL: Forces SQLAlchemy to find the views
+            type_adapter_callback=type_adapter_callback,
+            query_adapter_callback=query_adapter_callback,
+            resolve_foreign_keys=resolve_foreign_keys,
+            engine_adapter_callback=engine_adapter_callback,
+            **clean_kwargs
+        )
+        final_sources.append(view_source)
+
+    # Combine sources if we processed both
+    if len(final_sources) == 2:
+        return final_sources[0] + final_sources[1]
+    elif len(final_sources) == 1:
+        return final_sources[0]
+    
+    # Fallback return just in case
+    return None
 
 # --- GENERATORS (Helper Functions) ---
 
