@@ -277,7 +277,10 @@ def sql_ct_database(
 
     # Combine sources if we processed both
     if len(final_sources) == 2:
-        return final_sources[0] + final_sources[1]
+        combined_source = final_sources[0].clone(with_name="sql_database")
+        for name, res in final_sources[1].resources.items():
+            combined_source.resources[name] = res
+        return combined_source
     elif len(final_sources) == 1:
         return final_sources[0]
     
