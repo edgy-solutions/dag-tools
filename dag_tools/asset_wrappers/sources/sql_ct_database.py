@@ -207,7 +207,7 @@ def sql_ct_database(
     # If CT is disabled globally, route EVERYTHING to the official source
     if not ct_enabled:
         print("--- INFO: Reverting to Standard sql_database for all objects ---")
-        return official_sql_database(
+        source = official_sql_database(
             credentials=credentials,
             schema=schema,
             metadata=metadata,
@@ -236,6 +236,7 @@ def sql_ct_database(
             pass # Don't crash if resources aren't iterable yet
             
         return source
+
     # CT is enabled. Route standard tables to our custom source
     if actual_tables:
         ct_source = _internal_ct_source(
