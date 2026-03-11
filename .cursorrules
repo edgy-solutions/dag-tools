@@ -26,6 +26,26 @@ This project serves as the central hub for common Dagster utilities, resources, 
 
 ## 4. Ecosystem & Integrations Stack
 - **Dependencies**: The framework explicitly supports `pyarrow`, `pandas`, `s3fs`, `httpx`, `pyodbc`, `oracledb`, and the `restate-sdk`. Do not reinstall duplicative dependencies natively (e.g. `requests` instead of `httpx`).
+- **Dagster Version**: This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. The old experimental `dagster-components` library is deprecated — use `dagster.components` (built-in to core).
 - **Restate SDK Constrains**: 
   - Never hardcode API Keys or DB passwords into Dagster `kwargs` mapped to Restate. Always pull from `os.environ.get()` inside Restate `ctx.run` blocks for strict Kubernetes injection isolation.
   - When fan-out querying DB sources during Restate extraction syncs, chunk Database executions strictly (e.g. 10,000 max size for HTTP DAG dispatches, 1,000 max size for legacy Oracle `IN` clauses).
+
+## 5. Dagster Component API Pattern (1.12 GA)
+- **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.
+- **Imports**: `from dagster.components import Component, ComponentLoadContext` and `from dagster.components.resolved.base import Resolvable` and `from dagster.components.resolved.model import Model`.
+- **No `ComponentSchema`**: Schemas are plain `pydantic.BaseModel` or declared directly on the component class as typed fields.
+- **No manual `load()` overrides**: The `Resolvable` base handles YAML attribute parsing automatically.
+- **`build_defs(self, context: ComponentLoadContext) -> Definitions`**: This is the only method you must implement.
+- **Factory pattern for `@asset` closures**: Dagster 1.12 treats all function parameters (except `context`) as asset inputs. When creating `@asset` functions inside `build_defs()`, use a factory function to capture closure variables:
+  ```python
+  # WRONG: Dagster treats 'pk' and 'table' as asset inputs
+  @asset(name=name)
+  def my_asset(context, pk=pk_value, table=table_name): ...
+  
+  # CORRECT: Factory captures values via closure
+  def _make_asset(_name, _pk, _table):
+      @asset(name=_name)
+      def my_asset(context): ...  # use _pk, _table from closure
+      return my_asset
+  ```

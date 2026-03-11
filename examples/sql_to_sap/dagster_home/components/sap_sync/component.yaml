@@ -1,0 +1,32 @@
+type: dag_tools.components.restate_api_sync.RestateApiSyncComponent
+
+attributes:
+  # Instruct Dagster to hit the locally orchestrated Restate Server instance
+  restate_endpoint: "http://localhost:8083/GenericApiSyncService/process_record/send"
+  
+  # Connect locally to the docker-compose SQL Server
+  source_config:
+    drivername: "mssql+pyodbc"
+    database: "INTERNAL_ERP"
+    schema: "dbo"
+    host: "localhost"
+    port: 1433
+    username: "sa"
+    password: "Password123!"
+    
+  # Connect locally to the docker-compose Postgres Buffer
+  dest_config:
+    drivername: "postgresql"
+    database: "staging_db"
+    schema: "sap_buffer"
+    host: "localhost"
+    port: 5433
+    username: "admin"
+    password: "password"
+    
+  pipelines:
+    sap_api_dispatch:
+      primary_key: "PO_NUMBER"
+      api_path: "/sap/v1/orders"
+      sources:
+        - "PURCHASE_ORDERS"

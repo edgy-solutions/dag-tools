@@ -1,8 +1,8 @@
 from typing import Any, Dict, List, Optional
-from dagster.components import ComponentSchema
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-class RestateApiSyncGroupSchema(ComponentSchema):
+
+class RestateApiSyncGroupSchema(BaseModel):
     """Schema for a specific DLT pipeline configuration that triggers Restate API ACKs per row."""
     name: Optional[str] = Field(default=None, description="Name of the pipeline group")
     io_manager_key: str = Field(default="io_manager")
@@ -25,7 +25,7 @@ class RestateApiSyncGroupSchema(ComponentSchema):
         description="The specific API path suffix for this table's payload (e.g., '/v1/orders')."
     )
 
-class RestateApiSyncSchema(ComponentSchema):
+class RestateApiSyncSchema(BaseModel):
     """The root schema for the 'RestateApiSyncComponent' definition."""
     
     source_config: Dict[str, Any] = Field(

@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # 1. Source Database (SQL Server 2022)
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Password123!"
+    ports:
+      - "1433:1433"
+    volumes:
+      - ./init_sqlserver.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      bash -c '/opt/mssql/bin/sqlservr & sleep 15 && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Password123!" -C -i /docker-entrypoint-initdb.d/init.sql && wait'
+
+  # 2. Staging Database (PostgreSQL)
+  postgres_staging:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: staging_db
+    ports:
+      - "5433:5432"
+
+  # 3. Restate Server
+  restate:
+    image: docker.io/restatedev/restate:1.2.0
+    ports:
+      - "8083:8080"
+      - "9070:9070"
+    
+  # 4. Mock SAP API endpoint
+  mock_sap:
+    image: python:3.11-slim-bookworm
+    working_dir: /app
+    volumes:
+      - ./mock_sap_api.py:/app/main.py
+    command: bash -c "pip install fastapi uvicorn && uvicorn main:app --host 0.0.0.0 --port 5000"
+    ports:
+      - "5000:5000"
+      
+  # 5. Restate Handlers Server (Hosting dag-tools Restate Handlers)
+  restate_handlers:
+    image: python:3.11-slim-bookworm
+    working_dir: /app
+    volumes:
+      - ../../:/dag-tools  # Mount the local codebase
+      - ./restate_entrypoint.py:/app/restate_entrypoint.py
+    environment:
+      API_BASE_URL: "http://mock_sap:5000"
+      SQLSERVER_DSN: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=sqlserver,1433;DATABASE=INTERNAL_ERP;UID=sa;PWD=Password123!;Encrypt=no;"
+    command: bash -c "apt-get update && apt-get install -y curl gnupg2 && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list && apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev && pip install -e /dag-tools uvicorn restate-sdk==0.14.0 && python restate_entrypoint.py"
+    depends_on:
+      - sqlserver
+      - mock_sap

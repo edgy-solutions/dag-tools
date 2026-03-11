@@ -6,6 +6,15 @@ __pycache__/
 # Dagster
 .dagster/
 .dagster_home/
+.tmp_dagster_home*/
+*.db
+*.db-shm
+*.db-wal
+storage/
+history/
+schedules/
+runs/
+logs/
 
 # Virtual environments
 .venv/

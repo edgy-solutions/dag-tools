@@ -8,7 +8,7 @@ Rather than duplicating infrastructure logic (such as configuring connection str
 Other projects (e.g., `pub-tools`) rely on this repository for their core pipeline scaffolding.
 
 ## Structure
-- `dag_tools/components/`: Formal Dagster Declarative Components (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`) that allow users to deploy complex workloads via `.yaml`.
+- `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
@@ -20,7 +20,7 @@ Other projects (e.g., `pub-tools`) rely on this repository for their core pipeli
 Deploy declarative full `dlt` extraction pipelines from YAML definitions natively mapped to `dag-tools/components/dlt_pipeline`. Includes IO Manager and incremental hints mappings:
 
 ```yaml
-type: dag_tools.components.dlt_pipeline
+type: dag_tools.components.dlt_pipeline.DltPipelineComponent
 
 attributes:
   source_config:
@@ -42,7 +42,7 @@ attributes:
 Expose fully compiled DBT projects directly to Dagster with automatic Datahub integration native to the project component:
 
 ```yaml
-type: dag_tools.components.dbt_project
+type: dag_tools.components.dbt_project.CustomDbtProjectComponent
 
 attributes:
   project: "../../dbt_projects/project_one"
@@ -89,7 +89,7 @@ attributes:
 This component tracks an S3 Bucket and registers dynamic partitions for new incoming files chronologically. It triggers a PyArrow job that converts the raw bytes natively through your specified `io_manager`.
 
 ```yaml
-type: dag_tools.components.s3_sensor
+type: dag_tools.components.s3_sensor.S3ToArrowComponent
 
 attributes:
   partition_name: "daily_ingestion_logs"
@@ -125,7 +125,7 @@ resources = {
 Instantiate generic Oracle-to-Postgres syncing and auto-chunked Restate acking by writing a single YAML component definition:
 
 ```yaml
-type: dag_tools.components.restate_dlt_sync
+type: dag_tools.components.restate_dlt_sync.RestateDltSyncComponent
 
 attributes:
   restate_endpoint: "http://restate-server:8080/GenericOracleAckService/mark_as_processed/send"
@@ -151,7 +151,7 @@ attributes:
 Instantiate generic SQL Server-to-External REST API syncing using stateful row-level Restate acks by defining a single YAML configuration:
 
 ```yaml
-type: dag_tools.components.restate_api_sync
+type: dag_tools.components.restate_api_sync.RestateApiSyncComponent
 
 attributes:
   restate_endpoint: "http://restate-server:8080/GenericApiSyncService/process_record/send"
@@ -176,7 +176,7 @@ attributes:
 
 ## Setup & Development
 
-We use `uv` for all dependency management.
+This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. We use `uv` for all dependency management.
 
 ```bash
 uv sync
@@ -184,10 +184,27 @@ uv sync
 
 ### Running the local test environment
 
-To verify that the shared components load correctly, we provide an example Definitions entry point.
+To verify that the shared components load correctly, we provide example Definitions entry points in `examples/`.
 
 ```bash
 uv run dagster dev
+```
+
+### Component API
+
+All custom components use the Dagster 1.12 GA `Component, Resolvable, Model` triple-inheritance pattern:
+
+```python
+from dagster import Definitions
+from dagster.components import Component, ComponentLoadContext
+from dagster.components.resolved.base import Resolvable
+from dagster.components.resolved.model import Model
+
+class MyComponent(Component, Resolvable, Model):
+    my_field: str
+
+    def build_defs(self, context: ComponentLoadContext) -> Definitions:
+        ...
 ```
 
 ## AI Agent & Developer Guidelines

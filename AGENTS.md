@@ -14,10 +14,17 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - **DO NOT** hardcode project-specific logic, bucket names, or table names into this repository. 
 - All resources, IO Managers, and sensors must accept configuration at runtime via Dagster's `ConfigurableResource` or `ConfigurableIOManager` patterns so downstream projects can inject their own values.
 
-### 2. Declarative Component First
-- When building new data integration wrappers (e.g., DLT, DBT, Airbyte), prefer adopting the `dagster-components` custom component layout.
+### 2. Declarative Component First (Dagster 1.12 GA)
+- When building new data integration wrappers (e.g., DLT, DBT, Airbyte), use the **Dagster 1.12 GA Component API** (`dagster.components`). The old experimental `dagster-components` library is deprecated.
+- New components **MUST** use the `Component, Resolvable, Model` triple-inheritance pattern:
+  ```python
+  class MyComponent(Component, Resolvable, Model):
+      my_field: str
+      def build_defs(self, context: ComponentLoadContext) -> Definitions: ...
+  ```
 - When integrating with event-driven or stateful engines like **Restate**, avoid loose programmatic Python factory scripts. Wrap the existing extractors inside Declarative Components (like `restate_dlt_sync` and `restate_api_sync`).
 - Pipeline metadata, hints, and configurations should be offloaded to YAML structure rather than hardcoded Python factory kwargs.
+- When defining `@asset` functions inside `build_defs()` with closure variables, use a **factory function** pattern — Dagster 1.12 introspects all function parameters as asset inputs.
 
 ### 3. Backwards Compatibility
 - Since other repositories (like `pub-tools`) depend on `dag-tools`, **DO NOT** make breaking changes to function signatures or export names without explicit approval from the user. 

@@ -1,9 +1,8 @@
 from typing import Any, Dict, List, Optional
-from dagster import AssetKey
-from dagster_components import ComponentSchema
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-class DltPipelineGroupSchema(ComponentSchema):
+
+class DltPipelineGroupSchema(BaseModel):
     """Schema for a specific DLT pipeline configuration (e.g. 'fast_refresh')"""
     name: Optional[str] = Field(default=None, description="Name of the pipeline group")
     io_manager_key: str = Field(default="io_manager")
@@ -21,7 +20,7 @@ class DltPipelineGroupSchema(ComponentSchema):
     )
 
 
-class DltPipelineSchema(ComponentSchema):
+class DltPipelineSchema(BaseModel):
     """The root schema for the 'DltPipelineComponent' definition."""
     
     # E.g. mssql_source_config

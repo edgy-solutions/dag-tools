@@ -1,9 +1,8 @@
 from typing import Any, Dict, List, Optional
-from dagster import AssetKey
-from dagster.components import ComponentSchema
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-class RestateDltSyncGroupSchema(ComponentSchema):
+
+class RestateDltSyncGroupSchema(BaseModel):
     """Schema for a specific DLT pipeline configuration that triggers Restate ACKs"""
     name: Optional[str] = Field(default=None, description="Name of the pipeline group")
     io_manager_key: str = Field(default="io_manager")
@@ -24,7 +23,7 @@ class RestateDltSyncGroupSchema(ComponentSchema):
     )
 
 
-class RestateDltSyncSchema(ComponentSchema):
+class RestateDltSyncSchema(BaseModel):
     """The root schema for the 'RestateDltSyncComponent' definition."""
     
     source_config: Dict[str, Any] = Field(

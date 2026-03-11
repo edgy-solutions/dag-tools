@@ -1,0 +1,49 @@
+IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'INTERNAL_ERP')
+BEGIN
+    CREATE DATABASE INTERNAL_ERP;
+END
+GO
+
+USE INTERNAL_ERP;
+GO
+
+-- 1. Enable Database Change Tracking
+IF NOT EXISTS (SELECT 1 FROM sys.change_tracking_databases WHERE database_id = DB_ID('INTERNAL_ERP'))
+BEGIN
+    ALTER DATABASE INTERNAL_ERP SET CHANGE_TRACKING = ON (CHANGE_RETENTION = 2 DAYS, AUTO_CLEANUP = ON);
+END
+GO
+
+-- 2. Create the Source Table
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[PURCHASE_ORDERS]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE dbo.PURCHASE_ORDERS (
+        PO_NUMBER VARCHAR(50) PRIMARY KEY,
+        VENDOR_NAME VARCHAR(100),
+        AMOUNT DECIMAL(10,2),
+        sync_status VARCHAR(20) DEFAULT 'PENDING',
+        external_id VARCHAR(50) NULL
+    );
+END
+GO
+
+-- 3. Enable Table-Level Change Tracking
+IF NOT EXISTS (
+    SELECT 1 FROM sys.change_tracking_tables 
+    WHERE object_id = OBJECT_ID('dbo.PURCHASE_ORDERS')
+)
+BEGIN
+    ALTER TABLE dbo.PURCHASE_ORDERS ENABLE CHANGE_TRACKING WITH (TRACK_COLUMNS_UPDATED = OFF);
+END
+GO
+
+-- 4. Insert Dummy Data
+IF NOT EXISTS (SELECT 1 FROM dbo.PURCHASE_ORDERS WHERE PO_NUMBER = 'PO-1001')
+BEGIN
+    INSERT INTO dbo.PURCHASE_ORDERS (PO_NUMBER, VENDOR_NAME, AMOUNT)
+    VALUES 
+        ('PO-1001', 'Acme Corp', 5200.00),
+        ('PO-1002', 'Global Tech', 890.50),
+        ('PO-1003', 'Delta Supplies', 12000.00);
+END
+GO

@@ -1,5 +1,5 @@
 from pathlib import Path
-from dagster_components import build_component_defs
+from dagster.components import build_component_defs
 
 # Because we used "Option A", Dagster handles the recursive directory crawl!
 # This single line of python will recursively scan the folders and find BOTH:

@@ -337,7 +337,7 @@ def create_dlt_assets(
             effective_dest_schema = config.dest_schema or getattr(credentials, "schema", None) or getattr(base["creds"], "schema", None) or schema
             effective_name = config.name or (f"{credentials.database.replace('.', '_')}_{effective_dest_schema}" if getattr(credentials, "database", None) else database)
 
-            dlt_pipeline = pipeline(
+            dlt_pipeline = dlt.pipeline(
                 pipeline_name=f"{effective_name}_pipeline",
                 dataset_name=effective_dest_schema,
                 destination=destination,
