@@ -155,7 +155,7 @@ def config_to_credentials(
     creds.drivername = TYPE_MAPPINGS.get(drivername, drivername)
     kinds.append(KIND_MAPPING.get(kind, kind))
 
-    STANDARD_ATTRS = {"host", "port", "username", "password", "database", "drivername"}
+    STANDARD_ATTRS = {"host", "port", "username", "password", "database", "drivername", "schema"}
     creds.query = {}
     
     for key, item in config.items():

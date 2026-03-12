@@ -1,4 +1,4 @@
-from .oracle_ack import app as oracle_app, mark_as_processed
-from .api_sync import app as api_app, process_record
+from .oracle_ack import service as oracle_service, mark_as_processed
+from .api_sync import service as api_service, process_record
 
-__all__ = ["oracle_app", "mark_as_processed", "api_app", "process_record"]
+__all__ = ["oracle_service", "mark_as_processed", "api_service", "process_record"]

@@ -1,8 +1,12 @@
 import uvicorn
-from dag_tools.restate_handlers.api_sync import app as restate_handlers
+import restate
+from dag_tools.restate_handlers.api_sync import service as api_service
+from dag_tools.restate_handlers.oracle_ack import service as oracle_service
+
+# Define the ASGI app with all services bound
+app = restate.app(services=[api_service, oracle_service])
 
 if __name__ == "__main__":
-    import restate
-    # Serve the initialized GenericApiSyncService 
+    # Serve the initialized services
     # to the Restate Engine over port 9080
-    uvicorn.run(restate.serve([restate_handlers]), host="0.0.0.0", port=9080)
+    uvicorn.run(app, host="0.0.0.0", port=9080)

@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 import httpx
 import sqlalchemy as sa
-from dagster import Definitions, asset
+from dagster import AssetsDefinition, Definitions, AssetKey, asset
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model
@@ -61,16 +61,31 @@ class RestateApiSyncComponent(Component, Resolvable, Model):
             )
             generated_assets.extend(dlt_assets_group)
             
+            # Helper to find the correct AssetKey in the DLT multi-asset group
+            def _find_dlt_asset_key(table_name):
+                # Search through all generated DLT assets in this group
+                for dlt_group in dlt_assets_group:
+                    if isinstance(dlt_group, AssetsDefinition):
+                        for key in dlt_group.keys:
+                            if key.path[-1].lower() == table_name.lower():
+                                return key
+                return None
+
             for source_table in sources:
                 fanout_name = f"{pipeline_key}_{source_table}_api_dispatch"
-                dlt_asset_dep_str = f"dlt_{pydantic_config.name}_{self.source_config.get('schema', '')}_asset"
                 
+                # Dynamically resolve the upstream AssetKey instead of guessing a string
+                upstream_key = _find_dlt_asset_key(source_table)
+                if not upstream_key:
+                    # Fallback to a sensible default if not found (unlikely)
+                    upstream_key = f"dlt_{pydantic_config.name}_{self.source_config.get('schema', '')}_asset"
+
                 def _make_dispatch_asset(
-                    _fanout_name, _dlt_dep, _table, _pk, _api_route, _pydantic_config
+                    _fanout_name, _upstream_key, _table, _pk, _api_route, _pydantic_config
                 ):
                     @asset(
                         name=_fanout_name,
-                        deps=[_dlt_dep]
+                        deps=[_upstream_key]
                     )
                     async def dispatch_asset(context):
                         env_credential_name = f"DESTINATION__{self.dest_config.get('drivername', 'POSTGRES').upper()}__CREDENTIALS"
@@ -84,38 +99,62 @@ class RestateApiSyncComponent(Component, Resolvable, Model):
                         
                         engine = sa.create_engine(pg_url)
                         
-                        dest_schema_name = getattr(_pydantic_config, "dest_schema", None) or self.source_config.get("schema", "public")
-                        query = f"SELECT * FROM {dest_schema_name}.{_table}"
+                        # Correct logic: Use dest_config schema first, then source_config schema, then public
+                        dest_schema_name = (
+                            getattr(_pydantic_config, "dest_schema", None) 
+                            or self.dest_config.get("schema") 
+                            or self.source_config.get("schema") 
+                            or "public"
+                        )
+                        # DLT normalizes table names to lower case by default. 
+                        # Postgres quoted identifiers are case-sensitive.
+                        normalized_table = _table.lower()
+                        query = f'SELECT * FROM "{dest_schema_name}"."{normalized_table}"'
                         
                         rows = []
                         with engine.connect() as conn:
                             result = conn.execute(sa.text(query))
                             rows = [dict(row) for row in result.mappings()]
                             
-                        context.log.info(f"Retrieved {len(rows)} staged records from {dest_schema_name}.{_table}.")
+                        context.log.info(f"Retrieved {len(rows)} staged records from {dest_schema_name}.{normalized_table}.")
+
+                        # Helper to make types like Decimal JSON-serializable
+                        def _json_serializable(obj):
+                            import decimal
+                            if isinstance(obj, dict):
+                                return {k: _json_serializable(v) for k, v in obj.items()}
+                            elif isinstance(obj, list):
+                                return [_json_serializable(v) for v in obj]
+                            elif isinstance(obj, decimal.Decimal):
+                                return float(obj)
+                            return obj
 
                         async with httpx.AsyncClient() as client:
                             for idx, row_dict in enumerate(rows):
-                                payload = {
+                                # DLT normalizes column names to lower case.
+                                # Ensure we find the PK even if the config has it upper-cased.
+                                actual_pk_val = row_dict.get(_pk.lower()) or row_dict.get(_pk)
+                                
+                                payload = _json_serializable({
                                     "api_path": _api_route,
                                     "source_table": _table,
                                     "pk_column": _pk,
-                                    "pk_value": row_dict.get(_pk),
+                                    "pk_value": actual_pk_val,
                                     "row_data": row_dict
-                                }
+                                })
                                 
                                 if idx % 1000 == 0:
-                                    context.log.info(f"Dispatching record {idx} to Restate /send ingress.")
+                                    context.log.info(f"Dispatching record {idx} (PK: {actual_pk_val}) to Restate /send ingress.")
                                     
                                 try:
                                     await client.post(self.restate_endpoint, json=payload)
                                 except Exception as e:
-                                    context.log.warning(f"Failed to dispatch record PK {row_dict.get(_pk)} to Restate: {e}")
+                                    context.log.warning(f"Failed to dispatch record PK {actual_pk_val} to Restate: {e}")
 
                     return dispatch_asset
 
                 generated_assets.append(
-                    _make_dispatch_asset(fanout_name, dlt_asset_dep_str, source_table, primary_key, api_path, pydantic_config)
+                    _make_dispatch_asset(fanout_name, upstream_key, source_table, primary_key, api_path, pydantic_config)
                 )
 
         return Definitions(

@@ -3,9 +3,9 @@ import httpx
 import oracledb
 import restate
 
-app = restate.app("GenericApiSyncService")
+service = restate.Service(name="GenericApiSyncService")
 
-@app.handler()
+@service.handler()
 async def process_record(ctx: restate.Context, payload: dict):
     """Generic Restate service for sync data outward to REST APIs securely per row."""
     

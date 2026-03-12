@@ -2,9 +2,9 @@ import os
 import oracledb
 import restate
 
-app = restate.app("GenericOracleAckService")
+service = restate.Service(name="GenericOracleAckService")
 
-@app.handler()
+@service.handler()
 async def mark_as_processed(ctx: restate.Context, payload: dict):
     """Generic Restate service for batch updating Oracle processed flags safely."""
     
