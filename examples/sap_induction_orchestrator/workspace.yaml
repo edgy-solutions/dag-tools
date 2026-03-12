@@ -1,0 +1,2 @@
+load_from:
+  - python_module: examples.sap_induction_orchestrator.definitions

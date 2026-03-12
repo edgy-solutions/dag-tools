@@ -1,0 +1,13 @@
+name: 'sap_induction_dbt'
+version: '1.0.0'
+config-version: 2
+
+profile: 'sap_induction'
+
+model-paths: ["models"]
+target-path: "target"
+
+models:
+  sap_induction_dbt:
+    staging:
+      +materialized: table

@@ -1,0 +1,13 @@
+type: dlt_pipeline
+source_config:
+  type: sql_database
+  credentials: "{{ env.SQLSERVER_DSN }}"
+dest_config:
+  type: postgres
+  credentials: "{{ env.POSTGRES_DSN }}"
+pipelines:
+  sap_extraction:
+    name: sqlserver_to_postgres
+    dataset_name: raw_sap_data
+    sources:
+      - vw_sap_source_data

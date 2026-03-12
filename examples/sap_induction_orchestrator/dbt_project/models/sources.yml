@@ -1,0 +1,7 @@
+version: 2
+
+sources:
+  - name: raw_sap_data
+    schema: raw_sap_data
+    tables:
+      - name: vw_sap_source_data
