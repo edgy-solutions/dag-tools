@@ -8,6 +8,7 @@ from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model
 
+from dagster_dlt import DagsterDltResource
 from dag_tools.asset_wrappers.dlt_assets_parsing import create_dlt_assets
 from dag_tools.asset_wrappers.dlt_assets_factory import DltAssetGroupConfig
 
@@ -117,4 +118,7 @@ class RestateApiSyncComponent(Component, Resolvable, Model):
                     _make_dispatch_asset(fanout_name, dlt_asset_dep_str, source_table, primary_key, api_path, pydantic_config)
                 )
 
-        return Definitions(assets=generated_assets)
+        return Definitions(
+            assets=generated_assets,
+            resources={"dlt": DagsterDltResource()}
+        )

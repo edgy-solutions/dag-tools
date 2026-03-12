@@ -5,6 +5,7 @@ from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model
 
+from dagster_dlt import DagsterDltResource
 from dag_tools.asset_wrappers.dlt_assets_parsing import create_dlt_assets
 from dag_tools.asset_wrappers.dlt_assets_factory import DltAssetGroupConfig
 
@@ -52,4 +53,7 @@ class DltPipelineComponent(Component, Resolvable, Model):
             )
             generated_assets.extend(assets)
             
-        return Definitions(assets=generated_assets)
+        return Definitions(
+            assets=generated_assets, 
+            resources={"dlt": DagsterDltResource()}
+        )

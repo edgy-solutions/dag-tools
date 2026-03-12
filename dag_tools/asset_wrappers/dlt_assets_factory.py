@@ -155,9 +155,14 @@ def config_to_credentials(
     creds.drivername = TYPE_MAPPINGS.get(drivername, drivername)
     kinds.append(KIND_MAPPING.get(kind, kind))
 
+    STANDARD_ATTRS = {"host", "port", "username", "password", "database", "drivername"}
+    creds.query = {}
+    
     for key, item in config.items():
-        if key not in ["destination", "drivername"]:
+        if key in STANDARD_ATTRS:
             setattr(creds, key, item)
+        elif key not in ["destination", "drivername"]:
+             creds.query[key] = item
 
     return creds
 

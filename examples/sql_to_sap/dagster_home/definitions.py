@@ -4,7 +4,9 @@ Instantiates the RestateApiSyncComponent directly from Python attributes,
 bypassing the ComponentTree (which conflicts with this non-standard project 
 structure where definitions.py lives inside the defs module root).
 """
+from dagster import Definitions
 from dagster.components.core.load_defs import build_defs_for_component
+from dagster_dlt import DagsterDltResource
 from dag_tools.components.restate_api_sync import RestateApiSyncComponent
 
 component = RestateApiSyncComponent(
@@ -17,6 +19,8 @@ component = RestateApiSyncComponent(
         "port": 1433,
         "username": "sa",
         "password": "Password123!",
+        "driver": "ODBC Driver 18 for SQL Server",
+        "TrustServerCertificate": "yes",
     },
     dest_config={
         "drivername": "postgresql",
