@@ -129,6 +129,15 @@ class RestateApiSyncComponent(Component, Resolvable, Model):
                                 return float(obj)
                             return obj
 
+                        # Determine if we are in a container to resolve the correct Restate Ingress URL
+                        is_in_container = os.path.exists("/.dockerenv") or os.environ.get("KUBERNETES_SERVICE_HOST")
+                        resolved_endpoint = self.restate_endpoint
+                        if resolved_endpoint.startswith("http://localhost") and is_in_container:
+                            resolved_endpoint = resolved_endpoint.replace("localhost:8083", "restate:8080")
+                            context.log.info(f"Detected container environment, routing to internal Restate: {resolved_endpoint}")
+                        else:
+                            context.log.info(f"Using Restate endpoint: {resolved_endpoint}")
+
                         async with httpx.AsyncClient() as client:
                             for idx, row_dict in enumerate(rows):
                                 # DLT normalizes column names to lower case.
@@ -147,9 +156,9 @@ class RestateApiSyncComponent(Component, Resolvable, Model):
                                     context.log.info(f"Dispatching record {idx} (PK: {actual_pk_val}) to Restate /send ingress.")
                                     
                                 try:
-                                    await client.post(self.restate_endpoint, json=payload)
+                                    await client.post(resolved_endpoint, json=payload)
                                 except Exception as e:
-                                    context.log.warning(f"Failed to dispatch record PK {actual_pk_val} to Restate: {e}")
+                                    context.log.warning(f"Failed to dispatch record PK {actual_pk_val} to Restate at {resolved_endpoint}: {e}")
 
                     return dispatch_asset
 
