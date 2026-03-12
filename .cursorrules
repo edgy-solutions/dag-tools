@@ -30,6 +30,11 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Restate SDK Constrains**: 
   - Never hardcode API Keys or DB passwords into Dagster `kwargs` mapped to Restate. Always pull from `os.environ.get()` inside Restate `ctx.run` blocks for strict Kubernetes injection isolation.
   - When fan-out querying DB sources during Restate extraction syncs, chunk Database executions strictly (e.g. 10,000 max size for HTTP DAG dispatches, 1,000 max size for legacy Oracle `IN` clauses).
+  - **HTTP/2 Standard**: All Restate ASGI servers must use `Hypercorn` (or equivalent) to support HTTP/2, as required by modern Restate SDKs (`>=0.14.0`).
+
+## 6. Docker Build Best Practices
+- **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
+- **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
 ## 5. Dagster Component API Pattern (1.12 GA)
 - **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.

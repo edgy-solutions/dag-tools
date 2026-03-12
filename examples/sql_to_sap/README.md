@@ -18,8 +18,9 @@ This demo spins up 5 sandbox containers to simulate an enterprise environment:
 4. **Mock SAP API (Target Endpoint)**
    - A lightweight FastAPI server simulating a corporate ERP ingress endpoint on port `5000`.
    - Accepts JSON `POST` requests and logs them.
-5. **Restate Handlers (dag-tools worker)**
-   - A dedicated Python worker that hosts the `dag-tools` Restate Services (`GenericApiSyncService` and `GenericSqlAckService`).
+5. **Restate Handlers (Data Plane)**
+   - A dedicated Python worker image (`Dockerfile.worker`) hosting multiple `dag_tools` Restate Services: `GenericApiSyncService`, `GenericSqlAckService`, and `SapInductionService`.
+   - Built with `uv` for speed and `Hypercorn` for mandatory HTTP/2 support.
    - Acts as the bridge between the Restate cluster and your custom Python sync logic.
 
 ## 🚀 How to Run

@@ -12,7 +12,8 @@ This repository contains:
 4.  **Asset Wrappers**: Traditional Python factory functions or decorators that standardize repetitive `@asset` patterns across the organization.
 5.  **Components**: Formal Dagster 1.12 GA Declarative Components (`dagster.components`). Components use the `Component, Resolvable, Model` pattern and allow downstream users to deploy complex pipelines (e.g. `s3_sensor`, `dlt_pipeline`, `datahub_lineage`, `restate_dlt_sync`, `restate_api_sync`) using pure YAML architecture. Schemas are plain `pydantic.BaseModel` classes.
 6.  **Utilities**: Helper functions for logging, metadata formatting, AssetKey normalization (`AssetNormalizationRegistry`), and testing.
-7.  **Restate Handlers**: Generic durable execution handlers (`GenericOracleAckService`, `GenericApiSyncService`) that execute isolated API pushes and Database commits durably to enforce 1:1 or chunked execution idempotency mappings.
+7.  **Restate Handlers (Data Plane)**: Generic durable execution handlers (`GenericOracleAckService`, `GenericApiSyncService`, `SapInductionService`) that execute isolated API pushes and Database commits durably to enforce 1:1 or chunked execution idempotency mappings.
+8.  **Control Plane vs. Data Plane Architecture**: The project is split into a Control Plane (Dagster orchestrator) and a Data Plane (Restate workers). Workers are deployed as lean, separate images (`Dockerfile.worker`) and communicate with the Control Plane via Restate Ingress.
 
 ## Component API (Dagster 1.12 GA)
 All custom components inherit from `dagster.components.Component`, `dagster.components.resolved.base.Resolvable`, and `dagster.components.resolved.model.Model`. Key rules:

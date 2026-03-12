@@ -13,6 +13,14 @@ Other projects (e.g., `pub-tools`) rely on this repository for their core pipeli
 - `dag_tools/resources/`: Reusable resources and API/Database clients.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
 - `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
+- `dag_tools/restate_handlers/`: Durable Data Plane services (Restate) for SAP and Database synchronization.
+
+## Control Plane vs. Data Plane
+To ensure scalability and security, `dag-tools` enforces a strict separation between:
+1. **Control Plane (Dagster)**: Orchestrates data movement, manages schedules, and handles metadata.
+2. **Data Plane (Restate)**: Executes high-volume, row-level API and database mutations durably.
+
+Data Plane workers are built using `Dockerfile.worker` and utilize `Hypercorn` for mandatory HTTP/2 support required by modern Restate SDKs.
 
 ## Component Configuration Examples
 
@@ -172,6 +180,16 @@ attributes:
       api_path: "/v1/orders"
       sources:
         - "PURCHASE_ORDERS"
+
+### 7. SAP OData Induction Service
+Deploy a durable SAP OData 2.0 induction workflow. This service handles material resolution, quotation lookups, and serial number fan-out with exactly-once semantics using Restate:
+
+```yaml
+# Used via Restate components in downstream projects
+restate_endpoint: "http://restate-server:8080/SapInductionService/execute_induction/send"
+```
+
+The induction service is fully configuration-driven via `SapInductionSettings`, mapping generic field names to technical SAP OData properties.
 ```
 
 ## Setup & Development

@@ -5,9 +5,14 @@ import restate
 
 from dag_tools.restate_handlers.api_sync import service as api_service
 from dag_tools.restate_handlers.oracle_ack import service as oracle_service
+from dag_tools.restate_handlers.sap_induction import service as sap_induction_service
 
 # Define the ASGI app with all services bound
-app = restate.app(services=[api_service, oracle_service])
+app = restate.app(services=[
+    api_service, 
+    oracle_service,
+    sap_induction_service
+])
 
 async def main():
     config = Config()
