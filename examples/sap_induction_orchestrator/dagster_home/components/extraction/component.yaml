@@ -1,0 +1,19 @@
+type: dag_tools.DltPipelineComponent
+
+attributes:
+  source_config:
+    type: sql_database
+    credentials: "{{ env.SQLSERVER_DSN }}"
+    database: "INTERNAL_ERP"
+    schema: "dbo"
+  dest_config:
+    type: postgres
+    credentials: "{{ env.POSTGRES_DSN }}"
+    database: "sap_induction"
+    schema: "raw_sap_data"
+  pipelines:
+    sap_extraction:
+      name: sqlserver_to_postgres
+      dest_schema: raw_sap_data
+      sources:
+        - vw_sap_source_data

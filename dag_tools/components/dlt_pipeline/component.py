@@ -40,7 +40,7 @@ class DltPipelineComponent(Component, Resolvable, Model):
             sources = pipeline_attrs.pop("sources", [])
             
             pydantic_config = DltAssetGroupConfig(
-                name=pipeline_attrs.get("name", pipeline_key),
+                name=pipeline_attrs.pop("name", pipeline_key),
                 **pipeline_attrs
             )
 

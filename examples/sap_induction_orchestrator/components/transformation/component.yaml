@@ -1,3 +1,0 @@
-type: dbt_project
-dbt:
-  project_dir: ../../dbt_project

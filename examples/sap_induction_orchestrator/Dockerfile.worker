@@ -1,0 +1,40 @@
+# Data Plane Worker: Restate Handlers
+FROM python:3.11-slim-bookworm
+
+# 1. Install system dependencies for ODBC and build tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg2 \
+    unixodbc-dev \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Install uv for fast dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# 3. Setup application environment
+WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 4. Install dependencies (Data Plane slice only)
+COPY pyproject.toml .
+RUN mkdir dag_tools && touch dag_tools/__init__.py && touch README.md
+RUN uv venv .venv && \
+    uv pip install '.[worker]'
+
+# 5. Install the local package in editable mode for the handlers
+# IMPORTANT: Remove dummy metadata created for caching to avoid shadowing the real package
+RUN rm -rf dag_tools README.md
+COPY . /dag-tools
+RUN uv pip install -e /dag-tools
+
+# 6. Setup entrypoint
+COPY examples/sql_to_sap/restate_entrypoint.py /app/restate_entrypoint.py
+
+EXPOSE 9080
+CMD ["python", "restate_entrypoint.py"]

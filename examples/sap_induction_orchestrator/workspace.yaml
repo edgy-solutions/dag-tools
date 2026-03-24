@@ -1,2 +1,4 @@
 load_from:
-  - python_module: examples.sap_induction_orchestrator.definitions
+  - python_file:
+      relative_path: dagster_home/definitions.py
+      working_directory: .

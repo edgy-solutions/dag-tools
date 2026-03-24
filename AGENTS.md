@@ -26,7 +26,18 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - Pipeline metadata, hints, and configurations should be offloaded to YAML structure rather than hardcoded Python factory kwargs.
 - When defining `@asset` functions inside `build_defs()` with closure variables, use a **factory function** pattern — Dagster 1.12 introspects all function parameters as asset inputs.
 
-### 3. Backwards Compatibility
+### 3. Durable State Machines & Double-Writes
+- When building handlers that modify both a database and an external API (e.g., `SapInductionService`), follow the **Double-Write / Outbox Pattern**.
+- Every state transition (e.g., SUCCESS -> ERROR) must be recorded in the local database AND pushed to any remote callback/webhook APIs.
+- Use Restate's `ctx.run()` to wrap **both** the notification and the update in separate, durable steps to ensure they are eventually consistent, even if one system fails.
+- **NEVER** instantiate database clients or heavy resources inside a handler loop; use a global singleton/cache pattern to prevent connection leaks.
+
+### 4. Normalized Configuration Design
+- **Dagster Configuration First**: All new components and resources MUST use the Dagster configuration framework (`Config`, `ConfigurableResource`, or `dagster.components` attributes).
+- **Wrap & Standardize**: Do not expose raw, pass-through configurations for underlying tools (like `dlt` or `dbt`) directly if they deviate from Dagster's standard practices. Instead, define a Dagster-centric configuration schema that wraps and translates to the native tool's requirements.
+- **Component Translation**: The component's `build_defs()` or the resource's initialization logic is responsible for mapping these standardized Dagster inputs into the specific format required by the underlying engine.
+
+### 5. Backwards Compatibility
 - Since other repositories (like `pub-tools`) depend on `dag-tools`, **DO NOT** make breaking changes to function signatures or export names without explicit approval from the user. 
 - If adding a new feature to an existing shared component, make the new parameters optional with sensible defaults.
 

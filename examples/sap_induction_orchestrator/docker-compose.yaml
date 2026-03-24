@@ -1,0 +1,79 @@
+services:
+  # 1. SQL Server (Read-Only Source)
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Password123!
+    volumes:
+      - ./init_sqlserver.sql:/docker-entrypoint-initdb.d/init_sqlserver.sql
+    command: >
+      bash -c "
+      /opt/mssql/bin/sqlservr &
+      echo 'Waiting for SQL Server to be ready...' &&
+      for i in {1..50}; do
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Password123!' -C -Q 'SELECT 1' > /dev/null 2>&1
+        if [ $$? -eq 0 ]; then
+          echo 'SQL Server is UP. Running init script...'
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Password123!' -C -i /docker-entrypoint-initdb.d/init_sqlserver.sql
+          break
+        fi
+        sleep 2
+      done &&
+      wait"
+
+  # 2. Postgres (Local Outbox / Staging Buffer)
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=outbox_db
+
+  # 3. Restate Server (Durable Ingress)
+  restate:
+    image: docker.io/restatedev/restate:latest
+    ports:
+      - "9070:9070" # Admin
+      - "8083:8080" # Ingress
+    environment:
+      - RESTATE_ADMIN__BIND_ADDRESS=0.0.0.0:9070
+      - RESTATE_INGRESS__HTTP_SERVER__BIND_ADDRESS=0.0.0.0:8080
+
+  # 4. Mock SAP API
+  mock-sap:
+    image: python:3.11-slim
+    working_dir: /app
+    command: >
+      bash -c "
+      pip install fastapi uvicorn &&
+      uvicorn mock_sap_api:app --host 0.0.0.0 --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mock_sap_api.py:/app/mock_sap_api.py
+
+  # 5. Restate Handlers (Data Plane Worker)
+  restate-handlers:
+    build:
+      context: ../..
+      dockerfile: ./examples/sap_induction_orchestrator/Dockerfile.worker
+    environment:
+      - SAP_INDUCTION__DATABASE__HOST=postgres
+      - SAP_INDUCTION__DATABASE__PORT=5432
+      - SAP_INDUCTION__DATABASE__USERNAME=admin
+      - SAP_INDUCTION__DATABASE__PASSWORD=password
+      - SAP_INDUCTION__DATABASE__DATABASE=outbox_db
+      - RESTATE_ADMIN_URL=http://restate:9070
+      - SAP_INDUCTION__ODATA__BASE_URL=http://mock-sap:5000
+      - SAP_INDUCTION__CALLBACK_API__BASE_URL=http://mock-sap:5000/callback
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "9080:9080"
+    depends_on:
+      - restate
+      - postgres

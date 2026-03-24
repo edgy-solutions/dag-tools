@@ -17,6 +17,7 @@ orchestrator = [
     "dagster-aws>=0.28.18",
     "dagster-cloud",
     "dagster-dbt>=0.28.18",
+    "dbt-postgres>=1.8.0",
     "dagster-dlt>=0.28.18",
     "dagster-embedded-elt>=0.28.18",
     "dlt[postgres,snowflake,filesystem,clickhouse,databricks]>=1.23.0",
@@ -31,6 +32,8 @@ worker = [
     "hypercorn>=0.16.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
 ]
 dev = [
     "dagster-webserver",

@@ -3,13 +3,15 @@ import sqlalchemy as sa
 from typing import Any, Dict, Optional
 from datetime import datetime
 
+from .config import DatabaseConfig
+
 logger = logging.getLogger(__name__)
 
 class SapDbClient:
     """A generic database client for updating SAP induction status in the source system."""
 
-    def __init__(self, dsn: str):
-        self.engine = sa.create_engine(dsn)
+    def __init__(self, config: DatabaseConfig):
+        self.engine = sa.create_engine(config.dsn)
 
     def update_record_status(
         self,

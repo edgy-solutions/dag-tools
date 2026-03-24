@@ -1,6 +1,11 @@
 # SQL Server to SAP (Restate + DLT) Demo
 
-This directory contains a fully self-contained, end-to-end example demonstrating how `dag-tools` orchestrates stateful, row-level data synchronization from an on-premise SQL Server to an external REST API (like SAP) using **Dagster Components**, **dlt**, and **Restate**.
+This directory contains a fully self-contained, end-to-end example.
+
+> [!NOTE]
+> For our most advanced, production-ready implementation featuring the "Holy Trinity" (dlt + dbt + Restate) and a stateful outbox, please see the [sap_induction_orchestrator](../sap_induction_orchestrator) example.
+
+This demo demonstrates a foundational SQL Server to SAP integration. It orchestrates stateful, row-level data synchronization from an on-premise SQL Server to an external REST API (like SAP) using **Dagster Components**, **dlt**, and **Restate**.
 
 ## 🏗️ Architecture Matrix
 

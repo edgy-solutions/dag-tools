@@ -1,7 +1,6 @@
 import httpx
 import sqlalchemy as sa
 from dagster import asset, Config, AssetIn
-from .transformation import transform_to_outbox
 
 class RestateConfig(Config):
     postgres_dsn: str
@@ -9,7 +8,7 @@ class RestateConfig(Config):
 
 @asset(
     group_name="sap_induction",
-    ins={"sap_outbox": AssetIn("sap_outbox")}
+    ins={"sap_outbox": AssetIn(key=["dbt", "outbox_db", "public_staging", "sap_outbox"])}
 )
 async def trigger_restate_induction(config: RestateConfig, sap_outbox):
     """

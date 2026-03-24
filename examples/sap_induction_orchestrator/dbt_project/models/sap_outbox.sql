@@ -17,4 +17,4 @@ SELECT
     NULL as "last_attempt",
     0 as "retry_count"                            -- Starting from zero
 
-FROM {{ source('raw_sap_data', 'vw_sap_source_data') }}
+FROM {{ source('dlt_raw_sap_data', 'vw_sap_source_data') }}

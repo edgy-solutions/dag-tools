@@ -1,9 +1,8 @@
 import logging
-import os
 from typing import Any, Dict, List, Optional
 import restate
 import httpx
-from .config import SapInductionSettings
+from .config import DatabaseConfig, SapInductionSettings
 from .sap_client import SapODataClient
 from .db_client import SapDbClient
 
@@ -12,15 +11,11 @@ logger = logging.getLogger(__name__)
 # GLOBAL: Database client cache to prevent connection leaks
 _db_client: Optional[SapDbClient] = None
 
-def get_db_client() -> SapDbClient:
+def get_db_client(config: DatabaseConfig) -> SapDbClient:
     """Returns a singleton Database Client for the worker."""
     global _db_client
     if _db_client is None:
-        # Use POSTGRES_DSN for the local outbox as requested
-        dsn = os.environ.get("POSTGRES_DSN") or os.environ.get("SQLSERVER_DSN") or os.environ.get("SOURCE__MSSQL__CREDENTIALS")
-        if not dsn:
-            raise ValueError("Missing database DSN (POSTGRES_DSN, SQLSERVER_DSN or SOURCE__MSSQL__CREDENTIALS)")
-        _db_client = SapDbClient(dsn)
+        _db_client = SapDbClient(config)
     return _db_client
 
 # Create the service definition
@@ -40,7 +35,7 @@ async def execute_induction(ctx: restate.Context, record: Dict[str, Any]) -> Dic
         password=settings.odata.auth.password
     )
     
-    db_client = get_db_client()
+    db_client = get_db_client(settings.database)
 
     # Extract metadata from the dispatch payload
     # Note: record is the payload from RestateApiSyncComponent

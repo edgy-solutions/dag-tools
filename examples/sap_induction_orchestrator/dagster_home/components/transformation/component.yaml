@@ -1,0 +1,4 @@
+type: dag_tools.CustomDbtProjectComponent
+
+attributes:
+  project: "../../../dbt_project"

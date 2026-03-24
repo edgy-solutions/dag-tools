@@ -22,22 +22,39 @@ Configured via `components/transformation/component.yaml`. It executes the `dbt`
 ### 3. `trigger_restate_induction` (Execution)
 Queries the `SAP_OUTBOX` table for records requiring attention (`NEW`, `PENDING`, `ERROR`). For each record, it durably dispatches a task to the `SapInductionService` running on Restate.
 
-## 🚀 How to Run
+## 🚀 How to Run (End-to-End Demo)
 
-1.  **Setup Environment**:
-    Ensure you have `POSTGRES_DSN`, `SQLSERVER_DSN`, and `RESTATE_INGRESS_URL` set in your environment.
+This example includes a complete Docker Compose environment to simulate the entire hardware/software stack.
 
-2.  **Initialize dbt**:
-    Navigate to `dbt_project/` and ensure you have a `profiles.yml` pointing to your Postgres instance.
+### 1. Start the Infrastructure
+```bash
+cd examples/sap_induction_orchestrator
+# Builds and starts SQL Server, Postgres, Restate, and the Mock SAP API
+docker compose up -d --build
+```
 
-3.  **Launch Dagster**:
-    ```bash
-    cd examples/sap_induction_orchestrator
-    uv run dagster dev
-    ```
+### 2. Configure Environment
+The provided `.env` file contains the local DSNs and URLs required for Dagster (running on your host) to connect to the Docker containers.
 
-4.  **Execute**:
-    Materialize the `trigger_restate_induction` asset. Dagster will automatically execute the upstream extraction and transformation steps first.
+### 3. Load Dagster
+```bash
+# Launch Dagster (host-side) using the local Python environment
+uv run dagster dev
+```
+
+### 4. Direct Service Registration (Optional)
+If you need to manually register the Restate handlers:
+```bash
+# Registers the workers with the Restate coordinator
+curl -X POST http://localhost:9070/deployments -H "Content-Type: application/json" -d '{"uri": "http://restate-handlers:9080"}'
+```
+
+### 5. Execute Pipeline
+Launch the `trigger_restate_induction` asset in the Dagster UI. This will:
+1. **Extract** POs from the Dockerized SQL Server.
+2. **Transform** them into a Postgres Outbox.
+3. **Dispatch** them to the Restate Ingress.
+4. **Verify** success via the logs of the `restate-handlers` container!
 
 ## 🔒 Durable Security
 By utilizing Restate for the final API push, we ensure that:

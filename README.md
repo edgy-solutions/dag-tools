@@ -7,6 +7,12 @@ Rather than duplicating infrastructure logic (such as configuring connection str
 
 Other projects (e.g., `pub-tools`) rely on this repository for their core pipeline scaffolding.
 
+## Design Philosophy
+This library follows a **Dagster-first** configuration approach. 
+1. **Config Normalization**: Components MUST wrap native settings of underlying tools (like `dlt` or `dbt`) into standardized Dagster configuration schemas. 
+2. **Internal Translation**: The component's `build_defs()` is responsible for translating these standardized Dagster inputs into the format required by the external tool. 
+3. **Consistency**: Downstream users should interact with a consistent Dagster-centric experience regardless of the specific integration being used.
+
 ## Structure
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
@@ -181,8 +187,16 @@ attributes:
       sources:
         - "PURCHASE_ORDERS"
 
-### 7. SAP OData Induction Service
-Deploy a durable SAP OData 2.0 induction workflow. This service handles material resolution, quotation lookups, and serial number fan-out with exactly-once semantics using Restate:
+### 7. SAP Induction Orchestrator ("The Holy Trinity")
+The professional standard for complex SAP integrations. This example demonstrates the full orchestration lifecycle:
+- **`dlt`**: Extracting from read-only SQL Server views.
+- **`dbt`**: Transforming into a stateful Postgres outbox.
+- **`Restate`**: Durably triggering the `SapInductionService` with exactly-once semantics.
+
+See the full implementation and Docker demo in [examples/sap_induction_orchestrator](./examples/sap_induction_orchestrator).
+
+### 8. SAP OData Induction Service
+Deploy a durable SAP OData 2.0 induction workflow. This service handles material resolution, quotation lookups, and serial number fan-out with a built-in state machine (NEW -> PENDING -> SUCCESS/ERROR) and callback webhook support.
 
 ```yaml
 # Used via Restate components in downstream projects

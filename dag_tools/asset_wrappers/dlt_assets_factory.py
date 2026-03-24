@@ -127,6 +127,14 @@ def config_to_credentials(
         kinds = []
 
     drivername = config.get("drivername") or config.get("protocol") or config.get("resource", "")
+
+    # If not explicitly set, try to infer drivername from a 'credentials' string
+    if not drivername and config.get("credentials") and isinstance(config.get("credentials"), str):
+        try:
+            drivername = config["credentials"].split("://")[0]
+        except Exception:
+            pass
+
     kind = drivername.split("+")[0]
 
     if drivername == "snowflake":
@@ -155,13 +163,30 @@ def config_to_credentials(
     creds.drivername = TYPE_MAPPINGS.get(drivername, drivername)
     kinds.append(KIND_MAPPING.get(kind, kind))
 
+    # If we have a raw connection string provided, parse it into the credentials object
+    if isinstance(creds, ConnectionStringCredentials) and config.get("credentials") and isinstance(config.get("credentials"), str):
+        try:
+            creds.parse_native_representation(config["credentials"])
+        except Exception:
+            pass
+
     STANDARD_ATTRS = {"host", "port", "username", "password", "database", "drivername", "schema"}
-    creds.query = {}
+    if not hasattr(creds, "query") or creds.query is None:
+        creds.query = {}
+    
+    is_connection_string = isinstance(creds, ConnectionStringCredentials)
     
     for key, item in config.items():
+        if key == "credentials":
+            continue
+
         if key in STANDARD_ATTRS:
+            # If we already have a full DSN, avoid setting individual DB/Schema attrs 
+            # which can cause DLT/SQLAlchemy parsing conflicts
+            if is_connection_string and key in ["database", "schema"]:
+                continue
             setattr(creds, key, item)
-        elif key not in ["destination", "drivername"]:
+        elif key not in ["destination", "drivername", "type"]:
              creds.query[key] = item
 
     return creds

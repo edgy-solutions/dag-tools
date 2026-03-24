@@ -1,0 +1,12 @@
+sap_induction:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      user: admin
+      password: password
+      port: 5433
+      dbname: outbox_db
+      schema: public
+      threads: 1

@@ -28,3 +28,9 @@ ENV/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# dbt
+target/
+dbt_packages/
+logs/
+dbt_modules/

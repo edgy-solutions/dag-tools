@@ -1,0 +1,5 @@
+directory_type = "project"
+
+[project]
+root_module = "dagster_home"
+defs_module = "dagster_home.components"
