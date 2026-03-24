@@ -10,14 +10,14 @@ if TYPE_CHECKING:
     from dag_tools.components.s3_sensor import S3ToArrowComponent, S3SensorComponent, S3ToFileComponent
 
 _module_lookup = {
-    "DltPipelineComponent": "dag_tools.components.dlt_pipeline",
-    "CustomDbtProjectComponent": "dag_tools.components.dbt_project",
-    "DatahubLineageComponent": "dag_tools.components.datahub_lineage",
-    "RestateApiSyncComponent": "dag_tools.components.restate_api_sync",
-    "RestateDltSyncComponent": "dag_tools.components.restate_dlt_sync",
-    "S3ToArrowComponent": "dag_tools.components.s3_sensor",
-    "S3SensorComponent": "dag_tools.components.s3_sensor",
-    "S3ToFileComponent": "dag_tools.components.s3_sensor",
+    "DltPipelineComponent": "dag_tools.components.dlt_pipeline.component",
+    "CustomDbtProjectComponent": "dag_tools.components.dbt_project.component",
+    "DatahubLineageComponent": "dag_tools.components.datahub_lineage.component",
+    "RestateApiSyncComponent": "dag_tools.components.restate_api_sync.component",
+    "RestateDltSyncComponent": "dag_tools.components.restate_dlt_sync.component",
+    "S3ToArrowComponent": "dag_tools.components.s3_sensor.arrow_component",
+    "S3SensorComponent": "dag_tools.components.s3_sensor.sensor_component",
+    "S3ToFileComponent": "dag_tools.components.s3_sensor.file_component",
 }
 
 __all__ = list(_module_lookup.keys())
