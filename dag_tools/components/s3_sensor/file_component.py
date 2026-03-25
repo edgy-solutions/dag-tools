@@ -10,12 +10,14 @@ from dagster import (
     Config,
 )
 from dagster.components import Component, ComponentLoadContext
+from dagster.components.resolved.base import Resolvable
+from dagster.components.resolved.model import Model
 
 class S3FileConfig(Config):
     file_url: str
     extra_metadata: Dict[str, Any] = {}
 
-class S3ToFileComponent(Component):
+class S3ToFileComponent(Component, Resolvable, Model):
     """A declarative Dagster Component that defines a generic File Extraction Asset.
     Designed to receive S3 file URLs and pass them to downstream parsing/ML assets.
     """

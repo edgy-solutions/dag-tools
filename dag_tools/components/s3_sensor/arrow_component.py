@@ -9,10 +9,12 @@ from dagster import (
     define_asset_job,
 )
 from dagster.components import Component, ComponentLoadContext
+from dagster.components.resolved.base import Resolvable
+from dagster.components.resolved.model import Model
 
 from dag_tools.resources.arrow import ArrowResource
 
-class S3ToArrowComponent(Component):
+class S3ToArrowComponent(Component, Resolvable, Model):
     """A declarative Dagster Component that defines a PyArrow Extraction Asset 
     matching a Dynamic Partition schema. Designed to be triggered by an S3SensorComponent.
     """

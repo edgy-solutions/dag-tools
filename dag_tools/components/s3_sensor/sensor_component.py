@@ -10,13 +10,14 @@ from dagster import (
     DefaultSensorStatus,
 )
 from dagster.components import Component, ComponentLoadContext
+from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model, Resolver
 from pydantic import Field
 
 from dag_tools.resources.s3 import S3SensorConfig, S3SensorResource
 from .utils import get_s3_keys, key_2_partition_key, get_dynamic_partitions_requests
 
-class S3SensorComponent(Component, Model):
+class S3SensorComponent(Component, Resolvable, Model):
     """A standalone S3 Sensor Component that monitors a bucket and triggers a target job
     with file-level RunRequests and Dynamic Partition registration.
     """
