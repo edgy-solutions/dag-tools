@@ -7,6 +7,7 @@ from dagster import (
     DynamicPartitionsDefinition,
     asset,
     define_asset_job,
+    AssetExecutionContext,
 )
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
@@ -40,14 +41,14 @@ class S3ToArrowComponent(Component, Resolvable, Model):
             config_schema={"file_url": str, "delimiter": Field(default=self.delimiter)},
             partitions_def=partitions_def,
         )
-        def s3_arrow_asset(asset_context, arrow_client: ArrowResource) -> Any:
-            filename = asset_context.op_config["file_url"]
-            delimiter = asset_context.op_config["delimiter"]
-            partition = asset_context.asset_partition_key_for_output()
+        def s3_arrow_asset(context: AssetExecutionContext, arrow_client: ArrowResource) -> Any:
+            filename = context.op_config["file_url"]
+            delimiter = context.op_config["delimiter"]
+            partition = context.asset_partition_key_for_output()
             
-            asset_context.log.info(f"Ingesting partition {partition} from S3 URL: {filename}")
+            context.log.info(f"Ingesting partition {partition} from S3 URL: {filename}")
             # Ensure the pyarrow dataset abstracts S3 interactions globally
-            return arrow_client.get_client().load_input_from_file(filename, asset_context.log, delimiter)
+            return arrow_client.get_client().load_input_from_file(filename, context.log, delimiter)
 
         # 3. Create the targeted Dagster Job that the sensor executes
         sensor_job = define_asset_job(

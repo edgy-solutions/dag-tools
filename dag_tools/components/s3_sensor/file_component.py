@@ -8,6 +8,7 @@ from dagster import (
     asset,
     define_asset_job,
     Config,
+    AssetExecutionContext,
 )
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
@@ -39,19 +40,19 @@ class S3ToFileComponent(Component, Resolvable, Model):
             compute_kind='file',
             partitions_def=partitions_def,
         )
-        def s3_file_asset(asset_context, config: S3FileConfig) -> Any:
+        def s3_file_asset(context: AssetExecutionContext, config: S3FileConfig) -> Any:
             """Generic asset that 'materializes' a file reference."""
             file_url = config.file_url
-            asset_context.log.info(f"Received file for processing: {file_url}")
+            context.log.info(f"Received file for processing: {file_url}")
             
             # Record metadata about the file
             metadata = {
                 "file_url": file_url,
-                "partition": asset_context.partition_key,
+                "partition": context.partition_key,
                 **config.extra_metadata,
                 **self.op_config
             }
-            asset_context.add_output_metadata(metadata)
+            context.add_output_metadata(metadata)
             
             # Return the file URL or the metadata as the asset value
             return metadata
