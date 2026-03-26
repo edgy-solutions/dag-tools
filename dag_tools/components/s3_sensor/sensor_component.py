@@ -12,10 +12,12 @@ from dagster import (
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model, Resolver
+from dagster_aws.s3 import S3Resource
 from pydantic import Field
 
-from dag_tools.resources.s3 import S3SensorConfig, S3SensorResource
-from .utils import get_s3_keys, key_2_partition_key, get_dynamic_partitions_requests
+from dag_tools.resources.s3 import S3ResourceConfig, S3SensorResource
+from .utils import get_s3_keys
+
 
 class S3SensorComponent(Component, Resolvable, Model):
     """A standalone S3 Sensor Component that monitors a bucket and triggers a target job
@@ -28,6 +30,16 @@ class S3SensorComponent(Component, Resolvable, Model):
     target_job: str = Field(description="The name of the Dagster job to trigger.")
     target_op: str = Field(description="The name of the op within the job that accepts the 'file_url' configuration.")
     
+    s3_resource: Annotated[
+        Optional[Dict[str, Any]], 
+        Resolver.default(description="Optional custom configuration for the underlying S3Resource (e.g. endpoint_url).")
+    ] = None
+    
+    s3_filter: Annotated[
+        Optional[str],
+        Resolver.default(description="Optional regex filter to match S3 keys.")
+    ] = None
+
     filter_patterns: Annotated[
         List[str],
         Resolver.default(description="List of string substrings to exclude from triggering (e.g., metadata.json).")
@@ -73,9 +85,9 @@ class S3SensorComponent(Component, Resolvable, Model):
             # Compute cursor safety dynamically
             last_key = list(all_s3_keys.keys())[-1]
             
-            # Apply filters (e.g. skip metadata.json)
+            # Apply filters (e.g. skip metadata.json and custom regex)
             filtered_keys = {}
-            for etag_key, item in all_s3_keys.items():
+            for item in all_s3_keys.values():
                 obj_key = item["Key"]
                 if any(pattern in obj_key for pattern in self.filter_patterns):
                     continue
@@ -122,9 +134,20 @@ class S3SensorComponent(Component, Resolvable, Model):
                 ] if hasattr(sensor_context.instance, 'add_dynamic_partitions') else []
             )
 
+        # Initialize the underlying S3Resource
+        # If s3_resource is a dict, we unpack it; otherwise we use default constructor
+        underlying_s3 = S3Resource(**(self.s3_resource or {}))
+
         return Definitions(
             sensors=[s3_managed_sensor],
             resources={
-                resource_key: S3SensorResource(config=S3SensorConfig(s3_bucket=self.bucket, s3_prefix=self.prefix))
+                resource_key: S3SensorResource(
+                    config=S3ResourceConfig(
+                        s3_bucket=self.bucket,
+                        s3_prefix=self.prefix,
+                        s3_resource=underlying_s3,
+                        s3_filter=self.s3_filter
+                    )
+                )
             }
         )

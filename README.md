@@ -113,7 +113,32 @@ attributes:
   delimiter: ","
 ```
 
-### 4. PyArrow DataFrame IO Manager
+### 4. S3 Sensor Component (Standalone)
+A standalone sensor that monitors an S3 bucket and triggers any Dagster job with file-level `RunRequests`. It supports modern Dagster 1.12 resource configuration, allowing for custom S3 endpoints (e.g. Minio) and regex-based key filtering.
+
+```yaml
+type: dag_tools.components.s3_sensor.S3SensorComponent
+
+attributes:
+  bucket: "my-raw-data"
+  prefix: "incoming/"
+  target_job: "raw_ingestion_job"
+  target_op: "ingest_op"
+  partition_name: "landed_files"
+  
+  # Connect to local Minio
+  s3_resource:
+    endpoint_url: "http://minio:9000"
+    aws_access_key_id: "admin"
+    aws_secret_access_key: "password"
+    
+  # Only trigger for parquet files
+  s3_filter: ".*\\.parquet"
+
+  default_status: "RUNNING"
+```
+
+### 5. PyArrow DataFrame IO Manager
 The `ConfigurableArrowIOManager` connects Python's memory to Datalake storage using optimized `pyarrow.fs` clients. It abstracts S3 and Local mounts seamlessly while transparently coercing results into `pa.Table`, `pa.dataset.Dataset`, or `pd.DataFrame` directly into your downstream assets.
 
 ```python

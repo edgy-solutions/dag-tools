@@ -77,47 +77,7 @@ class FileObjectS3IOManager(PickledObjectS3IOManager):
         self.s3.upload_fileobj(obj_bytes, self.bucket, str(path))
 
 
-class S3ResourceConfig(ConfigurableResource):
-    """Configuration schema for S3-based resources and IO Managers."""
-    
-    s3_bucket: str = PydanticField(
-        description="S3 bucket to use for the file manager."
-    )
-    s3_prefix: str = PydanticField(
-        default="", 
-        description="Prefix to use for the S3 bucket for this file manager."
-    )
-    s3_resource: S3Resource = PydanticField(
-        description="The underlying Boto3/S3 Dagster resource."
-    )
-    s3_filter: Optional[str] = PydanticField(
-        default=None,
-        description="Optional regex filter used by sensors to match S3 keys."
-    )
-
-
-class S3SensorResource(ConfigurableResource, ConfigureFromDict):
-    """A resource that encapsulates S3 client access and filtering for sensors."""
-
-    config: S3ResourceConfig
-
-    def get_client(self) -> Any:
-        # Access the boto3 client directly from the wrapped S3Resource
-        return self.config.s3_resource.get_client()
-
-    def get_object_to_set_on_execution_context(self) -> Any:
-        return self.get_client()
-
-    @classmethod
-    def configure(cls, config: Dict[str, Any]) -> "S3SensorResource":
-        """Factory method to construct the resource from a dictionary."""
-        return cls(config=S3ResourceConfig.model_validate(config))
-
-    def apply_filter(self, key: str) -> bool:
-        """Determines if an S3 key matches the optional configured regex filter."""
-        if not self.config.s3_filter:
-            return True
-        return bool(re.match(self.config.s3_filter, key))
+from dag_tools.resources.s3 import S3ResourceConfig, S3SensorResource
 
 
 class S3FileIOManager(ConfigurableIOManager, ConfigureFromDict):
