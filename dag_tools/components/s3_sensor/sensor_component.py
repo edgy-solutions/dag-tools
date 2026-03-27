@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Annotated
 
 from dagster import (
     Definitions,
+    AddDynamicPartitionsRequest,
     RunRequest,
     SensorEvaluationContext,
     SensorResult,
@@ -127,11 +128,12 @@ class S3SensorComponent(Component, Resolvable, Model):
             # Dagster 1.12 handles dynamic partition addition via the SensorResult or instance
             return SensorResult(
                 run_requests=run_requests,
-                # Use a dummy dict for get_dynamic_partitions_requests or similar if we can't access the def
-                # Actually, we can just return the raw partition keys in a request
                 dynamic_partitions_requests=[
-                    sensor_context.instance.add_dynamic_partitions(self.partition_name, list(filtered_keys.values()))
-                ] if hasattr(sensor_context.instance, 'add_dynamic_partitions') else []
+                    AddDynamicPartitionsRequest(
+                        partitions_def_name=self.partition_name,
+                        partition_keys=list(filtered_keys.values())
+                    )
+                ] if filtered_keys else []
             )
 
         # Initialize the underlying S3Resource
