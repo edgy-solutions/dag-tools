@@ -215,6 +215,8 @@ def instantiate_assets(
             detect_precision_hints=True,
             backend_kwargs=config.backend_kwargs,
             query_adapter_callback=query_callback,
+            write_disposition=config.pipeline_kwargs.get("write_disposition", "merge"),
+            **config.pipeline_kwargs
         ).parallelize()
 
     for table, columns in config.select_columns.items():

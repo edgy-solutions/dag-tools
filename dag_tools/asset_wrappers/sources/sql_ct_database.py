@@ -38,10 +38,14 @@ def _internal_ct_source(
     write_disposition="merge",
     engine=None, # Passed explicitly
     defer_table_reflect=False,
+    use_ct: bool = True,
     **kwargs
 ) -> Iterable[DltResource]:
     
-    print("--- INFO: MSSQL Change Tracking DETECTED. Using CT Strategy. ---")
+    if not use_ct or write_disposition == "replace":
+        print(f"--- INFO: CT manually disabled or write_disposition='{write_disposition}'. Using Full Load Strategy. ---")
+    else:
+        print("--- INFO: MSSQL Change Tracking DETECTED. Using CT Strategy. ---")
     
     # 1. Pre-fetch the list of tables that actually have CT enabled.
     # Just because the DB has it, doesn't mean every table does.
@@ -100,9 +104,14 @@ def _internal_ct_source(
         t_schema = (table_obj.schema or "dbo").lower()
         t_name = table_obj.name.lower()
         
-        # CHECK 1: Does the table have CT enabled?
-        if (t_schema, t_name) not in ct_tables_set:
-            print(f"WARNING: Table '{table_obj.name}' does NOT have Change Tracking enabled. Falling back to FULL LOAD (replace).")
+        # CHECK 1: Does the table have CT enabled, or is CT manually disabled?
+        if not use_ct or write_disposition == "replace" or (t_schema, t_name) not in ct_tables_set:
+            if not use_ct or write_disposition == "replace":
+                reason = "manually disabled" if not use_ct else f"write_disposition='{write_disposition}'"
+                print(f"--- INFO: Table '{table_obj.name}' CT {reason}. Using FULL LOAD (replace).")
+            else:
+                print(f"WARNING: Table '{table_obj.name}' does NOT have Change Tracking enabled. Falling back to FULL LOAD (replace).")
+            
             yield dlt.resource(
                 _make_full_load_generator(engine, table_obj, chunk_size),
                 name=table_obj.name,
@@ -155,11 +164,15 @@ def sql_ct_database(
     query_adapter_callback: Optional[Any] = None,
     resolve_foreign_keys: bool = False,
     engine_adapter_callback: Optional[Callable[[Any], Any]] = None,
+    use_ct: bool = True,
     **kwargs: Any
 ):
     """
     A Smart Proxy for MSSQL. Matches the exact signature of dlt.sources.sql_database.
     Returns either the Official SQL Source OR the Custom CT Source, handling Views cleanly.
+
+    Args:
+        use_ct: If False, forces the use of standard sql_database even if Change Tracking is available.
     """
     
     # 1. Check for Change Tracking Capability (Silent Fail)
@@ -204,8 +217,15 @@ def sql_ct_database(
     # 3. Branching & Source Generation
     final_sources = []
     
-    # If CT is disabled globally, route EVERYTHING to the official source
-    if not ct_enabled:
+    # If CT is disabled globally, or manually turned off, route EVERYTHING to the official source
+    if not ct_enabled or not use_ct or write_disposition == "replace":
+        if not ct_enabled:
+            print("--- INFO: MSSQL Change Tracking NOT ENABLED on Database. ---")
+        elif not use_ct:
+            print("--- INFO: MSSQL Change Tracking MANUALLY DISABLED (use_ct=False). ---")
+        else:
+            print(f"--- INFO: MSSQL Change Tracking DISABLED globally due to write_disposition='{write_disposition}'. ---")
+            
         print("--- INFO: Reverting to Standard sql_database for all objects ---")
         source = official_sql_database(
             credentials=credentials,
@@ -247,6 +267,7 @@ def sql_ct_database(
             write_disposition=write_disposition,
             engine=engine,
             defer_table_reflect=defer_table_reflect,
+            use_ct=use_ct,
             **kwargs
         )
         final_sources.append(ct_source)
