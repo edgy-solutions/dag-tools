@@ -27,20 +27,20 @@ except ImportError:
             return sa.create_engine(str(credentials))
 
 # INTERNAL CT IMPLEMENTATION
-# We define this separately so we can decorate it properly as a source.
 # This handles the "Happy Path" where CT is enabled.
-@dlt.source(name="sql_database")
+# We do NOT decorate this with @dlt.source here to avoid argument injection collisions;
+# we will wrap the result in a source object in the dispatcher.
 def _internal_ct_source(
     credentials=None,
     schema=None,
     table_names=None,
     chunk_size=50000,
     write_disposition="merge",
-    engine=None, # Passed explicitly
+    engine=None, 
     defer_table_reflect=False,
     use_ct: bool = True,
     **kwargs
-) -> Iterable[DltResource]:
+):
     
     if not use_ct or write_disposition == "replace":
         print(f"--- INFO: CT manually disabled or write_disposition='{write_disposition}'. Using Full Load Strategy. ---")
@@ -133,10 +133,14 @@ def _internal_ct_source(
             continue
 
         # Happy Path: CT
-        print(f"--- [DEBUG] CT Resource '{table_obj.name}' configured with write_disposition='{write_disposition}'")
+        # Use schema-qualified name for the resource to avoid collisions (e.g. sales_users vs hr_users)
+        # Use underscore as separator which is safe for dlt.
+        resource_name = f"{t_schema}_{t_name}" if t_schema != "dbo" else t_name
+        
+        print(f"--- [DEBUG] CT Resource '{resource_name}' configured with write_disposition='{write_disposition}'")
         yield dlt.resource(
             _make_ct_generator(engine, table_obj, chunk_size),
-            name=table_obj.name,
+            name=resource_name,
             primary_key=primary_keys,
             write_disposition=write_disposition,
         )
@@ -259,18 +263,24 @@ def sql_ct_database(
 
     # CT is enabled. Route standard tables to our custom source
     if actual_tables:
-        ct_source = _internal_ct_source(
-            credentials=credentials,
-            schema=schema,
-            table_names=actual_tables, # Only tables
-            chunk_size=chunk_size,
-            write_disposition=write_disposition,
-            engine=engine,
-            defer_table_reflect=defer_table_reflect,
-            use_ct=use_ct,
-            **kwargs
-        )
-        final_sources.append(ct_source)
+        @dlt.source(name="sql_database")
+        def ct_source_factory():
+            # Return the list of resources
+            return list(
+                _internal_ct_source(
+                    credentials=credentials,
+                    schema=schema,
+                    table_names=actual_tables,
+                    chunk_size=chunk_size,
+                    write_disposition=write_disposition,
+                    engine=engine,
+                    defer_table_reflect=defer_table_reflect,
+                    use_ct=use_ct,
+                    **kwargs
+                )
+            )
+            
+        final_sources.append(ct_source_factory())
 
     # Route views to the official dlt source (as views cannot have CT)
     if actual_views:
@@ -324,10 +334,13 @@ def _make_full_load_generator(engine: sa.engine.Engine, table_obj: sa.Table, chu
 
 def _make_ct_generator(engine: sa.engine.Engine, table_obj: sa.Table, chunk_size: int):
     def generator():
-        current_state = dlt.current.state()
-        last_version = current_state.get("last_sync_version", None)
+        # Use resource-specific state to avoid data loss across multiple tables
+        # dlt.current.resource_state() returns state scoped to this specific resource (table)
+        resource_state = dlt.current.resource_state()
+        last_version = resource_state.get("last_sync_version", None)
         table_name = table_obj.name
         schema_name = table_obj.schema or "dbo"
+        # Use quoted names for the SQL Server query to handle special characters/schemas correctly
         full_table_name = f"[{schema_name}].[{table_name}]"
         
         print(f"--- [DEBUG] Starting Extraction for {full_table_name}")
@@ -345,10 +358,12 @@ def _make_ct_generator(engine: sa.engine.Engine, table_obj: sa.Table, chunk_size
             print(f"--- [DEBUG] {full_table_name}: State Version={last_version}, DB Version={current_db_version}")
 
             if last_version is not None:
-                min_ver_query = f"SELECT CHANGE_TRACKING_MIN_VALID_VERSION(OBJECT_ID('{full_table_name}'))"
+                # Use a cleaner way to get the min valid version
+                min_ver_query = sa.text("SELECT CHANGE_TRACKING_MIN_VALID_VERSION(OBJECT_ID(:t))")
                 try:
-                    min_valid_version = conn.execute(sa.text(min_ver_query)).scalar()
-                except Exception:
+                    min_valid_version = conn.execute(min_ver_query, {"t": full_table_name}).scalar()
+                except Exception as e:
+                    print(f"[{table_name}] WARNING: Could not fetch min_valid_version: {e}")
                     min_valid_version = None
                     
                 if min_valid_version is not None and last_version < min_valid_version:
@@ -373,7 +388,9 @@ def _make_ct_generator(engine: sa.engine.Engine, table_obj: sa.Table, chunk_size
                     batch = proxy.fetchmany(chunk_size)
                     if not batch: break
                     yield [dict(row._mapping) for row in batch]
-                current_state["last_sync_version"] = current_db_version
+                
+                # IMPORTANT: Update the RESOURCE state, not the global source state
+                resource_state["last_sync_version"] = current_db_version
             else:
                 if last_version >= current_db_version:
                     print(f"[{table_name}] No changes detected (State >= DB). Skipping.")
@@ -418,6 +435,8 @@ def _make_ct_generator(engine: sa.engine.Engine, table_obj: sa.Table, chunk_size
                     yield processed_batch
                 
                 print(f"[{table_name}] Incremental extraction complete. Yielded {count} rows.")
-                current_state["last_sync_version"] = current_db_version
+                
+                # IMPORTANT: Update the RESOURCE state, not the global source state
+                resource_state["last_sync_version"] = current_db_version
 
     return generator
