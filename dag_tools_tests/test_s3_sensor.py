@@ -45,5 +45,59 @@ class TestS3SensorResource(unittest.TestCase):
         resource_no_filter = S3SensorResource(config=config_no_filter)
         self.assertTrue(resource_no_filter.apply_filter("data/file.txt"))
 
+from dag_tools.components.s3_sensor.sensor_component import S3SensorComponent
+from dagster.components import ComponentLoadContext
+
+class TestS3SensorComponent(unittest.TestCase):
+    def test_default_sensor_name(self):
+        component = S3SensorComponent(
+            bucket="test-bucket",
+            prefix="test-prefix",
+            partition_name="test-partition",
+            target_job="test_job",
+            target_op="test_op"
+        )
+        # Mock ComponentLoadContext
+        context = MagicMock(spec=ComponentLoadContext)
+        defs = component.build_defs(context)
+        
+        # Verify the default name logic
+        sensors = list(defs.sensors)
+        self.assertEqual(len(sensors), 1)
+        self.assertEqual(sensors[0].name, "test_prefix_s3_sensor")
+
+    def test_custom_sensor_name(self):
+        component = S3SensorComponent(
+            bucket="test-bucket",
+            prefix="",
+            name="custom_sensor_name",
+            partition_name="test-partition",
+            target_job="test_job",
+            target_op="test_op"
+        )
+        context = MagicMock(spec=ComponentLoadContext)
+        defs = component.build_defs(context)
+        
+        # Verify the custom name overrides prefix
+        sensors = list(defs.sensors)
+        self.assertEqual(len(sensors), 1)
+        self.assertEqual(sensors[0].name, "custom_sensor_name")
+
+    def test_empty_prefix_default_name(self):
+        component = S3SensorComponent(
+            bucket="test-bucket",
+            prefix="",
+            partition_name="test-partition",
+            target_job="test_job",
+            target_op="test_op"
+        )
+        context = MagicMock(spec=ComponentLoadContext)
+        defs = component.build_defs(context)
+        
+        # Verify empty prefix falls back to "s3_sensor"
+        sensors = list(defs.sensors)
+        self.assertEqual(len(sensors), 1)
+        self.assertEqual(sensors[0].name, "s3_sensor")
+
 if __name__ == "__main__":
     unittest.main()

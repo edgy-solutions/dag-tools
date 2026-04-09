@@ -27,6 +27,7 @@ class S3SensorComponent(Component, Resolvable, Model):
     
     bucket: str = Field(description="The S3 bucket to monitor.")
     prefix: str = Field(description="The S3 prefix (directory) to monitor.")
+    name: Optional[str] = Field(default=None, description="Optional custom name for the sensor. Overrides the prefix-based naming fallback.")
     partition_name: str = Field(description="The name of the dynamic partition definition for tracking file state.")
     target_job: str = Field(description="The name of the Dagster job to trigger.")
     target_op: str = Field(description="The name of the op within the job that accepts the 'file_url' configuration.")
@@ -52,9 +53,9 @@ class S3SensorComponent(Component, Resolvable, Model):
     ] = "STOPPED"
 
     def build_defs(self, context: ComponentLoadContext) -> Definitions:
-        clean_prefix = self.prefix.strip("/").replace("/", "_")
-        sensor_name = f"{clean_prefix}_s3_sensor"
-        resource_key = f"s3_{clean_prefix}_sensor_resource"
+        clean_prefix = self.prefix.strip("/").replace("/", "_").replace("-", "_")
+        sensor_name = self.name or (f"{clean_prefix}_s3_sensor" if clean_prefix else "s3_sensor")
+        resource_key = f"{sensor_name}_resource"
         
         status = DefaultSensorStatus.RUNNING if self.default_status == "RUNNING" else DefaultSensorStatus.STOPPED
 
