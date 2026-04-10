@@ -137,11 +137,24 @@ def _internal_ct_source(
         # Use underscore as separator which is safe for dlt.
         resource_name = f"{t_schema}_{t_name}" if t_schema != "dbo" else t_name
         
+        # --- NEW FIX: Relax schema constraints for Deletes ---
+        # Because deleted rows return NULLs via the LEFT JOIN, we must explicitly 
+        # tell the dlt schema to allow NULLs on all non-PK columns.
+        columns_hint = {}
+        for c in table_obj.columns:
+            # Force all columns to be nullable by default
+            columns_hint[c.name] = {"name": c.name, "nullable": True}
+            
+        # Re-enforce NOT NULL on the Primary Keys
+        for pk in primary_keys:
+            columns_hint[pk] = {"name": pk, "nullable": False, "primary_key": True}
+        
         print(f"--- [DEBUG] CT Resource '{resource_name}' configured with write_disposition='{write_disposition}'")
         yield dlt.resource(
             _make_ct_generator(engine, table_obj, chunk_size),
             name=resource_name,
             primary_key=primary_keys,
+            columns=columns_hint,
             write_disposition=write_disposition,
         )
 

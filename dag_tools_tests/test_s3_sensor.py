@@ -99,5 +99,22 @@ class TestS3SensorComponent(unittest.TestCase):
         self.assertEqual(len(sensors), 1)
         self.assertEqual(sensors[0].name, "s3_sensor")
 
+    def test_custom_sensor_name_with_hyphens(self):
+        component = S3SensorComponent(
+            bucket="test-bucket",
+            prefix="",
+            name="custom-sensor-name",
+            partition_name="test-partition",
+            target_job="test_job",
+            target_op="test_op"
+        )
+        context = MagicMock(spec=ComponentLoadContext)
+        defs = component.build_defs(context)
+        
+        # Verify the custom name cleans hyphens
+        sensors = list(defs.sensors)
+        self.assertEqual(len(sensors), 1)
+        self.assertEqual(sensors[0].name, "custom_sensor_name")
+
 if __name__ == "__main__":
     unittest.main()

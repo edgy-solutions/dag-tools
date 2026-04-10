@@ -54,7 +54,8 @@ class S3SensorComponent(Component, Resolvable, Model):
 
     def build_defs(self, context: ComponentLoadContext) -> Definitions:
         clean_prefix = self.prefix.strip("/").replace("/", "_").replace("-", "_")
-        sensor_name = self.name or (f"{clean_prefix}_s3_sensor" if clean_prefix else "s3_sensor")
+        clean_name = self.name.replace("-", "_") if self.name else None
+        sensor_name = clean_name or (f"{clean_prefix}_s3_sensor" if clean_prefix else "s3_sensor")
         resource_key = f"{sensor_name}_resource"
         
         status = DefaultSensorStatus.RUNNING if self.default_status == "RUNNING" else DefaultSensorStatus.STOPPED
