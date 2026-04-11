@@ -4,6 +4,11 @@ import sqlalchemy as sa
 from sqlalchemy import inspect
 from dlt.extract.source import DltResource
 
+try:
+    from dlt.sources.sql_database.schema_types import table_to_columns
+except ImportError:
+    from dlt.sources.sql_database.helpers import table_to_columns
+
 # 1. Import the OFFICIAL dlt source for fallback
 from dlt.sources.sql_database import sql_database as official_sql_database
 
@@ -137,17 +142,18 @@ def _internal_ct_source(
         # Use underscore as separator which is safe for dlt.
         resource_name = f"{t_schema}_{t_name}" if t_schema != "dbo" else t_name
         
-        # --- NEW FIX: Relax schema constraints for Deletes ---
-        # Because deleted rows return NULLs via the LEFT JOIN, we must explicitly 
-        # tell the dlt schema to allow NULLs on all non-PK columns.
-        columns_hint = {}
-        for c in table_obj.columns:
-            # Force all columns to be nullable by default
-            columns_hint[c.name] = {"name": c.name, "nullable": True}
-            
-        # Re-enforce NOT NULL on the Primary Keys
-        for pk in primary_keys:
-            columns_hint[pk] = {"name": pk, "nullable": False, "primary_key": True}
+        # --- NATIVE DLT INTROSPECTION ---
+        # 1. Let dlt natively translate the SQLAlchemy table into a perfect dlt schema dictionary
+        # This captures all exact data types, precision, and SQL Server quirks automatically.
+        columns_hint = table_to_columns(table_obj)
+        
+        # 2. Relax the nullability constraints specifically for Change Tracking Deletes
+        for col_name, col_def in columns_hint.items():
+            if col_name in primary_keys:
+                col_def["nullable"] = False
+                col_def["primary_key"] = True
+            else:
+                col_def["nullable"] = True
         
         print(f"--- [DEBUG] CT Resource '{resource_name}' configured with write_disposition='{write_disposition}'")
         yield dlt.resource(
