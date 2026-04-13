@@ -12,7 +12,7 @@ class TestCtLogicMocked(unittest.TestCase):
         self.table.primary_key.columns = [MagicMock(name="id")]
         self.table.columns = [MagicMock(name="id"), MagicMock(name="name"), MagicMock(name="value")]
         
-    @patch("dlt.current.state")
+    @patch("dlt.current.resource_state")
     def test_incremental_extraction_logic(self, mock_state):
         # 1. Setup State (last sync at version 10)
         mock_state.return_value = {"last_sync_version": 10}
