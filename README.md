@@ -229,7 +229,6 @@ restate_endpoint: "http://restate-server:8080/SapInductionService/execute_induct
 ```
 
 The induction service is fully configuration-driven via `SapInductionSettings`, mapping generic field names to technical SAP OData properties.
-```
 
 ### 9. Federated Zero-Trust Data Mesh
 The Data Mesh architecture perfectly decouples the Control Plane from the Data Plane, enabling seamless, zero-trust data access across Dagster jobs, AI Agents, and Jupyter users using DataHub URNs.
