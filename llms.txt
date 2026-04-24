@@ -13,9 +13,9 @@ This repository contains:
 5.  **Components**: Formal Dagster 1.12 GA Declarative Components (`dagster.components`). Components use the `Component, Resolvable, Model` pattern and allow downstream users to deploy complex pipelines (e.g. `s3_sensor`, `dlt_pipeline`, `datahub_lineage`, `restate_dlt_sync`, `restate_api_sync`) using pure YAML architecture. Schemas are plain `pydantic.BaseModel` classes.
 6.  **Utilities**: Helper functions for logging, metadata formatting, AssetKey normalization (`AssetNormalizationRegistry`), and testing.
 7.  **Restate Handlers (Data Plane)**: Generic durable execution handlers (`GenericOracleAckService`, `GenericApiSyncService`, `SapInductionService`) that execute isolated API pushes and Database commits durably. The `SapInductionService` implements a **Durable State Machine** (NEW -> PENDING -> SUCCESS) with persistent retry tracking.
-8.  **Control Plane vs. Data Plane Architecture**: The project is split into a Control Plane (Dagster orchestrator) and a Data Plane (Restate workers). Workers are deployed as separate images (`Dockerfile.worker`).
-9.  **The "Holy Trinity" Pattern**: Our standard for complex integrations involves **dlt** (Extraction), **dbt** (Transformation into a stateful Outbox), and **Restate** (Durable Triggering).
-
+8.  **Control Plane vs. Data Plane Architecture**: The project is split into a Control Plane (Dagster orchestrator, Central Gateway, Domain Broker) and a Data Plane (Restate workers, Cortex Data Client). Workers are deployed as separate images (`Dockerfile.worker`).
+9.  **Federated Zero-Trust Data Mesh**: We implement a unified data mesh using DataHub URNs. The **Central Gateway** verifies Keycloak JWTs via Topaz AuthZ. The **Domain Broker** maps URNs to physical storage and mints temporary STS tickets. The **Cortex Data Client** uses Polars to fetch data natively. The **Cortex Polars IO Manager** forces Dagster to use this same client via M2M OAuth2, achieving 100% code portability between Jupyter and production.
+10. **The "Holy Trinity" Pattern**: Our standard for complex integrations involves **dlt** (Extraction), **dbt** (Transformation into a stateful Outbox), and **Restate** (Durable Triggering).
 ## Component API (Dagster 1.12 GA)
 All custom components inherit from `dagster.components.Component`, `dagster.components.resolved.base.Resolvable`, and `dagster.components.resolved.model.Model`. Key rules:
 - **No `ComponentSchema`** — schemas are plain `pydantic.BaseModel` or use `Model` directly on the component class.
