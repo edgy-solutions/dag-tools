@@ -22,7 +22,7 @@ redis_client: Optional[redis.Redis] = None
 
 class RegisterPayload(BaseModel):
     broker_url: str
-    asset_keys: List[str]
+    asset_urns: List[str]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,19 +49,19 @@ async def register_broker(payload: RegisterPayload):
     pipeline = redis_client.pipeline()
     ttl_seconds = 300  # 5 minutes
     
-    for asset_key in payload.asset_keys:
-        redis_key = f"mesh_route:{asset_key}"
+    for urn in payload.asset_urns:
+        redis_key = f"mesh_route:{urn}"
         pipeline.setex(redis_key, ttl_seconds, payload.broker_url)
         
     await pipeline.execute()
-    logger.info(f"Registered {len(payload.asset_keys)} assets for broker {payload.broker_url}")
-    return {"status": "success", "registered_assets": len(payload.asset_keys)}
+    logger.info(f"Registered {len(payload.asset_urns)} assets for broker {payload.broker_url}")
+    return {"status": "success", "registered_assets": len(payload.asset_urns)}
 
-async def check_topaz_authz(token: str, asset_key: str) -> tuple[bool, Optional[List[str]], Optional[str]]:
+async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[str]], Optional[str]]:
     """
     Calls the Topaz REST API to check authorization.
     Subject = Keycloak user_id (extracted from JWT)
-    Resource = dataset:{asset_key}
+    Resource = {urn}
     Permission = can_read
     """
     try:
@@ -91,7 +91,7 @@ async def check_topaz_authz(token: str, asset_key: str) -> tuple[bool, Optional[
                 "decisions": ["allowed"]
             },
             "resource_context": {
-                "asset": f"dataset:{asset_key}",
+                "asset": urn,
                 "permission": "can_read"
             }
         }
@@ -104,7 +104,7 @@ async def check_topaz_authz(token: str, asset_key: str) -> tuple[bool, Optional[
             },
             "object": {
                 "type": "dataset",
-                "key": asset_key
+                "key": urn
             },
             "relation": {
                 "name": "can_read"
@@ -150,8 +150,8 @@ async def check_topaz_authz(token: str, asset_key: str) -> tuple[bool, Optional[
             return True, None, None
         return False, None, None
 
-@app.post("/api/v1/assets/{asset_key}/authorize")
-async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+@app.post("/api/v1/assets/{urn:path}/authorize")
+async def authorize_asset(urn: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Verifies user JWT against Topaz, looks up asset in Redis, proxies to Domain Broker.
     """
@@ -161,7 +161,7 @@ async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredenti
     token = credentials.credentials
     
     # 1. Topaz AuthZ
-    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, asset_key)
+    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn)
     if not is_authorized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
@@ -169,20 +169,21 @@ async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredenti
         )
         
     # 2. Routing: O(1) lookup in Redis
-    redis_key = f"mesh_route:{asset_key}"
+    redis_key = f"mesh_route:{urn}"
     broker_url = await redis_client.get(redis_key)
     
     if not broker_url:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No active domain broker found for asset {asset_key}"
+            detail=f"No active domain broker found for asset {urn}"
         )
         
     # 3. Proxy to Domain Broker
     try:
         async with httpx.AsyncClient() as client:
-            resolve_url = f"{broker_url.rstrip('/')}/api/v1/internal/resolve/{asset_key}"
-            response = await client.post(resolve_url, timeout=10.0)
+            resolve_url = f"{broker_url.rstrip('/')}/api/v1/internal/resolve"
+            payload = {"urn": urn}
+            response = await client.post(resolve_url, json=payload, timeout=10.0)
             
             if response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Asset not found on broker")

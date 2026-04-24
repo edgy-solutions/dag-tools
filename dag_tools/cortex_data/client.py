@@ -13,7 +13,7 @@ class CortexDataClient:
         self.gateway_url = broker_url.rstrip("/")
         self.jwt_token = jwt_token
 
-    def get_dataframe(self, asset_key_or_urn: str) -> pl.LazyFrame:
+    def get_dataframe(self, urn: str) -> pl.LazyFrame:
         """
         Retrieves a Polars LazyFrame for the requested asset by first obtaining
         a routing ticket from the Central Gateway.
@@ -24,7 +24,7 @@ class CortexDataClient:
             "Content-Type": "application/json"
         }
         
-        url = f"{self.gateway_url}/api/v1/assets/{asset_key_or_urn}/authorize"
+        url = f"{self.gateway_url}/api/v1/assets/{urn}/authorize"
         
         with httpx.Client() as client:
             response = client.post(url, headers=headers, timeout=10.0)
@@ -66,7 +66,7 @@ class CortexDataClient:
             parts = physical_uri.replace("postgres://", "").split("/")
             host_port = parts[0]
             schema = parts[1] if len(parts) > 1 else "public"
-            table = parts[2] if len(parts) > 2 else asset_key_or_urn
+            table = parts[2] if len(parts) > 2 else (urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
             
             # Use adbc_driver_postgresql. Construct the URI using the PG18 OAUTHBEARER pattern
             # passing the JWT as the password.
@@ -86,7 +86,7 @@ class CortexDataClient:
             parts = physical_uri.replace("clickhouse://", "").split("/")
             host_port = parts[0]
             schema = parts[1] if len(parts) > 1 else "default"
-            table = parts[2] if len(parts) > 2 else asset_key_or_urn
+            table = parts[2] if len(parts) > 2 else (urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
             
             username = credentials.get("username", "default")
             password = credentials.get("token", self.jwt_token)

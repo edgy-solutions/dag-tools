@@ -11,9 +11,11 @@ from pydantic import BaseModel
 # Optional Dagster imports
 try:
     from dagster import Definitions, AssetKey
+    from dag_tools.components.datahub_lineage.component import asset_keys_to_dataset_urn_converter
 except ImportError:
     Definitions = None
     AssetKey = None
+    asset_keys_to_dataset_urn_converter = None
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +26,9 @@ DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
 
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
+
+class ResolveRequest(BaseModel):
+    urn: str
 
 def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[str, Any]:
     """
@@ -98,8 +103,21 @@ def load_dagster_definitions():
         if isinstance(defs, Definitions):
             for spec in defs.get_all_asset_specs():
                 key_str = spec.key.to_user_string()
-                LOCAL_ASSETS[key_str] = extract_io_manager_info(defs, spec.key)
-            logger.info(f"Loaded {len(LOCAL_ASSETS)} assets from Dagster definitions.")
+                
+                # Extract the URN. Assumes you tag assets with "datahub/urn" 
+                # or fallback to generating a deterministic one.
+                urn = spec.tags.get("datahub/urn") if spec.tags else None
+                if not urn:
+                    if asset_keys_to_dataset_urn_converter:
+                        dataset_urn = asset_keys_to_dataset_urn_converter(spec.key.path)
+                        urn = dataset_urn.urn() if dataset_urn else None
+                    if not urn:
+                        # Fallback deterministic URN generation
+                        urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str.replace('/', '.')},PROD)"
+                
+                # Index the dictionary by URN!
+                LOCAL_ASSETS[urn] = extract_io_manager_info(defs, spec.key)
+            logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
     except Exception as e:
         logger.error(f"Failed to load Dagster definitions: {e}")
 
@@ -114,7 +132,7 @@ async def lifespan(app: FastAPI):
         async with httpx.AsyncClient() as client:
             payload = {
                 "broker_url": BROKER_URL,
-                "asset_keys": asset_keys
+                "asset_urns": list(LOCAL_ASSETS.keys())
             }
             response = await client.post(
                 f"{CENTRAL_GATEWAY_URL}/api/v1/internal/register",
@@ -122,7 +140,7 @@ async def lifespan(app: FastAPI):
                 timeout=10.0
             )
             response.raise_for_status()
-            logger.info(f"Successfully registered {len(asset_keys)} assets with Central Gateway.")
+            logger.info(f"Successfully registered {len(LOCAL_ASSETS.keys())} assets with Central Gateway.")
     except Exception as e:
         logger.error(f"Failed to register with Central Gateway: {e}")
         
@@ -132,22 +150,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Domain Broker")
 
-@app.post("/api/v1/internal/resolve/{asset_key}")
-async def resolve_asset(asset_key: str):
+@app.post("/api/v1/internal/resolve")
+async def resolve_asset(request: ResolveRequest):
     """
-    Called ONLY by the Central Gateway to resolve an asset key into a physical routing ticket.
+    Called ONLY by the Central Gateway to resolve a DataHub URN into a physical routing ticket.
     """
-    if asset_key not in LOCAL_ASSETS:
-        raise HTTPException(status_code=404, detail="Asset not found in this domain.")
+    urn = request.urn
+    
+    if urn not in LOCAL_ASSETS:
+        raise HTTPException(status_code=404, detail="URN not found in this domain's Dagster deployment.")
         
-    asset_info = LOCAL_ASSETS[asset_key]
+    asset_info = LOCAL_ASSETS[urn]
     io_type = asset_info.get("io_manager_type", "s3_parquet")
     
     if io_type in ["postgres", "clickhouse"]:
         host = asset_info.get("db_host", "localhost")
         port = asset_info.get("db_port", 5432)
         schema = asset_info.get("schema", "public")
-        table = asset_info.get("table", asset_key)
+        table = asset_info.get("table", urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
         
         return {
             "source_type": io_type,
@@ -159,7 +179,8 @@ async def resolve_asset(asset_key: str):
         
     elif io_type in ["s3_parquet", "s3_iceberg", "s3_delta"]:
         bucket = asset_info.get("bucket", "default-bucket")
-        prefix = asset_info.get("prefix", f"warehouse/{asset_key}")
+        fallback_prefix = f"warehouse/{urn.split(',')[-2].replace('.', '/')}" if "urn:li:dataset" in urn else f"warehouse/{urn}"
+        prefix = asset_info.get("prefix", fallback_prefix)
         role_arn = os.getenv("AWS_ASSUME_ROLE_ARN", "arn:aws:iam::123456789012:role/DataAccessRole")
         
         policy = {
@@ -187,7 +208,7 @@ async def resolve_asset(asset_key: str):
             sts_client = boto3.client('sts')
             response = sts_client.assume_role(
                 RoleArn=role_arn,
-                RoleSessionName=f"session-{asset_key}",
+                RoleSessionName=f"session-{urn.replace(':', '_').replace(',', '_')[:40]}",
                 Policy=json.dumps(policy),
                 DurationSeconds=3600
             )
