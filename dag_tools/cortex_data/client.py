@@ -1,3 +1,4 @@
+import os
 import httpx
 import polars as pl
 from typing import Dict, Any
@@ -8,10 +9,33 @@ class CortexDataClient:
     Shared library used by JupyterHub users, Dagster IO Managers, and AI Agents to actually touch the data.
     """
     
-    def __init__(self, broker_url: str, jwt_token: str):
+    def __init__(self, broker_url: str, jwt_token: str = None, client_id: str = None, client_secret: str = None, keycloak_url: str = None):
         # broker_url is the Central Gateway URL
         self.gateway_url = broker_url.rstrip("/")
         self.jwt_token = jwt_token
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.keycloak_url = keycloak_url or os.getenv("KEYCLOAK_TOKEN_URL", "http://keycloak/realms/master/protocol/openid-connect/token")
+
+        if not self.jwt_token and self.client_id and self.client_secret:
+            self._fetch_m2m_token()
+        elif not self.jwt_token:
+            raise ValueError("Must provide either jwt_token or (client_id and client_secret)")
+
+    def _fetch_m2m_token(self):
+        """Fetches a short-lived Service Account JWT using client_credentials grant."""
+        with httpx.Client() as client:
+            response = client.post(
+                self.keycloak_url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            self.jwt_token = response.json().get("access_token")
 
     def get_dataframe(self, urn: str) -> pl.LazyFrame:
         """
