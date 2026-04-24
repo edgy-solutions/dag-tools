@@ -37,13 +37,16 @@ class CortexDataClient:
         credentials = ticket.get("credentials", {})
         
         # 3. Branch based on source_type
+        lf = None
+        apply_security = True
+        
         if source_type == "s3_parquet":
             storage_options = {
                 "aws_access_key_id": credentials.get("aws_access_key_id", ""),
                 "aws_secret_access_key": credentials.get("aws_secret_access_key", ""),
                 "aws_session_token": credentials.get("aws_session_token", "")
             }
-            return pl.scan_parquet(physical_uri, storage_options=storage_options)
+            lf = pl.scan_parquet(physical_uri, storage_options=storage_options)
             
         elif source_type == "s3_delta":
             storage_options = {
@@ -51,12 +54,12 @@ class CortexDataClient:
                 "aws_secret_access_key": credentials.get("aws_secret_access_key", ""),
                 "aws_session_token": credentials.get("aws_session_token", "")
             }
-            return pl.scan_delta(physical_uri, storage_options=storage_options)
+            lf = pl.scan_delta(physical_uri, storage_options=storage_options)
             
         elif source_type == "s3_iceberg":
             # Note: The agent may need to use pyiceberg depending on the exact Polars version.
             # Polars native scan_iceberg is evolving.
-            return pl.scan_iceberg(physical_uri)
+            lf = pl.scan_iceberg(physical_uri)
             
         elif source_type == "postgres":
             # Parse physical_uri: postgres://host:port/schema/table
@@ -75,7 +78,8 @@ class CortexDataClient:
             
             # pl.read_database returns a DataFrame; convert to LazyFrame to match signature
             df = pl.read_database(query, connection=adbc_uri, engine="adbc")
-            return df.lazy()
+            lf = df.lazy()
+            apply_security = False  # Handled natively by Postgres RLS/CLS
             
         elif source_type == "clickhouse":
             # Parse physical_uri: clickhouse://host:port/schema/table
@@ -91,7 +95,19 @@ class CortexDataClient:
             query = f"SELECT * FROM {schema}.{table}"
             
             df = pl.read_database(query, connection=clickhouse_uri, engine="adbc")
-            return df.lazy()
+            lf = df.lazy()
             
         else:
             raise ValueError(f"Unsupported source_type: {source_type}")
+            
+        if apply_security:
+            allowed_columns = ticket.get("allowed_columns")
+            row_filters = ticket.get("row_filters")
+            
+            if allowed_columns:
+                lf = lf.select(allowed_columns)
+                
+            if row_filters:
+                lf = lf.filter(pl.sql_expr(row_filters))
+                
+        return lf

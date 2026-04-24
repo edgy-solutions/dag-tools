@@ -57,7 +57,7 @@ async def register_broker(payload: RegisterPayload):
     logger.info(f"Registered {len(payload.asset_keys)} assets for broker {payload.broker_url}")
     return {"status": "success", "registered_assets": len(payload.asset_keys)}
 
-async def check_topaz_authz(token: str, asset_key: str) -> bool:
+async def check_topaz_authz(token: str, asset_key: str) -> tuple[bool, Optional[List[str]], Optional[str]]:
     """
     Calls the Topaz REST API to check authorization.
     Subject = Keycloak user_id (extracted from JWT)
@@ -127,22 +127,28 @@ async def check_topaz_authz(token: str, asset_key: str) -> bool:
                 if isinstance(decisions, list) and len(decisions) > 0:
                     decision_obj = decisions[0]
                     if isinstance(decision_obj, dict):
-                        return decision_obj.get("is", False)
-                # Alternative response format
-                return result.get("decision", False) or result.get("is", False)
+                        is_authorized = decision_obj.get("is", False)
+                if not is_authorized:
+                    is_authorized = result.get("decision", False) or result.get("is", False)
+                
+                # Extract data-masking rules
+                allowed_columns = result.get("allowed_columns") or result.get("fields")
+                row_filters = result.get("row_filters") or result.get("row_filter") or result.get("filters")
+                
+                return is_authorized, allowed_columns, row_filters
             else:
                 logger.error(f"Topaz AuthZ failed with status {response.status_code}: {response.text}")
                 # For development/testing if Topaz is unreachable
                 if os.getenv("ALLOW_MOCK_AUTH", "false").lower() == "true":
                     logger.warning("Using mock auth due to Topaz failure")
-                    return True
-                return False
+                    return True, None, None
+                return False, None, None
                 
     except Exception as e:
         logger.error(f"Error during Topaz AuthZ: {e}")
         if os.getenv("ALLOW_MOCK_AUTH", "false").lower() == "true":
-            return True
-        return False
+            return True, None, None
+        return False, None, None
 
 @app.post("/api/v1/assets/{asset_key}/authorize")
 async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -155,7 +161,7 @@ async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredenti
     token = credentials.credentials
     
     # 1. Topaz AuthZ
-    is_authorized = await check_topaz_authz(token, asset_key)
+    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, asset_key)
     if not is_authorized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
@@ -185,7 +191,12 @@ async def authorize_asset(asset_key: str, credentials: HTTPAuthorizationCredenti
                 raise HTTPException(status_code=502, detail="Bad gateway: Domain broker error")
                 
             # Return the BrokerTicketResponse directly to the client
-            return response.json()
+            ticket = response.json()
+            if allowed_columns is not None:
+                ticket["allowed_columns"] = allowed_columns
+            if row_filters is not None:
+                ticket["row_filters"] = row_filters
+            return ticket
             
     except httpx.RequestError as e:
         logger.error(f"Error communicating with domain broker: {e}")
