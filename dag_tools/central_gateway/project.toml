@@ -1,0 +1,26 @@
+[_]
+schema-version = "0.2"
+
+[project]
+dependencies = [
+    "fastapi",
+    "hypercorn",
+    "httpx",
+    "pydantic",
+    "redis",
+    "pyjwt"
+]
+
+[io.buildpacks]
+builder = "paketobuildpacks/builder-jammy-base"
+
+[[io.buildpacks.group]]
+id = "paketo-buildpacks/python"
+
+[[io.buildpacks.build.env]]
+name = "BP_CPYTHON_VERSION"
+value = "3.12"
+
+[[io.buildpacks.launch.env]]
+name = "PORT"
+value = "8090"

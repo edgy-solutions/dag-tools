@@ -1,0 +1,64 @@
+name: Build & Push Container Images
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/dag-tools
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: "CNB · ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: central-gateway
+            path: dag_tools/central_gateway
+            port: "8090"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Pack CLI
+        uses: buildpacks/github-actions/setup-pack@v5.7.4
+
+      - name: Build image with Cloud Native Buildpacks
+        run: |
+          echo "Building ${{ matrix.service }} with Cloud Native Buildpacks..."
+          pack build ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
+            --path ./${{ matrix.path }} \
+            --builder paketobuildpacks/builder-jammy-base \
+            --env BP_CPYTHON_VERSION=3.12 \
+            --trust-builder
+
+      - name: Tag latest
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: |
+          docker tag \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+      - name: Push images
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
