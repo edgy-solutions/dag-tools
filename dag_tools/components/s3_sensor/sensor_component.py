@@ -98,9 +98,8 @@ class S3SensorComponent(Component, Resolvable, Model):
                     continue
                 
                 # We use the ETag + Key as a unique run_key
-                # But the partition_key is the relative path
-                rel_path = obj_key.replace(s3_prefix, '', 1)
-                filtered_keys[f"{item.get('ETag', 'no_tag')}-{obj_key}"] = rel_path
+                # The partition_key is the full object key (excluding bucket) to avoid collisions
+                filtered_keys[f"{item.get('ETag', 'no_tag')}-{obj_key}"] = obj_key
 
             if not filtered_keys:
                 sensor_context.update_cursor(last_key)
@@ -109,18 +108,18 @@ class S3SensorComponent(Component, Resolvable, Model):
             run_requests = [
                 RunRequest(
                     run_key=run_key,
-                    partition_key=rel_path,
+                    partition_key=obj_key,
                     run_config={
                         "ops": {
                             self.target_op: {
                                 "config": {
-                                    "file_url": f"s3://{self.bucket}/{s3_prefix}{rel_path}"
+                                    "file_url": f"s3://{self.bucket}/{obj_key}"
                                 }
                             }
                         }
                     }
                 )
-                for run_key, rel_path in filtered_keys.items()
+                for run_key, obj_key in filtered_keys.items()
             ]
             
             sensor_context.update_cursor(last_key)
