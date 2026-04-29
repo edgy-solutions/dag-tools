@@ -98,8 +98,10 @@ class S3SensorComponent(Component, Resolvable, Model):
                     continue
                 
                 # We use the ETag + Key as a unique run_key
-                # The partition_key is the full object key (excluding bucket) to avoid collisions
-                filtered_keys[f"{item.get('ETag', 'no_tag')}-{obj_key}"] = obj_key
+                # The partition_key must not contain slashes to avoid breaking Dagster UI routing
+                # We replace slashes with double underscores (__) to keep the full path visible, unique, and URL-safe
+                partition_key = obj_key.replace("/", "__")
+                filtered_keys[f"{item.get('ETag', 'no_tag')}-{obj_key}"] = (partition_key, obj_key)
 
             if not filtered_keys:
                 sensor_context.update_cursor(last_key)
@@ -108,7 +110,7 @@ class S3SensorComponent(Component, Resolvable, Model):
             run_requests = [
                 RunRequest(
                     run_key=run_key,
-                    partition_key=obj_key,
+                    partition_key=partition_key,
                     run_config={
                         "ops": {
                             self.target_op: {
@@ -119,7 +121,7 @@ class S3SensorComponent(Component, Resolvable, Model):
                         }
                     }
                 )
-                for run_key, obj_key in filtered_keys.items()
+                for run_key, (partition_key, obj_key) in filtered_keys.items()
             ]
             
             sensor_context.update_cursor(last_key)
@@ -132,7 +134,7 @@ class S3SensorComponent(Component, Resolvable, Model):
                 dynamic_partitions_requests=[
                     AddDynamicPartitionsRequest(
                         partitions_def_name=self.partition_name,
-                        partition_keys=list(filtered_keys.values())
+                        partition_keys=[pk for pk, _ in filtered_keys.values()]
                     )
                 ] if filtered_keys else []
             )

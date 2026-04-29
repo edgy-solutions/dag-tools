@@ -153,16 +153,16 @@ class TestS3SensorComponent(unittest.TestCase):
         
         result = sensor_def._raw_fn(sensor_context)
         
-        # Verify partition key is full path
+        # Verify partition key is full path with replaced slashes
         self.assertEqual(len(result.run_requests), 1)
         run_request = result.run_requests[0]
-        self.assertEqual(run_request.partition_key, "test-prefix/folder/file.txt")
+        self.assertEqual(run_request.partition_key, "test-prefix__folder__file.txt")
         
         # Verify dynamic partitions request
         self.assertEqual(len(result.dynamic_partitions_requests), 1)
         self.assertEqual(
             result.dynamic_partitions_requests[0].partition_keys,
-            ["test-prefix/folder/file.txt"]
+            ["test-prefix__folder__file.txt"]
         )
 
 if __name__ == "__main__":
