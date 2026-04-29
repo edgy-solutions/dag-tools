@@ -116,5 +116,54 @@ class TestS3SensorComponent(unittest.TestCase):
         self.assertEqual(len(sensors), 1)
         self.assertEqual(sensors[0].name, "custom_sensor_name")
 
+    @patch("dag_tools.components.s3_sensor.sensor_component.get_s3_keys")
+    def test_sensor_partition_key_is_full_path(self, mock_get_s3_keys):
+        from dagster import build_sensor_context
+        
+        component = S3SensorComponent(
+            bucket="test-bucket",
+            prefix="test-prefix",
+            partition_name="test-partition",
+            target_job="test_job",
+            target_op="test_op"
+        )
+        context = MagicMock(spec=ComponentLoadContext)
+        defs = component.build_defs(context)
+        
+        sensors = list(defs.sensors)
+        self.assertEqual(len(sensors), 1)
+        sensor_def = sensors[0]
+        
+        # Mock get_s3_keys to return a dummy file
+        mock_get_s3_keys.return_value = {
+            "test-prefix/folder/file.txt": {
+                "Key": "test-prefix/folder/file.txt",
+                "ETag": "dummy-etag"
+            }
+        }
+        
+        # Setup resources
+        resource_key = "test_prefix_s3_sensor_resource"
+        mock_resource = MagicMock()
+        mock_resource.apply_filter.return_value = True
+        
+        sensor_context = build_sensor_context(
+            resources={resource_key: mock_resource}
+        )
+        
+        result = sensor_def._raw_fn(sensor_context)
+        
+        # Verify partition key is full path
+        self.assertEqual(len(result.run_requests), 1)
+        run_request = result.run_requests[0]
+        self.assertEqual(run_request.partition_key, "test-prefix/folder/file.txt")
+        
+        # Verify dynamic partitions request
+        self.assertEqual(len(result.dynamic_partitions_requests), 1)
+        self.assertEqual(
+            result.dynamic_partitions_requests[0].partition_keys,
+            ["test-prefix/folder/file.txt"]
+        )
+
 if __name__ == "__main__":
     unittest.main()
