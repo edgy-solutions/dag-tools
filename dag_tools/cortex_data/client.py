@@ -1,7 +1,7 @@
 import os
 import httpx
 import polars as pl
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class CortexDataClient:
     """
@@ -9,18 +9,30 @@ class CortexDataClient:
     Shared library used by JupyterHub users, Dagster IO Managers, and AI Agents to actually touch the data.
     """
     
-    def __init__(self, broker_url: str, jwt_token: str = None, client_id: str = None, client_secret: str = None, keycloak_url: str = None):
-        # broker_url is the Central Gateway URL
-        self.gateway_url = broker_url.rstrip("/")
-        self.jwt_token = jwt_token
-        self.client_id = client_id
-        self.client_secret = client_secret
+    def __init__(
+        self, 
+        broker_url: Optional[str] = None, 
+        jwt_token: Optional[str] = None, 
+        client_id: Optional[str] = None, 
+        client_secret: Optional[str] = None, 
+        keycloak_url: Optional[str] = None
+    ):
+        # 1. Resolve Broker URL (Central Gateway)
+        resolved_broker = broker_url or os.getenv("CORTEX_BROKER_URL")
+        if not resolved_broker:
+            raise ValueError("Must provide broker_url or set CORTEX_BROKER_URL environment variable.")
+        self.gateway_url = resolved_broker.rstrip("/")
+
+        # 2. Resolve Authentication
+        self.jwt_token = jwt_token or os.getenv("MESH_DEV_TOKEN")
+        self.client_id = client_id or os.getenv("CORTEX_CLIENT_ID")
+        self.client_secret = client_secret or os.getenv("CORTEX_CLIENT_SECRET")
         self.keycloak_url = keycloak_url or os.getenv("KEYCLOAK_TOKEN_URL", "http://keycloak/realms/master/protocol/openid-connect/token")
 
         if not self.jwt_token and self.client_id and self.client_secret:
             self._fetch_m2m_token()
         elif not self.jwt_token:
-            raise ValueError("Must provide either jwt_token or (client_id and client_secret)")
+            raise ValueError("Must provide either jwt_token (MESH_DEV_TOKEN) or M2M credentials (CORTEX_CLIENT_ID/SECRET).")
 
     def _fetch_m2m_token(self):
         """Fetches a short-lived Service Account JWT using client_credentials grant."""
