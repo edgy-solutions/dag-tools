@@ -246,10 +246,10 @@ The `dag_tools.utils` namespace provides foundational helpers used across the fl
 ```python
 from dag_tools.utils.k8s import resolve_k8s_resource_tags
 
-# Returns a dagster-k8s/config compliant tag dictionary
+# Returns a dagster-k8s/config compliant tag dictionary (nested dict)
 k8s_tags = resolve_k8s_resource_tags(prefix="INGEST_JOB", default_cpu="1000m", default_mem="2Gi")
 
-# IMPORTANT: Use 'op_tags' for K8s config to bypass Dagster's 63-character UI tag limit
+# IMPORTANT: Use 'op_tags' for K8s config to bypass Dagster's strict UI label string validation
 @asset(op_tags={**k8s_tags}, tags={"owner": "data-eng"})
 def my_kubernetes_asset():
     ...
