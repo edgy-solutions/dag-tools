@@ -238,6 +238,22 @@ The Data Mesh architecture perfectly decouples the Control Plane from the Data P
 - **Cortex Data Client (`dag_tools.cortex_data`)**: The Universal Data Plane client. It fetches routing tickets from the Central Gateway and uses Polars to lazily load data (`pl.scan_parquet`, `pl.read_database`) directly from S3 or Databases.
 - **Cortex Polars IO Manager (`dag_tools.io_managers.CortexPolarsIOManager`)**: Forces Dagster to use the `CortexDataClient` with M2M OAuth2 authentication for `load_input`, ensuring 100% uniformity. Data Engineers can copy-paste Polars code from Jupyter directly into production `@asset` definitions!
 
+### 10. Utilities
+The `dag_tools.utils` namespace provides foundational helpers used across the fleet.
+
+- **Dynamic K8s Resource Tags (`dag_tools.utils.k8s.resolve_k8s_resource_tags`)**: A resilient utility to resolve Kubernetes pod resource requests and limits from environment variables. It enforces a 1:1 request/limit ratio by default to ensure predictable scheduling and provides whitespace cleaning for K8s API safety.
+
+```python
+from dag_tools.utils.k8s import resolve_k8s_resource_tags
+
+# Returns a dagster-k8s/config compliant tag dictionary
+k8s_tags = resolve_k8s_resource_tags(prefix="INGEST_JOB", default_cpu="1000m", default_mem="2Gi")
+
+@asset(tags={**k8s_tags})
+def my_kubernetes_asset():
+    ...
+```
+
 ## Setup & Development
 
 This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. We use `uv` for all dependency management.
