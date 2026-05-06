@@ -1,7 +1,8 @@
 import os
+import json
 from typing import Dict, Any
 
-def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_mem: str = "1Gi") -> Dict[str, Any]:
+def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_mem: str = "1Gi") -> Dict[str, str]:
     """
     Utility to resolve Kubernetes resource requests and limits from environment variables.
     
@@ -20,7 +21,7 @@ def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_me
         default_mem: Fallback memory request (e.g., '1Gi').
         
     Returns:
-        A dictionary formatted for Dagster's 'dagster-k8s/config' tag.
+        A dictionary where 'dagster-k8s/config' contains a JSON-serialized configuration.
     """
     def _fetch_clean_env(key: str, fallback: str) -> str:
         val = os.environ.get(key)
@@ -33,13 +34,15 @@ def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_me
     lim_cpu = _fetch_clean_env(f"{prefix}_CPU_LIMIT", req_cpu)
     lim_mem = _fetch_clean_env(f"{prefix}_MEM_LIMIT", req_mem)
         
-    return {
-        "dagster-k8s/config": {
-            "container_config": {
-                "resources": {
-                    "requests": {"cpu": req_cpu, "memory": req_mem},
-                    "limits": {"cpu": lim_cpu, "memory": lim_mem},
-                }
+    config = {
+        "container_config": {
+            "resources": {
+                "requests": {"cpu": req_cpu, "memory": req_mem},
+                "limits": {"cpu": lim_cpu, "memory": lim_mem},
             }
         }
+    }
+
+    return {
+        "dagster-k8s/config": json.dumps(config)
     }
