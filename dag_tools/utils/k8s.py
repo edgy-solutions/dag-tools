@@ -22,6 +22,7 @@ def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_me
         
     Returns:
         A dictionary where 'dagster-k8s/config' contains a JSON-serialized configuration.
+        This should be passed to the 'op_tags' parameter of an @asset or @op decorator.
     """
     def _fetch_clean_env(key: str, fallback: str) -> str:
         val = os.environ.get(key)

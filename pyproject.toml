@@ -9,6 +9,7 @@ dependencies = [
     "requests>=2.32.5",
     "pyodbc>=5.3.0",
     "oracledb>=3.4.2",
+    "polars>=0.20.10",
 ]
 
 [project.optional-dependencies]

@@ -5,8 +5,9 @@ from dag_tools.utils.k8s import resolve_k8s_resource_tags
 
 def test_resolve_k8s_resource_tags_returns_json_string():
     """
-    Verify that the utility returns a dictionary where values are JSON strings,
-    as required by Dagster's strict tag validation.
+    Verify that the utility returns a dictionary where values are JSON strings.
+    Note: This result MUST be used with 'op_tags' rather than 'tags' to avoid
+    Dagster's strict 63-character and character-set validation for UI tags.
     """
     # Clear env for clean test
     prefix = "UNIT_TEST"
@@ -47,3 +48,21 @@ def test_resolve_k8s_resource_tags_env_overrides():
     assert resources["requests"]["memory"] == "1Gi"
     assert resources["limits"]["cpu"] == "1000m"
     assert resources["limits"]["memory"] == "1Gi" # Defaulted to request
+def test_resolve_k8s_resource_tags_compatibility_with_dagster():
+    """
+    Verify that Dagster's @asset decorator accepts the generated config string
+    when passed via 'op_tags', even though it would fail via 'tags'.
+    """
+    from dagster import asset
+    
+    k8s_tags = resolve_k8s_resource_tags(prefix="DAGSTER_TEST")
+    
+    # This should SUCCEED because op_tags does not have the strict 63-char limit
+    @asset(op_tags={**k8s_tags})
+    def test_asset_op_tags():
+        return 1
+        
+    assert test_asset_op_tags.op.tags["dagster-k8s/config"] == k8s_tags["dagster-k8s/config"]
+    
+    # This would FAIL if we used 'tags' instead of 'op_tags'
+    # We don't need to trigger the failure, just verify that the 'op_tags' approach works.

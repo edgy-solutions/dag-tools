@@ -249,7 +249,8 @@ from dag_tools.utils.k8s import resolve_k8s_resource_tags
 # Returns a dagster-k8s/config compliant tag dictionary
 k8s_tags = resolve_k8s_resource_tags(prefix="INGEST_JOB", default_cpu="1000m", default_mem="2Gi")
 
-@asset(tags={**k8s_tags})
+# IMPORTANT: Use 'op_tags' for K8s config to bypass Dagster's 63-character UI tag limit
+@asset(op_tags={**k8s_tags}, tags={"owner": "data-eng"})
 def my_kubernetes_asset():
     ...
 ```
