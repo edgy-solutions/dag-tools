@@ -251,8 +251,31 @@ k8s_tags = resolve_k8s_resource_tags(prefix="INGEST_JOB", default_cpu="1000m", d
 
 # IMPORTANT: Use 'op_tags' for K8s config to bypass Dagster's strict UI label string validation
 @asset(op_tags={**k8s_tags}, tags={"owner": "data-eng"})
-def my_kubernetes_asset():
     ...
+```
+
+- **Multi-Environment dbt Compiler & Validator (`scripts/compile_and_validate_dbt.py`)**: A robust utility for container assembly pipelines. It dynamically loads environment configurations from a `dbt_compile_config.yaml` file in the caller's repository.
+
+```yaml
+# dbt_compile_config.yaml
+dbt_assets_file: "mylib/assets/dbt_assets.py"
+manifest_path: "target/manifest.json"
+
+environments:
+  - name: "DEV"
+    env_vars:
+      DBT_TARGET_PROD: "target_dev"
+      SOME_DATABASE: "ENGINEERING_DEV"
+  - name: "PROD"
+    env_vars:
+      DBT_TARGET_PROD: "target"
+      SSOME_DATABASE: "ENGINEERING"
+```
+
+```bash
+# Usage in a container build/assemble script
+# Ensure PyYAML is installed: pip install PyYAML
+python3 scripts/compile_and_validate_dbt.py
 ```
 
 ## Setup & Development
