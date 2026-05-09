@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    name: "CNB · ${{ matrix.service }}"
+    name: "Docker · ${{ matrix.service }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,27 +38,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Pack CLI
-        uses: buildpacks/github-actions/setup-pack@v5.7.4
-
-      - name: Build image with Cloud Native Buildpacks
-        run: |
-          echo "Building ${{ matrix.service }} with Cloud Native Buildpacks..."
-          pack build ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
-            --path ./${{ matrix.path }} \
-            --builder paketobuildpacks/builder-jammy-base \
-            --env BP_CPYTHON_VERSION=3.12 \
-            --trust-builder
-
-      - name: Tag latest
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          docker tag \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.path }}
+          push: ${{ (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
-
-      - name: Push images
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
