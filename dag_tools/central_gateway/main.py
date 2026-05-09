@@ -37,6 +37,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, title="Central Gateway")
 security = HTTPBearer()
 
+@app.get("/health")
+async def health_check():
+    """Liveness probe: returns 200 as long as the process is running."""
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe: checks if critical dependencies (Redis) are reachable."""
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Redis client not initialized")
+    try:
+        await redis_client.ping()
+        return {"status": "ready"}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        raise HTTPException(status_code=503, detail="Redis unreachable")
+
 @app.post("/api/v1/internal/register")
 async def register_broker(payload: RegisterPayload):
     """
