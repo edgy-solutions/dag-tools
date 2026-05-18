@@ -1,0 +1,59 @@
+services:
+  # Oracle Free 23c — scriptable via /container-entrypoint-initdb.d/
+  # Init scripts run as the APP_USER (here: pdm) after the DB is bootstrapped.
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    ports:
+      - "1525:1521"
+    environment:
+      - ORACLE_PASSWORD=oracle
+      - APP_USER=pdm
+      - APP_USER_PASSWORD=pdm
+    volumes:
+      - ./init_oracle.sql:/container-entrypoint-initdb.d/init_oracle.sql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Postgres — dlt's destination for the extracted PDM rows
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=pdm_local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d pdm_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  restate:
+    image: docker.io/restatedev/restate:latest
+    ports:
+      - "9077:9070"   # admin
+      - "8087:8080"   # ingress
+    environment:
+      - RESTATE_ADMIN__BIND_ADDRESS=0.0.0.0:9070
+      - RESTATE_INGRESS__HTTP_SERVER__BIND_ADDRESS=0.0.0.0:8080
+
+  restate-handlers:
+    build:
+      context: ../..
+      dockerfile: ./examples/pdm_oracle_ingestion/Dockerfile.worker
+    environment:
+      - ORACLE_DSN=oracle:1521/FREEPDB1
+      - ORACLE_USER=pdm
+      - ORACLE_PASSWORD=pdm
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "9087:9080"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      restate:
+        condition: service_started

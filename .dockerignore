@@ -1,0 +1,9 @@
+**/.venv
+**/.tmp_dagster_home_*
+**/__pycache__
+**/.pytest_cache
+**/.git
+**/node_modules
+**/.dlt
+**/.env
+**/.env.dlt
