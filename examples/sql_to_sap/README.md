@@ -24,9 +24,9 @@ This demo spins up 5 sandbox containers to simulate an enterprise environment:
    - A lightweight FastAPI server simulating a corporate ERP ingress endpoint on port `5000`.
    - Accepts JSON `POST` requests and logs them.
 5. **Restate Handlers (Data Plane)**
-   - A dedicated Python worker image (`Dockerfile.worker`) hosting multiple `dag_tools` Restate Services: `GenericApiSyncService`, `GenericSqlAckService`, and `SapInductionService`.
+   - The shared `dag-tools` `restate-worker` image (built from the repo-root `Dockerfile.restate-worker`), hosting `GenericApiSyncService`, `GenericOracleAckService`, and `SapInductionService` — selected via the `RESTATE_SERVICES` env var.
    - Built with `uv` for speed and `Hypercorn` for mandatory HTTP/2 support.
-   - Acts as the bridge between the Restate cluster and your custom Python sync logic.
+   - Self-registers with the Restate cluster on startup (`RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI`) — no manual deployment registration step.
 
 ## 🚀 How to Run
 

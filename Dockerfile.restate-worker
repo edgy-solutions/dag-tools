@@ -12,8 +12,17 @@
 #     ghcr.io/edgy-solutions/dag-tools/restate-worker:latest
 FROM python:3.11-slim-bookworm
 
+# System deps for the data-plane handlers:
+#   libaio1     — Oracle (oracledb) — used by oracle_ack
+#   msodbcsql18 — SQL Server (pyodbc) — used by api_sync to ack back to MSSQL
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libaio1 \
+        curl gnupg2 unixodbc-dev libaio1 \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+        | gpg --batch --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
+        > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

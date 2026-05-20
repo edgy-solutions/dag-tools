@@ -42,10 +42,11 @@ The provided `.env` file contains the local DSNs and URLs required for Dagster (
 uv run dagster dev
 ```
 
-### 4. Direct Service Registration (Optional)
-If you need to manually register the Restate handlers:
+### 4. Service Registration
+The `restate-handlers` worker self-registers with the Restate coordinator on
+startup (`RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI` are set in the compose
+file), so no manual step is needed. To re-register manually if required:
 ```bash
-# Registers the workers with the Restate coordinator
 curl -X POST http://localhost:9070/deployments -H "Content-Type: application/json" -d '{"uri": "http://restate-handlers:9080"}'
 ```
 

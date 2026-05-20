@@ -58,17 +58,25 @@ services:
       - ./mock_sap_api.py:/app/mock_sap_api.py
 
   # 5. Restate Handlers (Data Plane Worker)
+  # Uses the shared dag-tools restate-worker image. Once CI publishes it you
+  # can drop `build:` and use:
+  #   image: ghcr.io/edgy-solutions/dag-tools/restate-worker:latest
   restate-handlers:
     build:
       context: ../..
-      dockerfile: ./examples/sap_induction_orchestrator/Dockerfile.worker
+      dockerfile: ./Dockerfile.restate-worker
     environment:
+      # Pick which service(s) this worker hosts.
+      - RESTATE_SERVICES=api_sync,oracle_ack,sap_induction
+      # Self-register with Restate on startup — no manual curl needed.
+      - RESTATE_ADMIN_URL=http://restate:9070
+      - RESTATE_ADVERTISED_URI=http://restate-handlers:9080
+      # Runtime config consumed by the SapInductionService.
       - SAP_INDUCTION__DATABASE__HOST=postgres
       - SAP_INDUCTION__DATABASE__PORT=5432
       - SAP_INDUCTION__DATABASE__USERNAME=admin
       - SAP_INDUCTION__DATABASE__PASSWORD=password
       - SAP_INDUCTION__DATABASE__DATABASE=outbox_db
-      - RESTATE_ADMIN_URL=http://restate:9070
       - SAP_INDUCTION__ODATA__BASE_URL=http://mock-sap:5000
       - SAP_INDUCTION__CALLBACK_API__BASE_URL=http://mock-sap:5000/callback
       - PYTHONUNBUFFERED=1

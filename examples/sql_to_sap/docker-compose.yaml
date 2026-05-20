@@ -56,11 +56,20 @@ services:
       - "5000:5000"
       
   # 5. Restate Handlers Server (Data Plane)
+  # Uses the shared dag-tools restate-worker image. Once CI publishes it you
+  # can drop `build:` and use:
+  #   image: ghcr.io/edgy-solutions/dag-tools/restate-worker:latest
   restate-handlers:
     build:
-      context: ../../
-      dockerfile: examples/sql_to_sap/Dockerfile.worker
+      context: ../..
+      dockerfile: ./Dockerfile.restate-worker
     environment:
+      # Pick which service(s) this worker hosts.
+      RESTATE_SERVICES: "api_sync,oracle_ack,sap_induction"
+      # Self-register with Restate on startup — no manual curl needed.
+      RESTATE_ADMIN_URL: "http://restate:9070"
+      RESTATE_ADVERTISED_URI: "http://restate-handlers:9080"
+      # Runtime config consumed by the handlers.
       API_BASE_URL: "http://mock_sap:5000"
       SQLSERVER_DSN: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=sqlserver,1433;DATABASE=INTERNAL_ERP;UID=sa;PWD=Password123!;Encrypt=no;"
     depends_on:
