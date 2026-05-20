@@ -215,9 +215,17 @@ def instantiate_assets(
             detect_precision_hints=True,
             backend_kwargs=config.backend_kwargs,
             query_adapter_callback=query_callback,
-            write_disposition=config.pipeline_kwargs.get("write_disposition", "merge"),
-            **config.pipeline_kwargs
+            # write_disposition / table_name are not valid kwargs for the dlt
+            # source constructor (dlt >= 1.23 dropped write_disposition from
+            # sql_database()); they are applied via apply_hints / the translator.
+            **{k: v for k, v in config.pipeline_kwargs.items()
+               if k not in ("write_disposition", "table_name")}
         ).parallelize()
+
+        write_disposition = config.pipeline_kwargs.get("write_disposition")
+        if write_disposition:
+            for resource in source.resources.values():
+                resource.apply_hints(write_disposition=write_disposition)
 
     for table, columns in config.select_columns.items():
         if table in source.resources:

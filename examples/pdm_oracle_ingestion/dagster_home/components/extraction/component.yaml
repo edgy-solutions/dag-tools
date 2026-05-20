@@ -5,6 +5,7 @@ attributes:
     type: sql_database
     drivername: oracle+oracledb
     credentials: "{{ env.ORACLE_DSN_URL }}"
+    database: FREEPDB1
     schema: PDM
   dest_config:
     type: postgres
@@ -19,6 +20,8 @@ attributes:
       primary_key: PART_ID
       sources:
         - PDM_STAGING
+      # The Restate handler writes one summary row here per ack batch.
+      stats_table: pdm_stats
       pipeline_kwargs:
         write_disposition: merge
       hints:
@@ -26,3 +29,9 @@ attributes:
           incremental:
             cursor_path: LAST_MODIFIED
           primary_key: PART_ID
+      # Emits a cycle job (dlt + ack dispatch) and a sensor that polls Oracle
+      # for unprocessed rows and re-runs the job — driving the loop hands-off.
+      cycle_sensor:
+        enabled: true
+        interval_seconds: 60
+        backlog_query: "SELECT COUNT(*) FROM pdm_staging WHERE processed_flag = 'N'"
