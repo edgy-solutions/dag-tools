@@ -34,11 +34,15 @@ semantics — if the worker dies mid-batch, the journal replays and finishes.
 | --- | --- |
 | [init_oracle.sql](init_oracle.sql) | Creates `PDM_STAGING` and `PDM_STATS` tables and seeds 5 unprocessed rows |
 | [docker-compose.yaml](docker-compose.yaml) | Oracle Free 23c + Restate + worker |
-| [Dockerfile.worker](Dockerfile.worker) | Builds the `restate-handlers` worker image |
-| [restate_entrypoint.py](restate_entrypoint.py) | ASGI app binding `GenericOracleAckService` |
 | [dagster_home/components/extraction/component.yaml](dagster_home/components/extraction/component.yaml) | `RestateDltSyncComponent` configured against Oracle as both source and ack target |
 | [dagster_home/definitions.py](dagster_home/definitions.py) | Dagster `Definitions` |
 | [.env.example](.env.example) | Required environment variables |
+
+The worker runs the shared `restate-worker` image (built from the repo-root
+[Dockerfile.restate-worker](../../Dockerfile.restate-worker)). It needs no
+example-specific entrypoint or Dockerfile — `RESTATE_SERVICES=oracle_ack` in
+the compose file selects which handler to host, and it self-registers with
+Restate on startup.
 
 ## How to run
 
@@ -46,10 +50,11 @@ semantics — if the worker dies mid-batch, the journal replays and finishes.
 cd examples/pdm_oracle_ingestion
 cp .env.example .env
 docker compose up -d --build
-curl -X POST http://localhost:9070/deployments -H "Content-Type: application/json" \
-  -d '{"uri": "http://restate-handlers:9080"}'
 uv run dagster dev
 ```
+
+No manual `curl` registration step — the worker self-registers because
+`RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI` are set in the compose file.
 
 Materialize the extraction asset twice in the Dagster UI. The first run picks
 up 5 rows; the second run picks up 0 because they've been acked.

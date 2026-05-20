@@ -1,0 +1,38 @@
+# Shared Restate worker image.
+#
+# Hosts every handler in dag_tools.restate_handlers behind one generic,
+# env-driven entrypoint. Consumers select which services to run with the
+# RESTATE_SERVICES env var and never build their own image.
+#
+#   docker run \
+#     -e RESTATE_SERVICES=oracle_ack \
+#     -e RESTATE_ADMIN_URL=http://restate:9070 \
+#     -e RESTATE_ADVERTISED_URI=http://restate-worker:9080 \
+#     -e ORACLE_DSN=... -e ORACLE_USER=... -e ORACLE_PASSWORD=... \
+#     ghcr.io/edgy-solutions/dag-tools/restate-worker:latest
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libaio1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install dependencies first (cached layer). Dummy package metadata lets uv
+# resolve the [worker] extras without the full source tree.
+COPY pyproject.toml README.md ./
+RUN mkdir dag_tools && touch dag_tools/__init__.py
+RUN uv venv .venv && uv pip install '.[worker]'
+
+# Install the real package.
+RUN rm -rf dag_tools
+COPY dag_tools/ ./dag_tools/
+RUN uv pip install -e .
+
+EXPOSE 9080
+CMD ["python", "-m", "dag_tools.restate_handlers.serve"]

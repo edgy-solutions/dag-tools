@@ -24,8 +24,11 @@ jobs:
       matrix:
         include:
           - service: central-gateway
-            path: dag_tools/central_gateway
-            port: "8090"
+            context: ./dag_tools/central_gateway
+            dockerfile: ./dag_tools/central_gateway/Dockerfile
+          - service: restate-worker
+            context: .
+            dockerfile: ./Dockerfile.restate-worker
 
     steps:
       - name: Checkout
@@ -41,7 +44,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./${{ matrix.path }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: ${{ (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
