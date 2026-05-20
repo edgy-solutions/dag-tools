@@ -32,16 +32,20 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - Use Restate's `ctx.run()` to wrap **both** the notification and the update in separate, durable steps to ensure they are eventually consistent, even if one system fails.
 - **NEVER** instantiate database clients or heavy resources inside a handler loop; use a global singleton/cache pattern to prevent connection leaks.
 
-### 4. Normalized Configuration Design
+### 4. Restate Worker Deployment
+- **DO NOT** write per-project Restate worker entrypoints or Dockerfiles. New durable handlers are registered in `dag_tools.restate_handlers.serve.SERVICE_REGISTRY` and ship in the shared `restate-worker` image (`Dockerfile.restate-worker`).
+- Deployments select handlers and wire Restate **purely through environment variables** (`RESTATE_SERVICES`, `RESTATE_ADMIN_URL`, `RESTATE_ADVERTISED_URI`); the worker self-registers on startup. When adding a handler module, add its key to `SERVICE_REGISTRY` so it becomes selectable.
+
+### 5. Normalized Configuration Design
 - **Dagster Configuration First**: All new components and resources MUST use the Dagster configuration framework (`Config`, `ConfigurableResource`, or `dagster.components` attributes).
 - **Wrap & Standardize**: Do not expose raw, pass-through configurations for underlying tools (like `dlt` or `dbt`) directly if they deviate from Dagster's standard practices. Instead, define a Dagster-centric configuration schema that wraps and translates to the native tool's requirements.
 - **Component Translation**: The component's `build_defs()` or the resource's initialization logic is responsible for mapping these standardized Dagster inputs into the specific format required by the underlying engine.
 
-### 5. Backwards Compatibility
+### 6. Backwards Compatibility
 - Since other repositories (like `pub-tools`) depend on `dag-tools`, **DO NOT** make breaking changes to function signatures or export names without explicit approval from the user. 
 - If adding a new feature to an existing shared component, make the new parameters optional with sensible defaults.
 
-### 3. Maintaining the Documentation Trifecta
+### 7. Maintaining the Documentation Trifecta
 As an agent operating on this project, part of your job is self-maintenance of the AI guardrails.
 If you add a new category of common tool (e.g., a new suite of dbt wrappers), you MUST concurrently update:
 1.  `llms.txt` (if the domain/intent changes).

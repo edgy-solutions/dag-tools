@@ -31,6 +31,7 @@ This project serves as the central hub for common Dagster utilities, resources, 
   - Never hardcode API Keys or DB passwords into Dagster `kwargs` mapped to Restate. Always pull from `os.environ.get()` inside Restate `ctx.run` blocks for strict Kubernetes injection isolation.
   - When fan-out querying DB sources during Restate extraction syncs, chunk Database executions strictly (e.g. 10,000 max size for HTTP DAG dispatches, 1,000 max size for legacy Oracle `IN` clauses).
   - **HTTP/2 Standard**: All Restate ASGI servers must use `Hypercorn` (or equivalent) to support HTTP/2, as required by modern Restate SDKs (`>=0.14.0`).
+  - **Shared Worker Image**: Do NOT write bespoke Restate worker entrypoints or per-project Dockerfiles. Restate workers run the shared `restate-worker` image (repo-root `Dockerfile.restate-worker`); its env-driven entrypoint `dag_tools.restate_handlers.serve` selects services via `RESTATE_SERVICES` and self-registers via `RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI`. Register every new durable handler in `serve.SERVICE_REGISTRY` so it is selectable. Deployments configure workers purely through environment variables.
 
 ## 6. Docker Build Best Practices
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.

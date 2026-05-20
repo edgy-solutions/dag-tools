@@ -26,7 +26,7 @@ To ensure scalability and security, `dag-tools` enforces a strict separation bet
 1. **Control Plane (Dagster)**: Orchestrates data movement, manages schedules, and handles metadata.
 2. **Data Plane (Restate)**: Executes high-volume, row-level API and database mutations durably.
 
-Data Plane workers are built using `Dockerfile.worker` and utilize `Hypercorn` for mandatory HTTP/2 support required by modern Restate SDKs.
+Data Plane workers run the shared `restate-worker` image (built from the repo-root `Dockerfile.restate-worker` and published by CI). Its env-driven entrypoint `dag_tools.restate_handlers.serve` selects which handlers to host via the `RESTATE_SERVICES` environment variable and self-registers with Restate on startup (`RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI`). Workers use `Hypercorn` for the mandatory HTTP/2 support required by modern Restate SDKs — no bespoke per-project entrypoint or Dockerfile is needed.
 
 ## Component Configuration Examples
 
@@ -161,30 +161,40 @@ resources = {
 ```
 
 ### 5. Restate DLT Data Sync Component
-Instantiate generic Oracle-to-Postgres syncing and auto-chunked Restate acking by writing a single YAML component definition:
+Instantiate generic Oracle-to-Postgres syncing and auto-chunked Restate acking by writing a single YAML component definition. A pipeline may also declare a `cycle_sensor:` block — the component then emits, alongside the dlt + ack-dispatch assets, an asset job binding them and a sensor that polls the source for unprocessed rows and re-runs the job, driving the read → ack → cycle loop hands-off:
 
 ```yaml
 type: dag_tools.components.restate_dlt_sync.RestateDltSyncComponent
 
 attributes:
   restate_endpoint: "http://restate-server:8080/GenericOracleAckService/mark_as_processed/send"
-  
+
   source_config:
     drivername: "oracle+oracledb"
+    credentials: "{{ env.ORACLE_DSN_URL }}"
     database: "MY_COMPANY_DB"
     schema: "HR"
-    
+
   dest_config:
     drivername: "postgres"
     schema: "ingested_hr"
-    
+
   pipelines:
     hr_employee_data:
       primary_key: "EMP_ID"
       sources:
         - "EMPLOYEE_MASTER"
         - "DEPARTMENT_MASTER"
+      # Optional: the Restate handler writes one summary row here per ack batch.
+      stats_table: "HR_SYNC_STATS"
+      # Optional: emit a cycle job + polling sensor for hands-off operation.
+      cycle_sensor:
+        enabled: true
+        interval_seconds: 60
+        backlog_query: "SELECT COUNT(*) FROM employee_master WHERE processed_flag = 'N'"
 ```
+
+A complete, runnable stateful cycle — Oracle → dlt → Postgres → Restate ack → Oracle — with a Docker Compose stack, init SQL, and end-to-end integration tests, is in [examples/pdm_oracle_ingestion](./examples/pdm_oracle_ingestion).
 
 ### 6. Restate DLT API Sync Component
 Instantiate generic SQL Server-to-External REST API syncing using stateful row-level Restate acks by defining a single YAML configuration:
