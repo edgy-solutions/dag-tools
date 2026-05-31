@@ -34,6 +34,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # QEMU emulation for cross-arch builds. Required for the arm64
+      # variant on x86_64 GitHub-hosted runners — without it the image
+      # is silently amd64-only and arm64 k8s clusters fail to pull with
+      # `no matching manifest for linux/arm64/v8`.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Buildx is required for `platforms:` multi-arch builds. Was
+      # missing entirely from this workflow; build-push-action@v5 needs
+      # an explicit buildx setup to do cross-arch builds.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -47,6 +60,11 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: ${{ (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push' }}
+          # Multi-arch: matches the runtime cluster shapes we deploy to
+          # (linux/amd64 GitHub-hosted CI runners, linux/arm64 k3s clusters).
+          # Build time roughly doubles because the arm64 layer goes through
+          # QEMU emulation. Mirror of the pattern in iagent's build matrix.
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
