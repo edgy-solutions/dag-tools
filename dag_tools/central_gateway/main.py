@@ -178,7 +178,7 @@ async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[s
         return False, None, None
 
 @app.post("/api/v1/assets/{urn:path}/authorize")
-async def authorize_asset(urn: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Verifies user JWT against Topaz, looks up asset in Redis, proxies to Domain Broker.
     """
@@ -196,24 +196,26 @@ async def authorize_asset(urn: str, credentials: HTTPAuthorizationCredentials = 
 
     # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
     # Checked before Topaz so a known-denied user cannot slip through if
-    # Topaz is mock-allowing for the happy path.
+    # Topaz is mock-allowing for the happy path. Originator-Sub header
+    # wins over the JWT sub so a service-account M2M token still gets
+    # filtered by the END USER's identity.
     if DENIED_USER_SUBS:
+        originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
         try:
             claims = jwt.decode(token, options={"verify_signature": False})
-            user_sub = claims.get("sub") or ""
-            if user_sub in DENIED_USER_SUBS:
-                logger.warning(
-                    f"AUTHZ_DENIED user_sub={user_sub} urn={urn} reason=explicit_deny_list"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: user is on explicit deny list",
-                )
-        except HTTPException:
-            raise
+            token_sub = claims.get("sub") or ""
         except Exception:
-            # If the token can't be decoded, the Topaz call below will reject it.
-            pass
+            token_sub = ""
+        effective_sub = originator_sub or token_sub
+        if effective_sub and effective_sub in DENIED_USER_SUBS:
+            logger.warning(
+                "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) urn=%s reason=explicit_deny_list",
+                effective_sub, originator_sub or "-", token_sub or "-", urn,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user is on explicit deny list",
+            )
 
     # 1. Topaz AuthZ
     is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn)

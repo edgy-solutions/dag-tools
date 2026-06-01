@@ -10,12 +10,13 @@ class CortexDataClient:
     """
     
     def __init__(
-        self, 
-        broker_url: Optional[str] = None, 
-        jwt_token: Optional[str] = None, 
-        client_id: Optional[str] = None, 
-        client_secret: Optional[str] = None, 
-        keycloak_url: Optional[str] = None
+        self,
+        broker_url: Optional[str] = None,
+        jwt_token: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        keycloak_url: Optional[str] = None,
+        originator_sub: Optional[str] = None,
     ):
         # 1. Resolve Broker URL (Central Gateway)
         resolved_broker = broker_url or os.getenv("CORTEX_BROKER_URL")
@@ -28,6 +29,11 @@ class CortexDataClient:
         self.client_id = client_id or os.getenv("CORTEX_CLIENT_ID")
         self.client_secret = client_secret or os.getenv("CORTEX_CLIENT_SECRET")
         self.keycloak_url = keycloak_url or os.getenv("KEYCLOAK_TOKEN_URL", "http://keycloak/realms/master/protocol/openid-connect/token")
+        # When the caller fetches data on behalf of an end user (rather than
+        # for the service itself), pass the originator's Keycloak sub here.
+        # The gateway sees this in X-Originator-Sub and applies user-level
+        # authz against it instead of the M2M token's sub.
+        self.originator_sub = originator_sub
 
         if not self.jwt_token and self.client_id and self.client_secret:
             self._fetch_m2m_token()
@@ -59,7 +65,9 @@ class CortexDataClient:
             "Authorization": f"Bearer {self.jwt_token}",
             "Content-Type": "application/json"
         }
-        
+        if self.originator_sub:
+            headers["X-Originator-Sub"] = self.originator_sub
+
         url = f"{self.gateway_url}/api/v1/assets/{urn}/authorize"
         
         with httpx.Client() as client:
