@@ -18,6 +18,15 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 TOPAZ_URL = os.getenv("TOPAZ_URL", "https://localhost:8383")
 TOPAZ_AUTHORIZER_API_KEY = os.getenv("TOPAZ_AUTHORIZER_API_KEY", "")
 
+# Comma-separated list of Keycloak 'sub' values to refuse access for.
+# Lighter-weight than a Topaz directory relation, useful for sandbox
+# tests of the deny path before a full Rego/directory setup lands.
+DENIED_USER_SUBS = {
+    s.strip()
+    for s in os.getenv("DENIED_USER_SUBS", "").split(",")
+    if s.strip()
+}
+
 # We'll initialize redis client in lifespan
 redis_client: Optional[redis.Redis] = None
 
@@ -184,6 +193,27 @@ async def authorize_asset(urn: str, credentials: HTTPAuthorizationCredentials = 
     urn = unquote(urn)
 
     token = credentials.credentials
+
+    # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
+    # Checked before Topaz so a known-denied user cannot slip through if
+    # Topaz is mock-allowing for the happy path.
+    if DENIED_USER_SUBS:
+        try:
+            claims = jwt.decode(token, options={"verify_signature": False})
+            user_sub = claims.get("sub") or ""
+            if user_sub in DENIED_USER_SUBS:
+                logger.warning(
+                    f"AUTHZ_DENIED user_sub={user_sub} urn={urn} reason=explicit_deny_list"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user is on explicit deny list",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If the token can't be decoded, the Topaz call below will reject it.
+            pass
 
     # 1. Topaz AuthZ
     is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn)
