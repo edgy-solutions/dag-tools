@@ -118,7 +118,10 @@ class CortexDataClient:
             adbc_uri = f"postgresql://{username}:{password}@{host_port}/{db_name}"
             query = f"SELECT * FROM {schema}.{table}"
 
-            df = pl.read_database(query, connection=adbc_uri, engine="adbc")
+            # Polars 1.x removed the `engine=` kwarg on read_database; use
+            # read_database_uri for URI-based connections (it dispatches to
+            # ADBC/ConnectorX automatically based on the URI scheme).
+            df = pl.read_database_uri(query, uri=adbc_uri)
             lf = df.lazy()
             apply_security = False  # Handled natively by Postgres RLS/CLS
             
@@ -134,8 +137,8 @@ class CortexDataClient:
             
             clickhouse_uri = f"clickhouse://{username}:{password}@{host_port}/{schema}"
             query = f"SELECT * FROM {schema}.{table}"
-            
-            df = pl.read_database(query, connection=clickhouse_uri, engine="adbc")
+
+            df = pl.read_database_uri(query, uri=clickhouse_uri)
             lf = df.lazy()
             
         else:

@@ -11,6 +11,9 @@ dependencies = [
     "oracledb>=3.4.2",
     "polars>=0.20.10",
     "PyYAML>=6.0.1",
+    # CortexDataClient uses pl.read_database_uri() for postgres/clickhouse;
+    # Polars dispatches to connectorx for URI-based reads.
+    "connectorx>=0.3.3",
 ]
 
 [project.optional-dependencies]
