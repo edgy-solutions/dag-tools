@@ -103,16 +103,21 @@ class CortexDataClient:
             host_port = parts[0]
             schema = parts[1] if len(parts) > 1 else "public"
             table = parts[2] if len(parts) > 2 else (urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
-            
-            # Use adbc_driver_postgresql. Construct the URI using the PG18 OAUTHBEARER pattern
-            # passing the JWT as the password.
-            username = credentials.get("username", "oauth")
+
+            # The intended pattern was PG18 OAUTHBEARER passing the JWT as the
+            # bearer token. libpq's OAUTHBEARER has no Python API to inject a
+            # pre-existing JWT (only device flow or PQsetAuthDataHook in C),
+            # and ADBC postgres doesn't expose the auth hook to Python. So
+            # honor an explicit credentials.password if the broker provides
+            # one (the sandbox path), and only fall back to the JWT pattern
+            # when something downstream actually wires it up.
+            username = credentials.get("username", "postgres")
             db_name = credentials.get("database", "postgres")
-            
-            adbc_uri = f"postgresql://{username}:{self.jwt_token}@{host_port}/{db_name}"
+            password = credentials.get("password") or self.jwt_token
+
+            adbc_uri = f"postgresql://{username}:{password}@{host_port}/{db_name}"
             query = f"SELECT * FROM {schema}.{table}"
-            
-            # pl.read_database returns a DataFrame; convert to LazyFrame to match signature
+
             df = pl.read_database(query, connection=adbc_uri, engine="adbc")
             lf = df.lazy()
             apply_security = False  # Handled natively by Postgres RLS/CLS
