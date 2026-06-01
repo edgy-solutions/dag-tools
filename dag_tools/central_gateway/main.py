@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import httpx
+from urllib.parse import unquote
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Request, status
@@ -174,17 +175,24 @@ async def authorize_asset(urn: str, credentials: HTTPAuthorizationCredentials = 
     """
     if not redis_client:
         raise HTTPException(status_code=500, detail="Redis client not initialized")
-        
+
+    # FastAPI's urn:path matcher does not decode percent-encoded characters.
+    # httpx URL-encodes RFC-3986 sub-delims like `(` and `)` in path components,
+    # so a URN of `urn:li:dataset:(urn:li:dataPlatform:postgres,foo,PROD)` arrives
+    # as `urn:li:dataset:%28...%29`. The broker registers Redis keys with the raw
+    # form, so the lookup misses. Decode here so the registered form matches.
+    urn = unquote(urn)
+
     token = credentials.credentials
-    
+
     # 1. Topaz AuthZ
     is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn)
     if not is_authorized:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this asset"
         )
-        
+
     # 2. Routing: O(1) lookup in Redis
     redis_key = f"mesh_route:{urn}"
     broker_url = await redis_client.get(redis_key)
