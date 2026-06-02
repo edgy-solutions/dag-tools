@@ -11,11 +11,18 @@ dependencies = [
     "oracledb>=3.4.2",
     "polars>=0.20.10",
     "PyYAML>=6.0.1",
-    # CortexDataClient uses pl.read_database_uri() for postgres/clickhouse;
+    # CortexDataClient uses pl.read_database_uri() for postgres;
     # Polars dispatches to connectorx for URI-based reads. connectorx
     # returns Arrow tables which Polars converts via pyarrow.
     "connectorx>=0.3.3",
     "pyarrow>=14",
+    # connectorx does NOT speak ClickHouse. clickhouse-connect is the
+    # official driver and exposes an Arrow query path that Polars consumes.
+    "clickhouse-connect>=0.8",
+    # S3-backed paths (parquet / delta / iceberg) — object_store backends.
+    # deltalake brings the delta-rs runtime; pyiceberg covers iceberg REST.
+    "deltalake>=0.20",
+    "pyiceberg>=0.7",
 ]
 
 [project.optional-dependencies]

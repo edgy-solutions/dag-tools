@@ -84,26 +84,38 @@ class CortexDataClient:
         lf = None
         apply_security = True
         
+        # Build common S3 storage options. aws_endpoint_url is what makes this
+        # work against MinIO / Ceph / any non-AWS S3-compatible store. Without
+        # it, the object_store backend tries to resolve s3.amazonaws.com.
+        # aws_allow_http permits http://minio endpoints (no TLS in sandbox).
+        def _s3_storage_options() -> Dict[str, Any]:
+            opts: Dict[str, Any] = {
+                "aws_access_key_id": credentials.get("aws_access_key_id", ""),
+                "aws_secret_access_key": credentials.get("aws_secret_access_key", ""),
+            }
+            session_token = credentials.get("aws_session_token") or ""
+            if session_token:
+                opts["aws_session_token"] = session_token
+            endpoint_url = credentials.get("aws_endpoint_url")
+            if endpoint_url:
+                opts["aws_endpoint_url"] = endpoint_url
+                if endpoint_url.startswith("http://"):
+                    opts["aws_allow_http"] = "true"
+            region = credentials.get("aws_region")
+            if region:
+                opts["aws_region"] = region
+            return opts
+
         if source_type == "s3_parquet":
-            storage_options = {
-                "aws_access_key_id": credentials.get("aws_access_key_id", ""),
-                "aws_secret_access_key": credentials.get("aws_secret_access_key", ""),
-                "aws_session_token": credentials.get("aws_session_token", "")
-            }
-            lf = pl.scan_parquet(physical_uri, storage_options=storage_options)
-            
+            lf = pl.scan_parquet(physical_uri, storage_options=_s3_storage_options())
+
         elif source_type == "s3_delta":
-            storage_options = {
-                "aws_access_key_id": credentials.get("aws_access_key_id", ""),
-                "aws_secret_access_key": credentials.get("aws_secret_access_key", ""),
-                "aws_session_token": credentials.get("aws_session_token", "")
-            }
-            lf = pl.scan_delta(physical_uri, storage_options=storage_options)
-            
+            lf = pl.scan_delta(physical_uri, storage_options=_s3_storage_options())
+
         elif source_type == "s3_iceberg":
-            # Note: The agent may need to use pyiceberg depending on the exact Polars version.
-            # Polars native scan_iceberg is evolving.
-            lf = pl.scan_iceberg(physical_uri)
+            # Polars native scan_iceberg evolved across versions. Use pyiceberg
+            # via REST catalog if available; otherwise fall back to scan_iceberg.
+            lf = pl.scan_iceberg(physical_uri, storage_options=_s3_storage_options())
             
         elif source_type == "postgres":
             # Parse physical_uri: postgres://host:port/schema/table
@@ -135,19 +147,31 @@ class CortexDataClient:
             
         elif source_type == "clickhouse":
             # Parse physical_uri: clickhouse://host:port/schema/table
+            # The port is the HTTP interface (default 8123), not native 9000.
             parts = physical_uri.replace("clickhouse://", "").split("/")
             host_port = parts[0]
             schema = parts[1] if len(parts) > 1 else "default"
             table = parts[2] if len(parts) > 2 else (urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
-            
-            username = credentials.get("username", "default")
-            password = credentials.get("token", self.jwt_token)
-            
-            clickhouse_uri = f"clickhouse://{username}:{password}@{host_port}/{schema}"
-            query = f"SELECT * FROM {schema}.{table}"
+            host, _, port = host_port.partition(":")
+            port_int = int(port) if port else 8123
 
-            df = pl.read_database_uri(query, uri=clickhouse_uri)
-            lf = df.lazy()
+            username = credentials.get("username", "default")
+            # Prefer credentials.password (sandbox), then token (PG18 pattern), then JWT.
+            password = credentials.get("password") or credentials.get("token") or self.jwt_token
+            db_name = credentials.get("database", schema)
+
+            # connectorx doesn't speak clickhouse — use clickhouse-connect's
+            # Arrow path, which polars consumes via pl.from_arrow.
+            import clickhouse_connect
+            client = clickhouse_connect.get_client(
+                host=host,
+                port=port_int,
+                username=username,
+                password=password,
+                database=db_name,
+            )
+            arrow_table = client.query_arrow(f"SELECT * FROM {table}")
+            lf = pl.from_arrow(arrow_table).lazy()
             
         else:
             raise ValueError(f"Unsupported source_type: {source_type}")
