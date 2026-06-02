@@ -113,9 +113,37 @@ class CortexDataClient:
             lf = pl.scan_delta(physical_uri, storage_options=_s3_storage_options())
 
         elif source_type == "s3_iceberg":
-            # Polars native scan_iceberg evolved across versions. Use pyiceberg
-            # via REST catalog if available; otherwise fall back to scan_iceberg.
-            lf = pl.scan_iceberg(physical_uri, storage_options=_s3_storage_options())
+            # pl.scan_iceberg(uri) only handles Hadoop-style tables
+            # (version-hint.text + manual layout). Real catalogs (SQL,
+            # REST, Glue) don't write that file. Load the table via
+            # pyiceberg.catalog instead, then pass the Table OBJECT to
+            # pl.scan_iceberg — polars 1.x accepts both forms.
+            from pyiceberg.catalog import load_catalog
+
+            catalog_uri = credentials.get("catalog_uri")
+            warehouse = credentials.get("warehouse_uri") or physical_uri
+            table_identifier = credentials.get("table_identifier")
+            if not catalog_uri or not table_identifier:
+                raise ValueError(
+                    "s3_iceberg credentials must include catalog_uri and "
+                    "table_identifier (e.g. 'sales.customers')."
+                )
+
+            catalog_props: Dict[str, str] = {
+                "type": credentials.get("catalog_type", "sql"),
+                "uri": catalog_uri,
+                "warehouse": warehouse,
+                "s3.access-key-id": credentials.get("aws_access_key_id", ""),
+                "s3.secret-access-key": credentials.get("aws_secret_access_key", ""),
+            }
+            if credentials.get("aws_endpoint_url"):
+                catalog_props["s3.endpoint"] = credentials["aws_endpoint_url"]
+            if credentials.get("aws_region"):
+                catalog_props["s3.region"] = credentials["aws_region"]
+
+            catalog = load_catalog("sandbox", **catalog_props)
+            table = catalog.load_table(table_identifier)
+            lf = pl.scan_iceberg(table)
             
         elif source_type == "postgres":
             # Parse physical_uri: postgres://host:port/schema/table
