@@ -1,0 +1,49 @@
+name: Build Python Package
+
+# Builds the dag_tools wheel on every push and PR so consumers can grab the
+# latest from a workflow artifact. On tag pushes (vX.Y.Z), the wheel is also
+# attached to a GitHub Release so it can be installed by pinned URL from
+# downstream projects:
+#
+#   uv add "dag_tools @ https://github.com/edgy-solutions/dag-tools/releases/download/v0.1.0/dag_tools-0.1.0-py3-none-any.whl"
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish the wheel as a release asset on tag pushes
+
+jobs:
+  build:
+    name: Build wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dag-tools-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach to GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl
+          generate_release_notes: true
+          fail_on_unmatched_files: true

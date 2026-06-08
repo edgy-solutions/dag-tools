@@ -9,6 +9,11 @@ __pycache__/
 # Machine-local MCP server configuration
 .mcp.json
 
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
 # Dagster
 .dagster/
 .dagster_home/
