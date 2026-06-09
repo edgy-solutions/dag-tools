@@ -1,0 +1,32 @@
+dag-tools v{{ .Chart.AppVersion }} — release "{{ .Release.Name }}" deployed.
+
+Components installed:
+{{- if .Values.restateServer.enabled }}
+  ✓ restate-server      svc/{{ .Release.Name }}-restate           ingress :{{ .Values.restateServer.ingressPort }}  admin :{{ .Values.restateServer.adminPort }}
+{{- else }}
+  · restate-server      disabled (using external: {{ default "<UNSET>" .Values.externalRestate.adminUrl }})
+{{- end }}
+{{- if .Values.restateWorker.enabled }}
+  ✓ restate-worker      svc/{{ .Release.Name }}-restate-worker    :{{ .Values.restateWorker.port }}
+      RESTATE_SERVICES     = {{ .Values.restateWorker.services | quote }}
+      RESTATE_ADMIN_URL    = {{ include "dag-tools.restateAdminUrl" . }}
+      RESTATE_ADVERTISED   = {{ include "dag-tools.workerAdvertisedUri" . }}
+{{- else }}
+  · restate-worker      disabled
+{{- end }}
+{{- if .Values.centralGateway.enabled }}
+  ✓ central-gateway     svc/{{ .Release.Name }}-central-gateway   :{{ .Values.centralGateway.port }}
+{{- if .Values.centralGateway.ingress.enabled }}
+      Ingress: {{ range .Values.centralGateway.ingress.hosts }}{{ .host }} {{ end }}
+{{- end }}
+{{- else }}
+  · central-gateway     disabled
+{{- end }}
+
+The restate-worker self-registers with Restate on startup using force=true,
+so each pod re-registers the same URI. With replicas > 1 this is harmless but
+slightly wasteful; for high-replica setups consider a post-install Job that
+registers once. See: https://github.com/edgy-solutions/dag-tools/blob/master/dag_tools/restate_handlers/serve.py
+
+To watch the worker pick up its handlers:
+  kubectl logs -l app.kubernetes.io/component=restate-worker -f

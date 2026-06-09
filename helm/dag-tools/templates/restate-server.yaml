@@ -1,0 +1,100 @@
+{{- if .Values.restateServer.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-restate
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+    {{- include "dag-tools.selectorLabels" (dict "component" "restate" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-restate
+  replicas: {{ .Values.restateServer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "dag-tools.selectorLabels" (dict "component" "restate" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dag-tools.labels" . | nindent 8 }}
+        {{- include "dag-tools.selectorLabels" (dict "component" "restate" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: restate
+          image: {{ include "dag-tools.restateImage" . | quote }}
+          imagePullPolicy: {{ .Values.restateServer.image.pullPolicy }}
+          ports:
+            - name: ingress
+              containerPort: {{ .Values.restateServer.ingressPort }}
+            - name: admin
+              containerPort: {{ .Values.restateServer.adminPort }}
+          env:
+            - name: RESTATE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RESTATE_INGRESS__HTTP_SERVER__BIND_ADDRESS
+              value: "0.0.0.0:{{ .Values.restateServer.ingressPort }}"
+            - name: RESTATE_ADMIN__BIND_ADDRESS
+              value: "0.0.0.0:{{ .Values.restateServer.adminPort }}"
+          resources:
+            {{- toYaml .Values.restateServer.resources | nindent 12 }}
+          volumeMounts:
+            - name: restate-data
+              mountPath: /restate-data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 30
+  volumeClaimTemplates:
+    - metadata:
+        name: restate-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if .Values.restateServer.storage.storageClass }}
+        storageClassName: {{ .Values.restateServer.storage.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.restateServer.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-restate
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dag-tools.selectorLabels" (dict "component" "restate" "root" .) | nindent 4 }}
+  ports:
+    - name: ingress
+      port: {{ .Values.restateServer.ingressPort }}
+      targetPort: ingress
+    - name: admin
+      port: {{ .Values.restateServer.adminPort }}
+      targetPort: admin
+{{- end }}

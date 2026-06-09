@@ -1,0 +1,116 @@
+{{- if .Values.centralGateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-central-gateway
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+    {{- include "dag-tools.selectorLabels" (dict "component" "central-gateway" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.centralGateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "dag-tools.selectorLabels" (dict "component" "central-gateway" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dag-tools.labels" . | nindent 8 }}
+        {{- include "dag-tools.selectorLabels" (dict "component" "central-gateway" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.centralGateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.centralGateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.centralGateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: central-gateway
+          image: {{ include "dag-tools.image" (dict "name" "central-gateway" "image" .Values.centralGateway.image "root" .) | quote }}
+          imagePullPolicy: {{ .Values.centralGateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.centralGateway.port }}
+          env:
+            {{- range $k, $v := .Values.centralGateway.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- with .Values.centralGateway.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.centralGateway.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-central-gateway
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dag-tools.selectorLabels" (dict "component" "central-gateway" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.centralGateway.port }}
+      targetPort: http
+{{- if .Values.centralGateway.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-central-gateway
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+  {{- with .Values.centralGateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.centralGateway.ingress.className }}
+  ingressClassName: {{ .Values.centralGateway.ingress.className }}
+  {{- end }}
+  {{- with .Values.centralGateway.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.centralGateway.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $.Release.Name }}-central-gateway
+                port:
+                  number: {{ $.Values.centralGateway.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

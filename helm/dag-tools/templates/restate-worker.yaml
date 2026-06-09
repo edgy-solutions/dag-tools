@@ -1,0 +1,76 @@
+{{- if .Values.restateWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-restate-worker
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+    {{- include "dag-tools.selectorLabels" (dict "component" "restate-worker" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.restateWorker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "dag-tools.selectorLabels" (dict "component" "restate-worker" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dag-tools.labels" . | nindent 8 }}
+        {{- include "dag-tools.selectorLabels" (dict "component" "restate-worker" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.restateWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: restate-worker
+          image: {{ include "dag-tools.image" (dict "name" "restate-worker" "image" .Values.restateWorker.image "root" .) | quote }}
+          imagePullPolicy: {{ .Values.restateWorker.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.restateWorker.port }}
+          env:
+            - name: RESTATE_SERVICES
+              value: {{ .Values.restateWorker.services | quote }}
+            - name: RESTATE_ADMIN_URL
+              value: {{ include "dag-tools.restateAdminUrl" . | quote }}
+            - name: RESTATE_ADVERTISED_URI
+              value: {{ include "dag-tools.workerAdvertisedUri" . | quote }}
+            - name: RESTATE_BIND
+              value: "0.0.0.0:{{ .Values.restateWorker.port }}"
+            {{- range $k, $v := .Values.restateWorker.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- with .Values.restateWorker.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.restateWorker.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-restate-worker
+  labels:
+    {{- include "dag-tools.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dag-tools.selectorLabels" (dict "component" "restate-worker" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.restateWorker.port }}
+      targetPort: http
+{{- end }}

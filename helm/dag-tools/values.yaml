@@ -1,0 +1,133 @@
+# Default values for dag-tools.
+#
+# Each component (restateServer, restateWorker, centralGateway) is
+# independently flag-gated. Defaults assume the most common production
+# layout: external Restate platform, in-chart worker and gateway.
+
+global:
+  # Registry for dag-tools images. The shared restate-worker and
+  # central-gateway images are pulled from <registry>/<imagePrefix>/<service>.
+  imageRegistry: ghcr.io
+  imagePrefix: edgy-solutions/dag-tools
+  imagePullSecrets: []
+  # Appended to in-cluster Service hostnames when constructing URLs.
+  # Leave empty for the default "namespace.svc.cluster.local" resolution.
+  clusterDomain: ""
+
+# ----------------------------------------------------------------------------
+# Restate addressing — used by the worker (and any consumer) to reach Restate.
+# ----------------------------------------------------------------------------
+# If restateServer.enabled is true, the worker and any other consumer use the
+# in-chart Restate's Service DNS. If false, they use externalRestate URLs.
+externalRestate:
+  adminUrl: ""    # e.g. http://restate.platform.svc:9070
+  ingressUrl: ""  # e.g. http://restate.platform.svc:8080
+
+# ----------------------------------------------------------------------------
+# Optional baked-in Restate server.
+# Most consumers leave this off and point at an existing Restate platform via
+# externalRestate.* above. Turn it on for greenfield / single-tenant installs.
+# ----------------------------------------------------------------------------
+restateServer:
+  enabled: false
+  replicas: 1
+  image:
+    registry: docker.io
+    repository: restatedev/restate
+    tag: latest
+    pullPolicy: IfNotPresent
+  ingressPort: 8080
+  adminPort: 9070
+  storage:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ----------------------------------------------------------------------------
+# Shared restate-worker (the heart of the dag-tools Data Plane).
+# Hosts handlers selected via RESTATE_SERVICES; self-registers on startup.
+# ----------------------------------------------------------------------------
+restateWorker:
+  enabled: true
+  replicas: 1
+  image:
+    repository: ""    # defaults to <global.imagePrefix>/restate-worker
+    tag: ""           # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  port: 9080
+  # Comma-separated handler keys: any subset of oracle_ack, api_sync,
+  # sap_induction. Empty = all registered services.
+  services: "oracle_ack"
+  # If empty, RESTATE_ADVERTISED_URI is auto-derived from the in-chart
+  # Service name. Override to publish under a different hostname (e.g. if
+  # behind a different Service, NodePort, or external LB).
+  advertisedUri: ""
+  # Extra env vars (handler runtime config like ORACLE_DSN). Either plain
+  # KEY: VALUE pairs (for non-secret) or use envFrom for Secrets/ConfigMaps.
+  env: {}
+  #   ORACLE_DSN: "oracle:1521/FREEPDB1"
+  envFrom: []
+  # - secretRef:
+  #     name: dag-tools-worker-secrets
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ----------------------------------------------------------------------------
+# central-gateway FastAPI service.
+# ----------------------------------------------------------------------------
+centralGateway:
+  enabled: true
+  replicas: 2
+  image:
+    repository: ""    # defaults to <global.imagePrefix>/central-gateway
+    tag: ""           # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  port: 8090
+  # Plain env vars + envFrom for secrets (e.g. TOPAZ_AUTHORIZER_API_KEY).
+  env: {}
+  #   REDIS_URL: "redis://redis:6379"
+  #   TOPAZ_URL: "https://topaz:8383"
+  #   ALLOW_MOCK_AUTH: "false"
+  #   DENIED_USER_SUBS: ""
+  envFrom: []
+  # - secretRef:
+  #     name: central-gateway-secrets
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: gateway.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    # - hosts: [gateway.example.com]
+    #   secretName: gateway-tls
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

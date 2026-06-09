@@ -1,0 +1,22 @@
+apiVersion: v2
+name: dag-tools
+description: |
+  Deployment chart for the dag-tools Data Plane components: the shared
+  restate-worker (hosts oracle_ack / api_sync / sap_induction handlers),
+  the central-gateway FastAPI service, and an optional baked-in Restate
+  server. Each component is independently flag-gated so the chart can be
+  installed alongside an existing platform (with an external Restate)
+  or stood up greenfield.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/edgy-solutions/dag-tools
+sources:
+  - https://github.com/edgy-solutions/dag-tools
+maintainers:
+  - name: Edgy Solutions
+keywords:
+  - dagster
+  - restate
+  - data-plane
+  - dlt
