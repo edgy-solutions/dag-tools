@@ -3,6 +3,7 @@ name: Build & Push Container Images
 on:
   push:
     branches: [master, main]
+    tags: ['v*']
   pull_request:
     branches: [master, main]
   workflow_dispatch:
@@ -54,19 +55,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Compute image tags from the git ref:
+      #   - Branch push (master/main) → :sha-<short> + :latest
+      #   - Tag push (vX.Y.Z)         → :X.Y.Z + :X.Y
+      # PR builds get no tags emitted here (push: is false on PR).
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: ${{ (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push' }}
+          # Push on any push event the workflow triggers on — i.e. master/main
+          # branch pushes and v* tag pushes. PR events have event_name=
+          # 'pull_request' and are excluded.
+          push: ${{ github.event_name == 'push' }}
           # Multi-arch: matches the runtime cluster shapes we deploy to
           # (linux/amd64 GitHub-hosted CI runners, linux/arm64 k3s clusters).
           # Build time roughly doubles because the arm64 layer goes through
           # QEMU emulation. Mirror of the pattern in iagent's build matrix.
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           labels: |
+            ${{ steps.meta.outputs.labels }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
