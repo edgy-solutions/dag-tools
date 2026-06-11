@@ -7,6 +7,7 @@ Before modifying *any* code or executing external network commands, you **MUST**
 1. Read `README.md` to understand the library's purpose and how to test changes locally.
 2. Read `llms.txt` to align your semantic context (this is a shared utility library, not a pipeline execution repo).
 3. Read `.cursorrules` to ensure your proposed edits comply with the strict tech stack (`uv`) and type-hinting standards.
+4. Before touching anything under `dag_tools/inventory/` or `dag_tools/qual/`, read [`docs/RECIPE.md`](docs/RECIPE.md) — it contains the load-bearing invariants and the ADRs explaining why the qualification system is shaped the way it is.
 
 ## Operational Safety Boundaries
 
