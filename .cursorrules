@@ -37,6 +37,12 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4b. Qualification Registry (`dag_tools.qual.registry`)
+- **Layout is canonical**: every S3 key is constructed via helpers in `dag_tools/qual/registry/layout.py`. **Never** write a literal key string anywhere else — writers and readers must agree on the layout via the module, not by convention.
+- **Immutability is enforced**: every per-build artifact and every per-qualification artifact is written via `S3Storage.put_immutable`, which refuses to overwrite (HEAD-then-PUT). The only mutable keys are `inventory/<repo>/latest.json` and the equivalent qualification pointers; those use `put_mutable`.
+- **`latest.json` is written LAST**: `InventoryRegistry.publish_build` writes all per-SHA artifacts first, then updates the pointer. **Do not reorder.** This is the invariant that prevents readers from observing partial builds — keep all pointer writes at the end of their respective publish paths.
+- **Machine-readable by default**: every `dagtools` CLI command emits JSON unless `--format table` is set. New sub-commands MUST follow this — operators pipe `dagtools` output into other tools.
+
 ## 4a. Inventory Contract (`dag_tools.inventory`)
 - The shared `AssetRecord` schema in `dag_tools/inventory/schema.py` is consumed by **both** the runtime Domain Broker and the CI qualification survey. Cross-process compatibility is the whole point.
 - **Evolution is strictly additive**: never rename or remove a field; only add `Optional[...]` fields with defaults. Bump `SCHEMA_VERSION` in the same commit. Readers use `extra="ignore"` to tolerate unknown fields from newer writers.
