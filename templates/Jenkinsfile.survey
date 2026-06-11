@@ -1,0 +1,41 @@
+// Jenkinsfile.survey — drop-in stage for the dagtools per-build survey.
+//
+// Add this to your repo's Jenkinsfile alongside its existing build / test
+// stages. Once a repo joins the qualification system the dagster-survey
+// stage is mandatory; it gates on the repo's Definitions actually loading,
+// then publishes a structural inventory to the MinIO registry under
+// inventory/<repo>/<sha>/.
+//
+// Environment expectations (set globally or in a shared Jenkins library):
+//   DAGTOOLS_REGISTRY     e.g. "s3://dag-tools"
+//   DAGTOOLS_S3_ENDPOINT  e.g. "https://minio.internal:9000"
+//   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   (or instance role)
+//   REPO_NAME             friendly repo identifier — primary registry partition key
+//   GIT_COMMIT, BUILD_ID  provided by Jenkins
+//
+// Recipe rule: a load failure fails the Jenkins stage and **nothing is
+// published**. The registry never contains an inventory for code that
+// doesn't load. ``dagtools survey`` exits 2 on load failure, which fails
+// the stage automatically.
+//
+// The optional 'dagster-canary' stage (continuous early-warning for the
+// next Dagster version) will land alongside the ``dagtools canary``
+// subcommand in a follow-up commit; this template will be updated then.
+
+stage('dagster-survey') {
+  steps {
+    sh '''
+      python -m pip install --upgrade pip
+      python -m pip install "dag_tools[qual]"
+      dagtools \
+        --registry "${DAGTOOLS_REGISTRY}" \
+        --endpoint-url "${DAGTOOLS_S3_ENDPOINT}" \
+        survey \
+          --introspect \
+          --locations workspace.yaml \
+          --repo "${REPO_NAME}" \
+          --sha "${GIT_COMMIT}" \
+          --build "${BUILD_ID}"
+    '''
+  }
+}

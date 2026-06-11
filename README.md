@@ -21,7 +21,13 @@ This library follows a **Dagster-first** configuration approach.
 - `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
 - `dag_tools/restate_handlers/`: Durable Data Plane services (Restate) for SAP and Database synchronization.
 - `dag_tools/inventory/`: The **shared structural-inventory contract** for Dagster assets — a versioned `AssetRecord` schema, an FQN-based IO manager classifier with MRO walking, and a soft-failing extractor that walks a `Definitions`. Used both by the runtime Domain Broker (for IO manager classification) and by the `dagtools survey` CLI (for per-build inventory published to MinIO). Evolution is additive-only; bump `SCHEMA_VERSION` on every change. See `dag_tools/inventory/schema.py` for the rules.
-- `dag_tools/qual/`: The **Dagster Upgrade Regression & Qualification System** — the `dagtools` console-script (Typer-based) and its MinIO/S3 registry. Phase 1 step 2 (now shipped) provides `dagtools registry status`, the `S3Storage` + `InventoryRegistry` clients, and the bucket layout contract — see `dag_tools/qual/registry/layout.py`. The registry enforces immutable per-build keys with a write-last `latest.json` pointer so readers never observe a partial publish. Install via the `qual` extras (`pip install dag_tools[qual]`).
+- `dag_tools/qual/`: The **Dagster Upgrade Regression & Qualification System** — the `dagtools` console-script (Typer-based) and its MinIO/S3 registry. Now shipped (Phase 1 steps 1–3):
+  - `dagtools survey` — load every code location in a workspace.yaml / module spec with `-W all` warning capture; if **any** load fails, refuse to publish and exit non-zero; otherwise introspect assets / sensors / schedules / asset checks / IO managers / dbt projects (custom translator flagged) and publish per-build artifacts via the registry.
+  - `dagtools registry status` — fleet-wide staleness report (fresh / stale / missing / unreadable per repo).
+  - `S3Storage` + `InventoryRegistry` with immutable per-build keys and a **write-last** `latest.json` pointer so readers never observe a partial publish. See `dag_tools/qual/registry/layout.py` for the bucket layout contract.
+  - `templates/Jenkinsfile.survey` — drop-in Jenkins stage for adding a repo to the survey fleet.
+
+  Install via the `qual` extras: `pip install dag_tools[qual]`.
 
 ## Control Plane vs. Data Plane
 To ensure scalability and security, `dag-tools` enforces a strict separation between:

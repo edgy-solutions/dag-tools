@@ -37,6 +37,13 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4c. Survey (`dag_tools.qual.survey`)
+- **Load failure means publish nothing.** `run_survey` refuses to write to the registry if any code location fails to load. This is THE recipe invariant for Phase 1 — the registry must never contain an inventory for code that doesn't load. The test `test_run_survey_refuses_to_publish_when_load_fails` enforces it; if you change publisher control flow, that test will tell you.
+- **Capture every warning during load.** Use `_capture_warnings` (equivalent to `-W all`) around every `importlib` call. Warnings are part of the load-validation payload — they're how operators see Dagster deprecations and experimental APIs drifting across the fleet.
+- **Soft-fail per item in introspection**, same discipline as `dag_tools.inventory.extractors`. One malformed sensor or dbt resource must never abort a whole introspection pass.
+- **Schema versions live in `survey/schemas.py`** (one per artifact). Same additive-only evolution rules as `AssetRecord`.
+- When adding a new artifact: define a pydantic model in `schemas.py` with its own `SCHEMA_VERSION_*` constant, add a filename constant to `registry/layout.py`, plumb it through `publisher.run_survey`'s artifact dict, and bump the schema version in any new commit that adds fields.
+
 ## 4b. Qualification Registry (`dag_tools.qual.registry`)
 - **Layout is canonical**: every S3 key is constructed via helpers in `dag_tools/qual/registry/layout.py`. **Never** write a literal key string anywhere else — writers and readers must agree on the layout via the module, not by convention.
 - **Immutability is enforced**: every per-build artifact and every per-qualification artifact is written via `S3Storage.put_immutable`, which refuses to overwrite (HEAD-then-PUT). The only mutable keys are `inventory/<repo>/latest.json` and the equivalent qualification pointers; those use `put_mutable`.

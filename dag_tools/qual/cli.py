@@ -167,5 +167,122 @@ def _print_status_table(report) -> None:
         )
 
 
+# --- survey command ---------------------------------------------------------
+
+
+@app.command("survey")
+def survey(
+    ctx: typer.Context,
+    introspect: bool = typer.Option(
+        True,
+        "--introspect/--no-introspect",
+        help=(
+            "Run inventory introspection. Currently the only mode; canary is a "
+            "separate command. Default true."
+        ),
+    ),
+    locations: str = typer.Option(
+        ...,
+        "--locations",
+        help=(
+            "Path to a workspace.yaml, a .py file, or a module spec "
+            "'pkg.mod[:attr]'. Every code location is loaded."
+        ),
+    ),
+    repo: str = typer.Option(..., "--repo", help="Repository name; primary registry partition key."),
+    sha: str = typer.Option(..., "--sha", help="Git SHA of this build."),
+    build: Optional[str] = typer.Option(
+        None, "--build", help="CI build identifier (optional but recommended)."
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help=(
+            "Permit re-publishing the same SHA. Off by default — the recipe "
+            "treats per-build keys as immutable. Useful for CI retries when "
+            "you genuinely intend to replace the previous publish."
+        ),
+    ),
+    skip_publish: bool = typer.Option(
+        False, "--skip-publish",
+        help=(
+            "Run introspection and emit the result locally but do NOT write "
+            "to the registry. Useful for dev iteration and dry runs."
+        ),
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format", help="Output format."),
+) -> None:
+    """Publish a per-build structural inventory for one repo to the registry.
+
+    Recipe rule: a load failure fails the Jenkins stage and **nothing is
+    published** — the registry never contains an inventory for code that
+    doesn't load. Exits non-zero on load failure.
+    """
+    # Lazy import — keeps `dagtools registry status` fast and free of
+    # any dagster dependency.
+    from .survey import run_survey
+    from .survey.publisher import _detect_dagster_version, _detect_dagtools_version
+
+    if not introspect:
+        typer.secho(
+            "error: --no-introspect disables the only currently-supported mode",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    outcome = run_survey(
+        locations_spec=locations,
+        repo=repo,
+        git_sha=sha,
+        registry=registry,
+        build_id=build,
+        dagster_version=_detect_dagster_version(),
+        dagtools_version=_detect_dagtools_version(),
+        allow_overwrite=allow_overwrite,
+        skip_publish=skip_publish,
+    )
+
+    payload = {
+        "published": outcome.published,
+        "pointer_sha": outcome.pointer_sha,
+        "artifacts_written": outcome.artifacts_written,
+        "load_validation": outcome.load_validation.model_dump(mode="json"),
+    }
+
+    if format == OutputFormat.JSON:
+        typer.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        _print_survey_table(outcome)
+
+    if not outcome.load_validation.loads:
+        raise typer.Exit(code=2)
+
+
+def _print_survey_table(outcome) -> None:
+    lv = outcome.load_validation
+    typer.echo(
+        f"survey @ {lv.timestamp.isoformat()}  "
+        f"loaded={len(lv.locations)}  failed={len(lv.failures)}  "
+        f"warnings={len(lv.warnings)}  published={outcome.published}"
+    )
+    if lv.failures:
+        typer.echo("  FAILURES:")
+        for f in lv.failures:
+            typer.echo(f"    - {f.name} ({f.source}): {f.error}")
+    if lv.locations:
+        typer.echo("  LOCATIONS:")
+        for loc in lv.locations:
+            typer.echo(
+                f"    - {loc.name}  assets={loc.asset_count or 0}  "
+                f"sensors={loc.sensor_count or 0}  schedules={loc.schedule_count or 0}  "
+                f"checks={loc.asset_check_count or 0}"
+            )
+    if outcome.published:
+        typer.echo(f"  PUBLISHED: pointer_sha={outcome.pointer_sha}")
+        typer.echo(f"  ARTIFACTS: {', '.join(outcome.artifacts_written)}")
+
+
 if __name__ == "__main__":
     app()
