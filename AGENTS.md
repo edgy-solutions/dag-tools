@@ -36,6 +36,12 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - **DO NOT** write per-project Restate worker entrypoints or Dockerfiles. New durable handlers are registered in `dag_tools.restate_handlers.serve.SERVICE_REGISTRY` and ship in the shared `restate-worker` image (`Dockerfile.restate-worker`).
 - Deployments select handlers and wire Restate **purely through environment variables** (`RESTATE_SERVICES`, `RESTATE_ADMIN_URL`, `RESTATE_ADVERTISED_URI`); the worker self-registers on startup. When adding a handler module, add its key to `SERVICE_REGISTRY` so it becomes selectable.
 
+### 4a. Shared Inventory Contract (`dag_tools.inventory`)
+- The `AssetRecord` pydantic schema in `dag_tools/inventory/schema.py` is the **cross-process contract** between the runtime Domain Broker (long-lived pods, last quarter's release) and the CI Dagster qualification survey (every commit, today's release). They will read each other's records across versions.
+- **Evolution rules**: additive-only. Never rename or remove fields. Only add new `Optional[...]` fields with defaults, and bump `SCHEMA_VERSION` by 1 in the same commit. Readers tolerate unknown fields via `extra="ignore"`. If you truly need a breaking change, it's a major library version and requires coordinated rollout — talk to the runtime mesh team first.
+- **IO manager classification**: extend `dag_tools/inventory/classifier.py::FAMILY_REGISTRY` with the FQN of any new IO manager. MRO walking catches custom subclasses of registered ancestors. The substring fallback is a logged-at-WARNING last resort whose presence in the logs is a signal to add a registry entry.
+- **Soft-failure discipline**: the extractor must never abort because one asset is malformed. Wrap every field access in per-field exception handling; record `None` and log WARNING. The whole point of the schema being mostly-optional is to make this safe.
+
 ### 5. Normalized Configuration Design
 - **Dagster Configuration First**: All new components and resources MUST use the Dagster configuration framework (`Config`, `ConfigurableResource`, or `dagster.components` attributes).
 - **Wrap & Standardize**: Do not expose raw, pass-through configurations for underlying tools (like `dlt` or `dbt`) directly if they deviate from Dagster's standard practices. Instead, define a Dagster-centric configuration schema that wraps and translates to the native tool's requirements.

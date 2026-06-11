@@ -37,6 +37,12 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4a. Inventory Contract (`dag_tools.inventory`)
+- The shared `AssetRecord` schema in `dag_tools/inventory/schema.py` is consumed by **both** the runtime Domain Broker and the CI qualification survey. Cross-process compatibility is the whole point.
+- **Evolution is strictly additive**: never rename or remove a field; only add `Optional[...]` fields with defaults. Bump `SCHEMA_VERSION` in the same commit. Readers use `extra="ignore"` to tolerate unknown fields from newer writers.
+- For new IO manager classes, add an explicit entry to `dag_tools/inventory/classifier.py::FAMILY_REGISTRY` (FQN -> family). Do **not** rely on substring matching — it's a logged-at-WARNING last-resort fallback, never the intended path.
+- For introspection that may not exist in older Dagster versions, version-gate it and **fail soft per-field** (record `None` + log WARNING). The extractor must never abort an entire `Definitions` walk because one asset is malformed — per-asset try/except is mandatory.
+
 ## 5. Dagster Component API Pattern (1.12 GA)
 - **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.
 - **Imports**: `from dagster.components import Component, ComponentLoadContext` and `from dagster.components.resolved.base import Resolvable` and `from dagster.components.resolved.model import Model`.

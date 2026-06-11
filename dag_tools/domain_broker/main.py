@@ -30,54 +30,60 @@ LOCAL_ASSETS: Dict[str, Any] = {}
 class ResolveRequest(BaseModel):
     urn: str
 
-def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[str, Any]:
+def _build_asset_info_from_record(record) -> Dict[str, Any]:
+    """Build the LOCAL_ASSETS value shape from a shared inventory ``AssetRecord``.
+
+    Preserves the dict shape that downstream callers (``resolve_asset``)
+    consume. Resource-config placeholders (``db.local``, ``my-data-lake``)
+    remain pending a separate resource-config extraction pass — that's a
+    follow-up, not part of this migration.
     """
-    Extracts IO Manager type and configuration from Dagster Definitions.
-    This is a simplified representation of how one might inspect Dagster's IO managers.
-    """
-    # Find the asset spec
-    spec = next((s for s in defs.get_all_asset_specs() if s.key == asset_key), None)
-    if not spec:
-        return {"io_manager_type": "s3_parquet"} # fallback
-        
-    io_manager_key = spec.io_manager_key or "io_manager"
-    
-    # Try to get the IO manager resource from definitions
-    resource_def = defs.resources.get(io_manager_key)
-    
-    info = {
-        "io_manager_key": io_manager_key,
-        "metadata": spec.metadata or {}
+    info: Dict[str, Any] = {
+        "io_manager_key": record.io_manager_key or "io_manager",
+        "io_manager_type": record.io_manager_family or "s3_parquet",
+        "io_manager_class": record.io_manager_class,
+        "metadata": dict(record.tags or {}),
     }
-    
-    # Determine type based on resource class name or config
-    if resource_def:
-        class_name = resource_def.__class__.__name__.lower()
-        if "postgres" in class_name or "clickhouse" in class_name:
-            info["io_manager_type"] = "postgres" if "postgres" in class_name else "clickhouse"
-            info["db_host"] = "db.local"
-            info["schema"] = "public"
-            info["table"] = asset_key.path[-1]
-        elif "s3" in class_name or "parquet" in class_name or "iceberg" in class_name or "delta" in class_name:
-            if "iceberg" in class_name:
-                info["io_manager_type"] = "s3_iceberg"
-            elif "delta" in class_name:
-                info["io_manager_type"] = "s3_delta"
-            else:
-                info["io_manager_type"] = "s3_parquet"
-                
-            info["bucket"] = "my-data-lake"
-            info["prefix"] = "/".join(asset_key.path)
-    else:
-        # Fallback based on metadata or defaults
-        info["io_manager_type"] = spec.metadata.get("io_manager_type", "s3_parquet")
-        info["bucket"] = spec.metadata.get("bucket", "default-bucket")
-        info["prefix"] = spec.metadata.get("prefix", "/".join(asset_key.path))
-        
+    family = record.io_manager_family
+    target_path = list(record.asset_key or [])
+    if family in ("postgres", "clickhouse"):
+        info["db_host"] = "db.local"   # TODO: pull from resource config
+        info["schema"] = "public"
+        info["table"] = target_path[-1] if target_path else "unknown"
+    elif family in ("s3_iceberg", "s3_delta", "s3_parquet"):
+        info["bucket"] = "my-data-lake"  # TODO: pull from resource config
+        info["prefix"] = "/".join(target_path)
     return info
 
+
+def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[str, Any]:
+    """Extracts IO Manager type + configuration for a specific asset.
+
+    Now delegates IO manager classification to the shared
+    ``dag_tools.inventory`` introspector — which uses an explicit FQN
+    registry with MRO walking, replacing the legacy substring-matching
+    that silently misclassified custom IO manager forks. The returned
+    dict shape is unchanged so downstream consumers don't need updates.
+    """
+    if defs is None or asset_key is None:
+        return {"io_manager_type": "s3_parquet"}
+
+    try:
+        from dag_tools.inventory import extract_records
+    except Exception as e:
+        logger.error(f"Failed to import dag_tools.inventory: {e}")
+        return {"io_manager_type": "s3_parquet"}
+
+    records = extract_records(defs)
+    target_path = list(asset_key.path)
+    record = next((r for r in records if r.asset_key == target_path), None)
+    if not record:
+        return {"io_manager_type": "s3_parquet"}
+    return _build_asset_info_from_record(record)
+
+
 def load_dagster_definitions():
-    """Load local Dagster definitions and populate LOCAL_ASSETS."""
+    """Load local Dagster definitions and populate LOCAL_ASSETS keyed by URN."""
     if not DAGSTER_DEFS_MODULE or not Definitions:
         logger.warning("No DAGSTER_DEFS_MODULE specified or Dagster not installed. Using mock assets.")
         LOCAL_ASSETS["my_postgres_table"] = {
@@ -99,25 +105,30 @@ def load_dagster_definitions():
         module_name, attr_name = DAGSTER_DEFS_MODULE.split(":")
         module = importlib.import_module(module_name)
         defs = getattr(module, attr_name)
-        
-        if isinstance(defs, Definitions):
-            for spec in defs.get_all_asset_specs():
-                key_str = spec.key.to_user_string()
-                
-                # Extract the URN. Assumes you tag assets with "datahub/urn" 
-                # or fallback to generating a deterministic one.
-                urn = spec.tags.get("datahub/urn") if spec.tags else None
-                if not urn:
-                    if asset_keys_to_dataset_urn_converter:
-                        dataset_urn = asset_keys_to_dataset_urn_converter(spec.key.path)
-                        urn = dataset_urn.urn() if dataset_urn else None
-                    if not urn:
-                        # Fallback deterministic URN generation
-                        urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str.replace('/', '.')},PROD)"
-                
-                # Index the dictionary by URN!
-                LOCAL_ASSETS[urn] = extract_io_manager_info(defs, spec.key)
-            logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
+
+        if not isinstance(defs, Definitions):
+            return
+
+        try:
+            from dag_tools.inventory import extract_records
+        except Exception as e:
+            logger.error(f"Failed to import dag_tools.inventory: {e}")
+            return
+
+        # One walk over Definitions — the shared inventory also derives the
+        # URN sidecar via the same datahub converter, so we don't re-call it.
+        records = extract_records(defs)
+        for record in records:
+            urn = record.tags.get("datahub/urn") if record.tags else None
+            if not urn:
+                urn = record.urn
+            if not urn:
+                # Fallback deterministic URN generation, mirroring legacy behavior.
+                key_str = ".".join(record.asset_key)
+                urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str},PROD)"
+            LOCAL_ASSETS[urn] = _build_asset_info_from_record(record)
+
+        logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
     except Exception as e:
         logger.error(f"Failed to load Dagster definitions: {e}")
 

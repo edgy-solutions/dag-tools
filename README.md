@@ -20,6 +20,7 @@ This library follows a **Dagster-first** configuration approach.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
 - `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
 - `dag_tools/restate_handlers/`: Durable Data Plane services (Restate) for SAP and Database synchronization.
+- `dag_tools/inventory/`: The **shared structural-inventory contract** for Dagster assets — a versioned `AssetRecord` schema, an FQN-based IO manager classifier with MRO walking, and a soft-failing extractor that walks a `Definitions`. Used both by the runtime Domain Broker (for IO manager classification) and by the upcoming `dagtools survey` CLI (for per-build inventory published to MinIO). Evolution is additive-only; bump `SCHEMA_VERSION` on every change. See `dag_tools/inventory/schema.py` for the rules.
 
 ## Control Plane vs. Data Plane
 To ensure scalability and security, `dag-tools` enforces a strict separation between:
