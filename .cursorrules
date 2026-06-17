@@ -37,6 +37,12 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4e. Qualification manifest (`dag_tools.qual.qualify`)
+- **One qual_id is immutable.** The manifest at `qualifications/<qual_id>/manifest.yaml` is written via `InventoryRegistry.put_qualification_manifest` which defaults to immutable. `--allow-overwrite` exists for the explicit "I really do want to redo this qualification" path; do NOT silently bypass.
+- **Inventory pinning is point-in-time.** `create_qualification` reads `latest.json` for every repo once at init time and freezes those `(repo, git_sha)` pairs in `inventory_pins[]`. Later phases MUST read the manifest's pins, not call `read_latest_pointer` again — that would let mid-qualification CI publishes shift the qualification target.
+- **`co_upgrade_risks` filters the Dagster family.** `compute_co_upgrade_risks` excludes anything matching `dagster*` from the diff because those are the explicit upgrade target. When extending the diff (e.g. to allowlist additional libraries), keep this filter in `dag_tools/qual/qualify/risks.py`, not scattered through callers.
+- **YAML aliases match the recipe sample.** `CoUpgradeRisk` uses `from`/`to` aliases (not `from_version`/`to_version`) so the on-disk YAML matches what operators read in `docs/RECIPE.md`. Always serialize with `by_alias=True`.
+
 ## 4d. Read the Recipe before changing the qualification system
 - The full spec for `dag_tools/qual/` (and the shared `dag_tools/inventory/` contract it depends on) lives in [`docs/RECIPE.md`](docs/RECIPE.md). It contains the ADRs (why the registry is separate from the gateway; why schema discipline replaces a package split; why FQN+MRO classification beats substring matching; etc.) and a table of regression tests that guard recipe invariants. Read it before changing publisher control flow, layout helpers, or schema fields.
 

@@ -279,6 +279,33 @@ class InventoryRegistry:
             return None
         return json.loads(body)
 
+    # --- qualification manifest --------------------------------------------
+
+    def put_qualification_manifest(
+        self, qual_id: str, body: bytes, *, allow_overwrite: bool = False
+    ) -> None:
+        """Write ``qualifications/<qual_id>/manifest.yaml``.
+
+        Immutable by default — re-running ``dagtools qual init`` with the
+        same ``qual_id`` raises :class:`ImmutableKeyExists`. ``allow_overwrite``
+        is for the explicit "I really do want to redo this qualification"
+        path.
+        """
+        key = layout.qualification_manifest_key(qual_id)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/yaml")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/yaml")
+
+    def read_qualification_manifest(self, qual_id: str) -> Optional[bytes]:
+        """Read ``qualifications/<qual_id>/manifest.yaml`` as raw bytes, or
+        None if absent. Callers parse with :func:`yaml.safe_load`."""
+        return self.storage.get_optional(layout.qualification_manifest_key(qual_id))
+
+    def list_qualifications(self) -> List[str]:
+        """List qual_ids present under ``qualifications/``."""
+        return sorted(self.storage.list_subdirs(layout.QUALIFICATIONS_PREFIX + "/"))
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

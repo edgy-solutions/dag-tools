@@ -22,6 +22,7 @@ import json
 import sys
 from datetime import timedelta
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -282,6 +283,159 @@ def _print_survey_table(outcome) -> None:
     if outcome.published:
         typer.echo(f"  PUBLISHED: pointer_sha={outcome.pointer_sha}")
         typer.echo(f"  ARTIFACTS: {', '.join(outcome.artifacts_written)}")
+
+
+# --- qual sub-app -----------------------------------------------------------
+
+
+qual_app = typer.Typer(
+    name="qual",
+    help=(
+        "Orchestrate a Dagster upgrade qualification (Phase 2): manifest "
+        "creation (Q0), equivalence-class matrix (Q1), baseline/candidate "
+        "runs through the k8s test deployment (Q2/Q4), preflight checks "
+        "(Q3), synthetic probes (Q5), and the verdict (Q6)."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(qual_app)
+
+
+@qual_app.command("init")
+def qual_init(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(
+        ..., "--id", help="Qualification identifier, e.g. '2026-06-15-dagster-1.12'."
+    ),
+    baseline_version: str = typer.Option(
+        ..., "--baseline", help="Baseline Dagster version, e.g. '1.10.6'."
+    ),
+    candidate_version: str = typer.Option(
+        ..., "--candidate", help="Candidate Dagster version, e.g. '1.12.1'."
+    ),
+    baseline_pins: Optional[Path] = typer.Option(
+        None, "--baseline-pins",
+        help="YAML file of baseline pins, e.g. {dagster-dbt: 0.27.0, dbt-core: 1.8.5}.",
+    ),
+    candidate_pins: Optional[Path] = typer.Option(
+        None, "--candidate-pins",
+        help="YAML file of candidate pins.",
+    ),
+    graphql_url: Optional[str] = typer.Option(
+        None, "--graphql-url",
+        help="Test deployment Dagster GraphQL endpoint. Recorded for Q2/Q3/Q4.",
+    ),
+    graphql_auth_env: Optional[str] = typer.Option(
+        None, "--graphql-auth-env",
+        help="Env var name containing the bearer token for the GraphQL endpoint.",
+    ),
+    staging_overrides: Optional[str] = typer.Option(
+        None, "--staging-overrides",
+        help="Pointer (typically s3://...) to the staging resource override config.",
+    ),
+    prefer_tag: str = typer.Option(
+        "regression", "--prefer-tag",
+        help="When picking representatives, prefer assets tagged with this.",
+    ),
+    reps_per_class: int = typer.Option(
+        2, "--reps-per-class",
+        help="Representatives to pick per equivalence class (Q1).",
+    ),
+    local_path: Optional[Path] = typer.Option(
+        None, "--local-path",
+        help="Override local manifest path (default ~/.dagtools/quals/<id>/manifest.yaml).",
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help="Allow re-initializing an existing qual_id. Off by default.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Pin the registry snapshot + version pair into a qualification manifest."""
+    # Lazy imports — keep registry-only commands lightweight.
+    from .qualify import (
+        Deployment,
+        QualificationManifest,
+        Selection,
+        VersionTarget,
+        create_qualification,
+    )
+
+    baseline_pins_dict = _load_pins_file(baseline_pins)
+    candidate_pins_dict = _load_pins_file(candidate_pins)
+
+    auth = f"env:{graphql_auth_env}" if graphql_auth_env else None
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        manifest = create_qualification(
+            qual_id=qual_id,
+            registry=registry,
+            baseline=VersionTarget(dagster=baseline_version, pins=baseline_pins_dict),
+            candidate=VersionTarget(dagster=candidate_version, pins=candidate_pins_dict),
+            deployment=Deployment(graphql_url=graphql_url, auth=auth),
+            staging_overrides=staging_overrides,
+            selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
+            local_path=local_path,
+            allow_overwrite=allow_overwrite,
+        )
+    except Exception as e:
+        typer.secho(f"error: qual init failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(manifest.model_dump_json(indent=2, by_alias=True))
+    else:
+        _print_manifest_table(manifest)
+
+
+def _load_pins_file(path: Optional[Path]) -> dict:
+    """Parse a pins YAML file into a flat dict. Empty / missing returns {}."""
+    if path is None:
+        return {}
+    import yaml
+    try:
+        with path.open() as f:
+            doc = yaml.safe_load(f) or {}
+    except Exception as e:
+        typer.secho(
+            f"error: failed to read pins file {path}: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    if not isinstance(doc, dict):
+        typer.secho(
+            f"error: pins file {path} must contain a mapping at top level",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    # All values to strings for stable diffing.
+    return {str(k): str(v) for k, v in doc.items()}
+
+
+def _print_manifest_table(manifest) -> None:
+    typer.echo(f"qual init: {manifest.qual_id} @ {manifest.created_at.isoformat()}")
+    typer.echo(
+        f"  versions: baseline={manifest.baseline.dagster}  "
+        f"candidate={manifest.candidate.dagster}"
+    )
+    typer.echo(f"  inventory pinned: {len(manifest.inventory_pins)} repo(s)")
+    for pin in manifest.inventory_pins:
+        sha = pin.git_sha[:12] if pin.git_sha else "-"
+        typer.echo(f"    - {pin.repo:40s}  sha={sha}")
+    if manifest.co_upgrade_risks:
+        typer.echo(f"  co_upgrade_risks: {len(manifest.co_upgrade_risks)}")
+        for r in manifest.co_upgrade_risks:
+            typer.echo(
+                f"    - [{r.severity:7s}] {r.lib}: "
+                f"{r.from_version} -> {r.to_version}"
+            )
+    else:
+        typer.echo("  co_upgrade_risks: none")
+    if manifest.deployment.graphql_url:
+        typer.echo(f"  deployment: {manifest.deployment.graphql_url}")
 
 
 if __name__ == "__main__":

@@ -462,16 +462,26 @@ docs/
   RECIPE.md
 ```
 
-To be built (Phase 2):
+Phase 2 in progress:
 
 ```
 dag_tools/qual/
-  classes/      # fleet merge + equivalence-class builder + rep selection
-  graphql/      # version-tolerant Dagster GraphQL layer
-  qualify/      # manifest, preflight, run state, resume logic,
-                # orchestration snapshots, synthetic generator,
-                # diff + verdict
-probes/         # the dag-tools-probes code location
+  qualify/                  # Q0 manifest, plus Q3 preflight + Q4 state (to come)
+    manifest.py             # pydantic schemas: QualificationManifest etc.
+    risks.py                # co_upgrade_risks diff
+    init.py                 # create_qualification orchestrator
+```
+
+To be built (rest of Phase 2):
+
+```
+dag_tools/qual/
+  classes/      # fleet merge + equivalence-class builder + rep selection (Q1)
+  graphql/      # version-tolerant Dagster GraphQL layer (Q2/Q3/Q4)
+  runs/         # resumable run state machine (Q4)
+  synthetic/    # synthetic probe generator (Q5)
+  verdict/      # diff + verdict (Q6)
+probes/         # the dag-tools-probes code location (Q5 target)
 ```
 
 ---
@@ -487,13 +497,20 @@ dagtools survey --locations <workspace.yaml | *.py | pkg.mod[:attr]>
                 --repo <name> --sha <git_sha> [--build <id>]
                 [--allow-overwrite] [--skip-publish]
                 [--format json|table]
+dagtools qual init --id <qual_id>
+                --baseline <version> [--baseline-pins <yaml>]
+                --candidate <version> [--candidate-pins <yaml>]
+                [--graphql-url URL] [--graphql-auth-env VAR_NAME]
+                [--staging-overrides s3://...]
+                [--prefer-tag TAG] [--reps-per-class N]
+                [--local-path PATH] [--allow-overwrite]
+                [--format json|table]
 ```
 
 Planned:
 
 ```
 dagtools canary --candidate <version> --publish
-dagtools qual init      --id <qual_id> [...]
 dagtools qual classes   --id <qual_id>
 dagtools qual preflight --id <qual_id> --side baseline|candidate
 dagtools qual run       --id <qual_id> --side baseline|candidate
@@ -636,7 +653,11 @@ caught it on itself.
 | 1 | 3 Survey CLI + `Jenkinsfile.survey` | ✅ done — commit `77b2833` |
 | 1 | 4 Documentation Recipe + ADRs | ✅ done — this file |
 | 1 | (opt) Canary stage | Not yet started |
-| 2 | Q0–Q6: equivalence classes, preflight, run, orchestration, synthetic, verdict | Not yet started |
+| 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
+| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | Not yet started |
+| 2 | Q2/Q3/Q4 GraphQL launcher + baseline/candidate runs + preflight | Not yet started |
+| 2 | Q5 Synthetic probes | Not yet started |
+| 2 | Q6 Diff + verdict | Not yet started |
 
 ### Key regression tests enforcing recipe invariants
 
@@ -651,6 +672,9 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Partial load failure also refuses publish | `test_survey_publisher.py::test_run_survey_partial_load_failure_also_refuses_publish` |
 | JSON output by default | `test_dagtools_cli.py::test_registry_status_json_default` |
 | Schema tolerates forward-compat fields | `test_inventory.py::test_schema_tolerates_unknown_fields` |
+| Qualification manifest is immutable per qual_id | `test_qualify_init.py::test_re_init_same_qual_id_raises` |
+| Dagster-family pins filtered from co_upgrade_risks | `test_qualify_risks.py::test_dagster_family_is_filtered_out` |
+| Inventory pins freeze the registry snapshot at init time | `test_qualify_init.py::test_create_qualification_pins_inventories` |
 
 ---
 
