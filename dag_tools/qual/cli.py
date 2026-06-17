@@ -585,5 +585,87 @@ def _print_run_table(outcome) -> None:
         )
 
 
+@qual_app.command("preflight")
+def qual_preflight(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    side: str = typer.Option(
+        ..., "--side",
+        help="Which side to preflight: 'baseline' or 'candidate'.",
+    ),
+    sample_size: int = typer.Option(
+        5, "--sample-size",
+        help=(
+            "Number of PASSED baseline runs to spot-check via GraphQL on "
+            "the candidate side (event-log back-compat check). Ignored on "
+            "the baseline side."
+        ),
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help="Allow re-publishing the preflight report after fixing failures.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q3: gate the test deployment is ready for baseline/candidate work.
+
+    Three checks:
+      1. Deployment version matches the manifest's baseline/candidate.
+      2. Every code location is loaded (fleet-wide load validation under
+         the side's Dagster, on real infrastructure).
+      3. (Candidate only) Sampled baseline runs still render — the
+         event-log back-compat spot check.
+    """
+    if side not in ("baseline", "candidate"):
+        typer.secho(
+            f"error: --side must be 'baseline' or 'candidate', got {side!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from .preflight import publish_preflight_report, run_preflight
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        report = run_preflight(
+            qual_id=qual_id, side=side,
+            registry=registry,
+            run_sample_size=sample_size,
+        )
+        publish_preflight_report(
+            report, registry=registry, allow_overwrite=allow_overwrite,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(
+            f"error: qual preflight failed: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        _print_preflight_table(report)
+
+    if not report.passed:
+        raise typer.Exit(code=2)
+
+
+def _print_preflight_table(report) -> None:
+    typer.echo(
+        f"qual preflight: {report.qual_id} side={report.side}  "
+        f"version: deployment={report.deployment_version!r} expected={report.expected_version!r}  "
+        f"passed={'YES' if report.passed else 'NO'}"
+    )
+    for check in report.checks:
+        mark = "PASS" if check.passed else "FAIL"
+        typer.echo(f"  [{mark}] {check.name}: {check.detail}")
+
+
 if __name__ == "__main__":
     app()

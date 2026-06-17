@@ -37,6 +37,12 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - **DO NOT** write per-project Restate worker entrypoints or Dockerfiles. New durable handlers are registered in `dag_tools.restate_handlers.serve.SERVICE_REGISTRY` and ship in the shared `restate-worker` image (`Dockerfile.restate-worker`).
 - Deployments select handlers and wire Restate **purely through environment variables** (`RESTATE_SERVICES`, `RESTATE_ADMIN_URL`, `RESTATE_ADVERTISED_URI`); the worker self-registers on startup. When adding a handler module, add its key to `SERVICE_REGISTRY` so it becomes selectable.
 
+### 4g. Preflight (`dag_tools.qual.preflight`)
+- **All checks become entries in `PreflightReport.checks`, never raise.** A GraphQL failure during version lookup or workspace probing becomes a FAILED `CheckResult` with the error in `detail`. The whole point of preflight is the operator gets a report — crashing while reporting defeats it.
+- **Baseline side has two checks; candidate side has three.** The third check (sampled baseline runs still render) only makes sense on the candidate — there are no priors to back-compat-check on the baseline side. Tests `test_baseline_preflight_does_not_sample_baseline_runs` and `test_candidate_preflight_samples_baseline_runs` enforce this.
+- **Sampling is deterministic.** PASSED baseline run_ids are sorted lexicographically before slicing — re-runs probe the same runs, so a failure isn't a flake about which subset got picked. Don't change to random sampling without updating the contract.
+- **Version comparison: exact, or wildcard `.x` suffix.** That's the entire grammar. `1.12.x` matches `1.12.0` through `1.12.999`. SemVer-style ranges, prereleases, and hashes are deliberately out of scope.
+
 ### 4f. Run execution (`dag_tools.qual.runs` + `dag_tools.qual.graphql`)
 - **Save state after every transition.** The runner's resumability story depends on it. If a desktop dies between launch and persistence, the registry-mirrored state file is what makes the next invocation reconcile rather than re-launch. `test_run_side_state_is_mirrored_to_registry_after_each_transition` is the regression — if it fails, you've broken resumability.
 - **PASSED is sacred.** A re-invocation MUST NOT re-launch a passed rep — that would burn duplicate compute and confuse Q6's diff (two run records for the same `(class_hash, asset_key)` on the same side). LAUNCHED reps reconcile via `client.get_run_status(run_id)`, not relaunch.

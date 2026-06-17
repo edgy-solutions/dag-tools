@@ -83,6 +83,21 @@ class EventLogEntry:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class CodeLocationStatus:
+    """One code location's load status as the test deployment reports it."""
+    name: str
+    load_status: str
+    """``"LOADED"`` is the only happy state. ``"LOADING"`` means the
+    operator must wait; ``"ERROR"`` means the user-code image is broken."""
+    error: Optional[str] = None
+    """When ``load_status`` is ``"ERROR"``, the operator-actionable message."""
+
+    @property
+    def loaded(self) -> bool:
+        return self.load_status == "LOADED"
+
+
 # ---------------------------------------------------------------------------
 # Auth resolution
 # ---------------------------------------------------------------------------
@@ -341,6 +356,73 @@ query DagtoolsEventLog($runId: ID!) {
   }
 }
 """.strip()
+
+    # -- preflight: deployment health -----------------------------------
+
+    VERSION_QUERY = """
+query DagtoolsVersion {
+  version
+}
+""".strip()
+
+    def get_dagster_version(self) -> str:
+        """Return the Dagster version string the webserver reports.
+
+        Used by Q3 preflight to confirm the deployment matches the
+        manifest's expected side. The ``version`` field has been a stable
+        top-level GraphQL query since Dagster 1.0."""
+        data = self.post(self.VERSION_QUERY)
+        v = data.get("version")
+        if not v:
+            raise DagsterGraphQLError(
+                f"deployment did not report a version (data={data})"
+            )
+        return str(v)
+
+    LOCATIONS_QUERY = """
+query DagtoolsWorkspace {
+  workspaceOrError {
+    __typename
+    ... on Workspace {
+      locationEntries {
+        name
+        loadStatus
+        locationOrLoadError {
+          __typename
+          ... on PythonError { message }
+        }
+      }
+    }
+    ... on PythonError { message }
+  }
+}
+""".strip()
+
+    def get_code_locations(self) -> List[CodeLocationStatus]:
+        """Return every code location's load status.
+
+        Q3 preflight fails when any entry has ``load_status != "LOADED"``
+        — that's the fleet-wide load validation on real infrastructure."""
+        data = self.post(self.LOCATIONS_QUERY)
+        result = data.get("workspaceOrError") or {}
+        typename = result.get("__typename")
+        if typename != "Workspace":
+            raise DagsterGraphQLError(
+                f"workspace lookup failed ({typename}): "
+                f"{result.get('message') or 'no detail'}"
+            )
+        out: List[CodeLocationStatus] = []
+        for entry in result.get("locationEntries") or []:
+            name = entry.get("name") or "?"
+            load_status = str(entry.get("loadStatus") or "UNKNOWN")
+            error: Optional[str] = None
+            link = entry.get("locationOrLoadError") or {}
+            if link.get("__typename") == "PythonError":
+                error = link.get("message")
+            out.append(CodeLocationStatus(
+                name=name, load_status=load_status, error=error,
+            ))
+        return out
 
     def get_event_log(self, run_id: str) -> List[EventLogEntry]:
         """Pull all event-log entries for a run. Soft-failing per entry —

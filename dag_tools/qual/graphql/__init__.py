@@ -9,6 +9,7 @@ Public surface:
   * :class:`DagsterGraphQLError` — what callers catch.
 """
 from .client import (
+    CodeLocationStatus,
     DagsterGraphQLClient,
     DagsterGraphQLError,
     EventLogEntry,
@@ -17,6 +18,7 @@ from .client import (
 )
 
 __all__ = [
+    "CodeLocationStatus",
     "DagsterGraphQLClient",
     "DagsterGraphQLError",
     "EventLogEntry",

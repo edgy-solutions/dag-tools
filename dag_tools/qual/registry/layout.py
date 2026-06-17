@@ -149,6 +149,16 @@ def qualification_side_summary_key(qual_id: str, side: str) -> str:
     return f"{qualification_prefix(qual_id)}{side}/summary.json"
 
 
+def qualification_side_preflight_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/preflight.json``.
+
+    Written by Q3 ``dagtools qual preflight``. Immutable per (qual_id,
+    side, attempt) — re-running preflight after fixing a failure uses
+    ``--allow-overwrite``."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/preflight.json"
+
+
 def _validate_side(side: str) -> None:
     if side not in ("baseline", "candidate"):
         raise ValueError(f"side must be 'baseline' or 'candidate', got {side!r}")

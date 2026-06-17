@@ -481,13 +481,14 @@ dag_tools/qual/
     records.py              # RunRecord persisted to <side>/runs/<class_hash>/<run_id>.json
     launcher.py             # launch_representative + build_run_record
     runner.py               # run_side orchestrator (reconciliation, retries, summary)
+  preflight/                # Q3 deployment-readiness gate via GraphQL
+    preflight.py            # PreflightReport schema + run_preflight orchestrator
 ```
 
 To be built (rest of Phase 2):
 
 ```
 dag_tools/qual/
-  preflight/    # Q3 candidate-side preflight via GraphQL
   synthetic/    # synthetic probe generator (Q5)
   verdict/      # diff + verdict (Q6)
 probes/         # the dag-tools-probes code location (Q5 target)
@@ -519,6 +520,9 @@ dagtools qual classes --id <qual_id>
 dagtools qual run --id <qual_id> --side baseline|candidate
                 [--retry-failed] [--only-class <hash>]
                 [--poll-interval N] [--poll-timeout N]
+                [--format json|table]
+dagtools qual preflight --id <qual_id> --side baseline|candidate
+                [--sample-size N] [--allow-overwrite]
                 [--format json|table]
 ```
 
@@ -670,7 +674,8 @@ caught it on itself.
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
 | 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
-| 2 | Q3 Preflight + Q4 candidate pass | Q4 = same code, different side; Q3 preflight not yet started |
+| 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
+| 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 | 2 | Q5 Synthetic probes | Not yet started |
 | 2 | Q6 Diff + verdict | Not yet started |
@@ -699,6 +704,10 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q2 side state mirrors to registry after every transition | `test_runs_runner.py::test_run_side_state_is_mirrored_to_registry_after_each_transition` |
 | Q2 non-runnable representatives are SKIPPED, not launched | `test_runs_runner.py::test_run_side_skips_synthetic_required_reps` |
 | GraphQL launch uses the typed-union failure shape | `test_graphql_client.py::test_launch_asset_run_raises_on_typed_failure_shape` |
+| Q3 preflight fails on version mismatch | `test_preflight.py::test_run_preflight_fails_on_version_mismatch` |
+| Q3 preflight fails when any code location doesn't load | `test_preflight.py::test_run_preflight_fails_when_a_code_location_does_not_load` |
+| Q3 candidate preflight samples baseline runs for back-compat | `test_preflight.py::test_candidate_preflight_samples_baseline_runs` |
+| Q3 baseline preflight skips the run-rendering check | `test_preflight.py::test_baseline_preflight_does_not_sample_baseline_runs` |
 
 ---
 

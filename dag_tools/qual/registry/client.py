@@ -412,6 +412,29 @@ class InventoryRegistry:
             layout.qualification_side_summary_key(qual_id, side)
         )
 
+    def put_side_preflight(
+        self,
+        qual_id: str,
+        side: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write ``qualifications/<qual_id>/<side>/preflight.json``.
+
+        Immutable by default — re-running preflight after fixing a failure
+        needs ``--allow-overwrite``."""
+        key = layout.qualification_side_preflight_key(qual_id, side)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_side_preflight(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_preflight_key(qual_id, side)
+        )
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""
