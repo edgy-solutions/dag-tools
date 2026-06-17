@@ -340,6 +340,78 @@ class InventoryRegistry:
     def read_qualification_classes_md(self, qual_id: str) -> Optional[bytes]:
         return self.storage.get_optional(layout.qualification_classes_md_key(qual_id))
 
+    # --- per-side state, run records, summary (Q2 / Q4) -------------------
+
+    def put_side_state(self, qual_id: str, side: str, body: bytes) -> None:
+        """Write ``qualifications/<qual_id>/<side>/state.json``.
+
+        Mutable on purpose — Q2/Q4 update this in-place as representatives
+        transition between pending/launched/passed/failed. The
+        operator-local copy at ``~/.dagtools/quals/<qual_id>/<side>-state.json``
+        mirrors it; either side can recover from the other if a desktop
+        dies mid-run.
+        """
+        self.storage.put_mutable(
+            layout.qualification_side_state_key(qual_id, side),
+            body,
+            content_type="application/json",
+        )
+
+    def read_side_state(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_state_key(qual_id, side)
+        )
+
+    def put_run_record(
+        self,
+        qual_id: str,
+        side: str,
+        class_hash: str,
+        run_id: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Persist one run's full record under
+        ``qualifications/<qual_id>/<side>/runs/<class_hash>/<run_id>.json``.
+
+        Immutable by default — re-runs (e.g. a re-launched failed rep)
+        get a different ``run_id`` and so don't collide. ``allow_overwrite``
+        exists for operator-driven cleanups."""
+        key = layout.qualification_side_run_key(qual_id, side, class_hash, run_id)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_run_record(
+        self, qual_id: str, side: str, class_hash: str, run_id: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_run_key(qual_id, side, class_hash, run_id)
+        )
+
+    def put_side_summary(
+        self,
+        qual_id: str,
+        side: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write ``qualifications/<qual_id>/<side>/summary.json`` (immutable
+        by default)."""
+        key = layout.qualification_side_summary_key(qual_id, side)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_side_summary(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_summary_key(qual_id, side)
+        )
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

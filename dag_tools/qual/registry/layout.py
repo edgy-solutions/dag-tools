@@ -126,9 +126,32 @@ def qualification_side_run_key(
     qual_id: str, side: str, class_hash: str, run_id: str
 ) -> str:
     """``qualifications/<qual_id>/<side>/runs/<class_hash>/<run_id>.json``."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/runs/{class_hash}/{run_id}.json"
+
+
+def qualification_side_state_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/state.json``.
+
+    The mutable per-side state file that Q2/Q4 maintain — mirrors the
+    operator-local ``~/.dagtools/quals/<qual_id>/<side>-state.json`` so a
+    crashed desktop can resume from the registry copy.
+    """
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/state.json"
+
+
+def qualification_side_summary_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/summary.json``.
+
+    Written once Q2/Q4 finishes a side. Immutable per (qual_id, side)."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/summary.json"
+
+
+def _validate_side(side: str) -> None:
     if side not in ("baseline", "candidate"):
         raise ValueError(f"side must be 'baseline' or 'candidate', got {side!r}")
-    return f"{qualification_prefix(qual_id)}{side}/runs/{class_hash}/{run_id}.json"
 
 
 # --- registry URI parsing ---------------------------------------------------

@@ -500,5 +500,90 @@ def _print_classes_table(matrix) -> None:
         )
 
 
+@qual_app.command("run")
+def qual_run(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    side: str = typer.Option(
+        ..., "--side",
+        help="Which side to run: 'baseline' or 'candidate'.",
+    ),
+    retry_failed: bool = typer.Option(
+        False, "--retry-failed",
+        help="Re-launch representatives currently in FAILED state.",
+    ),
+    only_class: Optional[str] = typer.Option(
+        None, "--only-class",
+        help="Restrict the run to one equivalence class (the 12-char hash).",
+    ),
+    poll_interval: float = typer.Option(
+        5.0, "--poll-interval",
+        help="Seconds between run-status polls.",
+    ),
+    poll_timeout: float = typer.Option(
+        1800.0, "--poll-timeout",
+        help="Per-rep poll timeout in seconds.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q2/Q4: launch representatives through the test deployment, poll
+    to completion, persist run records, mirror state for resumability."""
+    if side not in ("baseline", "candidate"):
+        typer.secho(
+            f"error: --side must be 'baseline' or 'candidate', got {side!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    # Lazy imports — runs pulls dagster's graphql layer, no need to pay
+    # that cost on registry-only commands.
+    from .runs import run_side
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        outcome = run_side(
+            qual_id=qual_id,
+            side=side,
+            registry=registry,
+            poll_interval_seconds=poll_interval,
+            poll_timeout_seconds=poll_timeout,
+            retry_failed=retry_failed,
+            only_class=only_class,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(f"error: qual run failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(outcome.summary.model_dump_json(indent=2))
+    else:
+        _print_run_table(outcome)
+
+    if outcome.summary.failed or outcome.summary.launched or outcome.summary.pending:
+        # Non-zero exit on any non-terminal-or-failed state so CI can gate.
+        raise typer.Exit(code=2)
+
+
+def _print_run_table(outcome) -> None:
+    s = outcome.summary
+    typer.echo(
+        f"qual run: {s.qual_id} side={s.side}  "
+        f"total={s.rep_total}  passed={s.passed}  failed={s.failed}  "
+        f"launched={s.launched}  pending={s.pending}  skipped={s.skipped}"
+    )
+    for rep in outcome.state.reps.values():
+        ak = "/".join(rep.asset_key)
+        status = rep.status.value if hasattr(rep.status, "value") else str(rep.status)
+        typer.echo(
+            f"  [{status:9s}] {rep.class_hash}  {rep.repo:30s}  {ak}  "
+            f"run={rep.run_id or '-'}"
+        )
+
+
 if __name__ == "__main__":
     app()

@@ -474,14 +474,20 @@ dag_tools/qual/
     key.py                  # ClassKeyComponents, class_hash, EquivalenceClass, ClassMatrix
     selection.py            # pick_representatives + classify_runnability
     builder.py              # build_class_matrix + publish + render_markdown
+  graphql/                  # Q2/Q3/Q4 version-tolerant Dagster GraphQL client
+    client.py               # DagsterGraphQLClient (launch, poll, event log)
+  runs/                     # Q2/Q4 resumable run execution
+    state.py                # RepStatus + RepState + QualRunState (local + registry-mirrored)
+    records.py              # RunRecord persisted to <side>/runs/<class_hash>/<run_id>.json
+    launcher.py             # launch_representative + build_run_record
+    runner.py               # run_side orchestrator (reconciliation, retries, summary)
 ```
 
 To be built (rest of Phase 2):
 
 ```
 dag_tools/qual/
-  graphql/      # version-tolerant Dagster GraphQL layer (Q2/Q3/Q4)
-  runs/         # resumable run state machine (Q4)
+  preflight/    # Q3 candidate-side preflight via GraphQL
   synthetic/    # synthetic probe generator (Q5)
   verdict/      # diff + verdict (Q6)
 probes/         # the dag-tools-probes code location (Q5 target)
@@ -510,6 +516,10 @@ dagtools qual init --id <qual_id>
                 [--format json|table]
 dagtools qual classes --id <qual_id>
                 [--allow-overwrite] [--format json|table]
+dagtools qual run --id <qual_id> --side baseline|candidate
+                [--retry-failed] [--only-class <hash>]
+                [--poll-interval N] [--poll-timeout N]
+                [--format json|table]
 ```
 
 Planned:
@@ -659,7 +669,9 @@ caught it on itself.
 | 1 | (opt) Canary stage | Not yet started |
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
 | 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
-| 2 | Q2/Q3/Q4 GraphQL launcher + baseline/candidate runs + preflight | Not yet started |
+| 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
+| 2 | Q3 Preflight + Q4 candidate pass | Q4 = same code, different side; Q3 preflight not yet started |
+| 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 | 2 | Q5 Synthetic probes | Not yet started |
 | 2 | Q6 Diff + verdict | Not yet started |
 
@@ -682,6 +694,11 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q1 reads the manifest's inventory_pins, NOT the registry's latest | `test_classes_builder.py::test_q1_reads_pinned_sha_not_latest` |
 | Custom dbt translators force their own equivalence class | `test_classes_builder.py::test_build_class_matrix_segregates_custom_dbt_translator` |
 | Class hash is deterministic over its components | `test_classes_key.py::test_class_hash_is_deterministic` |
+| Q2 re-invocation skips PASSED reps (resumability) | `test_runs_runner.py::test_run_side_skips_passed_reps_on_re_invocation` |
+| Q2 reconciles LAUNCHED reps via poll, not relaunch | `test_runs_runner.py::test_run_side_reconciles_launched_via_poll_not_relaunch` |
+| Q2 side state mirrors to registry after every transition | `test_runs_runner.py::test_run_side_state_is_mirrored_to_registry_after_each_transition` |
+| Q2 non-runnable representatives are SKIPPED, not launched | `test_runs_runner.py::test_run_side_skips_synthetic_required_reps` |
+| GraphQL launch uses the typed-union failure shape | `test_graphql_client.py::test_launch_asset_run_raises_on_typed_failure_shape` |
 
 ---
 
@@ -704,6 +721,12 @@ them, you're probably violating a recipe rule. Read carefully first.
 - **Business logic is out of scope.** This system validates behavior
   preservation at the framework boundary; pipeline correctness vs. business
   intent is the user's job.
+- **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
+  probe asset that loads representative output via the same IO manager)
+  needs the Q5 probes code location infrastructure to land first. The
+  local in-process orchestration snapshot (`dagtools qual orchestration`)
+  is a separate command and ships separately. Both are tracked in the
+  implementation-status table.
 
 ---
 

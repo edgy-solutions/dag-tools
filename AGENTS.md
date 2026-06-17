@@ -37,6 +37,12 @@ Before modifying *any* code or executing external network commands, you **MUST**
 - **DO NOT** write per-project Restate worker entrypoints or Dockerfiles. New durable handlers are registered in `dag_tools.restate_handlers.serve.SERVICE_REGISTRY` and ship in the shared `restate-worker` image (`Dockerfile.restate-worker`).
 - Deployments select handlers and wire Restate **purely through environment variables** (`RESTATE_SERVICES`, `RESTATE_ADMIN_URL`, `RESTATE_ADVERTISED_URI`); the worker self-registers on startup. When adding a handler module, add its key to `SERVICE_REGISTRY` so it becomes selectable.
 
+### 4f. Run execution (`dag_tools.qual.runs` + `dag_tools.qual.graphql`)
+- **Save state after every transition.** The runner's resumability story depends on it. If a desktop dies between launch and persistence, the registry-mirrored state file is what makes the next invocation reconcile rather than re-launch. `test_run_side_state_is_mirrored_to_registry_after_each_transition` is the regression — if it fails, you've broken resumability.
+- **PASSED is sacred.** A re-invocation MUST NOT re-launch a passed rep — that would burn duplicate compute and confuse Q6's diff (two run records for the same `(class_hash, asset_key)` on the same side). LAUNCHED reps reconcile via `client.get_run_status(run_id)`, not relaunch.
+- **GraphQL drift is expected.** The client uses public fields only and falls back gracefully on unknown event subtypes (records them as raw dicts with what we could decode). If a Dagster version surfaces a new event subtype that matters for run records, extend the parser in `build_run_record` — don't add internal-attribute access.
+- **The Q2 IO round-trip probe is deferred.** Recipe item 4 of Q2 — "for each class, also launch the class's probe asset" — depends on Q5's probe code location. Tracked in `docs/RECIPE.md` known limitations; do not implement a half-measure that fakes it without the real probe infrastructure.
+
 ### 4e. Equivalence-class matrix (`dag_tools.qual.classes`)
 - **Q1 reads the manifest, not the registry.** `build_class_matrix` walks `manifest.inventory_pins[]` and fetches each pinned SHA's `assets.json` + `dbt_projects.json`. It never calls `read_latest_pointer`. If you write a new Q-phase, follow the same pattern — that's how the qualification stays reproducible.
 - **The class hash is deterministic.** Identical `ClassKeyComponents` → identical 12-char SHA-256 prefix. Tests in `test_classes_key.py` enforce this. Don't introduce nondeterministic ordering or transient state into the components.
