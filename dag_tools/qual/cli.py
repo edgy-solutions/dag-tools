@@ -438,5 +438,67 @@ def _print_manifest_table(manifest) -> None:
         typer.echo(f"  deployment: {manifest.deployment.graphql_url}")
 
 
+@qual_app.command("classes")
+def qual_classes(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(
+        ..., "--id", help="Qualification identifier (must already exist via 'qual init')."
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help="Allow re-publishing the class matrix for this qual_id.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Build and publish the fleet equivalence-class matrix (Q1)."""
+    # Lazy import — qual classes pulls the inventory schema, no need to
+    # pay that on every `dagtools registry status`.
+    from .classes import build_class_matrix, publish_class_matrix
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        matrix = build_class_matrix(qual_id, registry=registry)
+        publish_class_matrix(
+            matrix, registry=registry, allow_overwrite=allow_overwrite,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(f"error: qual classes failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(matrix.model_dump_json(indent=2))
+    else:
+        _print_classes_table(matrix)
+
+
+def _print_classes_table(matrix) -> None:
+    typer.echo(
+        f"classes for {matrix.qual_id} @ {matrix.generated_at.isoformat()}"
+    )
+    typer.echo(
+        f"  assets={matrix.asset_count}  classes={matrix.class_count}  "
+        + "  ".join(
+            f"{k}={v}" for k, v in matrix.coverage_by_runnability.items()
+        )
+    )
+    typer.echo()
+    typer.echo("  HASH         SIZE  REPOS  REPS  COMPUTE      IO MANAGER")
+    for cls in matrix.classes:
+        io = (cls.key.io_manager_class or "—").rsplit(".", 1)[-1]
+        compute = cls.key.compute_kind or "—"
+        typer.echo(
+            f"  {cls.class_hash}  "
+            f"{cls.member_count:4d}  "
+            f"{cls.member_repo_count:5d}  "
+            f"{len(cls.representatives):4d}  "
+            f"{compute[:11]:11s}  {io}"
+        )
+
+
 if __name__ == "__main__":
     app()

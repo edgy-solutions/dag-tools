@@ -306,6 +306,40 @@ class InventoryRegistry:
         """List qual_ids present under ``qualifications/``."""
         return sorted(self.storage.list_subdirs(layout.QUALIFICATIONS_PREFIX + "/"))
 
+    def put_qualification_classes(
+        self,
+        qual_id: str,
+        json_body: bytes,
+        markdown_body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write the Q1 equivalence-class artifacts atomically.
+
+        Both the machine-readable JSON and the human-readable Markdown go
+        under ``qualifications/<qual_id>/classes/``. Immutable by default
+        — re-running ``dagtools qual classes`` raises
+        :class:`ImmutableKeyExists` unless ``allow_overwrite=True``. The
+        markdown write goes second so a failure on the JSON write leaves
+        no inconsistent state.
+        """
+        json_key = layout.qualification_classes_key(qual_id)
+        md_key = layout.qualification_classes_md_key(qual_id)
+        if allow_overwrite:
+            self.storage.put_mutable(json_key, json_body, content_type="application/json")
+            self.storage.put_mutable(md_key, markdown_body, content_type="text/markdown")
+        else:
+            self.storage.put_immutable(json_key, json_body, content_type="application/json")
+            self.storage.put_immutable(md_key, markdown_body, content_type="text/markdown")
+
+    def read_qualification_classes_json(self, qual_id: str) -> Optional[bytes]:
+        """Read ``qualifications/<qual_id>/classes/equivalence_classes.json``
+        as raw bytes, or None if absent."""
+        return self.storage.get_optional(layout.qualification_classes_key(qual_id))
+
+    def read_qualification_classes_md(self, qual_id: str) -> Optional[bytes]:
+        return self.storage.get_optional(layout.qualification_classes_md_key(qual_id))
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

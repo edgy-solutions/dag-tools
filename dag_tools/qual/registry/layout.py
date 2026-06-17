@@ -113,6 +113,11 @@ def qualification_classes_key(qual_id: str) -> str:
     return f"{qualification_prefix(qual_id)}classes/equivalence_classes.json"
 
 
+def qualification_classes_md_key(qual_id: str) -> str:
+    """Human-readable companion to ``equivalence_classes.json``."""
+    return f"{qualification_prefix(qual_id)}classes/equivalence_classes.md"
+
+
 def qualification_verdict_key(qual_id: str) -> str:
     return f"{qualification_prefix(qual_id)}verdict.json"
 

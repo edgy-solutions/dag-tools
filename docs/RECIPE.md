@@ -470,13 +470,16 @@ dag_tools/qual/
     manifest.py             # pydantic schemas: QualificationManifest etc.
     risks.py                # co_upgrade_risks diff
     init.py                 # create_qualification orchestrator
+  classes/                  # Q1 fleet equivalence-class matrix
+    key.py                  # ClassKeyComponents, class_hash, EquivalenceClass, ClassMatrix
+    selection.py            # pick_representatives + classify_runnability
+    builder.py              # build_class_matrix + publish + render_markdown
 ```
 
 To be built (rest of Phase 2):
 
 ```
 dag_tools/qual/
-  classes/      # fleet merge + equivalence-class builder + rep selection (Q1)
   graphql/      # version-tolerant Dagster GraphQL layer (Q2/Q3/Q4)
   runs/         # resumable run state machine (Q4)
   synthetic/    # synthetic probe generator (Q5)
@@ -505,13 +508,14 @@ dagtools qual init --id <qual_id>
                 [--prefer-tag TAG] [--reps-per-class N]
                 [--local-path PATH] [--allow-overwrite]
                 [--format json|table]
+dagtools qual classes --id <qual_id>
+                [--allow-overwrite] [--format json|table]
 ```
 
 Planned:
 
 ```
 dagtools canary --candidate <version> --publish
-dagtools qual classes   --id <qual_id>
 dagtools qual preflight --id <qual_id> --side baseline|candidate
 dagtools qual run       --id <qual_id> --side baseline|candidate
                           [--only-class <hash>] [--only-failed] [--retry <asset_key>]
@@ -654,7 +658,7 @@ caught it on itself.
 | 1 | 4 Documentation Recipe + ADRs | ✅ done — this file |
 | 1 | (opt) Canary stage | Not yet started |
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
-| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | Not yet started |
+| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
 | 2 | Q2/Q3/Q4 GraphQL launcher + baseline/candidate runs + preflight | Not yet started |
 | 2 | Q5 Synthetic probes | Not yet started |
 | 2 | Q6 Diff + verdict | Not yet started |
@@ -675,6 +679,9 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Qualification manifest is immutable per qual_id | `test_qualify_init.py::test_re_init_same_qual_id_raises` |
 | Dagster-family pins filtered from co_upgrade_risks | `test_qualify_risks.py::test_dagster_family_is_filtered_out` |
 | Inventory pins freeze the registry snapshot at init time | `test_qualify_init.py::test_create_qualification_pins_inventories` |
+| Q1 reads the manifest's inventory_pins, NOT the registry's latest | `test_classes_builder.py::test_q1_reads_pinned_sha_not_latest` |
+| Custom dbt translators force their own equivalence class | `test_classes_builder.py::test_build_class_matrix_segregates_custom_dbt_translator` |
+| Class hash is deterministic over its components | `test_classes_key.py::test_class_hash_is_deterministic` |
 
 ---
 
