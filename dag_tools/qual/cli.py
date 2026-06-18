@@ -667,5 +667,93 @@ def _print_preflight_table(report) -> None:
         typer.echo(f"  [{mark}] {check.name}: {check.detail}")
 
 
+@qual_app.command("report")
+def qual_report(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    accept_co_upgrade_risks: bool = typer.Option(
+        False, "--accept-co-upgrade-risks",
+        help=(
+            "Operator opt-in: every co_upgrade_risk in the manifest has been "
+            "separately validated or pinned back. Without this flag, any "
+            "risk in the manifest blocks GO."
+        ),
+    ),
+    accept_synthetic_coverage_missing: bool = typer.Option(
+        False, "--accept-synthetic-coverage-missing",
+        help=(
+            "Operator opt-in: there are SYNTHETIC_REQUIRED classes without "
+            "probe coverage (Q5 not implemented). Required to GO when any "
+            "synthetic class exists."
+        ),
+    ),
+    accept_orchestration_deferred: bool = typer.Option(
+        False, "--accept-orchestration-deferred",
+        help=(
+            "Operator opt-in: orchestration snapshot diffs are not "
+            "produced yet. Required to GO until orchestration support lands."
+        ),
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help="Allow re-publishing the verdict for this qual_id.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q6: build the GO/NO-GO verdict from all qualification artifacts."""
+    from .verdict import GapAcceptance, build_verdict, publish_verdict
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        verdict = build_verdict(
+            qual_id=qual_id,
+            registry=registry,
+            gaps=GapAcceptance(
+                co_upgrade_risks=accept_co_upgrade_risks,
+                synthetic_coverage_missing=accept_synthetic_coverage_missing,
+                orchestration_deferred=accept_orchestration_deferred,
+            ),
+        )
+        publish_verdict(
+            verdict, registry=registry, allow_overwrite=allow_overwrite,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(f"error: qual report failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(verdict.model_dump_json(indent=2))
+    else:
+        _print_verdict_table(verdict)
+
+    # NO_GO -> exit 2 so CI / shell scripts can gate.
+    if verdict.status.value != "go":
+        raise typer.Exit(code=2)
+
+
+def _print_verdict_table(verdict) -> None:
+    headline = "GO" if verdict.status.value == "go" else "NO-GO"
+    typer.echo(
+        f"qual report: {verdict.qual_id}  "
+        f"baseline={verdict.baseline_version}  candidate={verdict.candidate_version}  "
+        f"=> {headline}"
+    )
+    typer.echo(
+        f"  classes={verdict.class_count}  "
+        f"runnable={verdict.runnable_classes_total} (red={len(verdict.runnable_classes_red)})  "
+        f"synthetic={verdict.synthetic_classes_total}  "
+        f"observe_only={verdict.observe_only_classes_total}"
+    )
+    if verdict.blocking_issues:
+        typer.echo("  Blocking issues:")
+        for issue in verdict.blocking_issues:
+            typer.echo(f"    - {issue}")
+
+
 if __name__ == "__main__":
     app()

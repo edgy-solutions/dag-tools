@@ -483,6 +483,9 @@ dag_tools/qual/
     runner.py               # run_side orchestrator (reconciliation, retries, summary)
   preflight/                # Q3 deployment-readiness gate via GraphQL
     preflight.py            # PreflightReport schema + run_preflight orchestrator
+  verdict/                  # Q6 diff + GO/NO-GO verdict
+    diff.py                 # RepDiff per-rep parity + ClassVerdict roll-up
+    verdict.py              # build_verdict + render_markdown + GapAcceptance
 ```
 
 To be built (rest of Phase 2):
@@ -490,7 +493,6 @@ To be built (rest of Phase 2):
 ```
 dag_tools/qual/
   synthetic/    # synthetic probe generator (Q5)
-  verdict/      # diff + verdict (Q6)
 probes/         # the dag-tools-probes code location (Q5 target)
 ```
 
@@ -524,6 +526,11 @@ dagtools qual run --id <qual_id> --side baseline|candidate
 dagtools qual preflight --id <qual_id> --side baseline|candidate
                 [--sample-size N] [--allow-overwrite]
                 [--format json|table]
+dagtools qual report --id <qual_id>
+                [--accept-co-upgrade-risks]
+                [--accept-synthetic-coverage-missing]
+                [--accept-orchestration-deferred]
+                [--allow-overwrite] [--format json|table]
 ```
 
 Planned:
@@ -676,6 +683,8 @@ caught it on itself.
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
 | 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
+| 2 | Q5 Synthetic probes | Not yet started |
+| 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 | 2 | Q5 Synthetic probes | Not yet started |
 | 2 | Q6 Diff + verdict | Not yet started |
@@ -708,6 +717,11 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q3 preflight fails when any code location doesn't load | `test_preflight.py::test_run_preflight_fails_when_a_code_location_does_not_load` |
 | Q3 candidate preflight samples baseline runs for back-compat | `test_preflight.py::test_candidate_preflight_samples_baseline_runs` |
 | Q3 baseline preflight skips the run-rendering check | `test_preflight.py::test_baseline_preflight_does_not_sample_baseline_runs` |
+| Q6 metadata parity uses key SET only (values may differ) | `test_verdict_diff.py::test_diff_compares_metadata_KEY_set_not_values` |
+| Q6 duration deltas are informational, never gating | `test_verdict_diff.py::test_diff_duration_is_informational_not_gating` |
+| Q6 candidate-preflight failure is a hard gate | `test_verdict.py::test_verdict_no_go_when_candidate_preflight_failed` |
+| Q6 strict-by-default: deferred gaps block GO until accepted | `test_verdict.py::test_verdict_no_go_by_default_when_orchestration_not_accepted` |
+| Q6 co_upgrade_risks block GO unless --accept-co-upgrade-risks | `test_verdict.py::test_verdict_no_go_when_co_upgrade_risks_unaccepted` |
 
 ---
 

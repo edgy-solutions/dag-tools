@@ -37,6 +37,12 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4i. Verdict (`dag_tools.qual.verdict`)
+- **Metadata parity is KEY-set only, never value comparison.** The recipe explicitly says "metadata values may differ" — a baseline timestamp metadata value will never equal the candidate's, and gating on that would NO_GO every qualification. Test `test_diff_compares_metadata_KEY_set_not_values` enforces this; don't relax it.
+- **Duration deltas are reported but never gating.** Same recipe rule. A candidate that's 10x slower is fine for behavior preservation; it's the operator's call whether to GO. Do not add a "gates on duration" knob.
+- **Strict by default.** Unknown gaps block GO. `GapAcceptance` exists so operators can explicitly accept "yes, I know orchestration isn't implemented and I'm OK going without it" — the verdict layer does NOT decide that on the operator's behalf. New gaps follow the same pattern: add a `GapAcceptance` field defaulting to False, surface a blocking issue when False, document the override flag in the CLI.
+- **Candidate-preflight failure is a hard gate, period.** No GapAcceptance bypass exists or should be added — the operator should fix the deployment, not paper over it.
+
 ## 4h. Preflight (`dag_tools.qual.preflight`)
 - **All checks become entries in `PreflightReport.checks`, never raise.** A `DagsterGraphQLError` from version lookup or workspace query becomes a failed `CheckResult` with the message in `detail`. Operators read the report; the runner should not crash because the deployment is misbehaving — that's WHY they're running preflight.
 - **The candidate-side run-rendering check uses the baseline state, NOT the registry's `latest.json` or the class matrix.** Sampling reads `state.json` for the baseline side, deterministically sorts PASSED run_ids, and probes the top N. This is the event-log back-compat spot check — its whole point is reusing the runs that actually executed during Q2.

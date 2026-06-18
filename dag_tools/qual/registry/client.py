@@ -435,6 +435,36 @@ class InventoryRegistry:
             layout.qualification_side_preflight_key(qual_id, side)
         )
 
+    def put_qualification_verdict(
+        self,
+        qual_id: str,
+        json_body: bytes,
+        markdown_body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write the Q6 verdict artifacts atomically.
+
+        Both ``verdict.json`` and ``UPGRADE_VERDICT.md`` go under
+        ``qualifications/<qual_id>/``. Immutable by default — re-running
+        ``dagtools qual report`` after fixing failures uses
+        ``--allow-overwrite``. JSON write first; MD second so a failure
+        on JSON leaves no inconsistent state."""
+        json_key = layout.qualification_verdict_key(qual_id)
+        md_key = layout.qualification_verdict_md_key(qual_id)
+        if allow_overwrite:
+            self.storage.put_mutable(json_key, json_body, content_type="application/json")
+            self.storage.put_mutable(md_key, markdown_body, content_type="text/markdown")
+        else:
+            self.storage.put_immutable(json_key, json_body, content_type="application/json")
+            self.storage.put_immutable(md_key, markdown_body, content_type="text/markdown")
+
+    def read_qualification_verdict_json(self, qual_id: str) -> Optional[bytes]:
+        return self.storage.get_optional(layout.qualification_verdict_key(qual_id))
+
+    def read_qualification_verdict_md(self, qual_id: str) -> Optional[bytes]:
+        return self.storage.get_optional(layout.qualification_verdict_md_key(qual_id))
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

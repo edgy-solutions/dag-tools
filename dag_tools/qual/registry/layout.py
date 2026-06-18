@@ -122,6 +122,13 @@ def qualification_verdict_key(qual_id: str) -> str:
     return f"{qualification_prefix(qual_id)}verdict.json"
 
 
+def qualification_verdict_md_key(qual_id: str) -> str:
+    """``qualifications/<qual_id>/UPGRADE_VERDICT.md`` — the human-readable
+    companion to ``verdict.json``. The recipe-specified filename is
+    deliberate: operators look for it by name when reviewing past quals."""
+    return f"{qualification_prefix(qual_id)}UPGRADE_VERDICT.md"
+
+
 def qualification_side_run_key(
     qual_id: str, side: str, class_hash: str, run_id: str
 ) -> str:
