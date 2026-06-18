@@ -836,6 +836,106 @@ def qual_synthetic(
         _print_synthetic_table(bundle, written_path=written_path, published=not skip_publish)
 
 
+# --- qual probes sub-app ----------------------------------------------------
+
+
+probes_app = typer.Typer(
+    name="probes",
+    help=(
+        "Operate on the dag-tools-probes code location and its probe runs "
+        "(Q5c). Operators deploy `dag_tools.probes_location.definitions` "
+        "to the test deployment and point DAGTOOLS_PROBES_DIR at the "
+        "bundle that `qual synthetic` produced; this sub-app launches "
+        "each probe through the deployment and persists per-probe runs."
+    ),
+    no_args_is_help=True,
+)
+qual_app.add_typer(probes_app)
+
+
+@probes_app.command("run")
+def qual_probes_run(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    side: str = typer.Option(
+        ..., "--side",
+        help="Which side to run probes for: 'baseline' or 'candidate'.",
+    ),
+    retry_failed: bool = typer.Option(
+        False, "--retry-failed",
+        help="Re-launch probes currently in FAILED state.",
+    ),
+    only_class: Optional[str] = typer.Option(
+        None, "--only-class",
+        help="Restrict the run to one equivalence class (12-char hash).",
+    ),
+    poll_interval: float = typer.Option(
+        5.0, "--poll-interval",
+        help="Seconds between run-status polls.",
+    ),
+    poll_timeout: float = typer.Option(
+        1800.0, "--poll-timeout",
+        help="Per-probe poll timeout in seconds.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q5c: launch each generated probe through the test deployment's
+    dag-tools-probes location, poll to completion, persist per-probe
+    RunRecords, mirror state for resumability."""
+    if side not in ("baseline", "candidate"):
+        typer.secho(
+            f"error: --side must be 'baseline' or 'candidate', got {side!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from .probes import run_probes_side
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        outcome = run_probes_side(
+            qual_id=qual_id, side=side, registry=registry,
+            poll_interval_seconds=poll_interval,
+            poll_timeout_seconds=poll_timeout,
+            retry_failed=retry_failed,
+            only_class=only_class,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(
+            f"error: qual probes run failed: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(outcome.summary.model_dump_json(indent=2))
+    else:
+        _print_probes_run_table(outcome)
+
+    if outcome.summary.failed or outcome.summary.launched or outcome.summary.pending:
+        raise typer.Exit(code=2)
+
+
+def _print_probes_run_table(outcome) -> None:
+    s = outcome.summary
+    typer.echo(
+        f"qual probes run: {s.qual_id} side={s.side}  "
+        f"total={s.probe_total}  passed={s.passed}  failed={s.failed}  "
+        f"launched={s.launched}  pending={s.pending}  skipped={s.skipped}"
+    )
+    for probe in outcome.state.probes.values():
+        status = probe.status.value if hasattr(probe.status, "value") else str(probe.status)
+        typer.echo(
+            f"  [{status:9s}] {probe.class_hash}  {probe.module_name}  "
+            f"run={probe.run_id or '-'}"
+        )
+
+
 def _print_synthetic_table(bundle, *, written_path: Optional[Path], published: bool) -> None:
     m = bundle.manifest
     typer.echo(

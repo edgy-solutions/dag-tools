@@ -30,6 +30,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..classes import ClassMatrix, Runnability
+from ..probes.state import ProbeRepStatus, ProbeRunState
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry, layout
 from ..runs.records import RunRecord
@@ -89,8 +90,15 @@ class Verdict(BaseModel):
     """Class hashes of failing RUNNABLE classes — operator triage list."""
     synthetic_classes_total: int = 0
     synthetic_classes_with_probe_coverage: int = 0
-    """Always 0 in v1 — Q5 not yet built. Surfaced so operators know
-    what they're accepting when they pass ``--accept-synthetic-coverage-missing``."""
+    """Synthetic classes whose probes PASSED on BOTH sides. Counts toward
+    the GO gate the same way runnable classes do — once every synthetic
+    class is here, the operator no longer needs
+    ``--accept-synthetic-coverage-missing``."""
+    synthetic_classes_red: List[str] = Field(default_factory=list)
+    """Synthetic classes whose probes RAN and FAILED on baseline or
+    candidate. Unlike "no probe deployed yet" (which is opt-out-able),
+    a probe that ran-and-failed is a real regression signal and blocks
+    GO regardless of acceptance flags."""
     observe_only_classes_total: int = 0
     orchestration_status: str = "deferred"
     """"deferred" until orchestration snapshot support lands."""
@@ -161,6 +169,25 @@ def build_verdict(
         # to the synthetic-coverage criterion.
         runnable_green = True
 
+    # --- Synthetic coverage -----------------------------------------------
+    baseline_probes = _load_probe_state(registry, qual_id, "baseline")
+    candidate_probes = _load_probe_state(registry, qual_id, "candidate")
+    synthetic_green: List[str] = []
+    synthetic_red: List[str] = []
+    for cls_v in synthetic_classes:
+        ch = cls_v.class_hash
+        b = baseline_probes.get(ch) if baseline_probes else None
+        c = candidate_probes.get(ch) if candidate_probes else None
+        if (b == ProbeRepStatus.PASSED and c == ProbeRepStatus.PASSED):
+            synthetic_green.append(ch)
+        elif b == ProbeRepStatus.FAILED or c == ProbeRepStatus.FAILED:
+            synthetic_red.append(ch)
+        # else: probe still PENDING / LAUNCHED / not yet deployed →
+        # counted under "missing coverage" via the difference below.
+    synthetic_uncovered = (
+        len(synthetic_classes) - len(synthetic_green) - len(synthetic_red)
+    )
+
     candidate_preflight_body = registry.read_side_preflight(qual_id, "candidate")
     preflight_passed: Optional[bool] = None
     if candidate_preflight_body:
@@ -183,10 +210,19 @@ def build_verdict(
             + ", ".join(runnable_red[:5])
             + ("..." if len(runnable_red) > 5 else "")
         )
-    if synthetic_classes and not gaps.synthetic_coverage_missing:
+    if synthetic_red:
+        # Probe ran AND failed — real regression signal, NOT opt-out-able.
         blocking.append(
-            f"{len(synthetic_classes)} synthetic-required class(es) have no probe coverage "
-            "(Q5 not implemented); pass --accept-synthetic-coverage-missing to ignore"
+            f"{len(synthetic_red)} synthetic-required class(es) had failing probes: "
+            + ", ".join(synthetic_red[:5])
+            + ("..." if len(synthetic_red) > 5 else "")
+        )
+    if synthetic_uncovered > 0 and not gaps.synthetic_coverage_missing:
+        blocking.append(
+            f"{synthetic_uncovered} synthetic-required class(es) have no probe coverage "
+            "(generate via `dagtools qual synthetic` + run via "
+            "`dagtools qual probes run --side baseline|candidate`); "
+            "pass --accept-synthetic-coverage-missing to ignore"
         )
     if not gaps.orchestration_deferred:
         blocking.append(
@@ -217,7 +253,8 @@ def build_verdict(
         runnable_classes_total=len(runnable_classes),
         runnable_classes_red=runnable_red,
         synthetic_classes_total=len(synthetic_classes),
-        synthetic_classes_with_probe_coverage=0,  # v1
+        synthetic_classes_with_probe_coverage=len(synthetic_green),
+        synthetic_classes_red=synthetic_red,
         observe_only_classes_total=len(observe_classes),
         orchestration_status="deferred",
         co_upgrade_risks_total=len(manifest.co_upgrade_risks),
@@ -291,17 +328,28 @@ def render_markdown(verdict: Verdict) -> str:
                                  unknown_note="not yet run"))
     lines.append(_criterion_line("All RUNNABLE classes green",
                                  verdict.runnable_classes_green))
-    synth_note = (
-        "no synthetic-required classes"
-        if verdict.synthetic_classes_total == 0
-        else (
-            f"{verdict.synthetic_classes_with_probe_coverage}/"
-            f"{verdict.synthetic_classes_total} via probes (Q5 not implemented)"
-        )
-    )
+    if verdict.synthetic_classes_total == 0:
+        synth_mark, synth_note = "✅", "no synthetic-required classes"
+    else:
+        covered = verdict.synthetic_classes_with_probe_coverage
+        red = len(verdict.synthetic_classes_red)
+        if red > 0:
+            synth_mark = "🛑"
+            synth_note = (
+                f"{red} probe(s) FAILED; "
+                f"{covered}/{verdict.synthetic_classes_total} green"
+            )
+        elif covered == verdict.synthetic_classes_total:
+            synth_mark = "✅"
+            synth_note = f"all {covered}/{verdict.synthetic_classes_total} probes passed"
+        else:
+            synth_mark = "⏳"
+            synth_note = (
+                f"{covered}/{verdict.synthetic_classes_total} via probes "
+                "(deploy + run remaining probes)"
+            )
     lines.append(
-        f"- {'✅' if verdict.synthetic_classes_total == 0 else '⏳'}"
-        f" **SYNTHETIC_REQUIRED classes covered**: {synth_note}"
+        f"- {synth_mark} **SYNTHETIC_REQUIRED classes covered**: {synth_note}"
     )
     lines.append(f"- ⏳ **Orchestration snapshots**: {verdict.orchestration_status}")
     risk_line = (
@@ -394,6 +442,27 @@ def _read_class_matrix(registry: InventoryRegistry, qual_id: str) -> ClassMatrix
             f"run `dagtools qual classes --id {qual_id}` first"
         )
     return ClassMatrix.model_validate_json(body)
+
+
+def _load_probe_state(
+    registry: InventoryRegistry,
+    qual_id: str,
+    side: str,
+) -> Dict[str, ProbeRepStatus]:
+    """Return ``class_hash -> ProbeRepStatus`` for the side, or empty if
+    probes haven't been run on that side yet. Returns empty dict (not
+    None) so the caller can treat "no probes deployed" and "probes still
+    pending" uniformly as "no coverage" — distinct from "probe failed"
+    which is a real signal."""
+    body = registry.read_probes_state(qual_id, side)
+    if not body:
+        return {}
+    try:
+        state = ProbeRunState.model_validate_json(body)
+    except Exception as e:
+        logger.warning("_load_probe_state: invalid state for %s/%s: %s", qual_id, side, e)
+        return {}
+    return {ch: rep.status for ch, rep in state.probes.items()}
 
 
 def _load_side_records(

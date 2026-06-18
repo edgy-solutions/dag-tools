@@ -537,15 +537,19 @@ dag_tools/qual/
 dag_tools/probes_location/  # the deployable `dag-tools-probes` Dagster code location
   loader.py                 # load_probes_from_dir + ProbeLoadReport (per-file soft-fail)
   definitions.py            # top-level `defs` the test deployment imports
+dag_tools/qual/probes/      # Q5c probe runner (parallel to runs/)
+  state.py                  # ProbeRunState + ProbeRepState + ProbeRepStatus
+  runner.py                 # run_probes_side launcher + reconciler + summary
 ```
 
-To be built (follow-up Q5 slices):
+Operator follow-ups (not blockers — visibility convenience):
 
 ```
-- Runner integration: launch each probe's upstream/downstream pair through Q2
-  so synthetic classes contribute to verdict coverage automatically.
 - `dagtools qual probes status` — GraphQL probe of the test deployment's
   dag-tools-probes location to verify which class_hashes are loaded vs missing.
+- Diff probe RunRecords like real-rep RunRecords in Q6's per-rep diff
+  (currently only the PASSED/FAILED status feeds coverage; the materialization +
+  asset-check parity is recorded but not yet compared side-to-side).
 ```
 
 ---
@@ -581,6 +585,10 @@ dagtools qual preflight --id <qual_id> --side baseline|candidate
 dagtools qual synthetic --id <qual_id>
                 [--skip-publish] [--skip-local]
                 [--local-path PATH] [--allow-overwrite]
+                [--format json|table]
+dagtools qual probes run --id <qual_id> --side baseline|candidate
+                [--retry-failed] [--only-class <hash>]
+                [--poll-interval N] [--poll-timeout N]
                 [--format json|table]
 dagtools qual report --id <qual_id>
                 [--accept-co-upgrade-risks]
@@ -736,7 +744,8 @@ caught it on itself.
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
 | 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
 | 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
-| 2 | Q5 Synthetic probe **run + Q6 coverage** | Not yet started — extend Q2 runner to launch probe assets per class; verdict coverage automatically green for synthetic classes with passing probes |
+| 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's downstream asset against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
+| 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides; `synthetic_classes_red` lists probes that ran-and-failed (blocks GO regardless of `--accept-synthetic-coverage-missing`) |
 | 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 
@@ -783,6 +792,13 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 dag-tools-probes location loads cleanly when no probes are deployed | `test_probes_location_loader.py::test_loader_returns_empty_report_when_env_unset` |
 | Q5 dag-tools-probes location soft-fails per-probe (one broken probe does NOT block the location) | `test_probes_location_loader.py::test_loader_soft_fails_a_malformed_probe` |
 | Q5 N generated probes merge into one Definitions without conflict | `test_probes_location_loader.py::test_loaded_probes_merge_into_one_definitions_without_resource_collision` |
+| Q5c probe runner launches against `dag-tools-probes` location with downstream asset key only | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
+| Q5c PASSED probe is sacred (no relaunch on re-invocation) | `test_probes_runner.py::test_run_probes_side_skips_passed_probes_on_re_invocation` |
+| Q5c LAUNCHED probes reconcile via GraphQL poll, not relaunch | `test_probes_runner.py::test_run_probes_side_reconciles_launched_via_poll_not_relaunch` |
+| Q5c state mirrors to registry after every transition | `test_probes_runner.py::test_run_probes_side_mirrors_state_to_registry_after_each_transition` |
+| Q6 counts synthetic classes with PASSED probes on BOTH sides as covered | `test_verdict.py::test_verdict_go_when_probes_pass_on_both_sides` |
+| Q6 probe FAILED blocks GO regardless of `--accept-synthetic-coverage-missing` | `test_verdict.py::test_verdict_no_go_when_probe_failed_even_with_synthetic_accept` |
+| Q6 partial probe coverage still requires `--accept-synthetic-coverage-missing` | `test_verdict.py::test_verdict_partial_probe_coverage_still_blocks` |
 
 ---
 
@@ -811,14 +827,18 @@ them, you're probably violating a recipe rule. Read carefully first.
   local in-process orchestration snapshot (`dagtools qual orchestration`)
   is a separate command and ships separately. Both are tracked in the
   implementation-status table.
-- **Q5 v1 is generation + deploy target.** `dagtools qual synthetic`
-  emits the per-class probe modules + manifest, and
-  `dag_tools.probes_location.definitions` is the Dagster code location
-  operators deploy to surface them on the test deployment. What's still
-  pending: the Q2 runner does not yet launch the probe assets per
-  class, and `qual report` still requires
-  `--accept-synthetic-coverage-missing` to GO past synthetic classes.
-  Run-integration + verdict-coverage-counting are the next slice.
+- **Q5 v1 is generation + deploy target + runner + Q6 coverage.**
+  `dagtools qual synthetic` generates the modules,
+  `dag_tools.probes_location.definitions` is the deployable code
+  location, and `dagtools qual probes run --side <s>` exercises each
+  probe through the test deployment. Q6 now counts synthetic classes
+  with PASSED probes on both sides as covered (no
+  `--accept-synthetic-coverage-missing` needed) and flags ran-and-failed
+  probes as a hard block (NOT opt-out-able with the synthetic accept
+  flag — that flag excuses *missing* coverage, not actively-failing
+  probes). The visibility convenience commands (`qual probes status`)
+  and deeper probe-record parity in Q6's per-rep diff are operator
+  follow-ups, not blockers.
 
 ---
 

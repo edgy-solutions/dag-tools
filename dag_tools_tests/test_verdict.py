@@ -380,7 +380,120 @@ def test_verdict_no_go_when_synthetic_classes_without_probe_coverage(setup):
     )
     assert verdict.status == VerdictStatus.NO_GO
     assert verdict.synthetic_classes_total == 1
+    assert verdict.synthetic_classes_with_probe_coverage == 0
     assert any("synthetic" in i for i in verdict.blocking_issues)
+
+
+# ---------------------------------------------------------------------------
+# Q5c probe coverage feeds Q6 verdict
+# ---------------------------------------------------------------------------
+
+
+def _publish_probe_state(registry, qual_id, side, class_hashes, status: str):
+    """Synthesize a ProbeRunState with one probe per class_hash at the
+    given status — lets verdict tests assert Q6's coverage rollup
+    without exercising the runner."""
+    probes_dict = {
+        ch: {
+            "class_hash": ch,
+            "module_name": f"probe_{ch[:8]}",
+            "status": status,
+            "run_id": f"probe-run-{side}-{ch[:6]}" if status in ("passed", "failed") else None,
+            "attempts": 1 if status in ("passed", "failed") else 0,
+        }
+        for ch in class_hashes
+    }
+    state = {
+        "schema_version": 1,
+        "qual_id": qual_id, "side": side,
+        "started_at": "2026-06-15T00:00:00+00:00",
+        "updated_at": "2026-06-15T00:00:00+00:00",
+        "probes": probes_dict,
+    }
+    registry.put_probes_state(qual_id, side, json.dumps(state).encode())
+
+
+def test_verdict_go_when_probes_pass_on_both_sides(setup):
+    """Q5c integration: a synthetic class with PASSED probes on baseline
+    AND candidate counts as covered, removes the missing-coverage blocker,
+    and contributes to GO without --accept-synthetic-coverage-missing."""
+    registry = setup
+    matrix = _seed_full_qualification(
+        registry, asset_tags={"synthetic_required": "true"},
+    )
+    _publish_state_and_records(registry, "q-test", "baseline", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_state_and_records(registry, "q-test", "candidate", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_preflight(registry, "q-test", "candidate", passed=True)
+
+    class_hashes = [c.class_hash for c in matrix.classes]
+    _publish_probe_state(registry, "q-test", "baseline", class_hashes, "passed")
+    _publish_probe_state(registry, "q-test", "candidate", class_hashes, "passed")
+
+    verdict = build_verdict(
+        "q-test", registry=registry,
+        gaps=GapAcceptance(orchestration_deferred=True),  # NO synthetic accept
+    )
+    assert verdict.status == VerdictStatus.GO, verdict.blocking_issues
+    assert verdict.synthetic_classes_with_probe_coverage == 1
+    assert verdict.synthetic_classes_red == []
+
+
+def test_verdict_no_go_when_probe_failed_even_with_synthetic_accept(setup):
+    """A probe that RAN and FAILED is a real regression signal — it must
+    block GO regardless of --accept-synthetic-coverage-missing (which
+    only excuses *missing* coverage, not actively-failing probes)."""
+    registry = setup
+    matrix = _seed_full_qualification(
+        registry, asset_tags={"synthetic_required": "true"},
+    )
+    _publish_state_and_records(registry, "q-test", "baseline", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_state_and_records(registry, "q-test", "candidate", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_preflight(registry, "q-test", "candidate", passed=True)
+
+    class_hashes = [c.class_hash for c in matrix.classes]
+    _publish_probe_state(registry, "q-test", "baseline", class_hashes, "passed")
+    _publish_probe_state(registry, "q-test", "candidate", class_hashes, "failed")
+
+    verdict = build_verdict(
+        "q-test", registry=registry,
+        gaps=GapAcceptance(
+            orchestration_deferred=True,
+            synthetic_coverage_missing=True,  # even with this opt-in
+        ),
+    )
+    assert verdict.status == VerdictStatus.NO_GO
+    assert verdict.synthetic_classes_red == class_hashes
+    assert any("failing probes" in i for i in verdict.blocking_issues)
+
+
+def test_verdict_partial_probe_coverage_still_blocks(setup):
+    """Probes deployed only on one side → still uncovered → blocked
+    unless --accept-synthetic-coverage-missing."""
+    registry = setup
+    matrix = _seed_full_qualification(
+        registry, asset_tags={"synthetic_required": "true"},
+    )
+    _publish_state_and_records(registry, "q-test", "baseline", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_state_and_records(registry, "q-test", "candidate", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_preflight(registry, "q-test", "candidate", passed=True)
+
+    class_hashes = [c.class_hash for c in matrix.classes]
+    # Only baseline has probe runs; candidate side hasn't run probes yet.
+    _publish_probe_state(registry, "q-test", "baseline", class_hashes, "passed")
+
+    verdict = build_verdict(
+        "q-test", registry=registry,
+        gaps=GapAcceptance(orchestration_deferred=True),
+    )
+    assert verdict.status == VerdictStatus.NO_GO
+    assert verdict.synthetic_classes_with_probe_coverage == 0
+    assert any("no probe coverage" in i for i in verdict.blocking_issues)
 
 
 # ---------------------------------------------------------------------------

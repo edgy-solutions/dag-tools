@@ -512,6 +512,74 @@ class InventoryRegistry:
             layout.qualification_probe_source_key(qual_id, class_hash)
         )
 
+    # --- Q5c probe-runner per-side state / records / summary ----------------
+
+    def put_probes_state(self, qual_id: str, side: str, body: bytes) -> None:
+        """Write ``qualifications/<qual_id>/<side>/probes/state.json``.
+
+        Mutable (mirrors the runnable-rep state file's semantics) — the
+        runner updates this after every per-probe transition.
+        """
+        self.storage.put_mutable(
+            layout.qualification_side_probes_state_key(qual_id, side),
+            body,
+            content_type="application/json",
+        )
+
+    def read_probes_state(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_probes_state_key(qual_id, side)
+        )
+
+    def put_probe_run_record(
+        self,
+        qual_id: str,
+        side: str,
+        class_hash: str,
+        run_id: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Persist one probe run's record under
+        ``qualifications/<qual_id>/<side>/probes/runs/<class_hash>/<run_id>.json``.
+
+        Immutable per ``run_id`` — re-launches get fresh run_ids and so
+        don't collide."""
+        key = layout.qualification_side_probe_run_key(qual_id, side, class_hash, run_id)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_probe_run_record(
+        self, qual_id: str, side: str, class_hash: str, run_id: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_probe_run_key(qual_id, side, class_hash, run_id)
+        )
+
+    def put_probes_summary(
+        self,
+        qual_id: str,
+        side: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write ``qualifications/<qual_id>/<side>/probes/summary.json``
+        (immutable by default)."""
+        key = layout.qualification_side_probes_summary_key(qual_id, side)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_probes_summary(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_probes_summary_key(qual_id, side)
+        )
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

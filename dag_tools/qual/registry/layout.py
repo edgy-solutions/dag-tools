@@ -141,6 +141,41 @@ def qualification_probe_source_key(qual_id: str, class_hash: str) -> str:
     return f"{qualification_prefix(qual_id)}probes/{class_hash}.py"
 
 
+# --- Q5c probe-runner state (separate slot from the runnable-rep state) ----
+
+def qualification_side_probes_state_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/probes/state.json``.
+
+    Mutable per-side probe state, sibling to ``<side>/state.json``.
+    Separate slot so a class can be both RUNNABLE (rep covered by
+    ``<side>/state.json``) and SYNTHETIC_REQUIRED (probe covered here)
+    without state collision.
+    """
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/probes/state.json"
+
+
+def qualification_side_probe_run_key(
+    qual_id: str, side: str, class_hash: str, run_id: str
+) -> str:
+    """``qualifications/<qual_id>/<side>/probes/runs/<class_hash>/<run_id>.json`` —
+    one persisted probe run record. Immutable per (qual_id, side, class_hash,
+    run_id)."""
+    _validate_side(side)
+    return (
+        f"{qualification_prefix(qual_id)}{side}/probes/runs/"
+        f"{class_hash}/{run_id}.json"
+    )
+
+
+def qualification_side_probes_summary_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/probes/summary.json`` — written
+    after ``qual probes run`` finishes a side. Immutable per (qual_id,
+    side)."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/probes/summary.json"
+
+
 def qualification_side_run_key(
     qual_id: str, side: str, class_hash: str, run_id: str
 ) -> str:
