@@ -921,6 +921,80 @@ def qual_probes_run(
         raise typer.Exit(code=2)
 
 
+@probes_app.command("status")
+def qual_probes_status(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    exit_nonzero_on_gap: bool = typer.Option(
+        False, "--exit-nonzero-on-gap/--no-exit-nonzero-on-gap",
+        help=(
+            "When true, exit code 2 if the dag-tools-probes location is "
+            "not fully loaded (any missing or partially loaded probes, "
+            "or the location itself is absent/erroring). Useful for "
+            "operator scripts that gate the next step on a clean deploy."
+        ),
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q5d: cross-reference the probe manifest against the test
+    deployment's dag-tools-probes location.
+
+    Reports per probe: fully loaded vs partially loaded vs missing; and
+    flags unexpected probe-shaped asset keys present in the location
+    but absent from the current manifest (usually stale files)."""
+    from .probes import check_probes_status
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        report = check_probes_status(qual_id, registry=registry)
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(
+            f"error: qual probes status failed: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        _print_probes_status_table(report)
+
+    if exit_nonzero_on_gap and not report.all_loaded:
+        raise typer.Exit(code=2)
+
+
+def _print_probes_status_table(report) -> None:
+    typer.echo(
+        f"qual probes status: {report.qual_id}  location={report.location_name}  "
+        f"status={report.location_load_status}"
+    )
+    if report.location_error:
+        typer.echo(f"  location error: {report.location_error}")
+    typer.echo(
+        f"  expected={report.expected_class_count}  "
+        f"fully_loaded={report.fully_loaded_class_count}  "
+        f"partial={len(report.partially_loaded)}  "
+        f"missing={len(report.missing_class_hashes)}  "
+        f"unexpected={len(report.unexpected_probe_asset_keys)}"
+    )
+    for ch in report.missing_class_hashes:
+        typer.echo(f"  MISSING:    {ch}")
+    for c in report.partially_loaded:
+        bits = []
+        if not c.upstream_loaded:
+            bits.append("upstream missing")
+        if not c.downstream_loaded:
+            bits.append("downstream missing")
+        typer.echo(f"  PARTIAL:    {c.class_hash}  ({', '.join(bits)})")
+    for ak in report.unexpected_probe_asset_keys:
+        typer.echo(f"  UNEXPECTED: {'/'.join(ak)}")
+
+
 def _print_probes_run_table(outcome) -> None:
     s = outcome.summary
     typer.echo(

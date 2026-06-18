@@ -43,6 +43,12 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Strict by default.** Unknown gaps block GO. `GapAcceptance` exists so operators can explicitly accept "yes, I know orchestration isn't implemented and I'm OK going without it" — the verdict layer does NOT decide that on the operator's behalf. New gaps follow the same pattern: add a `GapAcceptance` field defaulting to False, surface a blocking issue when False, document the override flag in the CLI.
 - **Candidate-preflight failure is a hard gate, period.** No GapAcceptance bypass exists or should be added — the operator should fix the deployment, not paper over it.
 
+## 4h-1. Probe deploy-state status (`dag_tools.qual.probes.status`)
+- **Location name is HARD-CODED to `dag-tools-probes`** — same constant the runner uses. If a future deployment needs configurability, surface it through the manifest, not a per-call override.
+- **`ABSENT` is distinct from `LOADED` empty.** The workspace returning no `dag-tools-probes` entry is its own diagnostic state (operator forgot to register the location); don't collapse it into "no probes."
+- **Partial loads are visible, not silenced.** Upstream-loaded-downstream-missing (or vice versa) usually means an `_IO_MANAGER_ERROR` fallback path is masking a class-import problem. Surface it; the operator needs the asymmetry to triage.
+- **Unexpected probe-shaped assets are INFORMATIONAL.** Stale files in `DAGTOOLS_PROBES_DIR` get flagged but don't fail `all_loaded` — forcing operators to wipe the probe dir every iteration would be hostile.
+
 ## 4h0. Probe runner (`dag_tools.qual.probes`) + Q6 synthetic coverage
 - **Probe state is in its OWN slot — never mixed with runnable-rep state.** `qualifications/<qual_id>/<side>/probes/state.json` for probes; `<side>/state.json` for runnable reps. Run records mirror: `<side>/probes/runs/.../` vs `<side>/runs/.../`. The two paths must not collide because a class can legitimately be both RUNNABLE (covered by a rep) and SYNTHETIC_REQUIRED (covered by a probe), and Q6 reads both.
 - **The probe state schemas are SEPARATE TYPES** (`ProbeRepState` / `ProbeRepStatus`) from the rep state types (`RepState` / `RepStatus`). They have the same status values but distinct types — accidental cross-wiring fails type checks at the call site instead of silently working.

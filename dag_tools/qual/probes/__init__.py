@@ -29,6 +29,11 @@ from .state import (
     ProbeRunState,
     default_local_probes_state_path,
 )
+from .status import (
+    ProbeAssetCheck,
+    ProbesStatusReport,
+    check_probes_status,
+)
 
 __all__ = [
     "SCHEMA_VERSION_PROBES_STATE",
@@ -39,4 +44,7 @@ __all__ = [
     "ProbeSideOutcome",
     "ProbeSideSummary",
     "run_probes_side",
+    "ProbeAssetCheck",
+    "ProbesStatusReport",
+    "check_probes_status",
 ]

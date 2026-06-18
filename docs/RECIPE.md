@@ -542,11 +542,9 @@ dag_tools/qual/probes/      # Q5c probe runner (parallel to runs/)
   runner.py                 # run_probes_side launcher + reconciler + summary
 ```
 
-Operator follow-ups (not blockers — visibility convenience):
+Operator follow-up (next slice — visibility convenience):
 
 ```
-- `dagtools qual probes status` — GraphQL probe of the test deployment's
-  dag-tools-probes location to verify which class_hashes are loaded vs missing.
 - Diff probe RunRecords like real-rep RunRecords in Q6's per-rep diff
   (currently only the PASSED/FAILED status feeds coverage; the materialization +
   asset-check parity is recorded but not yet compared side-to-side).
@@ -589,6 +587,9 @@ dagtools qual synthetic --id <qual_id>
 dagtools qual probes run --id <qual_id> --side baseline|candidate
                 [--retry-failed] [--only-class <hash>]
                 [--poll-interval N] [--poll-timeout N]
+                [--format json|table]
+dagtools qual probes status --id <qual_id>
+                [--exit-nonzero-on-gap]
                 [--format json|table]
 dagtools qual report --id <qual_id>
                 [--accept-co-upgrade-risks]
@@ -745,6 +746,7 @@ caught it on itself.
 | 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
 | 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
 | 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's downstream asset against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
+| 2 | Q5d Probe deploy-state visibility — `dagtools qual probes status` | ✅ done — GraphQL cross-reference of probe manifest vs the dag-tools-probes location: fully-loaded vs partially-loaded vs missing classes + stale-asset detection |
 | 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides; `synthetic_classes_red` lists probes that ran-and-failed (blocks GO regardless of `--accept-synthetic-coverage-missing`) |
 | 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |

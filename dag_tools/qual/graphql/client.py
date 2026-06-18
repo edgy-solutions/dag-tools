@@ -424,6 +424,68 @@ query DagtoolsWorkspace {
             ))
         return out
 
+    LOCATION_ASSETS_QUERY = """
+query DagtoolsLocationAssets {
+  workspaceOrError {
+    __typename
+    ... on Workspace {
+      locationEntries {
+        name
+        loadStatus
+        locationOrLoadError {
+          __typename
+          ... on RepositoryLocation {
+            repositories {
+              name
+              assetNodes {
+                assetKey { path }
+              }
+            }
+          }
+          ... on PythonError { message }
+        }
+      }
+    }
+    ... on PythonError { message }
+  }
+}
+""".strip()
+
+    def get_location_asset_keys(self, location_name: str) -> List[List[str]]:
+        """Return every asset key in the named code location.
+
+        Returns ``[]`` when the location is absent or in an error /
+        loading state — operators reading the report can tell from the
+        outer status (via :meth:`get_code_locations`) why; this method
+        deliberately doesn't raise on a not-yet-loaded location.
+
+        Used by ``dagtools qual probes status`` to cross-reference the
+        probe manifest against what the test deployment actually shows.
+        """
+        data = self.post(self.LOCATION_ASSETS_QUERY)
+        result = data.get("workspaceOrError") or {}
+        if result.get("__typename") != "Workspace":
+            raise DagsterGraphQLError(
+                f"workspace lookup failed ({result.get('__typename')}): "
+                f"{result.get('message') or 'no detail'}"
+            )
+        out: List[List[str]] = []
+        for entry in result.get("locationEntries") or []:
+            if entry.get("name") != location_name:
+                continue
+            link = entry.get("locationOrLoadError") or {}
+            if link.get("__typename") != "RepositoryLocation":
+                # Loading / error states: return empty so the caller
+                # can distinguish "absent" from "no assets" via the
+                # outer location-status check.
+                return []
+            for repo in link.get("repositories") or []:
+                for node in repo.get("assetNodes") or []:
+                    ak = (node.get("assetKey") or {}).get("path")
+                    if isinstance(ak, list) and ak:
+                        out.append([str(p) for p in ak])
+        return out
+
     def get_event_log(self, run_id: str) -> List[EventLogEntry]:
         """Pull all event-log entries for a run. Soft-failing per entry —
         if Dagster adds a new event subtype, unknown shapes still come
