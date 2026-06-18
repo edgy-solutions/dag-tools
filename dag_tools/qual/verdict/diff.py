@@ -218,6 +218,13 @@ class ClassVerdict(BaseModel):
     rep_count: int
     rep_diffs: List[RepDiff]
 
+    probe_diff: Optional[RepDiff] = None
+    """Per-class probe diff for SYNTHETIC_REQUIRED classes (None otherwise).
+    The probe diff uses the same :class:`RepDiff` shape as runnable reps
+    so Q6 reporting can render it uniformly. ``probe_diff.is_pass`` False
+    means the probe ran on both sides but the run records diverged — a
+    real regression signal that blocks GO."""
+
     is_green: bool
     """True iff EVERY RUNNABLE representative's RepDiff has ``is_pass=True``.
     Non-runnable classes (SYNTHETIC_REQUIRED, OBSERVE_ONLY) are reported
@@ -232,12 +239,19 @@ def build_class_verdicts(
     matrix: ClassMatrix,
     *,
     diff_by_rep_id: Dict[str, RepDiff],
+    probe_diff_by_class_hash: Optional[Dict[str, RepDiff]] = None,
 ) -> List[ClassVerdict]:
     """Roll RepDiffs up into per-class verdicts.
 
     ``diff_by_rep_id`` is keyed by the same ``rep_id`` the runs state uses
     so the caller can populate it without re-deriving keys here.
+    ``probe_diff_by_class_hash`` is keyed by class_hash (one probe per
+    synthetic class) and attached to the per-class verdict for
+    SYNTHETIC_REQUIRED classes. Only attached — ``is_green`` for non-
+    runnable classes still defaults True; the verdict-level gate
+    decides whether a probe diff failure blocks GO.
     """
+    probe_diff_by_class_hash = probe_diff_by_class_hash or {}
     verdicts: List[ClassVerdict] = []
     for cls in matrix.classes:
         per_class: List[RepDiff] = []
@@ -272,12 +286,19 @@ def build_class_verdicts(
             is_green = True
             failure_summary = None
 
+        probe_diff = (
+            probe_diff_by_class_hash.get(cls.class_hash)
+            if runnability_label == Runnability.SYNTHETIC_REQUIRED.value
+            else None
+        )
+
         verdicts.append(ClassVerdict(
             class_hash=cls.class_hash,
             runnability=runnability_label,
             member_count=cls.member_count,
             rep_count=len(cls.representatives),
             rep_diffs=per_class,
+            probe_diff=probe_diff,
             is_green=is_green,
             failure_summary=failure_summary,
         ))

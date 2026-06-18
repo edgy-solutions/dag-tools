@@ -497,6 +497,125 @@ def test_verdict_partial_probe_coverage_still_blocks(setup):
 
 
 # ---------------------------------------------------------------------------
+# Q5e probe RunRecord diff in Q6 — divergent-but-passing probes
+# ---------------------------------------------------------------------------
+
+
+def _publish_probe_record(registry, qual_id, side, class_hash, *,
+                          materialization_keys, metadata_keys,
+                          asset_check_results=None):
+    """Persist a probe RunRecord under the class_hash + run_id we
+    synthesized in _publish_probe_state. Matching the runner's persisted
+    shape lets Q6 read + diff."""
+    run_id = f"probe-run-{side}-{class_hash[:6]}"
+    record = RunRecord(
+        qual_id=qual_id, side=side, class_hash=class_hash,
+        asset_key=[f"probe_{class_hash[:8]}_downstream"],
+        repo="dag-tools-probes", git_sha=class_hash[:12],
+        run_id=run_id, success=True, status="SUCCESS",
+        materialization_events=[
+            MaterializationEventSummary(asset_key=list(k), metadata_keys=metadata_keys)
+            for k in materialization_keys
+        ],
+        metadata_keys=metadata_keys,
+        asset_check_results=asset_check_results or [],
+        duration_seconds=2.0, event_count=len(materialization_keys),
+    )
+    registry.put_probe_run_record(
+        qual_id=qual_id, side=side, class_hash=class_hash, run_id=run_id,
+        body=record.model_dump_json().encode("utf-8"),
+    )
+
+
+def test_verdict_diverged_probes_blocks_go_even_with_passing_status(setup):
+    """Both probe sides terminate as PASSED at the run level but produce
+    DIFFERENT materialization metadata keys — this is exactly the kind
+    of regression Q6 exists to surface. The class must end up in
+    synthetic_classes_red and block GO regardless of acceptance flags."""
+    registry = setup
+    matrix = _seed_full_qualification(
+        registry, asset_tags={"synthetic_required": "true"},
+    )
+    _publish_state_and_records(registry, "q-test", "baseline", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_state_and_records(registry, "q-test", "candidate", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_preflight(registry, "q-test", "candidate", passed=True)
+
+    class_hashes = [c.class_hash for c in matrix.classes]
+    _publish_probe_state(registry, "q-test", "baseline", class_hashes, "passed")
+    _publish_probe_state(registry, "q-test", "candidate", class_hashes, "passed")
+
+    for ch in class_hashes:
+        # Baseline record: one metadata key "row_count".
+        _publish_probe_record(
+            registry, "q-test", "baseline", ch,
+            materialization_keys=[[f"probe_{ch[:8]}_downstream"]],
+            metadata_keys=["row_count"],
+        )
+        # Candidate record: DIFFERENT metadata key set.
+        _publish_probe_record(
+            registry, "q-test", "candidate", ch,
+            materialization_keys=[[f"probe_{ch[:8]}_downstream"]],
+            metadata_keys=["row_count", "schema_version"],
+        )
+
+    verdict = build_verdict(
+        "q-test", registry=registry,
+        gaps=GapAcceptance(
+            orchestration_deferred=True,
+            synthetic_coverage_missing=True,
+        ),
+    )
+    assert verdict.status == VerdictStatus.NO_GO
+    assert verdict.synthetic_classes_red == class_hashes
+    # And the per-class probe_diff carries the divergence detail.
+    for cls in verdict.class_verdicts:
+        if cls.class_hash in class_hashes:
+            assert cls.probe_diff is not None
+            assert cls.probe_diff.metadata_keys_parity is False
+            assert any("metadata key set differs" in n for n in cls.probe_diff.notes)
+
+
+def test_verdict_matching_probe_records_count_as_covered(setup):
+    """When the probe RunRecords match across sides (same materialization
+    + metadata + check parity) AND both probes PASSED, the class is
+    counted as covered — same outcome as the records-less back-compat
+    path, but now backed by the actual run record diff."""
+    registry = setup
+    matrix = _seed_full_qualification(
+        registry, asset_tags={"synthetic_required": "true"},
+    )
+    _publish_state_and_records(registry, "q-test", "baseline", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_state_and_records(registry, "q-test", "candidate", matrix,
+                               rep_status=RepStatus.SKIPPED)
+    _publish_preflight(registry, "q-test", "candidate", passed=True)
+
+    class_hashes = [c.class_hash for c in matrix.classes]
+    _publish_probe_state(registry, "q-test", "baseline", class_hashes, "passed")
+    _publish_probe_state(registry, "q-test", "candidate", class_hashes, "passed")
+    for ch in class_hashes:
+        for side in ("baseline", "candidate"):
+            _publish_probe_record(
+                registry, "q-test", side, ch,
+                materialization_keys=[[f"probe_{ch[:8]}_downstream"]],
+                metadata_keys=["row_count"],
+            )
+
+    verdict = build_verdict(
+        "q-test", registry=registry,
+        gaps=GapAcceptance(orchestration_deferred=True),
+    )
+    assert verdict.status == VerdictStatus.GO, verdict.blocking_issues
+    # ClassVerdict carries the probe_diff for operator review.
+    for cls in verdict.class_verdicts:
+        if cls.runnability == "synthetic_required":
+            assert cls.probe_diff is not None
+            assert cls.probe_diff.is_pass is True
+
+
+# ---------------------------------------------------------------------------
 # Publish + render
 # ---------------------------------------------------------------------------
 

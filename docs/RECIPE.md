@@ -542,13 +542,10 @@ dag_tools/qual/probes/      # Q5c probe runner (parallel to runs/)
   runner.py                 # run_probes_side launcher + reconciler + summary
 ```
 
-Operator follow-up (next slice — visibility convenience):
-
-```
-- Diff probe RunRecords like real-rep RunRecords in Q6's per-rep diff
-  (currently only the PASSED/FAILED status feeds coverage; the materialization +
-  asset-check parity is recorded but not yet compared side-to-side).
-```
+Q5 phase complete — every recipe item under "Synthetic coverage for
+SYNTHETIC_REQUIRED classes" is implemented end-to-end (generation +
+deploy target + runner + deploy-state visibility + Q6 coverage + Q6
+record diff).
 
 ---
 
@@ -747,7 +744,8 @@ caught it on itself.
 | 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
 | 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's downstream asset against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
 | 2 | Q5d Probe deploy-state visibility — `dagtools qual probes status` | ✅ done — GraphQL cross-reference of probe manifest vs the dag-tools-probes location: fully-loaded vs partially-loaded vs missing classes + stale-asset detection |
-| 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides; `synthetic_classes_red` lists probes that ran-and-failed (blocks GO regardless of `--accept-synthetic-coverage-missing`) |
+| 2 | Q5e Probe RunRecord diff in Q6 | ✅ done — divergent-but-passing probes (both PASSED but materialization / metadata / asset-check parity broke) populate `synthetic_classes_red` and block GO regardless of acceptance flags; `ClassVerdict.probe_diff` carries the per-class diff for `UPGRADE_VERDICT.md` |
+| 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides AND (when records exist) diff cleanly; graceful degradation to status-only when records are missing |
 | 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 
@@ -801,6 +799,8 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q6 counts synthetic classes with PASSED probes on BOTH sides as covered | `test_verdict.py::test_verdict_go_when_probes_pass_on_both_sides` |
 | Q6 probe FAILED blocks GO regardless of `--accept-synthetic-coverage-missing` | `test_verdict.py::test_verdict_no_go_when_probe_failed_even_with_synthetic_accept` |
 | Q6 partial probe coverage still requires `--accept-synthetic-coverage-missing` | `test_verdict.py::test_verdict_partial_probe_coverage_still_blocks` |
+| Q6 divergent-but-passing probes block GO regardless of acceptance flags | `test_verdict.py::test_verdict_diverged_probes_blocks_go_even_with_passing_status` |
+| Q6 matching probe records (both sides PASSED + clean diff) count as covered | `test_verdict.py::test_verdict_matching_probe_records_count_as_covered` |
 
 ---
 

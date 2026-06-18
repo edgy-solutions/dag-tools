@@ -30,7 +30,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..classes import ClassMatrix, Runnability
-from ..probes.state import ProbeRepStatus, ProbeRunState
+from ..probes.state import ProbeRepState, ProbeRepStatus, ProbeRunState
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry, layout
 from ..runs.records import RunRecord
@@ -170,23 +170,73 @@ def build_verdict(
         runnable_green = True
 
     # --- Synthetic coverage -----------------------------------------------
-    baseline_probes = _load_probe_state(registry, qual_id, "baseline")
-    candidate_probes = _load_probe_state(registry, qual_id, "candidate")
+    baseline_probes_state = _load_probe_run_state(registry, qual_id, "baseline")
+    candidate_probes_state = _load_probe_run_state(registry, qual_id, "candidate")
+    baseline_probes = {ch: rs.status for ch, rs in (baseline_probes_state or {}).items()}
+    candidate_probes = {ch: rs.status for ch, rs in (candidate_probes_state or {}).items()}
+
+    # Build per-class probe diffs (when both records exist) — same shape
+    # as the runnable-rep diff so reporting renders uniformly.
+    probe_diff_by_class_hash: Dict[str, RepDiff] = {}
+    for cls_v in synthetic_classes:
+        ch = cls_v.class_hash
+        b_state = (baseline_probes_state or {}).get(ch)
+        c_state = (candidate_probes_state or {}).get(ch)
+        b_record = _load_probe_record(registry, qual_id, "baseline", b_state)
+        c_record = _load_probe_record(registry, qual_id, "candidate", c_state)
+        if b_record is None and c_record is None:
+            continue  # No records → fall back to state-based coverage.
+        pseudo_rep = _probe_pseudo_rep(ch, b_state or c_state)
+        probe_diff_by_class_hash[ch] = diff_rep(
+            rep=pseudo_rep, class_hash=ch,
+            baseline=b_record, candidate=c_record,
+        )
+
     synthetic_green: List[str] = []
     synthetic_red: List[str] = []
     for cls_v in synthetic_classes:
         ch = cls_v.class_hash
-        b = baseline_probes.get(ch) if baseline_probes else None
-        c = candidate_probes.get(ch) if candidate_probes else None
-        if (b == ProbeRepStatus.PASSED and c == ProbeRepStatus.PASSED):
-            synthetic_green.append(ch)
-        elif b == ProbeRepStatus.FAILED or c == ProbeRepStatus.FAILED:
+        b = baseline_probes.get(ch)
+        c = candidate_probes.get(ch)
+        probe_diff = probe_diff_by_class_hash.get(ch)
+
+        if b == ProbeRepStatus.FAILED or c == ProbeRepStatus.FAILED:
             synthetic_red.append(ch)
+        elif b == ProbeRepStatus.PASSED and c == ProbeRepStatus.PASSED:
+            # Both passed at the terminal level. If we ALSO have run
+            # records and the diff failed, this is a divergence: probe
+            # succeeded both times but produced different outputs — a
+            # real regression signal, NOT covered.
+            if probe_diff is not None and not probe_diff.is_pass:
+                synthetic_red.append(ch)
+            else:
+                synthetic_green.append(ch)
         # else: probe still PENDING / LAUNCHED / not yet deployed →
         # counted under "missing coverage" via the difference below.
     synthetic_uncovered = (
         len(synthetic_classes) - len(synthetic_green) - len(synthetic_red)
     )
+
+    # Rebuild class_verdicts now that we have probe diffs to attach.
+    class_verdicts = build_class_verdicts(
+        matrix,
+        diff_by_rep_id=diff_by_rep_id,
+        probe_diff_by_class_hash=probe_diff_by_class_hash,
+    )
+    # Recompute synthetic_classes against the updated verdict list so
+    # both downstream consumers see the same objects.
+    synthetic_classes = [
+        v for v in class_verdicts
+        if v.runnability == Runnability.SYNTHETIC_REQUIRED.value
+    ]
+    runnable_classes = [
+        v for v in class_verdicts
+        if v.runnability == Runnability.RUNNABLE.value
+    ]
+    observe_classes = [
+        v for v in class_verdicts
+        if v.runnability == Runnability.OBSERVE_ONLY.value
+    ]
 
     candidate_preflight_body = registry.read_side_preflight(qual_id, "candidate")
     preflight_passed: Optional[bool] = None
@@ -211,9 +261,13 @@ def build_verdict(
             + ("..." if len(runnable_red) > 5 else "")
         )
     if synthetic_red:
-        # Probe ran AND failed — real regression signal, NOT opt-out-able.
+        # Probe ran AND failed, OR ran on both sides but diverged — real
+        # regression signal, NOT opt-out-able. The verdict's
+        # ``class_verdicts[*].probe_diff`` carries the diff notes so the
+        # operator can see WHAT diverged in UPGRADE_VERDICT.md.
         blocking.append(
-            f"{len(synthetic_red)} synthetic-required class(es) had failing probes: "
+            f"{len(synthetic_red)} synthetic-required class(es) had failing probes "
+            "(probe FAILED or run records diverged): "
             + ", ".join(synthetic_red[:5])
             + ("..." if len(synthetic_red) > 5 else "")
         )
@@ -395,6 +449,27 @@ def render_markdown(verdict: Verdict) -> str:
                     lines.append(f"  - {note}")
             lines.append("")
 
+    if verdict.synthetic_classes_red:
+        lines.append("## Failing SYNTHETIC_REQUIRED probes")
+        lines.append("")
+        red_set = set(verdict.synthetic_classes_red)
+        for cls in verdict.class_verdicts:
+            if cls.class_hash not in red_set:
+                continue
+            lines.append(f"### `{cls.class_hash}`")
+            lines.append("")
+            pd = cls.probe_diff
+            if pd is None:
+                lines.append("- probe terminal status FAILED on one or both sides")
+            else:
+                lines.append(
+                    f"- baseline run `{pd.baseline_run_id or '-'}` "
+                    f"vs candidate run `{pd.candidate_run_id or '-'}`"
+                )
+                for note in pd.notes:
+                    lines.append(f"  - {note}")
+            lines.append("")
+
     lines.append("## All classes")
     lines.append("")
     lines.append("| Class | Runnability | Members | Reps | Verdict |")
@@ -444,14 +519,14 @@ def _read_class_matrix(registry: InventoryRegistry, qual_id: str) -> ClassMatrix
     return ClassMatrix.model_validate_json(body)
 
 
-def _load_probe_state(
+def _load_probe_run_state(
     registry: InventoryRegistry,
     qual_id: str,
     side: str,
-) -> Dict[str, ProbeRepStatus]:
-    """Return ``class_hash -> ProbeRepStatus`` for the side, or empty if
-    probes haven't been run on that side yet. Returns empty dict (not
-    None) so the caller can treat "no probes deployed" and "probes still
+) -> Dict[str, "ProbeRepState"]:
+    """Return ``class_hash -> ProbeRepState`` for the side, or empty if
+    probes haven't been run on that side yet. Empty dict (not None) so
+    the caller can treat "no probes deployed" and "probes still
     pending" uniformly as "no coverage" — distinct from "probe failed"
     which is a real signal."""
     body = registry.read_probes_state(qual_id, side)
@@ -460,9 +535,57 @@ def _load_probe_state(
     try:
         state = ProbeRunState.model_validate_json(body)
     except Exception as e:
-        logger.warning("_load_probe_state: invalid state for %s/%s: %s", qual_id, side, e)
+        logger.warning("_load_probe_run_state: invalid state for %s/%s: %s", qual_id, side, e)
         return {}
-    return {ch: rep.status for ch, rep in state.probes.items()}
+    return dict(state.probes)
+
+
+def _load_probe_record(
+    registry: InventoryRegistry,
+    qual_id: str,
+    side: str,
+    probe_state,
+) -> Optional[RunRecord]:
+    """Read the probe's :class:`RunRecord` from the registry, if any.
+
+    Returns None when the probe state is missing or has no ``run_id``
+    yet (PENDING / LAUNCHED-but-never-persisted). Missing records are
+    treated as graceful degradation — the verdict falls back to the
+    state-based PASSED/FAILED check.
+    """
+    if probe_state is None or probe_state.run_id is None:
+        return None
+    body = registry.read_probe_run_record(
+        qual_id, side, probe_state.class_hash, probe_state.run_id,
+    )
+    if body is None:
+        return None
+    try:
+        return RunRecord.model_validate_json(body)
+    except Exception as e:
+        logger.warning(
+            "_load_probe_record: invalid record %s/%s/%s/%s: %s",
+            qual_id, side, probe_state.class_hash, probe_state.run_id, e,
+        )
+        return None
+
+
+def _probe_pseudo_rep(class_hash: str, probe_state):
+    """Synthesize a Representative for the probe diff.
+
+    The runner uses the same trick when building probe RunRecords — we
+    feed Q2's ``build_run_record`` a pseudo-rep so the records have
+    consistent shape. Here we do the symmetric thing for diffing.
+    """
+    from ..classes import Representative, Runnability
+    module_name = probe_state.module_name if probe_state else f"probe_{class_hash[:8]}"
+    return Representative(
+        repo="dag-tools-probes",
+        git_sha=class_hash[:12],
+        asset_key=[f"{module_name}_downstream"],
+        runnability=Runnability.SYNTHETIC_REQUIRED,
+        runnability_reason="probe",
+    )
 
 
 def _load_side_records(
