@@ -755,5 +755,106 @@ def _print_verdict_table(verdict) -> None:
             typer.echo(f"    - {issue}")
 
 
+@qual_app.command("synthetic")
+def qual_synthetic(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    skip_publish: bool = typer.Option(
+        False, "--skip-publish",
+        help="Write probe modules locally but do NOT push to the registry.",
+    ),
+    skip_local: bool = typer.Option(
+        False, "--skip-local",
+        help="Push to registry but do NOT write a local copy.",
+    ),
+    local_path: Optional[Path] = typer.Option(
+        None, "--local-path",
+        help="Override local probes directory (default ~/.dagtools/quals/<id>/probes/).",
+    ),
+    allow_overwrite: bool = typer.Option(
+        False, "--allow-overwrite",
+        help="Allow re-publishing the probe bundle for this qual_id.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Q5: generate synthetic probe modules for every SYNTHETIC_REQUIRED
+    class so the operator can deploy them to the dag-tools-probes
+    code location.
+
+    What runs:
+      1. Read the manifest + class matrix.
+      2. For each SYNTHETIC_REQUIRED class, generate a self-contained
+         Python module: real IO manager FQN, deterministic dict payload,
+         upstream + downstream asset pair, with a fallback to
+         InMemoryIOManager so the code location always loads.
+      3. Write the bundle to BOTH the registry and a local directory
+         the operator pulls from.
+
+    The probe deployment + run-through-Q2 + verdict-coverage-counting is
+    the natural follow-up; v1 stops at generation so operators can start
+    integrating the probe location into their test deployment.
+    """
+    from .synthetic import (
+        default_local_probes_dir,
+        generate_bundle,
+        publish_bundle,
+        write_local_bundle,
+    )
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        bundle = generate_bundle(qual_id, registry=registry)
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(f"error: qual synthetic failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if not skip_publish:
+        try:
+            publish_bundle(bundle, registry=registry, allow_overwrite=allow_overwrite)
+        except Exception as e:
+            typer.secho(
+                f"error: probe bundle publish failed: {e}",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+
+    written_path: Optional[Path] = None
+    if not skip_local:
+        written_path = write_local_bundle(bundle, local_path=local_path)
+
+    if format == OutputFormat.JSON:
+        payload = bundle.manifest.model_dump(mode="json")
+        payload["published_to_registry"] = not skip_publish
+        payload["local_path"] = str(written_path) if written_path else None
+        typer.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        _print_synthetic_table(bundle, written_path=written_path, published=not skip_publish)
+
+
+def _print_synthetic_table(bundle, *, written_path: Optional[Path], published: bool) -> None:
+    m = bundle.manifest
+    typer.echo(
+        f"qual synthetic: {m.qual_id}  synthetic_classes={m.synthetic_class_count}  "
+        f"probes={len(m.probes)}  skipped={len(m.skipped_class_hashes)}"
+    )
+    if published:
+        typer.echo(f"  published to registry")
+    if written_path is not None:
+        typer.echo(f"  local: {written_path}")
+    for p in m.probes:
+        notes_str = f" ({len(p.notes)} note(s))" if p.notes else ""
+        typer.echo(
+            f"  - {p.class_hash}  {p.module_name}  "
+            f"io_manager={p.io_manager_class or '(none)'}{notes_str}"
+        )
+    for ch in m.skipped_class_hashes:
+        typer.echo(f"  SKIPPED: {ch}")
+
+
 if __name__ == "__main__":
     app()

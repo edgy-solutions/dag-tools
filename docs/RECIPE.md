@@ -381,22 +381,43 @@ querying run status via GraphQL rather than relaunching.
 ### Phase Q5 — Synthetic coverage for `SYNTHETIC_REQUIRED` classes
 
 ```
-dagtools qual synthetic --id <qual_id> --side <side>
+dagtools qual synthetic --id <qual_id>
+                        [--skip-publish] [--skip-local]
+                        [--local-path PATH] [--allow-overwrite]
+                        [--format json|table]
 ```
 
-For each such class, generate a module under a dedicated **probe code
-location** deployed to the test deployment (`dag-tools-probes` user
-deployment):
+For each `SYNTHETIC_REQUIRED` class, the generator emits a self-contained
+Dagster module the operator drops into the `dag-tools-probes` user
+deployment. v1 (shipped) does **generation + persistence**; "deploy these
+through Q2 and feed coverage into Q6" is the next slice — until then,
+`qual report --accept-synthetic-coverage-missing` is how operators GO past
+synthetic gaps.
 
-- Import the **real** IO manager and resource classes (FQNs from the
-  inventory — this is why the survey records them), instantiated with staging
-  config.
-- Trivial upstream asset producing a small deterministic payload matching the
-  class's broad shape (DataFrame/dict/file — infer from IO manager type;
-  record the assumption), plus a downstream that loads and asserts
-  equality/shape.
-- Mirror the class's partitions def and partition mappings.
-- Launch through the deployment like any other representative.
+What the generator produces per class:
+
+- **Import the real IO manager** by FQN (from the inventory), wrapped in a
+  try/except with an `InMemoryIOManager` fallback so the
+  `dag-tools-probes` code location always loads. A failed import becomes a
+  runtime error at materialization time (visible in the run output), not a
+  silent code-location load failure.
+- **Deterministic dict payload** + an upstream/downstream asset pair. The
+  downstream loads the upstream through the same IO manager and asserts
+  the payload survived the round-trip intact.
+- **Notes** captured when the class has features v1 doesn't yet
+  synthesize: partitions defs (operator extends the probe), partition
+  mappings, custom `DagsterDbtTranslator` subclasses (a dbt-aware probe is
+  the operator's job).
+
+Outputs:
+
+- Registry: `qualifications/<qual_id>/probes/<class_hash>.py` (one per
+  class) and `qualifications/<qual_id>/probes/probe_manifest.json` —
+  manifest written **last**, so a reader observing it is guaranteed every
+  referenced source is present.
+- Local: `~/.dagtools/quals/<qual_id>/probes/` (overridable via
+  `--local-path` or `DAGTOOLS_HOME`) — same file layout as the registry.
+  `--skip-publish` and `--skip-local` let the operator pick one side.
 
 Mark in reports that synthetic coverage is weaker: it validates Dagster
 plumbing through real custom classes, not prod-only credentials/paths/data
@@ -486,14 +507,19 @@ dag_tools/qual/
   verdict/                  # Q6 diff + GO/NO-GO verdict
     diff.py                 # RepDiff per-rep parity + ClassVerdict roll-up
     verdict.py              # build_verdict + render_markdown + GapAcceptance
+  synthetic/                # Q5 synthetic probe code generation
+    schema.py               # ProbeManifest + ProbeModule + ProbeStatus
+    generator.py            # generate_probe_module + generate_probe_source
+    bundle.py               # generate_bundle + publish_bundle + write_local_bundle
 ```
 
-To be built (rest of Phase 2):
+To be built (follow-up Q5 slices):
 
 ```
-dag_tools/qual/
-  synthetic/    # synthetic probe generator (Q5)
-probes/         # the dag-tools-probes code location (Q5 target)
+probes/         # the dag-tools-probes code location operators deploy
+                # (Q5 v1 generates the modules; deploying them, running
+                # them through Q2, and feeding coverage into Q6 are the
+                # natural next slices)
 ```
 
 ---
@@ -526,6 +552,10 @@ dagtools qual run --id <qual_id> --side baseline|candidate
 dagtools qual preflight --id <qual_id> --side baseline|candidate
                 [--sample-size N] [--allow-overwrite]
                 [--format json|table]
+dagtools qual synthetic --id <qual_id>
+                [--skip-publish] [--skip-local]
+                [--local-path PATH] [--allow-overwrite]
+                [--format json|table]
 dagtools qual report --id <qual_id>
                 [--accept-co-upgrade-risks]
                 [--accept-synthetic-coverage-missing]
@@ -537,12 +567,7 @@ Planned:
 
 ```
 dagtools canary --candidate <version> --publish
-dagtools qual preflight --id <qual_id> --side baseline|candidate
-dagtools qual run       --id <qual_id> --side baseline|candidate
-                          [--only-class <hash>] [--only-failed] [--retry <asset_key>]
 dagtools qual orchestration --id <qual_id> --side baseline|candidate
-dagtools qual synthetic --id <qual_id> --side baseline|candidate
-dagtools qual report    --id <qual_id>
 ```
 
 ---
@@ -683,11 +708,10 @@ caught it on itself.
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
 | 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
-| 2 | Q5 Synthetic probes | Not yet started |
+| 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
+| 2 | Q5 Synthetic probe **deploy + run + Q6 coverage** | Not yet started — operator deploys generated modules to the `dag-tools-probes` location; runs through Q2 + verdict coverage are the next slice |
 | 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
-| 2 | Q5 Synthetic probes | Not yet started |
-| 2 | Q6 Diff + verdict | Not yet started |
 
 ### Key regression tests enforcing recipe invariants
 
@@ -722,6 +746,12 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q6 candidate-preflight failure is a hard gate | `test_verdict.py::test_verdict_no_go_when_candidate_preflight_failed` |
 | Q6 strict-by-default: deferred gaps block GO until accepted | `test_verdict.py::test_verdict_no_go_by_default_when_orchestration_not_accepted` |
 | Q6 co_upgrade_risks block GO unless --accept-co-upgrade-risks | `test_verdict.py::test_verdict_no_go_when_co_upgrade_risks_unaccepted` |
+| Q5 only generates probes for SYNTHETIC_REQUIRED classes | `test_synthetic_generator.py::test_generate_probe_module_skips_non_synthetic` |
+| Q5 generated source always parses as Python (code location loads) | `test_synthetic_generator.py::test_generated_source_parses_as_python` |
+| Q5 source imports IO manager by FQN with InMemoryIOManager fallback | `test_synthetic_generator.py::test_generated_source_has_inmemory_fallback_for_missing_io_manager` |
+| Q5 generated probes do NOT import `dag_tools.qual.*` (decoupled deploy cycles) | `test_synthetic_generator.py::test_generate_probe_source_is_self_contained` |
+| Q5 manifest written LAST in publish (sources visible-then-manifest invariant) | `test_synthetic_bundle.py::test_publish_bundle_writes_sources_then_manifest` |
+| Q5 probe artifacts are immutable per qual_id | `test_synthetic_bundle.py::test_publish_bundle_is_immutable_by_default` |
 
 ---
 
@@ -750,6 +780,12 @@ them, you're probably violating a recipe rule. Read carefully first.
   local in-process orchestration snapshot (`dagtools qual orchestration`)
   is a separate command and ships separately. Both are tracked in the
   implementation-status table.
+- **Q5 v1 is generation only.** `dagtools qual synthetic` emits the per-
+  class probe modules + manifest, but the operator deploys them to the
+  `dag-tools-probes` user-code location, the Q2 runner does not yet
+  launch them, and `qual report` still requires
+  `--accept-synthetic-coverage-missing` to GO past synthetic classes.
+  Deploying + running + verdict-coverage-counting are the next slice.
 
 ---
 

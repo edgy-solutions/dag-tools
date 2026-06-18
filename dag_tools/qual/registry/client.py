@@ -465,6 +465,53 @@ class InventoryRegistry:
     def read_qualification_verdict_md(self, qual_id: str) -> Optional[bytes]:
         return self.storage.get_optional(layout.qualification_verdict_md_key(qual_id))
 
+    # --- probes (Q5) ------------------------------------------------------
+
+    def put_probe_manifest(
+        self,
+        qual_id: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write ``qualifications/<qual_id>/probes/probe_manifest.json``.
+
+        Default-immutable, like every other artifact under
+        ``qualifications/<qual_id>/``. Operators regenerate with
+        ``--allow-overwrite`` when refining synthetic coverage."""
+        key = layout.qualification_probes_manifest_key(qual_id)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_probe_manifest(self, qual_id: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_probes_manifest_key(qual_id)
+        )
+
+    def put_probe_source(
+        self,
+        qual_id: str,
+        class_hash: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write one probe module's source under ``probes/<class_hash>.py``."""
+        key = layout.qualification_probe_source_key(qual_id, class_hash)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="text/x-python")
+        else:
+            self.storage.put_immutable(key, body, content_type="text/x-python")
+
+    def read_probe_source(
+        self, qual_id: str, class_hash: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_probe_source_key(qual_id, class_hash)
+        )
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

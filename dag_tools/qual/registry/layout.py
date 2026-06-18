@@ -129,6 +129,18 @@ def qualification_verdict_md_key(qual_id: str) -> str:
     return f"{qualification_prefix(qual_id)}UPGRADE_VERDICT.md"
 
 
+def qualification_probes_manifest_key(qual_id: str) -> str:
+    """``qualifications/<qual_id>/probes/probe_manifest.json`` — index of
+    every generated probe module for this qual_id."""
+    return f"{qualification_prefix(qual_id)}probes/probe_manifest.json"
+
+
+def qualification_probe_source_key(qual_id: str, class_hash: str) -> str:
+    """``qualifications/<qual_id>/probes/<class_hash>.py`` — the generated
+    probe module source for one equivalence class."""
+    return f"{qualification_prefix(qual_id)}probes/{class_hash}.py"
+
+
 def qualification_side_run_key(
     qual_id: str, side: str, class_hash: str, run_id: str
 ) -> str:
