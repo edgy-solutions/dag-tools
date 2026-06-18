@@ -124,6 +124,18 @@ def test_generated_source_round_trips_class_hash_constant():
     assert 'CLASS_HASH = "ff00aa11bb22"' in source
 
 
+def test_each_probe_uses_class_unique_io_manager_resource_key():
+    """The dag-tools-probes location merges every probe's Definitions; a
+    shared 'io_manager' key would clobber across classes. The generator
+    must emit per-class keys like 'io_manager_<short>'."""
+    cls = _class(class_hash="abcd1234ffff")
+    _, source = generate_probe_module(cls, qual_id="q1")
+    assert 'IO_MANAGER_KEY = "io_manager_abcd1234"' in source
+    # And the bare default ' "io_manager"' key MUST NOT appear elsewhere
+    # (would silently re-collide on merge).
+    assert '"io_manager"' not in source
+
+
 def test_generated_source_defines_upstream_and_downstream_assets():
     cls = _class(class_hash="hash5678")
     _, source = generate_probe_module(cls, qual_id="q1")

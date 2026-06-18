@@ -419,6 +419,29 @@ Outputs:
   `--local-path` or `DAGTOOLS_HOME`) — same file layout as the registry.
   `--skip-publish` and `--skip-local` let the operator pick one side.
 
+**Deploy target — the `dag-tools-probes` code location.** The repo ships
+a deployable Dagster code location at
+`dag_tools.probes_location.definitions` that the operator points the
+test deployment at (separate user-code location, separate deploy
+cadence from the regular fleet). The location dynamically loads every
+`<class_hash>.py` under `DAGTOOLS_PROBES_DIR`, merges their
+`Definitions` (each probe uses a class-unique `io_manager_<short>`
+resource key so merge never collides), and soft-fails per file so one
+broken probe doesn't block the location load.
+
+```yaml
+# operator's test-deployment workspace.yaml
+load_from:
+  - python_module:
+      module_name: dag_tools.probes_location.definitions
+      location_name: dag-tools-probes
+```
+
+```bash
+# operator sets the env var on the test deployment to point at the bundle
+DAGTOOLS_PROBES_DIR=/path/to/~/.dagtools/quals/<qual_id>/probes/
+```
+
 Mark in reports that synthetic coverage is weaker: it validates Dagster
 plumbing through real custom classes, not prod-only credentials/paths/data
 scale.
@@ -511,15 +534,18 @@ dag_tools/qual/
     schema.py               # ProbeManifest + ProbeModule + ProbeStatus
     generator.py            # generate_probe_module + generate_probe_source
     bundle.py               # generate_bundle + publish_bundle + write_local_bundle
+dag_tools/probes_location/  # the deployable `dag-tools-probes` Dagster code location
+  loader.py                 # load_probes_from_dir + ProbeLoadReport (per-file soft-fail)
+  definitions.py            # top-level `defs` the test deployment imports
 ```
 
 To be built (follow-up Q5 slices):
 
 ```
-probes/         # the dag-tools-probes code location operators deploy
-                # (Q5 v1 generates the modules; deploying them, running
-                # them through Q2, and feeding coverage into Q6 are the
-                # natural next slices)
+- Runner integration: launch each probe's upstream/downstream pair through Q2
+  so synthetic classes contribute to verdict coverage automatically.
+- `dagtools qual probes status` — GraphQL probe of the test deployment's
+  dag-tools-probes location to verify which class_hashes are loaded vs missing.
 ```
 
 ---
@@ -709,7 +735,8 @@ caught it on itself.
 | 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
 | 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
-| 2 | Q5 Synthetic probe **deploy + run + Q6 coverage** | Not yet started — operator deploys generated modules to the `dag-tools-probes` location; runs through Q2 + verdict coverage are the next slice |
+| 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
+| 2 | Q5 Synthetic probe **run + Q6 coverage** | Not yet started — extend Q2 runner to launch probe assets per class; verdict coverage automatically green for synthetic classes with passing probes |
 | 2 | Q6 Diff + verdict + `dagtools qual report` | ✅ done — per-rep parity diff, class roll-up, GO/NO-GO with strict-by-default known-gap acceptance |
 | 2 | Q2/Q4 IO round-trip probes + local orchestration snapshots | Deferred — see Known limitations |
 
@@ -752,6 +779,10 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 generated probes do NOT import `dag_tools.qual.*` (decoupled deploy cycles) | `test_synthetic_generator.py::test_generate_probe_source_is_self_contained` |
 | Q5 manifest written LAST in publish (sources visible-then-manifest invariant) | `test_synthetic_bundle.py::test_publish_bundle_writes_sources_then_manifest` |
 | Q5 probe artifacts are immutable per qual_id | `test_synthetic_bundle.py::test_publish_bundle_is_immutable_by_default` |
+| Q5 each probe uses class-unique `io_manager_<short>` resource key (no merge collision) | `test_synthetic_generator.py::test_each_probe_uses_class_unique_io_manager_resource_key` |
+| Q5 dag-tools-probes location loads cleanly when no probes are deployed | `test_probes_location_loader.py::test_loader_returns_empty_report_when_env_unset` |
+| Q5 dag-tools-probes location soft-fails per-probe (one broken probe does NOT block the location) | `test_probes_location_loader.py::test_loader_soft_fails_a_malformed_probe` |
+| Q5 N generated probes merge into one Definitions without conflict | `test_probes_location_loader.py::test_loaded_probes_merge_into_one_definitions_without_resource_collision` |
 
 ---
 
@@ -780,12 +811,14 @@ them, you're probably violating a recipe rule. Read carefully first.
   local in-process orchestration snapshot (`dagtools qual orchestration`)
   is a separate command and ships separately. Both are tracked in the
   implementation-status table.
-- **Q5 v1 is generation only.** `dagtools qual synthetic` emits the per-
-  class probe modules + manifest, but the operator deploys them to the
-  `dag-tools-probes` user-code location, the Q2 runner does not yet
-  launch them, and `qual report` still requires
+- **Q5 v1 is generation + deploy target.** `dagtools qual synthetic`
+  emits the per-class probe modules + manifest, and
+  `dag_tools.probes_location.definitions` is the Dagster code location
+  operators deploy to surface them on the test deployment. What's still
+  pending: the Q2 runner does not yet launch the probe assets per
+  class, and `qual report` still requires
   `--accept-synthetic-coverage-missing` to GO past synthetic classes.
-  Deploying + running + verdict-coverage-counting are the next slice.
+  Run-integration + verdict-coverage-counting are the next slice.
 
 ---
 

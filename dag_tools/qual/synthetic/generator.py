@@ -189,6 +189,11 @@ CLASS_HASH = "{cls.class_hash}"
 # --- Real IO manager from the inventory FQN ---------------------------
 {io_manager_import}
 
+# Unique resource key per probe so the dag-tools-probes location can
+# merge every probe's Definitions without clobbering. The operator can
+# point this key at staging-configured IO managers at deploy time.
+IO_MANAGER_KEY = "io_manager_{short}"
+
 PROBE_PAYLOAD: Dict[str, Any] = {{
     "schema_version": 1,
     "class_hash": CLASS_HASH,
@@ -196,7 +201,7 @@ PROBE_PAYLOAD: Dict[str, Any] = {{
 }}
 
 
-@asset
+@asset(io_manager_key=IO_MANAGER_KEY)
 def {module_name}_upstream() -> Dict[str, Any]:
     """Emit the deterministic probe payload. Raises if the real IO manager
     couldn't be imported, so the failure is visible at materialization
@@ -208,7 +213,7 @@ def {module_name}_upstream() -> Dict[str, Any]:
     return dict(PROBE_PAYLOAD)
 
 
-@asset(deps=[{module_name}_upstream])
+@asset(deps=[{module_name}_upstream], io_manager_key=IO_MANAGER_KEY)
 def {module_name}_downstream({module_name}_upstream: Dict[str, Any]) -> bool:
     """Load upstream's payload via the same IO manager and assert it
     survived the round-trip intact."""
@@ -222,7 +227,7 @@ def {module_name}_downstream({module_name}_upstream: Dict[str, Any]) -> bool:
 
 defs = Definitions(
     assets=[{module_name}_upstream, {module_name}_downstream],
-    resources={{"io_manager": {io_manager_construct}}},
+    resources={{IO_MANAGER_KEY: {io_manager_construct}}},
 )
 ''')
 
