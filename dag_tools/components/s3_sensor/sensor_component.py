@@ -31,6 +31,18 @@ class S3SensorComponent(Component, Resolvable, Model):
     partition_name: str = Field(description="The name of the dynamic partition definition for tracking file state.")
     target_job: str = Field(description="The name of the Dagster job to trigger.")
     target_op: str = Field(description="The name of the op within the job that accepts the 'file_url' configuration.")
+
+    additional_target_ops: Annotated[
+        List[str],
+        Resolver.default(description=(
+            "Other ops in the target_job that need the SAME file_url config "
+            "as target_op (typically a downstream asset that depends on the "
+            "partition and accepts the same S3FileConfig). Without this, "
+            "Dagster rejects the run with DagsterInvalidConfigError when any "
+            "op besides target_op is part of the job's selection AND requires "
+            "config. Empty by default — single-op jobs keep prior behavior."
+        )),
+    ] = []
     
     s3_resource: Annotated[
         Optional[Dict[str, Any]], 
@@ -107,19 +119,20 @@ class S3SensorComponent(Component, Resolvable, Model):
                 sensor_context.update_cursor(last_key)
                 return SkipReason(f"All {len(all_s3_keys)} new objects filtered out by patterns.")
 
+            def _build_ops_config(obj_key: str) -> Dict[str, Any]:
+                file_url = f"s3://{self.bucket}/{obj_key}"
+                cfg = {
+                    self.target_op: {"config": {"file_url": file_url}}
+                }
+                for extra_op in self.additional_target_ops:
+                    cfg[extra_op] = {"config": {"file_url": file_url}}
+                return cfg
+
             run_requests = [
                 RunRequest(
                     run_key=run_key,
                     partition_key=partition_key,
-                    run_config={
-                        "ops": {
-                            self.target_op: {
-                                "config": {
-                                    "file_url": f"s3://{self.bucket}/{obj_key}"
-                                }
-                            }
-                        }
-                    }
+                    run_config={"ops": _build_ops_config(obj_key)},
                 )
                 for run_key, (partition_key, obj_key) in filtered_keys.items()
             ]
