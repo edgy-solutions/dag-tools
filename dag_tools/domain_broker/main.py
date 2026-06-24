@@ -30,6 +30,19 @@ LOCAL_ASSETS: Dict[str, Any] = {}
 class ResolveRequest(BaseModel):
     urn: str
 
+
+class RegisterAssetRequest(BaseModel):
+    """Payload accepted by ``POST /api/v1/admin/register_asset``.
+
+    Sent by user-deployment sidecars (see ``dag_tools.sidecar``) at
+    code-location startup. The broker accepts the asset_record shape
+    that ``dag_tools.inventory.extract_records`` produces — same
+    contract every other inventory consumer uses, so there's no
+    sidecar-specific schema for code-locations to maintain.
+    """
+    urn: str
+    asset_record: Dict[str, Any]
+
 def _build_asset_info_from_record(record) -> Dict[str, Any]:
     """Build the LOCAL_ASSETS value shape from a shared inventory ``AssetRecord``.
 
@@ -248,3 +261,58 @@ async def resolve_asset(request: ResolveRequest):
             }
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported IO manager type: {io_type}")
+
+
+@app.post("/api/v1/admin/register_asset")
+async def register_asset(request: RegisterAssetRequest):
+    """Register or update a single asset's URN → routing mapping.
+
+    Called by user-deployment sidecars (see ``dag_tools.sidecar``) at
+    code-location startup. Idempotent: repeat calls overwrite the
+    existing entry by URN, which gives "latest write wins" semantics
+    most useful when a code-location redeploys with updated asset
+    metadata.
+
+    The broker stores LOCAL_ASSETS in-process. On broker restart the
+    sidecars publish again — durability is a property of the publishing
+    deployments, not the registry. That keeps the registry stateless
+    enough to scale horizontally without a shared DB; if persistence
+    becomes a requirement, swap the dict for a PVC-backed SQLite and
+    keep the contract unchanged.
+    """
+    try:
+        from dag_tools.inventory.schema import AssetRecord
+        record = AssetRecord.model_validate(request.asset_record)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid asset_record: {exc}",
+        )
+
+    LOCAL_ASSETS[request.urn] = _build_asset_info_from_record(record)
+    logger.info(
+        "Registered asset %s via sidecar (location=%s, key=%s).",
+        request.urn,
+        record.location,
+        ".".join(record.asset_key) if record.asset_key else "?",
+    )
+    return {
+        "status": "ok",
+        "urn": request.urn,
+        "io_manager_type": LOCAL_ASSETS[request.urn].get("io_manager_type"),
+    }
+
+
+@app.get("/api/v1/admin/registry")
+async def list_registry():
+    """Operator-facing list of currently-registered URNs.
+
+    Useful when debugging "why doesn't this URN resolve?" — answers
+    *which* URNs the registry knows about, *who* registered them
+    (via the asset_record.location field), and *what* routing they
+    point at.
+    """
+    return {
+        "count": len(LOCAL_ASSETS),
+        "urns": sorted(LOCAL_ASSETS.keys()),
+    }
