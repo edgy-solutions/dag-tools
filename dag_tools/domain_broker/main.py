@@ -8,14 +8,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Optional Dagster imports
+# Optional Dagster imports — the broker can boot without dagster
+# installed (e.g. for a /health-only readiness path), but won't be
+# able to load a real Definitions module.
+#
+# Note: we deliberately do NOT import
+# ``dag_tools.components.datahub_lineage`` here even though it
+# contains a URN converter; the broker derives URNs straight off
+# ``AssetRecord.urn`` / ``AssetRecord.tags["datahub/urn"]``, and
+# pulling the lineage component in transitively requires acryl-
+# datahub + datahub-dagster-plugin — heavy deps no user-deployment
+# image should be forced to carry just to participate in the mesh.
 try:
     from dagster import Definitions, AssetKey
-    from dag_tools.components.datahub_lineage.component import asset_keys_to_dataset_urn_converter
 except ImportError:
     Definitions = None
     AssetKey = None
-    asset_keys_to_dataset_urn_converter = None
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
