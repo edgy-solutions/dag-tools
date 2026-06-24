@@ -57,13 +57,26 @@ qual = [
     "boto3>=1.34",
     "pydantic>=2.0.0",
 ]
+broker = [
+    # dag_tools.domain_broker — FastAPI broker that any Dagster user-
+    # deployment runs as a second pod to register URNs with a mesh-
+    # level central-gateway. Imports boto3 (for S3-backed IO managers),
+    # fastapi/pydantic (the app + request models), and is served by
+    # hypercorn. Install with `pip install "dag-tools[broker]"` from a
+    # user-deployment that wants to participate in the mesh.
+    "fastapi>=0.110",
+    "hypercorn>=0.16",
+    "pydantic>=2.0.0",
+    "httpx>=0.28.1",
+    "boto3>=1.34",
+]
 dev = [
     "dagster-webserver",
     "pytest",
     "moto[s3]>=5",
 ]
 all = [
-    "dag_tools[orchestrator,worker,qual,dev]",
+    "dag_tools[orchestrator,worker,qual,broker,dev]",
 ]
 
 [project.scripts]
