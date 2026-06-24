@@ -30,19 +30,6 @@ LOCAL_ASSETS: Dict[str, Any] = {}
 class ResolveRequest(BaseModel):
     urn: str
 
-
-class RegisterAssetRequest(BaseModel):
-    """Payload accepted by ``POST /api/v1/admin/register_asset``.
-
-    Sent by user-deployment sidecars (see ``dag_tools.sidecar``) at
-    code-location startup. The broker accepts the asset_record shape
-    that ``dag_tools.inventory.extract_records`` produces — same
-    contract every other inventory consumer uses, so there's no
-    sidecar-specific schema for code-locations to maintain.
-    """
-    urn: str
-    asset_record: Dict[str, Any]
-
 def _build_asset_info_from_record(record) -> Dict[str, Any]:
     """Build the LOCAL_ASSETS value shape from a shared inventory ``AssetRecord``.
 
@@ -145,32 +132,79 @@ def load_dagster_definitions():
     except Exception as e:
         logger.error(f"Failed to load Dagster definitions: {e}")
 
+async def _register_once(client: httpx.AsyncClient) -> None:
+    """Push this broker's URN list to the Central Gateway.
+
+    The gateway holds (broker_url → URN list) in Redis with a TTL.
+    The broker re-pushes on a loop so a single hiccup doesn't blow
+    the routing table away — see ``_re_register_loop``.
+    """
+    payload = {
+        "broker_url": BROKER_URL,
+        "asset_urns": list(LOCAL_ASSETS.keys()),
+    }
+    resp = await client.post(
+        f"{CENTRAL_GATEWAY_URL}/api/v1/internal/register",
+        json=payload,
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+
+
+async def _re_register_loop() -> None:
+    """Re-register with the gateway every
+    ``BROKER_REGISTER_INTERVAL_SEC`` seconds.
+
+    Why: the gateway stores ``mesh_route:*`` keys in Redis with a TTL
+    (5 minutes in the sandbox). One missed push past TTL silently
+    drops every URN this broker serves until the next push. Re-pushing
+    every 2 minutes (default) gives 2-3 push attempts per TTL window
+    so a transient gateway hiccup never wipes the routing table.
+
+    Non-fatal: per-iteration failures log at ERROR and the loop
+    continues; the broker stays serving ``/resolve`` even if the
+    gateway is temporarily unreachable. The next push attempt
+    recovers automatically when the gateway comes back.
+    """
+    import asyncio
+    interval = float(os.getenv("BROKER_REGISTER_INTERVAL_SEC", "120"))
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await _register_once(client)
+                logger.info(
+                    "re-registered %d assets with Central Gateway",
+                    len(LOCAL_ASSETS),
+                )
+        except Exception as exc:
+            logger.error("re-register failed: %s", exc)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load definitions
+    import asyncio
+    # Startup: load definitions, do the first register up-front so
+    # routing is available before the first /resolve call, then start
+    # the re-register loop in the background.
     load_dagster_definitions()
-    asset_keys = list(LOCAL_ASSETS.keys())
-    
-    # Register with Central Gateway
+    logger.info("Loaded %d assets from Dagster definitions", len(LOCAL_ASSETS))
+
     try:
-        async with httpx.AsyncClient() as client:
-            payload = {
-                "broker_url": BROKER_URL,
-                "asset_urns": list(LOCAL_ASSETS.keys())
-            }
-            response = await client.post(
-                f"{CENTRAL_GATEWAY_URL}/api/v1/internal/register",
-                json=payload,
-                timeout=10.0
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await _register_once(client)
+            logger.info(
+                "initial register: %d assets pushed to gateway", len(LOCAL_ASSETS),
             )
-            response.raise_for_status()
-            logger.info(f"Successfully registered {len(LOCAL_ASSETS.keys())} assets with Central Gateway.")
-    except Exception as e:
-        logger.error(f"Failed to register with Central Gateway: {e}")
-        
-    yield
-    # Shutdown logic
-    logger.info("Domain Broker shutting down.")
+    except Exception as exc:
+        logger.error("initial register failed (will retry in loop): %s", exc)
+
+    task = asyncio.create_task(_re_register_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        logger.info("Domain Broker shutting down.")
 
 app = FastAPI(lifespan=lifespan, title="Domain Broker")
 
@@ -261,58 +295,3 @@ async def resolve_asset(request: ResolveRequest):
             }
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported IO manager type: {io_type}")
-
-
-@app.post("/api/v1/admin/register_asset")
-async def register_asset(request: RegisterAssetRequest):
-    """Register or update a single asset's URN → routing mapping.
-
-    Called by user-deployment sidecars (see ``dag_tools.sidecar``) at
-    code-location startup. Idempotent: repeat calls overwrite the
-    existing entry by URN, which gives "latest write wins" semantics
-    most useful when a code-location redeploys with updated asset
-    metadata.
-
-    The broker stores LOCAL_ASSETS in-process. On broker restart the
-    sidecars publish again — durability is a property of the publishing
-    deployments, not the registry. That keeps the registry stateless
-    enough to scale horizontally without a shared DB; if persistence
-    becomes a requirement, swap the dict for a PVC-backed SQLite and
-    keep the contract unchanged.
-    """
-    try:
-        from dag_tools.inventory.schema import AssetRecord
-        record = AssetRecord.model_validate(request.asset_record)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid asset_record: {exc}",
-        )
-
-    LOCAL_ASSETS[request.urn] = _build_asset_info_from_record(record)
-    logger.info(
-        "Registered asset %s via sidecar (location=%s, key=%s).",
-        request.urn,
-        record.location,
-        ".".join(record.asset_key) if record.asset_key else "?",
-    )
-    return {
-        "status": "ok",
-        "urn": request.urn,
-        "io_manager_type": LOCAL_ASSETS[request.urn].get("io_manager_type"),
-    }
-
-
-@app.get("/api/v1/admin/registry")
-async def list_registry():
-    """Operator-facing list of currently-registered URNs.
-
-    Useful when debugging "why doesn't this URN resolve?" — answers
-    *which* URNs the registry knows about, *who* registered them
-    (via the asset_record.location field), and *what* routing they
-    point at.
-    """
-    return {
-        "count": len(LOCAL_ASSETS),
-        "urns": sorted(LOCAL_ASSETS.keys()),
-    }
