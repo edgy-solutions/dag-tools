@@ -359,6 +359,19 @@ def _derive_urn(asset_key_path: List[str]) -> Optional[str]:
     Returns None if the datahub_dagster_plugin isn't installed (the
     converter module imports it conditionally) or the converter fails
     for this particular asset.
+
+    Passes ``platform='dagster'`` to the converter explicitly — the
+    inventory layer is by definition called from a Dagster context, so
+    the platform is known. Without this hint, the converter defaults
+    to ``'unknown'`` whenever the asset key's first segment isn't in
+    its recognized-platforms list (``clickhouse / snowflake / postgres``),
+    producing URNs like
+    ``urn:li:dataset:(urn:li:dataPlatform:unknown,mesh_demo_customers,PROD)``.
+    Downstream consumers (CortexPolarsIOManager.handle_output,
+    Engine DA's CortexDataClient lookups, the DataHub emit path) all
+    assemble the URN with ``platform='dagster'``, so the ``unknown``
+    form coming out of the inventory walker never matches and lookups
+    return 404 even when the data exists.
     """
     try:
         from dag_tools.components.datahub_lineage.component import (
@@ -367,7 +380,9 @@ def _derive_urn(asset_key_path: List[str]) -> Optional[str]:
     except Exception:
         return None
     try:
-        urn = asset_keys_to_dataset_urn_converter(asset_key_path)
+        urn = asset_keys_to_dataset_urn_converter(
+            asset_key_path, platform="dagster"
+        )
         if urn is None:
             return None
         # DataHub URN classes expose .urn() for the canonical string form;
