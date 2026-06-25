@@ -114,7 +114,8 @@ class CortexPolarsIOManager(ConfigurableIOManager):
         path deterministically without needing the asset to have been
         materialized yet. The materialization event also carries
         ``datahub/urn`` and ``physical_uri`` for after-the-fact lineage
-        lookups.
+        lookups, and if ``DATAHUB_SERVER`` is set the URN is pushed to
+        DataHub directly via the metadata REST API.
         """
         if not isinstance(obj, (pl.DataFrame, pl.LazyFrame)):
             raise ValueError(
@@ -143,6 +144,68 @@ class CortexPolarsIOManager(ConfigurableIOManager):
                 "datahub/urn": MetadataValue.text(urn),
             }
         )
+
+        # Emit the URN directly to DataHub if a server is configured.
+        # Done in-line with the write rather than via an
+        # ASSET_MATERIALIZATION sensor for two reasons: no sensor-lag
+        # window where the URN is materialized but unindexed, and no
+        # version-skew between dagster and acryl-datahub-dagster-plugin.
+        # Failures here are non-fatal — the write already succeeded
+        # and the materialization metadata is the durable record.
+        self._emit_to_datahub(context, urn, s3_path)
+
+    @staticmethod
+    def _emit_to_datahub(
+        context: OutputContext, urn: str, physical_uri: str
+    ) -> None:
+        """Push the materialized URN to DataHub via DataHubGraph.
+
+        ``DATAHUB_SERVER`` env var holds the GMS base URL (not the
+        GraphQL endpoint — that's a different layer). When unset, this
+        is a no-op so the IO manager works on clusters without DataHub
+        installed. Any DataHub-side failure is logged and swallowed —
+        the IO manager's job is to write data, and emitting to the
+        catalog is best-effort.
+        """
+        import os
+        server = os.environ.get("DATAHUB_SERVER")
+        if not server:
+            context.log.info(
+                "DATAHUB_SERVER unset; skipping DataHub emit for %s", urn
+            )
+            return
+        try:
+            from datahub.emitter.mcp import MetadataChangeProposalWrapper
+            from datahub.ingestion.graph.client import (
+                DataHubGraph,
+                DatahubClientConfig,
+            )
+            from datahub.metadata.schema_classes import DatasetPropertiesClass
+
+            graph = DataHubGraph(DatahubClientConfig(server=server))
+            asset_name = context.asset_key.to_user_string().replace("/", ".")
+            mcp = MetadataChangeProposalWrapper(
+                entityUrn=urn,
+                aspect=DatasetPropertiesClass(
+                    name=asset_name,
+                    description=(
+                        f"Dagster asset materialized to {physical_uri}"
+                    ),
+                    customProperties={
+                        "physical_uri": physical_uri,
+                        "dagster_asset_key": asset_name,
+                    },
+                ),
+            )
+            graph.emit_mcp(mcp)
+            context.log.info(f"Emitted URN to DataHub at {server}: {urn}")
+        except Exception as exc:
+            # Non-fatal: a DataHub outage shouldn't fail the
+            # materialization. Logged at WARNING so it's surfaced in
+            # Dagit but doesn't trip alerting on transient blips.
+            context.log.warning(
+                "DataHub emit failed for %s: %s", urn, exc
+            )
 
     def physical_coordinates(
         self, asset_key_path: Sequence[str]
