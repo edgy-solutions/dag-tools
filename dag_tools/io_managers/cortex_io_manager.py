@@ -152,20 +152,63 @@ class CortexPolarsIOManager(ConfigurableIOManager):
         # version-skew between dagster and acryl-datahub-dagster-plugin.
         # Failures here are non-fatal — the write already succeeded
         # and the materialization metadata is the durable record.
-        self._emit_to_datahub(context, urn, s3_path)
+        #
+        # Hand the underlying Polars schema in too — the catalog UI
+        # and downstream routing layers can only answer column-aware
+        # questions about an asset if the columns are actually
+        # advertised. Passing the materialized DataFrame's schema in
+        # makes "what's the breakdown by region?" answerable straight
+        # from the catalog without first having to read the parquet.
+        schema = self._collect_schema(obj)
+        self._emit_to_datahub(context, urn, s3_path, schema)
+
+    @staticmethod
+    def _collect_schema(obj: Any) -> Optional[Dict[str, str]]:
+        """Extract a {column_name: polars_type_str} map from the output.
+
+        For a ``LazyFrame`` we use ``collect_schema()`` to avoid
+        forcing a materialization (we already wrote the data above —
+        no point in re-collecting). Returns ``None`` on any failure
+        so the caller can still emit the URN + properties without the
+        schema aspect.
+        """
+        try:
+            if isinstance(obj, pl.LazyFrame):
+                schema = obj.collect_schema()
+            else:
+                schema = obj.schema
+            return {name: str(dtype) for name, dtype in schema.items()}
+        except Exception:
+            return None
 
     @staticmethod
     def _emit_to_datahub(
-        context: OutputContext, urn: str, physical_uri: str
+        context: OutputContext,
+        urn: str,
+        physical_uri: str,
+        schema: Optional[Dict[str, str]] = None,
     ) -> None:
-        """Push the materialized URN to DataHub via DataHubGraph.
+        """Push the materialized URN + schema to DataHub via DataHubGraph.
 
         ``DATAHUB_SERVER`` env var holds the GMS base URL (not the
         GraphQL endpoint — that's a different layer). When unset, this
         is a no-op so the IO manager works on clusters without DataHub
-        installed. Any DataHub-side failure is logged and swallowed —
-        the IO manager's job is to write data, and emitting to the
-        catalog is best-effort.
+        installed.
+
+        Two aspects are emitted when a schema is available:
+
+          * ``DatasetPropertiesClass`` — name, description, physical_uri.
+            Always emitted (it's what makes the URN visible to the
+            DataHub UI / search index).
+          * ``SchemaMetadataClass`` — one ``SchemaFieldClass`` per
+            column, with a polars-derived type mapped onto the
+            DataHub type hierarchy. Lets catalog-aware engines answer
+            column-aware questions ("what's the breakdown by X?")
+            without first reading the parquet.
+
+        Any DataHub-side failure is logged and swallowed — the IO
+        manager's job is to write data, and emitting to the catalog
+        is best-effort.
         """
         import os
         server = os.environ.get("DATAHUB_SERVER")
@@ -180,11 +223,24 @@ class CortexPolarsIOManager(ConfigurableIOManager):
                 DataHubGraph,
                 DatahubClientConfig,
             )
-            from datahub.metadata.schema_classes import DatasetPropertiesClass
+            from datahub.metadata.schema_classes import (
+                DatasetPropertiesClass,
+                NumberTypeClass,
+                OtherSchemaClass,
+                SchemaFieldClass,
+                SchemaFieldDataTypeClass,
+                SchemaMetadataClass,
+                StringTypeClass,
+                BooleanTypeClass,
+                DateTypeClass,
+                TimeTypeClass,
+            )
 
             graph = DataHubGraph(DatahubClientConfig(server=server))
             asset_name = context.asset_key.to_user_string().replace("/", ".")
-            mcp = MetadataChangeProposalWrapper(
+
+            # Properties aspect — always sent.
+            properties_mcp = MetadataChangeProposalWrapper(
                 entityUrn=urn,
                 aspect=DatasetPropertiesClass(
                     name=asset_name,
@@ -197,8 +253,36 @@ class CortexPolarsIOManager(ConfigurableIOManager):
                     },
                 ),
             )
-            graph.emit_mcp(mcp)
-            context.log.info(f"Emitted URN to DataHub at {server}: {urn}")
+            graph.emit_mcp(properties_mcp)
+
+            # Schema aspect — only sent when we could extract columns.
+            if schema:
+                fields = [
+                    SchemaFieldClass(
+                        fieldPath=col,
+                        type=SchemaFieldDataTypeClass(
+                            type=CortexPolarsIOManager._polars_type_to_datahub(dtype)
+                        ),
+                        nativeDataType=dtype,
+                    )
+                    for col, dtype in schema.items()
+                ]
+                schema_mcp = MetadataChangeProposalWrapper(
+                    entityUrn=urn,
+                    aspect=SchemaMetadataClass(
+                        schemaName=asset_name,
+                        platform="urn:li:dataPlatform:dagster",
+                        version=0,
+                        hash="",
+                        fields=fields,
+                        platformSchema=OtherSchemaClass(rawSchema=""),
+                    ),
+                )
+                graph.emit_mcp(schema_mcp)
+
+            context.log.info(
+                f"Emitted URN + {len(schema or {})} columns to DataHub at {server}: {urn}"
+            )
         except Exception as exc:
             # Non-fatal: a DataHub outage shouldn't fail the
             # materialization. Logged at WARNING so it's surfaced in
@@ -206,6 +290,34 @@ class CortexPolarsIOManager(ConfigurableIOManager):
             context.log.warning(
                 "DataHub emit failed for %s: %s", urn, exc
             )
+
+    @staticmethod
+    def _polars_type_to_datahub(polars_dtype: str) -> Any:
+        """Map a polars dtype string onto a DataHub schema type class.
+
+        Polars dtype names cover a handful of recognizable shapes
+        (Int64, Float32, String/Utf8, Boolean, Date, Datetime, Time,
+        Duration). Everything else falls through to ``StringTypeClass``
+        which DataHub treats as a generic — better to under-claim than
+        misclassify.
+        """
+        from datahub.metadata.schema_classes import (
+            BooleanTypeClass,
+            DateTypeClass,
+            NumberTypeClass,
+            StringTypeClass,
+            TimeTypeClass,
+        )
+        lower = polars_dtype.lower()
+        if any(t in lower for t in ("int", "float", "decimal")):
+            return NumberTypeClass()
+        if "bool" in lower:
+            return BooleanTypeClass()
+        if "date" in lower:
+            return DateTypeClass()
+        if "time" in lower or "duration" in lower:
+            return TimeTypeClass()
+        return StringTypeClass()
 
     def physical_coordinates(
         self, asset_key_path: Sequence[str]
