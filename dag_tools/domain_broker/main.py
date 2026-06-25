@@ -255,6 +255,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Domain Broker")
 
+
+@app.get("/health")
+async def health():
+    """Liveness / readiness probe.
+
+    Returns 200 with the count of registered assets once
+    ``load_dagster_definitions`` has populated ``LOCAL_ASSETS``.
+    Kubernetes probes hit this endpoint to know when to start
+    routing traffic — without it they fall back to a 404 and the
+    pod never becomes Ready.
+    """
+    return {"status": "ok", "assets": len(LOCAL_ASSETS)}
+
+
 @app.post("/api/v1/internal/resolve")
 async def resolve_asset(request: ResolveRequest):
     """
