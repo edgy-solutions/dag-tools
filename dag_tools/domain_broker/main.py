@@ -38,13 +38,24 @@ LOCAL_ASSETS: Dict[str, Any] = {}
 class ResolveRequest(BaseModel):
     urn: str
 
-def _build_asset_info_from_record(record) -> Dict[str, Any]:
+def _build_asset_info_from_record(record, io_manager=None) -> Dict[str, Any]:
     """Build the LOCAL_ASSETS value shape from a shared inventory ``AssetRecord``.
 
-    Preserves the dict shape that downstream callers (``resolve_asset``)
-    consume. Resource-config placeholders (``db.local``, ``my-data-lake``)
-    remain pending a separate resource-config extraction pass — that's a
-    follow-up, not part of this migration.
+    When ``io_manager`` is provided AND it implements the mesh-publishing
+    protocol (a ``physical_coordinates`` method that returns a routing
+    ticket), the ticket is stored verbatim under ``_routing_ticket``.
+    The ``/resolve`` endpoint short-circuits to that ticket when present,
+    bypassing the fallback bucket/host placeholders entirely. This is
+    the path every modern dag-tools IO manager uses (sql.py, delta.py,
+    cortex_io_manager.py) to advertise real physical coordinates.
+
+    For IO managers that don't implement the protocol — third-party
+    ones, custom forks, or assets without an IO manager binding — we
+    fall back to the placeholder bucket/host shape. Those entries
+    won't actually resolve to working data; ``/resolve`` will hand
+    back a ticket that the cortex data client can dispatch on, but
+    the underlying physical_uri is decorative until the IO manager
+    is upgraded to the protocol.
     """
     info: Dict[str, Any] = {
         "io_manager_key": record.io_manager_key or "io_manager",
@@ -52,14 +63,32 @@ def _build_asset_info_from_record(record) -> Dict[str, Any]:
         "io_manager_class": record.io_manager_class,
         "metadata": dict(record.tags or {}),
     }
+
+    # Mesh-publishing protocol: if the IO manager declares its own
+    # routing ticket, take it verbatim. Failures here are non-fatal —
+    # the broker degrades to the placeholder fallback rather than
+    # refusing to load the asset.
+    if io_manager is not None and hasattr(io_manager, "physical_coordinates"):
+        try:
+            ticket = io_manager.physical_coordinates(list(record.asset_key or []))
+            if ticket:
+                info["_routing_ticket"] = ticket
+                return info
+        except Exception as exc:
+            logger.warning(
+                "physical_coordinates() failed for %s: %s",
+                record.asset_key,
+                exc,
+            )
+
     family = record.io_manager_family
     target_path = list(record.asset_key or [])
     if family in ("postgres", "clickhouse"):
-        info["db_host"] = "db.local"   # TODO: pull from resource config
+        info["db_host"] = "db.local"
         info["schema"] = "public"
         info["table"] = target_path[-1] if target_path else "unknown"
     elif family in ("s3_iceberg", "s3_delta", "s3_parquet"):
-        info["bucket"] = "my-data-lake"  # TODO: pull from resource config
+        info["bucket"] = "my-data-lake"
         info["prefix"] = "/".join(target_path)
     return info
 
@@ -126,15 +155,25 @@ def load_dagster_definitions():
         # One walk over Definitions — the shared inventory also derives the
         # URN sidecar via the same datahub converter, so we don't re-call it.
         records = extract_records(defs)
+
+        # Build a {io_manager_key: io_manager_instance} lookup so each
+        # record can resolve its bound IO manager and (if the IO manager
+        # implements the mesh-publishing protocol) request a real
+        # routing ticket. ``defs.resources`` exposes the configured
+        # resource instances — typically these are already pydantic
+        # ConfigurableIOManager objects with their fields resolved.
+        resources = getattr(defs, "resources", {}) or {}
+
         for record in records:
             urn = record.tags.get("datahub/urn") if record.tags else None
             if not urn:
                 urn = record.urn
             if not urn:
-                # Fallback deterministic URN generation, mirroring legacy behavior.
+                # Fallback deterministic URN generation.
                 key_str = ".".join(record.asset_key)
                 urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str},PROD)"
-            LOCAL_ASSETS[urn] = _build_asset_info_from_record(record)
+            io_manager = resources.get(record.io_manager_key) if record.io_manager_key else None
+            LOCAL_ASSETS[urn] = _build_asset_info_from_record(record, io_manager=io_manager)
 
         logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
     except Exception as e:
@@ -222,13 +261,22 @@ async def resolve_asset(request: ResolveRequest):
     Called ONLY by the Central Gateway to resolve a DataHub URN into a physical routing ticket.
     """
     urn = request.urn
-    
+
     if urn not in LOCAL_ASSETS:
         raise HTTPException(status_code=404, detail="URN not found in this domain's Dagster deployment.")
-        
+
     asset_info = LOCAL_ASSETS[urn]
+
+    # Mesh-publishing protocol short-circuit: when the IO manager
+    # supplied its own routing ticket at load time, return it verbatim.
+    # No STS minting, no placeholder fallback — the IO manager already
+    # knows the real physical coordinates and credentials.
+    ticket = asset_info.get("_routing_ticket")
+    if ticket:
+        return ticket
+
     io_type = asset_info.get("io_manager_type", "s3_parquet")
-    
+
     if io_type in ["postgres", "clickhouse"]:
         host = asset_info.get("db_host", "localhost")
         port = asset_info.get("db_port", 5432)
