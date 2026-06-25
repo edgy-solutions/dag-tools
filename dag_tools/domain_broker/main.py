@@ -228,25 +228,59 @@ async def _re_register_loop() -> None:
         await asyncio.sleep(interval)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _startup_load_and_register() -> None:
+    """Background task: load Dagster definitions, then drive the
+    re-register loop.
+
+    Runs outside the synchronous lifespan so a slow
+    ``load_dagster_definitions`` (large Dagster Definitions, cold
+    pip wheel cache, dlt/datahub imports) can't blow past hypercorn's
+    lifespan startup timeout. The broker becomes Ready as soon as
+    the FastAPI app is up; ``/health`` reports ``assets: 0`` until
+    the load finishes, then jumps to the real count.
+
+    Until the load finishes, ``/resolve`` returns 404 for any URN
+    (LOCAL_ASSETS is still empty). That's the right shape: consumers
+    can't be served before the broker actually knows what it serves.
+    Consumers should be tolerant of a 404 → succeed retry pattern.
+    """
     import asyncio
-    # Startup: load definitions, do the first register up-front so
-    # routing is available before the first /resolve call, then start
-    # the re-register loop in the background.
-    load_dagster_definitions()
-    logger.info("Loaded %d assets from Dagster definitions", len(LOCAL_ASSETS))
+    try:
+        # load_dagster_definitions is synchronous-blocking — keep it
+        # off the event loop by running it in a worker thread so the
+        # FastAPI app stays responsive to /health probes during the
+        # load.
+        await asyncio.to_thread(load_dagster_definitions)
+        logger.info(
+            "Loaded %d assets from Dagster definitions", len(LOCAL_ASSETS),
+        )
+    except Exception as exc:
+        logger.error("load_dagster_definitions failed: %s", exc)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await _register_once(client)
             logger.info(
-                "initial register: %d assets pushed to gateway", len(LOCAL_ASSETS),
+                "initial register: %d assets pushed to gateway",
+                len(LOCAL_ASSETS),
             )
     except Exception as exc:
         logger.error("initial register failed (will retry in loop): %s", exc)
 
-    task = asyncio.create_task(_re_register_loop())
+    await _re_register_loop()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import asyncio
+    # Kick off the load + register loop as a fire-and-forget
+    # background task so lifespan startup completes immediately.
+    # Hypercorn's lifespan startup timeout (60s, not CLI-configurable)
+    # is too tight for the heavy Definitions imports a real
+    # user-deployment carries — Dagster + dlt + datahub easily eat
+    # 90-180s on cold start. Yielding before the load happens means
+    # /health responds right away and k8s probes pass.
+    task = asyncio.create_task(_startup_load_and_register())
     try:
         yield
     finally:
