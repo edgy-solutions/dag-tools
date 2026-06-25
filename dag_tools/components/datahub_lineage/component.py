@@ -6,7 +6,8 @@ from typing import Annotated, Any, Dict, List, Optional, Sequence
 import dagster as dg
 from dagster import AssetKey, DagsterEventType, EnvVar, RunStatusSensorContext
 from dagster.components import Component, ComponentLoadContext
-from dagster.components.resolved.model import Resolver
+from dagster.components.resolved.base import Resolvable
+from dagster.components.resolved.model import Model, Resolver
 from dag_tools.utils.translation_registry import AssetNormalizationRegistry
 
 # External imports required for Datahub Integration
@@ -65,10 +66,15 @@ def get_datahub_metadata(source_keys: Sequence[Sequence[str]], platform: str) ->
             
     return {"datahub.inputs": urns}
 
-@dataclass
-class DatahubLineageComponent(Component):
+class DatahubLineageComponent(Component, Resolvable, Model):
     """A Dagster Declarative Component that activates global Datahub lineage tracking.
     This component returns exactly 1 definition: the global ASSET_MATERIALIZATION sensor.
+
+    Resolvable + Model lets Dagster load attribute values straight from a
+    component.yaml — without those mixins the loader rejects the YAML
+    with ``DagsterInvalidDefinitionError: Component is not resolvable
+    from YAML``. Dataclass-style ``field(default_factory=...)`` defaults
+    work through the Resolver layer; subclasses don't need to change.
     """
     
     datahub_config: Annotated[
