@@ -47,10 +47,23 @@ RUN apt-get update \
 # at runtime).
 COPY . /app
 
-# Resolve and install dependencies from the pyproject.toml at the
-# repo root. Cache mount keeps repeat builds fast.
+# Resolve and install dependencies. dag-tools' base ``[project]``
+# deps are minimal (polars, pyarrow, connectorx etc.); the heavy
+# Dagster + broker libs live in optional-dependency groups so a
+# consumer installs only what its role needs. The user-deployment
+# image needs BOTH:
+#
+#   * ``orchestrator`` — dagster, dagster-aws, acryl-datahub, boto3,
+#     s3fs (the code-location process imports dagster + the
+#     CortexPolarsIOManager whose __init__ triggers dagster_aws
+#     side-effects).
+#   * ``broker`` — fastapi, hypercorn, pydantic, boto3 (the broker
+#     pod runs ``dag_tools.domain_broker.main:app`` under hypercorn).
+#
+# Same image runs both pods (helm picks the entrypoint), so install
+# both groups in a single layer. Cache mount keeps repeat builds fast.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system .
+    uv pip install --system ".[orchestrator,broker]"
 
 # Default port for the Dagster gRPC code-location.
 EXPOSE 4000
