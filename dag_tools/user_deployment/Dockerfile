@@ -47,23 +47,42 @@ RUN apt-get update \
 # at runtime).
 COPY . /app
 
-# Resolve and install dependencies. dag-tools' base ``[project]``
-# deps are minimal (polars, pyarrow, connectorx etc.); the heavy
-# Dagster + broker libs live in optional-dependency groups so a
-# consumer installs only what its role needs. The user-deployment
-# image needs BOTH:
+# Install only the dagster + S3 + DataHub bits the user-deployment
+# actually uses. The full ``orchestrator`` extras group pulls in
+# dagster-dlt + dagster-dbt + dagster-embedded-elt + dlt with five
+# DB backends — none of which the user-deployment touches. Importing
+# them at code-location startup ballooned ``import
+# dag_tools.user_deployment.definitions`` to 43.4 seconds, which
+# overflowed Dagster's 60-second gRPC launch_run timeout: the
+# daemon's subprocess-spawn RPC consistently failed with
+# ``DagsterUserCodeUnreachableError`` even though the gRPC server
+# was reachable. The 43.4s + subprocess handshake exceeded the
+# budget; trimming brings it well under the deadline.
 #
-#   * ``orchestrator`` — dagster, dagster-aws, acryl-datahub, boto3,
-#     s3fs (the code-location process imports dagster + the
-#     CortexPolarsIOManager whose __init__ triggers dagster_aws
-#     side-effects).
-#   * ``broker`` — fastapi, hypercorn, pydantic, boto3 (the broker
-#     pod runs ``dag_tools.domain_broker.main:app`` under hypercorn).
+# The minimum set:
+#   * Base dag-tools deps via ``.`` install (polars, pyarrow, etc.)
+#   * ``dagster`` + ``dagster-aws`` — @asset decorator + the
+#     CortexPolarsIOManager's transitive dagster_aws.s3 import.
+#   * ``acryl-datahub`` — CortexPolarsIOManager.handle_output emits
+#     URNs to DataHub on materialization.
+#   * ``boto3`` + ``s3fs`` — S3 writes.
+#   * ``.[broker]`` extras — fastapi, hypercorn, pydantic, httpx,
+#     boto3 for the broker pod (same image, helm picks the
+#     entrypoint).
 #
-# Same image runs both pods (helm picks the entrypoint), so install
-# both groups in a single layer. Cache mount keeps repeat builds fast.
+# Future singleton modules added by the owner may need additional
+# bits (e.g. a Snowflake source-singleton would want
+# ``dagster-snowflake`` or similar). Add those individually here
+# as needed — but resist re-introducing the full ``orchestrator``
+# extras group unless every transitive package is genuinely used.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system ".[orchestrator,broker]"
+    uv pip install --system \
+        ".[broker]" \
+        dagster \
+        dagster-aws \
+        acryl-datahub \
+        boto3 \
+        s3fs
 
 # Default port for the Dagster gRPC code-location.
 EXPOSE 4000
