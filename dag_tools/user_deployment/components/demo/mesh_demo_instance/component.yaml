@@ -5,10 +5,18 @@ attributes:
   # bucket the broker pod's IO manager instance sees so the routing
   # ticket it advertises points at the same location handle_output
   # writes to. Override via DAG_TOOLS_DEMO_S3_BUCKET (without the s3://
-  # prefix). Default keeps the same bucket the asset has historically
-  # written to (publog-lake on the sandbox), so re-locating the
-  # component doesn't move the data.
-  s3_bucket: "{{ env('DAG_TOOLS_DEMO_S3_BUCKET', 'publog-lake') }}"
+  # prefix). Default ``dag-lake`` — the bucket owned by the dag-tools
+  # user-deployment. The old pub-tools-hosted demo wrote to
+  # ``publog-lake``; this relocation moves writes to ``dag-lake`` so
+  # the bucket reflects the new owning deployment. The bucket must
+  # exist in the target cluster's MinIO before the first
+  # materialization; on the sandbox cluster this is provisioned as
+  # part of the MinIO setup. The DataHub URN
+  # (``urn:li:dataset:(...,mesh_demo_customers,PROD)``) stays the
+  # same because it comes from the asset_key + platform, NOT the
+  # bucket — so DataHub history isn't orphaned by the bucket change;
+  # only the underlying S3 path moves.
+  s3_bucket: "{{ env('DAG_TOOLS_DEMO_S3_BUCKET', 'dag-lake') }}"
   prefix: "{{ env('MESH_DEMO_PREFIX', 'mesh_demo') }}"
 
   # Central gateway URL — required by CortexPolarsIOManager's schema

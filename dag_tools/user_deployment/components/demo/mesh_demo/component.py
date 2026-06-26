@@ -19,10 +19,20 @@ example, not a demo container), so this component moved here under
 the dag-tools user-deployment package — a deployment whose explicit
 purpose is generic / source-singleton content, with a demo-mode
 toggle for synthetic surfaces like this one. Production deployments
-turn the toggle off. The asset_name, asset_key, and MinIO path are
-unchanged, so the DataHub URN
+turn the toggle off.
+
+The asset_name and asset_key are unchanged, so the DataHub URN
 (``urn:li:dataset:(urn:li:dataPlatform:dagster,mesh_demo_customers,PROD)``)
-stays the same and existing materialization history isn't orphaned.
+stays the same and existing DataHub history isn't orphaned. The S3
+bucket DID change — from ``publog-lake`` (pub-tools' bucket) to
+``dag-lake`` (dag-tools' bucket) — so the underlying parquet path
+moves: the first materialization in the new container writes to
+``s3://dag-lake/mesh_demo/mesh_demo_customers.parquet`` and the
+broker advertises that path going forward. The old parquet at
+``s3://publog-lake/mesh_demo/...`` is orphaned (Dagster
+materializations are reproducible so the demo data simply
+re-generates at the new location — the bucket change is a
+cutover, not a data migration).
 """
 
 from datetime import datetime
