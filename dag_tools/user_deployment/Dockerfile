@@ -63,6 +63,21 @@ COPY . /app
 #   * Base dag-tools deps via ``.`` install (polars, pyarrow, etc.)
 #   * ``dagster`` + ``dagster-aws`` — @asset decorator + the
 #     CortexPolarsIOManager's transitive dagster_aws.s3 import.
+#   * ``dagster-postgres`` — REQUIRED by the daemon's launch-run
+#     subprocess. The iagent-dagster instance's dagster.yaml
+#     configures DagsterPostgresStorage; when the daemon spawns a
+#     run subprocess on the code-location pod, that subprocess
+#     reads the instance config and instantiates the storage class.
+#     Without dagster-postgres installed, the subprocess fails to
+#     import the storage backend and the daemon reports a
+#     misleading ``DagsterUserCodeUnreachableError: ... timed out
+#     after 60 seconds`` (because it never gets the success ack
+#     within the budget). The actual error is in the daemon log:
+#     ``Couldn't import module dagster_postgres when attempting to
+#     load the configurable class dagster_postgres.DagsterPostgresStorage``.
+#     Pub-tools includes this transitively via ``.[orchestrator]``;
+#     dag-tools' trimmed install dropped that group, so it must be
+#     listed explicitly here.
 #   * ``acryl-datahub`` — CortexPolarsIOManager.handle_output emits
 #     URNs to DataHub on materialization.
 #   * ``boto3`` + ``s3fs`` — S3 writes.
@@ -80,6 +95,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         ".[broker]" \
         dagster \
         dagster-aws \
+        dagster-postgres \
         acryl-datahub \
         boto3 \
         s3fs
