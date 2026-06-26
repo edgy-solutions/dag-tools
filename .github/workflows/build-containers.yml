@@ -30,6 +30,18 @@ jobs:
           - service: restate-worker
             context: .
             dockerfile: ./Dockerfile.restate-worker
+          # User-deployment image: a Dagster code-location image that
+          # any cluster can spin up via the iagent helm chart's
+          # ``userDeployments`` mechanism. Hosts demo / source-singleton
+          # content (toggleable via DAG_TOOLS_DEMO_MODE). The same image
+          # runs as the domain broker too (helm overrides the command).
+          # Context is the repo root because the user-deployment imports
+          # from sibling packages (dag_tools.io_managers,
+          # dag_tools.domain_broker, etc.) — central_gateway can scope
+          # to its own subdir because it has no cross-package imports.
+          - service: user-deployment
+            context: .
+            dockerfile: ./dag_tools/user_deployment/Dockerfile
 
     steps:
       - name: Checkout
