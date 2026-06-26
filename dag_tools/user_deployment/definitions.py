@@ -1,35 +1,35 @@
 """Dagster Definitions assembly for the dag-tools user-deployment.
 
-Single demo-mode switch (``DAG_TOOLS_DEMO_MODE``) selects which
-component subdirectory the deployment scans:
+Single demo-mode switch (``DAG_TOOLS_DEMO_MODE``) selects which surface
+this deployment exposes:
 
-* ``on`` (``true`` / ``1`` / ``yes``) — scans
-  ``components/demo/``, registering the synthetic
-  ``mesh_demo_customers`` dataset that the bar-chart demo depends on.
-  Use in sandbox / dev clusters where the demo path must remain
+* ``on`` (``true`` / ``1`` / ``yes``) — registers the synthetic
+  ``mesh_demo_customers`` dataset from ``mesh_demo_assets.py``. Used in
+  sandbox / dev clusters where the bar-chart demo must remain
   exercised.
 
-* ``off`` (default; anything else, including unset) — scans only
-  ``components/singletons/``, which holds basic singleton source
-  assets (Snowflake all-assets, etc.). That directory is currently
-  empty and is filled in by the owner when the real source-singleton
-  code lands. With the toggle off and singletons empty, the
-  deployment registers zero assets — the honest production state
-  for a mesh that has no globally-available source surfaces wired
-  yet.
+* ``off`` (default; anything else, including unset) — registers only
+  the source-singleton surface (currently empty and waits for the
+  owner to fill it in with code like Snowflake all-assets, etc.).
+  Production-safe: with the toggle off and no singletons wired, the
+  deployment registers zero assets — the honest production state for
+  a mesh that has no globally-available source surfaces yet.
 
-The toggle is **single-switch by design** (per the architect's
-guidance): either demo content is active, or the real
-source-singleton surface is. They do NOT both run side-by-side.
-This avoids the "demo data leaks into production" failure mode.
+The toggle is **single-switch by design**: either demo OR singletons,
+not both. Production overrides set ``DAG_TOOLS_DEMO_MODE=false`` to
+keep synthetic data out of work clusters.
+
+This file uses a flat ``Definitions(...)`` rather than the
+``build_component_defs`` discovery API because the latter is
+deprecated (breaking_version 0.2.0) and assumes a shallow
+``<package>/components`` layout that doesn't match the
+``dag_tools.user_deployment.*`` nesting. Direct Definitions is
+the right shape going forward.
 """
 
 import os
-from pathlib import Path
-from typing import Iterable
 
 from dagster import Definitions
-from dagster.components import build_component_defs
 
 
 _TRUTHY = {"1", "true", "yes", "on", "y", "t"}
@@ -44,35 +44,34 @@ def _demo_mode_on() -> bool:
     return (os.getenv("DAG_TOOLS_DEMO_MODE") or "").strip().lower() in _TRUTHY
 
 
-def _scan_dirs() -> Iterable[Path]:
-    base = Path(__file__).parent / "components"
-    if _demo_mode_on():
-        # Demo mode: register demo content. Singletons stay
-        # available too so a deployment can ALSO surface real source
-        # singletons alongside the demo if both happen to be wired.
-        # (In practice singletons is empty until the owner fills it
-        # in, so this is equivalent to "demo only" today.)
-        yield base / "demo"
-        yield base / "singletons"
-    else:
-        # Production: only singletons. Demo content is structurally
-        # absent from the running deployment, not just hidden behind
-        # a flag — the components module isn't even scanned.
-        yield base / "singletons"
+def _build_singleton_defs() -> Definitions:
+    """Future source-singleton surface — currently empty.
+
+    When the owner adds singleton modules (e.g. a Snowflake
+    all-assets surface), each module exports ``build_defs() -> Definitions``
+    and this function merges them. Pattern intentionally mirrors
+    ``mesh_demo_assets.build_demo_defs()`` so the conventions stay
+    uniform across this deployment.
+    """
+    # Placeholder — replace with merged Definitions once singletons land.
+    return Definitions()
 
 
 def _build_combined_defs() -> Definitions:
-    parts = []
-    for d in _scan_dirs():
-        if d.is_dir() and any(d.iterdir()):
-            parts.append(build_component_defs(d))
-    if not parts:
-        # Empty surface — honest "this deployment has no registered
-        # assets right now." Dagster accepts an empty Definitions.
-        return Definitions()
-    if len(parts) == 1:
-        return parts[0]
-    return Definitions.merge(*parts)
+    if _demo_mode_on():
+        # Lazy import: only pull mesh_demo_assets (and polars,
+        # CortexPolarsIOManager) into the deployment's module graph
+        # when demo mode is actually on. Cleaner blast-radius if a
+        # production import of this module accidentally happens with
+        # the env var unset.
+        from dag_tools.user_deployment.mesh_demo_assets import build_demo_defs
+
+        demo = build_demo_defs()
+        singletons = _build_singleton_defs()
+        # Merge — Definitions.merge accepts an iterable. When singletons
+        # is empty the merge is a no-op.
+        return Definitions.merge(demo, singletons)
+    return _build_singleton_defs()
 
 
 defs = _build_combined_defs()
