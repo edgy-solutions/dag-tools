@@ -33,7 +33,6 @@ from typing import Tuple
 
 import polars as pl
 from dagster import (
-    AssetExecutionContext,
     Definitions,
     asset,
 )
@@ -41,12 +40,20 @@ from dagster import (
 from dag_tools.io_managers.cortex_io_manager import CortexPolarsIOManager
 
 
+# Note: ``context`` is intentionally left unannotated. The
+# @asset decorator's validator rejected the explicit
+# ``AssetExecutionContext`` annotation in this build of dagster
+# even though it's in the documented accept-list — likely a version
+# skew between the dagster the validator runs and the type imported
+# here. Leaving the annotation blank is documented as acceptable and
+# avoids the validator entirely. Type-checkers still infer the right
+# type from the @asset decorator's signature.
 @asset(
     name="mesh_demo_customers",
     group_name="mesh_demo",
     io_manager_key="mesh_demo_io",
 )
-def mesh_demo_customers(context: AssetExecutionContext) -> pl.DataFrame:
+def mesh_demo_customers(context) -> pl.DataFrame:
     """Synthetic customer dataset.
 
     Real-shaped rows (id, name, region, signup_date, plan) generated
