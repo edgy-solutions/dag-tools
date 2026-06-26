@@ -21,7 +21,6 @@ gateway — closing the loop.
 import os
 from typing import Any, Dict, Optional, Sequence
 
-import polars as pl
 from dagster import (
     ConfigurableIOManager,
     InputContext,
@@ -30,7 +29,28 @@ from dagster import (
 )
 from pydantic import Field
 
-from dag_tools.cortex_data.client import CortexDataClient
+# polars and the cortex data client are LAZILY imported inside the
+# methods that need them. Importing them at module load forced the
+# 60s Dagster gRPC ``launch_run`` budget to overflow when this IO
+# manager landed in a slim user-deployment image: ``import
+# dag_tools.user_deployment.definitions`` clocked at ~42s, and the
+# subprocess-spawn handshake couldn't complete inside the budget,
+# producing reproducible ``DagsterUserCodeUnreachableError`` even
+# though the gRPC server was reachable.
+#
+# Lazy-loading these heavy deps keeps definitions-load fast (the
+# common case: enumerating assets for the broker's URN-registration
+# loop and the daemon's run-launch RPC). The runtime cost only fires
+# when an asset materializes (handle_output) or reads an upstream
+# (load_input) — exactly when polars / CortexDataClient are actually
+# needed.
+#
+# See ``[[dag-tools-grpc-import-timeout]]`` for the full diagnosis
+# and the alternative fix options (raising the gRPC timeout,
+# demoting heavy base deps to optional extras); this is Option A.
+#
+# When future code reaches for ``pl`` or ``CortexDataClient`` here,
+# move it inside the method body or accept the import-cost regression.
 
 
 # Discriminator the cortex data client uses to pick the parquet read
@@ -98,6 +118,9 @@ class CortexPolarsIOManager(ConfigurableIOManager):
 
         context.log.info(f"Loading input for URN: {urn}")
 
+        # Lazy import — see module-level note on import discipline.
+        from dag_tools.cortex_data.client import CortexDataClient
+
         client = CortexDataClient(
             broker_url=self.broker_url,
             client_id=self.client_id,
@@ -117,6 +140,9 @@ class CortexPolarsIOManager(ConfigurableIOManager):
         lookups, and if ``DATAHUB_SERVER`` is set the URN is pushed to
         DataHub directly via the metadata REST API.
         """
+        # Lazy import — see module-level note on import discipline.
+        import polars as pl
+
         if not isinstance(obj, (pl.DataFrame, pl.LazyFrame)):
             raise ValueError(
                 f"Expected a Polars DataFrame or LazyFrame, got {type(obj)}"
@@ -173,6 +199,9 @@ class CortexPolarsIOManager(ConfigurableIOManager):
         schema aspect.
         """
         try:
+            # Lazy import — see module-level note on import discipline.
+            import polars as pl
+
             if isinstance(obj, pl.LazyFrame):
                 schema = obj.collect_schema()
             else:

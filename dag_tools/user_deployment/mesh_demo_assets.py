@@ -31,7 +31,6 @@ from __future__ import annotations
 import os
 from typing import Tuple
 
-import polars as pl
 from dagster import (
     Definitions,
     asset,
@@ -40,6 +39,14 @@ from dagster import (
 from dag_tools.io_managers.cortex_io_manager import CortexPolarsIOManager
 
 
+# Lazy ``polars`` import inside the asset compute keeps definitions-
+# load fast. Importing polars at module level was part of what pushed
+# ``dag_tools.user_deployment.definitions`` import time past Dagster's
+# 60-second gRPC launch_run budget; see
+# ``[[dag-tools-grpc-import-timeout]]`` for the full diagnosis. The
+# IO manager applies the same discipline at
+# ``dag_tools.io_managers.cortex_io_manager``.
+#
 # Note: ``context`` is intentionally left unannotated. The
 # @asset decorator's validator rejected the explicit
 # ``AssetExecutionContext`` annotation in this build of dagster
@@ -53,7 +60,7 @@ from dag_tools.io_managers.cortex_io_manager import CortexPolarsIOManager
     group_name="mesh_demo",
     io_manager_key="mesh_demo_io",
 )
-def mesh_demo_customers(context) -> pl.DataFrame:
+def mesh_demo_customers(context):
     """Synthetic customer dataset.
 
     Real-shaped rows (id, name, region, signup_date, plan) generated
@@ -62,6 +69,9 @@ def mesh_demo_customers(context) -> pl.DataFrame:
     write and attaches the URN + physical_uri metadata for the broker
     and downstream consumers to pick up.
     """
+    # Lazy import — see module-level note.
+    import polars as pl
+
     df = pl.DataFrame(
         {
             "id": list(range(1, 11)),
