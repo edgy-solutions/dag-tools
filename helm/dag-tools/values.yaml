@@ -104,8 +104,15 @@ centralGateway:
   env: {}
   #   REDIS_URL: "redis://redis:6379"
   #   TOPAZ_URL: "https://topaz:8383"
-  #   ALLOW_MOCK_AUTH: "false"
   #   DENIED_USER_SUBS: ""
+  # 2026-07-01: `ALLOW_MOCK_AUTH` was removed as part of ADR-0026
+  # step 1. It converted every topaz failure (exception, timeout,
+  # non-200) into an allow-by-default fail-open, which meant
+  # topaz-misconfigured environments silently allowed all data
+  # reads with nobody the wiser. Any authz path in central_gateway
+  # now denies-with-loud-log on failure; there is no runtime
+  # override to relax that. If you're debugging a 403 storm, grep
+  # logs for "TOPAZ AUTHZ DENIED" — the message names the cause.
   envFrom: []
   # - secretRef:
   #     name: central-gateway-secrets

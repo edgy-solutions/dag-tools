@@ -157,24 +157,50 @@ async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[s
                         is_authorized = decision_obj.get("is", False)
                 if not is_authorized:
                     is_authorized = result.get("decision", False) or result.get("is", False)
-                
+
                 # Extract data-masking rules
                 allowed_columns = result.get("allowed_columns") or result.get("fields")
                 row_filters = result.get("row_filters") or result.get("row_filter") or result.get("filters")
-                
+
                 return is_authorized, allowed_columns, row_filters
             else:
-                logger.error(f"Topaz AuthZ failed with status {response.status_code}: {response.text}")
-                # For development/testing if Topaz is unreachable
-                if os.getenv("ALLOW_MOCK_AUTH", "false").lower() == "true":
-                    logger.warning("Using mock auth due to Topaz failure")
-                    return True, None, None
+                # ADR-0026 posture: authz is a GATE, not a trailing step.
+                # Every non-200 from topaz is a hard DENY with a loud
+                # log — never a silent allow. The prior
+                # `ALLOW_MOCK_AUTH=true → return (True, None, None)`
+                # branch converted "authz service broken" into
+                # "allow everything" (fail-open), which meant sandbox
+                # had been mock-allowing every data request since the
+                # topaz service was first misconfigured. That branch
+                # is removed with topaz-config wiring landing in the
+                # same PR per `[[coupled-interim-mechanisms-retire-together]]`.
+                logger.error(
+                    "TOPAZ AUTHZ DENIED: non-200 response from topaz. "
+                    "url=%s status=%s user=%s urn=%s body=%r",
+                    f"{TOPAZ_URL}/api/v2/authz/is",
+                    response.status_code,
+                    user_id,
+                    urn,
+                    response.text[:500],
+                )
                 return False, None, None
-                
+
     except Exception as e:
-        logger.error(f"Error during Topaz AuthZ: {e}")
-        if os.getenv("ALLOW_MOCK_AUTH", "false").lower() == "true":
-            return True, None, None
+        # Same posture: exception (topaz unreachable, timeout, DNS,
+        # TLS, etc.) is a hard DENY with a loud log naming the cause.
+        # `ALLOW_MOCK_AUTH=true` used to fall through here to
+        # (True, None, None) — that's the fail-open the ADR-0026
+        # amendment explicitly killed. Any operator debugging a
+        # sudden 403 storm should search the log for
+        # "TOPAZ AUTHZ DENIED" — the message names the failure.
+        logger.error(
+            "TOPAZ AUTHZ DENIED: exception talking to topaz. "
+            "url=%s user=%s urn=%s error=%r",
+            f"{TOPAZ_URL}/api/v2/authz/is",
+            locals().get("user_id"),
+            urn,
+            e,
+        )
         return False, None, None
 
 @app.post("/api/v1/assets/{urn:path}/authorize")
