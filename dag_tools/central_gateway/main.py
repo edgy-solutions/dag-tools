@@ -92,13 +92,23 @@ async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[s
     Permission = can_read
     """
     try:
-        # Decode JWT to get user_id (sub).
+        # Decode JWT. The SUBJECT of the DA-read authz decision is the
+        # caller's ENTITLEMENT KEY (email), NOT the sub — the seeded
+        # dataset `owner`/`reader` relations are email-keyed (DataHub owners
+        # are emails), and everything else in this system keys on email
+        # (auth.USER_ENTITLEMENT_CLAIM). Sending the sub here is why the gate
+        # was dormant-unverified: it matched no owner and denied everyone,
+        # which looks safe and hid the misalignment. Sub is kept for logs.
         unverified_claims = jwt.decode(token, options={"verify_signature": False})
         user_id = unverified_claims.get("sub")
-        if not user_id:
-            logger.error("JWT does not contain a 'sub' claim for user_id")
-            return False
-            
+        subject_key = unverified_claims.get("email")
+        if not subject_key:
+            logger.error(
+                "JWT has no 'email' claim — DA-read subject unresolvable; "
+                "fail-CLOSED deny (sub=%s)", user_id,
+            )
+            return False, None, None
+
         # Topaz API call (using standard Aserto/Topaz REST API format for Is)
         headers = {
             "Content-Type": "application/json",
@@ -106,19 +116,25 @@ async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[s
         }
         if TOPAZ_AUTHORIZER_API_KEY:
             headers["Aserto-Tenant-Id"] = TOPAZ_AUTHORIZER_API_KEY
-            
-        # Standard Topaz check API format (v2/authz/is)
+
+        # Standard Topaz check API format (v2/authz/is).
+        # data_broker.rego reads the subject from resource_context.user_id
+        # (input.user.id is EMPTY on this Topaz — no identity->user resolution
+        # objects seeded), and the object from resource_context.asset_key.
+        # identity_context is still required by the authorizer's request
+        # validation even though the decision reads resource_context.
         authz_payload = {
             "identity_context": {
-                "identity": user_id,
-                "type": "IDENTITY_TYPE_SUB"
+                "identity": subject_key,
+                "type": "IDENTITY_TYPE_MANUAL"
             },
             "policy_context": {
                 "path": "data_mesh.GET.api.v1.assets.__asset_key.authorize",
                 "decisions": ["allowed"]
             },
             "resource_context": {
-                "asset": urn,
+                "asset_key": urn,
+                "user_id": subject_key,
                 "permission": "can_read"
             }
         }
