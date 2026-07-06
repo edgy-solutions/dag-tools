@@ -15,7 +15,15 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-TOPAZ_URL = os.getenv("TOPAZ_URL", "https://localhost:8383")
+# Read TOPAZ_AUTHORIZER_URL (the convention used across the mesh — auth.py,
+# datahub_wrapper) FIRST; fall back to the legacy TOPAZ_URL name; default to
+# the in-cluster authorizer over HTTP. The prior default `https://localhost:8383`
+# was doubly wrong (localhost = this pod, not the topaz service; https vs the
+# HTTP authorizer) AND the code read TOPAZ_URL while helm set
+# TOPAZ_AUTHORIZER_URL — a name mismatch that made the gate UNREACHABLE, so it
+# fail-closed DENIED every read. Deny-all looked safe and hid the misconfig
+# (broken-closed-hides-brokenness). Caught by the composed-path DA-read seal.
+TOPAZ_URL = os.getenv("TOPAZ_AUTHORIZER_URL") or os.getenv("TOPAZ_URL") or "http://topaz-svc:8383"
 TOPAZ_AUTHORIZER_API_KEY = os.getenv("TOPAZ_AUTHORIZER_API_KEY", "")
 
 # Comma-separated list of Keycloak 'sub' values to refuse access for.
