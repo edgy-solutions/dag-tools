@@ -17,6 +17,7 @@ class CortexDataClient:
         client_secret: Optional[str] = None,
         keycloak_url: Optional[str] = None,
         originator_sub: Optional[str] = None,
+        originator_email: Optional[str] = None,
     ):
         # 1. Resolve Broker URL (Central Gateway)
         resolved_broker = broker_url or os.getenv("CORTEX_BROKER_URL")
@@ -34,6 +35,12 @@ class CortexDataClient:
         # The gateway sees this in X-Originator-Sub and applies user-level
         # authz against it instead of the M2M token's sub.
         self.originator_sub = originator_sub
+        # The originator's authz_id / ENTITLEMENT KEY (email in sandbox,
+        # employee-id at work-deploy). The gateway's can_read topaz check
+        # is email-keyed, so it MUST see the end user's email here (via
+        # X-Originator-Email) — the M2M token has no user email. Without
+        # this the DA-read gate denied everyone (broken-closed).
+        self.originator_email = originator_email
 
         if not self.jwt_token and self.client_id and self.client_secret:
             self._fetch_m2m_token()
@@ -67,6 +74,8 @@ class CortexDataClient:
         }
         if self.originator_sub:
             headers["X-Originator-Sub"] = self.originator_sub
+        if self.originator_email:
+            headers["X-Originator-Email"] = self.originator_email
 
         url = f"{self.gateway_url}/api/v1/assets/{urn}/authorize"
         

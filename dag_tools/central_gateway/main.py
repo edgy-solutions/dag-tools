@@ -92,7 +92,7 @@ async def register_broker(payload: RegisterPayload):
     logger.info(f"Registered {len(payload.asset_urns)} assets for broker {payload.broker_url}")
     return {"status": "success", "registered_assets": len(payload.asset_urns)}
 
-async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[str]], Optional[str]]:
+async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str] = None) -> tuple[bool, Optional[List[str]], Optional[str]]:
     """
     Calls the Topaz REST API to check authorization.
     Subject = Keycloak user_id (extracted from JWT)
@@ -109,11 +109,20 @@ async def check_topaz_authz(token: str, urn: str) -> tuple[bool, Optional[List[s
         # which looks safe and hid the misalignment. Sub is kept for logs.
         unverified_claims = jwt.decode(token, options={"verify_signature": False})
         user_id = unverified_claims.get("sub")
-        subject_key = unverified_claims.get("email")
+        # The authz SUBJECT is the ORIGINATING USER, threaded via
+        # X-Originator-Email (the caller's authz_id / entitlement key —
+        # email in sandbox, employee-id at work-deploy). The `token` here
+        # is a SERVICE-ACCOUNT M2M JWT (DA's transport identity, no user
+        # email), so reading email off the token denied everyone
+        # (broken-closed: allow-path never functioned). Prefer the
+        # originator email; fall back to the token email only for legacy
+        # user-JWT callers. Consistent with the content gates, which key
+        # on authz_id — so this gate flips with them at work-deploy.
+        subject_key = (originator_email or "").strip() or unverified_claims.get("email")
         if not subject_key:
             logger.error(
-                "JWT has no 'email' claim — DA-read subject unresolvable; "
-                "fail-CLOSED deny (sub=%s)", user_id,
+                "DA-read subject unresolvable — no X-Originator-Email and no "
+                "token 'email' claim; fail-CLOSED deny (token_sub=%s)", user_id,
             )
             return False, None, None
 
@@ -244,6 +253,11 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
 
     token = credentials.credentials
 
+    # The originating user's authz_id (email in sandbox), threaded by the
+    # data client as X-Originator-Email. `token` is a service-account M2M
+    # JWT (DA's transport identity); the authz SUBJECT is this end user.
+    originator_email = (request.headers.get("X-Originator-Email") or "").strip() or None
+
     # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
     # Checked before Topaz so a known-denied user cannot slip through if
     # Topaz is mock-allowing for the happy path. Originator-Sub header
@@ -268,7 +282,7 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             )
 
     # 1. Topaz AuthZ
-    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn)
+    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, originator_email)
     if not is_authorized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
