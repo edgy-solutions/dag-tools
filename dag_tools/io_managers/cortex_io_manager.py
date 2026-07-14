@@ -265,7 +265,11 @@ class CortexPolarsIOManager(ConfigurableIOManager):
                 TimeTypeClass,
             )
 
-            graph = DataHubGraph(DatahubClientConfig(server=server))
+            # A PAT is required when the metadata service runs with
+            # METADATA_SERVICE_AUTH_ENABLED=true (the correct posture). Read it from
+            # DATAHUB_TOKEN; None = unauthenticated (only works on an open GMS).
+            token = os.environ.get("DATAHUB_TOKEN") or None
+            graph = DataHubGraph(DatahubClientConfig(server=server, token=token))
             asset_name = context.asset_key.to_user_string().replace("/", ".")
 
             # Properties aspect — always sent.
