@@ -67,7 +67,22 @@ attributes:
       sources:
         - "production"
         - "consumption"
+    heavy_ingest:
+      io_manager_key: "snowflake_io_manager"
+      sources:
+        - "big_fact_table"
+      # Per-pipeline k8s resources via op_tags → dagster-k8s/config.
+      # The k8s executor / run launcher reads this at run submit time.
+      pool: "heavy-ingest"          # optional Dagster concurrency pool
+      op_tags:
+        dagster-k8s/config:
+          container_config:
+            resources:
+              requests: {cpu: "2000m", memory: "8Gi"}
+              limits:   {cpu: "4000m", memory: "16Gi"}
 ```
+
+`op_tags` is forwarded verbatim to the generated `@multi_asset`. For env-driven sizing, build the dict with `dag_tools.utils.k8s.resolve_k8s_resource_tags("<PREFIX>")` (reads `<PREFIX>_CPU_REQUEST` / `_MEM_REQUEST` / `_CPU_LIMIT` / `_MEM_LIMIT`) and pass its output as `op_tags`.
 
 ### 2. DBT Project Component
 Expose fully compiled DBT projects directly to Dagster with automatic Datahub integration native to the project component:

@@ -282,6 +282,8 @@ def instantiate_assets(
         name=f"dlt_{config.name}_{schema}_asset",
         io_manager_key=config.io_manager_key,
         dagster_dlt_translator=translator,
+        op_tags=config.op_tags or None,
+        pool=config.pool,
     )
     def dlt_asset(context: AssetExecutionContext, dlt: DagsterDltResource, config: DltAssetConfig):
         yield from dlt.run(context=context, **default_pipeline_kwargs, **config.pipeline_kwargs)

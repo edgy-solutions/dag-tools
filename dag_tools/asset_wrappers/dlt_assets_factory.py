@@ -76,6 +76,31 @@ class DltAssetGroupConfig(BaseModel):
     io_manager_key: str = PydanticField(
         default="io_manager", description="The Dagster IO manager key to assign to the multi_asset."
     )
+    op_tags: Dict[str, Any] = PydanticField(
+        default_factory=dict,
+        description=(
+            "Tags forwarded verbatim to the generated `@multi_asset`'s `op_tags`. "
+            "The primary use is per-pipeline k8s resource requests / limits / "
+            "node selectors / tolerations via the `dagster-k8s/config` key that "
+            "the k8s executor + run launcher read. Build the dict manually or "
+            "via `dag_tools.utils.k8s.resolve_k8s_resource_tags(<PREFIX>)` which "
+            "returns the correct shape from env vars. Example:\n"
+            "  op_tags:\n"
+            "    dagster-k8s/config:\n"
+            "      container_config:\n"
+            "        resources:\n"
+            "          requests: {cpu: '2000m', memory: '8Gi'}\n"
+            "          limits:   {cpu: '4000m', memory: '16Gi'}"
+        ),
+    )
+    pool: Optional[str] = PydanticField(
+        default=None,
+        description=(
+            "Optional Dagster concurrency pool name for the generated "
+            "`@multi_asset`. Runs sharing a pool respect the pool's slot "
+            "limit configured on the instance."
+        ),
+    )
 
 
 def include_actual_dlt_assets(
