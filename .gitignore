@@ -27,6 +27,39 @@ schedules/
 runs/
 logs/
 
+# Guard: the bare Dagster instance-output patterns above (storage/,
+# history/, schedules/, runs/, logs/) match by directory NAME at ANY
+# depth. That silently swallowed dag_tools/qual/runs/ — real source —
+# so it never got committed and the deployed CLI hit ModuleNotFoundError
+# on `from .runs import ...`. Source code must never be ignorable: keep
+# the package + test trees whitelisted against those name collisions.
+!dag_tools/**/storage/
+!dag_tools/**/storage/**
+!dag_tools/**/history/
+!dag_tools/**/history/**
+!dag_tools/**/schedules/
+!dag_tools/**/schedules/**
+!dag_tools/**/runs/
+!dag_tools/**/runs/**
+!dag_tools/**/logs/
+!dag_tools/**/logs/**
+!dag_tools_tests/**/storage/
+!dag_tools_tests/**/storage/**
+!dag_tools_tests/**/history/
+!dag_tools_tests/**/history/**
+!dag_tools_tests/**/schedules/
+!dag_tools_tests/**/schedules/**
+!dag_tools_tests/**/runs/
+!dag_tools_tests/**/runs/**
+!dag_tools_tests/**/logs/
+!dag_tools_tests/**/logs/**
+
+# Re-assert bytecode ignores LAST so the whitelist negations above don't
+# accidentally re-include __pycache__ / *.pyc sitting inside those dirs
+# (last-matching gitignore pattern wins).
+__pycache__/
+*.py[cod]
+
 # Virtual environments
 .venv/
 env/
