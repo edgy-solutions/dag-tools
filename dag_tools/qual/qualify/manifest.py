@@ -91,6 +91,20 @@ class Deployment(BaseModel):
     Future: ``"oauth:..."``, ``"none"``. Phase 2 implementation will
     grow this; the manifest just records the operator intent."""
 
+    location_name: Optional[str] = None
+    """Code-location name to target when Q2/Q4 launch RUNNABLE
+    representatives, exactly as the test deployment's workspace surfaces
+    it (e.g. the user-deployment / gRPC server name, or ``demo_defs.py``
+    for a local ``dagster dev -f demo_defs.py``). When unset the launcher
+    falls back to ``"default"``, which only works if the deployment
+    happens to name its location that — real deployments never do, so set
+    this via ``dagtools qual init --location-name``."""
+
+    job_name: Optional[str] = None
+    """Job to launch representatives through. Defaults to Dagster's
+    implicit ``"__ASSET_JOB"`` when unset, which is correct for
+    asset-only locations."""
+
 
 class Selection(BaseModel):
     """Representative-picking knobs consumed by Q1."""

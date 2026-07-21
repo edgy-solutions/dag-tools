@@ -321,6 +321,8 @@ def _drive_state(
             run_id = launch_representative(
                 client, rep,
                 qual_id=qual_id, side=side, manifest=manifest,
+                location_name=manifest.deployment.location_name,
+                job_name=manifest.deployment.job_name,
             )
         except DagsterGraphQLError as e:
             rep_state = transition(

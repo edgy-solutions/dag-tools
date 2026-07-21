@@ -329,6 +329,21 @@ def qual_init(
         None, "--graphql-auth-env",
         help="Env var name containing the bearer token for the GraphQL endpoint.",
     ),
+    location_name: Optional[str] = typer.Option(
+        None, "--location-name",
+        help=(
+            "Code-location name the test deployment exposes for Q2/Q4 "
+            "representative launches (e.g. the user-deployment name, or "
+            "'demo_defs.py' for a local `dagster dev -f demo_defs.py`). "
+            "Required for `qual run` to target the right location — the "
+            "launcher falls back to 'default' otherwise, which real "
+            "deployments never use."
+        ),
+    ),
+    job_name: Optional[str] = typer.Option(
+        None, "--job-name",
+        help="Job to launch reps through. Defaults to Dagster's '__ASSET_JOB'.",
+    ),
     staging_overrides: Optional[str] = typer.Option(
         None, "--staging-overrides",
         help="Pointer (typically s3://...) to the staging resource override config.",
@@ -375,7 +390,10 @@ def qual_init(
             registry=registry,
             baseline=VersionTarget(dagster=baseline_version, pins=baseline_pins_dict),
             candidate=VersionTarget(dagster=candidate_version, pins=candidate_pins_dict),
-            deployment=Deployment(graphql_url=graphql_url, auth=auth),
+            deployment=Deployment(
+                graphql_url=graphql_url, auth=auth,
+                location_name=location_name, job_name=job_name,
+            ),
             staging_overrides=staging_overrides,
             selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
             local_path=local_path,

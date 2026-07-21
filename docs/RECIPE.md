@@ -564,6 +564,7 @@ dagtools qual init --id <qual_id>
                 --baseline <version> [--baseline-pins <yaml>]
                 --candidate <version> [--candidate-pins <yaml>]
                 [--graphql-url URL] [--graphql-auth-env VAR_NAME]
+                [--location-name NAME] [--job-name NAME]
                 [--staging-overrides s3://...]
                 [--prefer-tag TAG] [--reps-per-class N]
                 [--local-path PATH] [--allow-overwrite]
@@ -773,6 +774,9 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q2 side state mirrors to registry after every transition | `test_runs_runner.py::test_run_side_state_is_mirrored_to_registry_after_each_transition` |
 | Q2 non-runnable representatives are SKIPPED, not launched | `test_runs_runner.py::test_run_side_skips_synthetic_required_reps` |
 | GraphQL launch uses the typed-union failure shape | `test_graphql_client.py::test_launch_asset_run_raises_on_typed_failure_shape` |
+| Launch mutation never selects `message` on fieldless error types (InvalidStepError/InvalidOutputError) — else it 400s every launch | `test_graphql_client.py::test_launch_mutation_does_not_select_message_on_fieldless_error_types` |
+| Q2 launcher targets the manifest's deployment.location_name / job_name (NOT hardcoded 'default') | `test_runs_runner.py::test_run_side_threads_manifest_location_and_job_into_launch` |
+| Q5c probe launch selects BOTH upstream + downstream (single-asset launch fails to load the input) | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
 | Q3 preflight fails on version mismatch | `test_preflight.py::test_run_preflight_fails_on_version_mismatch` |
 | Q3 preflight fails when any code location doesn't load | `test_preflight.py::test_run_preflight_fails_when_a_code_location_does_not_load` |
 | Q3 candidate preflight samples baseline runs for back-compat | `test_preflight.py::test_candidate_preflight_samples_baseline_runs` |
@@ -809,7 +813,26 @@ them, you're probably violating a recipe rule. Read carefully first.
 - **GraphQL drift.** Dagster GraphQL fields and internals shift across
   versions; the survey and launcher must be defensive and version-gated
   (schema introspection, soft per-field failure). The inventory extractor
-  already follows this pattern; the Phase 2 GraphQL layer must too.
+  already follows this pattern; the Phase 2 GraphQL layer must too. When
+  editing any mutation/query, select ONLY fields that exist on the target
+  type — introspect the live schema, don't guess. Selecting a nonexistent
+  field (e.g. `message` on `InvalidStepError`) 400s the entire request,
+  not just that field. This was a real shipped bug that broke every
+  `qual run` / `qual probes run` launch until caught by live testing.
+- **Survey IO-manager FQN fidelity.** When an IO manager class is defined
+  *inside a `.py` file that the survey loads via importlib* (rather than
+  imported from an installed package), its captured FQN is a synthetic
+  module name (`__dagtools_loaded_<file>__.<Class>`) that isn't importable
+  later — so a generated probe falls back to `InMemoryIOManager`. Real
+  deployments define IO managers in installed packages with genuinely
+  importable FQNs, so this only bites synthetic/demo setups. If it matters,
+  move the IO manager into an importable module.
+- **`qual run` needs the deployment's real location name.** Pass
+  `dagtools qual init --location-name <name>` (the name the test
+  deployment's workspace surfaces, e.g. the user-deployment / gRPC server
+  name). The launcher falls back to `"default"` otherwise, which no real
+  deployment uses. Discover the name via the workspace GraphQL query or
+  the Dagster UI.
 - **Synthetic probes are weaker coverage.** They validate framework plumbing
   through real custom classes, not prod-only systems or data-scale behavior.
   Report this explicitly in `UPGRADE_VERDICT.md`.

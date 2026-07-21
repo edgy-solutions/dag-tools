@@ -137,6 +137,29 @@ def test_launch_asset_run_raises_on_typed_failure_shape():
         )
 
 
+def test_launch_mutation_does_not_select_message_on_fieldless_error_types():
+    """Regression: `InvalidStepError` and `InvalidOutputError` have NO
+    `message` field in the Dagster GraphQL schema (only invalidStepKey /
+    stepKey+invalidOutputName). Selecting `message` on them 400s the
+    ENTIRE mutation, which silently broke every launch against a real
+    deployment (found via live testing against dagster dev 1.13.1).
+
+    We assert the mutation never does this. Guarding at the string level
+    is the right altitude — the failure mode is a server-side query
+    rejection, not a parse-time error on our side."""
+    import re
+    mutation = DagsterGraphQLClient.LAUNCH_MUTATION
+    # No `... on InvalidStepError { ... message ... }` or InvalidOutputError.
+    for bad_type in ("InvalidStepError", "InvalidOutputError"):
+        # Grab the inline-fragment body for this type, if present at all.
+        m = re.search(rf"on {bad_type}\s*{{([^}}]*)}}", mutation)
+        if m:
+            assert "message" not in m.group(1), (
+                f"{bad_type} has no `message` field; selecting it 400s the "
+                f"whole launch mutation"
+            )
+
+
 def test_launch_sends_tags_in_execution_metadata():
     http = _mock_http_with_response({
         "data": {

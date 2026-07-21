@@ -204,12 +204,18 @@ mutation DagtoolsLaunchAssetRun($params: ExecutionParams!) {
     ... on LaunchRunSuccess { run { runId status } }
     ... on PipelineNotFoundError { message }
     ... on PythonError { message stack }
-    ... on InvalidStepError { message }
     ... on InvalidSubsetError { message }
     ... on RunConfigValidationInvalid { errors { message reason } }
   }
 }
 """.strip()
+    # NOTE: we deliberately select `message` ONLY on union members that
+    # actually expose it. `InvalidStepError` (invalidStepKey) and
+    # `InvalidOutputError` (stepKey/invalidOutputName) have NO `message`
+    # field — selecting it 400s the ENTIRE mutation, which silently broke
+    # every launch against a real deployment. Unknown/other failure shapes
+    # fall through to `__typename` reporting in `launch_asset_run`, so we
+    # don't need a fragment per member to stay informative.
 
     def launch_asset_run(
         self,

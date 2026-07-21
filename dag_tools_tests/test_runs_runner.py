@@ -55,7 +55,8 @@ def setup(monkeypatch, tmp_path):
         yield registry, tmp_path
 
 
-def _seed_qual(registry, runnability_tags=None, tag_map=None):
+def _seed_qual(registry, runnability_tags=None, tag_map=None,
+               location_name=None, job_name=None):
     """Publish one inventory, init qual, build + publish class matrix.
     Returns the qual_id."""
     when = datetime.now(tz=timezone.utc) - timedelta(hours=1)
@@ -95,7 +96,10 @@ def _seed_qual(registry, runnability_tags=None, tag_map=None):
         qual_id="q-test", registry=registry,
         baseline=VersionTarget(dagster="1.10.6"),
         candidate=VersionTarget(dagster="1.12.1"),
-        deployment=Deployment(graphql_url="http://dagster-test/graphql"),
+        deployment=Deployment(
+            graphql_url="http://dagster-test/graphql",
+            location_name=location_name, job_name=job_name,
+        ),
     )
     matrix = build_class_matrix("q-test", registry=registry)
     publish_class_matrix(matrix, registry=registry)
@@ -162,6 +166,30 @@ def test_run_side_launches_polls_and_persists_record(setup):
     rec = json.loads(body)
     assert rec["success"] is True
     assert rec["asset_key"] == ["hello"]
+
+
+def test_run_side_threads_manifest_location_and_job_into_launch(setup):
+    """Regression: the launcher hardcoded location 'default', ignoring the
+    deployment config. Real deployments never name their location
+    'default' (dagster dev names it after the file), so every launch
+    targeted a nonexistent location. The manifest's
+    deployment.location_name / job_name must reach launch_asset_run.
+    Found via live testing against dagster dev."""
+    registry, _ = setup
+    qual_id = _seed_qual(
+        registry, location_name="my-user-deployment", job_name="custom_job",
+    )
+    client = _fake_client()
+    run_side(
+        qual_id, "baseline",
+        registry=registry,
+        client_factory=_factory(client),
+        poll_interval_seconds=0,
+        sleep=lambda _: None,
+    )
+    kwargs = client.launch_asset_run.call_args.kwargs
+    assert kwargs["location_name"] == "my-user-deployment"
+    assert kwargs["job_name"] == "custom_job"
 
 
 def test_run_side_marks_failed_when_run_status_is_failure(setup):

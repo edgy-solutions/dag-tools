@@ -337,13 +337,19 @@ def _launch_probe(
     side: str,
     manifest: QualificationManifest,
 ) -> str:
-    """Submit the launch mutation for one probe's downstream asset.
+    """Submit the launch mutation for one probe — BOTH assets in one run.
 
-    We launch only the downstream — its deps pulls the upstream
-    automatically, which is enough to exercise the IO manager round-
-    trip the probe's identity assertion checks. Tags mirror the Q2
-    runs convention so probe runs are filterable from regular traffic.
+    We must select the upstream AND the downstream together. Selecting
+    only the downstream does NOT auto-materialize the upstream (Dagster
+    treats the upstream as a loaded input, not a co-materialized dep) —
+    the downstream then fails with ``DagsterExecutionLoadInputError``
+    because the upstream's output was never written to the IO manager.
+    Materializing both in one run is what gives the probe its actual
+    write-then-read round-trip through the real IO manager, which the
+    downstream's identity assertion validates. Tags mirror the Q2 runs
+    convention so probe runs are filterable from regular traffic.
     """
+    upstream_asset_key = [f"{probe.module_name}_upstream"]
     downstream_asset_key = [f"{probe.module_name}_downstream"]
     tags = {
         "dagtools/qual": qual_id,
@@ -358,7 +364,7 @@ def _launch_probe(
         location_name=PROBES_LOCATION_NAME,
         repository_name=PROBES_REPOSITORY_NAME,
         job_name=PROBES_JOB_NAME,
-        asset_selection=[downstream_asset_key],
+        asset_selection=[upstream_asset_key, downstream_asset_key],
         run_config=run_config,
         tags=tags,
     )

@@ -176,7 +176,7 @@ def test_run_probes_side_launches_and_passes_one_probe(setup):
 
 def test_run_probes_side_launches_against_dag_tools_probes_location(setup):
     """Contract with dag_tools.probes_location: launches MUST target
-    PROBES_LOCATION_NAME with the downstream asset key."""
+    PROBES_LOCATION_NAME with BOTH the upstream and downstream asset keys."""
     registry, _ = setup
     qual_id, bundle = _seed_qual_with_probes(registry)
     client = _fake_client()
@@ -189,10 +189,14 @@ def test_run_probes_side_launches_against_dag_tools_probes_location(setup):
     args = client.launch_asset_run.call_args
     assert args.kwargs["location_name"] == PROBES_LOCATION_NAME
     assert args.kwargs["job_name"] == PROBES_JOB_NAME
-    # Downstream key only — deps pulls upstream automatically.
+    # BOTH assets — selecting only the downstream fails at runtime with
+    # DagsterExecutionLoadInputError because Dagster does NOT auto-
+    # materialize the upstream; it treats it as a loaded input whose
+    # output must already exist. Verified live against dagster dev.
     probe = bundle.manifest.probes[0]
     assert args.kwargs["asset_selection"] == [
-        [f"{probe.module_name}_downstream"]
+        [f"{probe.module_name}_upstream"],
+        [f"{probe.module_name}_downstream"],
     ]
     # Probe-marker tag distinguishes probe runs from rep runs.
     assert args.kwargs["tags"]["dagtools/probe"] == "true"
