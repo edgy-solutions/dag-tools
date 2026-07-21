@@ -80,9 +80,24 @@ attributes:
             resources:
               requests: {cpu: "2000m", memory: "8Gi"}
               limits:   {cpu: "4000m", memory: "16Gi"}
+    env_sized_ingest:
+      io_manager_key: "snowflake_io_manager"
+      sources:
+        - "another_table"
+      # Env-prefix convention (matches the deployment pattern used
+      # elsewhere in the fleet): the deployment sets ENV_SIZED_CPU_REQUEST
+      # / _MEM_REQUEST / _CPU_LIMIT / _MEM_LIMIT (Helm `env:`), and the
+      # YAML just names the prefix — no need to template four values.
+      k8s_resource_env_prefix: "ENV_SIZED"
 ```
 
-`op_tags` is forwarded verbatim to the generated `@multi_asset`. For env-driven sizing, build the dict with `dag_tools.utils.k8s.resolve_k8s_resource_tags("<PREFIX>")` (reads `<PREFIX>_CPU_REQUEST` / `_MEM_REQUEST` / `_CPU_LIMIT` / `_MEM_LIMIT`) and pass its output as `op_tags`.
+There are **three** ways to size a pipeline's k8s resources, all landing on the same `dagster-k8s/config` op_tag the launcher reads at run submit time:
+
+1. **Literal `op_tags`** in YAML (the `heavy_ingest` example) — explicit values.
+2. **`{{ env.VAR }}` templating** inside `op_tags` — Dagster's template resolver fills each value from the environment (verified to resolve at any nesting depth).
+3. **`k8s_resource_env_prefix`** (the `env_sized_ingest` example) — name a single prefix; the component resolves `<PREFIX>_CPU_REQUEST` / `_MEM_REQUEST` / `_CPU_LIMIT` / `_MEM_LIMIT` from the code-location environment at defs-load time (limits default to requests). This mirrors the `resolve_k8s_resource_tags(prefix=...)` pattern used on plain `@asset`s elsewhere and is the least verbose for the common case. Explicit `op_tags` are deep-merged **on top**, so you can name a prefix for resources *and* add node selectors / tolerations (or override one value) in the same block.
+
+For Python callers of `create_dlt_assets`, the same helper is available directly: `dag_tools.utils.k8s.resolve_k8s_resource_tags("<PREFIX>")`.
 
 ### 2. DBT Project Component
 Expose fully compiled DBT projects directly to Dagster with automatic Datahub integration native to the project component:
@@ -94,6 +109,12 @@ attributes:
   project: "../../dbt_projects/project_one"
   datahub_config:
     server: "{{ env.DATAHUB_URL }}"
+  # dbt runs all models in one op, so this sizes the whole dbt run.
+  # Same env-prefix convention as the dlt component: the deployment sets
+  # DBT_BUILD_CPU_REQUEST / _MEM_REQUEST / _CPU_LIMIT / _MEM_LIMIT and the
+  # resolved dagster-k8s/config lands on the generated @dbt_assets op's
+  # tags (explicit `op.tags` deep-merge on top).
+  k8s_resource_env_prefix: "DBT_BUILD"
 ```
 
 ### 3. Datahub Global Lineage Tracking

@@ -45,3 +45,52 @@ def resolve_k8s_resource_tags(prefix: str, default_cpu: str = "500m", default_me
             }
         }
     }
+
+
+def deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge ``override`` into ``base``; ``override`` wins on
+    leaf conflicts. Nested dicts merge; everything else is replaced.
+
+    Used to layer explicit op-tags on top of env-prefix-resolved k8s
+    resources without clobbering sibling keys (e.g. keep a node selector
+    while overriding one resource value).
+    """
+    result = dict(base)
+    for key, value in override.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            result[key] = deep_merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def resolve_op_tags_with_env_prefix(
+    env_prefix: Any,
+    explicit_tags: Any,
+    default_cpu: str = "500m",
+    default_mem: str = "1Gi",
+) -> Dict[str, Any]:
+    """The env-prefix convention for component op-tags.
+
+    When ``env_prefix`` is set, resolve ``<PREFIX>_CPU_REQUEST`` /
+    ``_MEM_REQUEST`` / ``_CPU_LIMIT`` / ``_MEM_LIMIT`` into the
+    ``dagster-k8s/config`` op-tag via :func:`resolve_k8s_resource_tags`,
+    then deep-merge ``explicit_tags`` ON TOP (explicit wins on leaf
+    conflicts, so callers can override a single value or add node
+    selectors / tolerations alongside the env-driven resources).
+
+    When ``env_prefix`` is falsy, returns a copy of ``explicit_tags``
+    unchanged — so components that don't opt into the convention behave
+    exactly as before.
+    """
+    explicit_tags = dict(explicit_tags or {})
+    if not env_prefix:
+        return explicit_tags
+    resolved = resolve_k8s_resource_tags(
+        prefix=env_prefix, default_cpu=default_cpu, default_mem=default_mem,
+    )
+    return deep_merge_dicts(resolved, explicit_tags)

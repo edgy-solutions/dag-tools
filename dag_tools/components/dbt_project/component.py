@@ -15,13 +15,50 @@ from dag_tools.utils.translation_registry import AssetNormalizationRegistry
 
 @dataclass
 class CustomDbtProjectComponent(DbtProjectComponent):
-    """A custom DbtProjectComponent that executes Datahub lineage ingestion 
+    """A custom DbtProjectComponent that executes Datahub lineage ingestion
     and applies standardized prefix stripping."""
-    
+
     datahub_config: Annotated[
         Optional[Dict[str, Any]],
         Resolver.default(description="Datahub ingest configuration (requires 'server').")
     ] = None
+
+    k8s_resource_env_prefix: Annotated[
+        Optional[str],
+        Resolver.default(description=(
+            "Env-prefix convention for the dbt run's k8s resources (matches "
+            "the deployment pattern used elsewhere in the fleet). When set, "
+            "resolve <PREFIX>_CPU_REQUEST / _MEM_REQUEST / _CPU_LIMIT / "
+            "_MEM_LIMIT from the code-location environment into the generated "
+            "@dbt_assets op's `dagster-k8s/config` tag at defs-load time. The "
+            "deployment sets those four env vars (Helm `env:`) and the YAML "
+            "just names the prefix. Any explicit `op.tags` are deep-merged on "
+            "top. All dbt models run in one op, so this sizes the whole dbt run."
+        ))
+    ] = None
+    k8s_default_cpu: Annotated[
+        str, Resolver.default(description="Fallback CPU request when the prefix's "
+                                          "<PREFIX>_CPU_REQUEST env var is unset.")
+    ] = "500m"
+    k8s_default_mem: Annotated[
+        str, Resolver.default(description="Fallback memory request when the prefix's "
+                                          "<PREFIX>_MEM_REQUEST env var is unset.")
+    ] = "1Gi"
+
+    def _get_op_spec(self, project: Any) -> Any:
+        """Inject env-prefix-resolved k8s resources into the @dbt_assets op
+        tags, deep-merging any explicit `op.tags` on top."""
+        op_spec = super()._get_op_spec(project)
+        if not self.k8s_resource_env_prefix:
+            return op_spec
+        from dag_tools.utils.k8s import resolve_op_tags_with_env_prefix
+        merged = resolve_op_tags_with_env_prefix(
+            env_prefix=self.k8s_resource_env_prefix,
+            explicit_tags=getattr(op_spec, "tags", None),
+            default_cpu=self.k8s_default_cpu,
+            default_mem=self.k8s_default_mem,
+        )
+        return op_spec.model_copy(update={"tags": merged})
 
     def get_asset_spec(
         self, manifest: Mapping[str, Any], unique_id: str, project: Any

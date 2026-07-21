@@ -101,6 +101,52 @@ class DltAssetGroupConfig(BaseModel):
             "limit configured on the instance."
         ),
     )
+    k8s_resource_env_prefix: Optional[str] = PydanticField(
+        default=None,
+        description=(
+            "Env-prefix convention for per-pipeline k8s resources, matching "
+            "the deployment pattern used elsewhere (e.g. doc-tools' "
+            "`resolve_k8s_resource_tags(prefix=...)` on `@asset`). When set, "
+            "the component resolves `<PREFIX>_CPU_REQUEST`, `<PREFIX>_MEM_REQUEST`, "
+            "`<PREFIX>_CPU_LIMIT`, `<PREFIX>_MEM_LIMIT` from the code-location's "
+            "environment into the `dagster-k8s/config` op_tag at defs-load time. "
+            "The deployment sets those four env vars (Helm `env:`), and the YAML "
+            "just names the prefix — no need to template four values into "
+            "`op_tags`. Any explicit `op_tags` are deep-merged ON TOP (so you "
+            "can add node selectors / tolerations, or override an individual "
+            "resource value). Limits default to requests when unset."
+        ),
+    )
+    k8s_default_cpu: str = PydanticField(
+        default="500m",
+        description="Fallback CPU request when k8s_resource_env_prefix is set but "
+                    "<PREFIX>_CPU_REQUEST is unset in the environment.",
+    )
+    k8s_default_mem: str = PydanticField(
+        default="1Gi",
+        description="Fallback memory request when k8s_resource_env_prefix is set but "
+                    "<PREFIX>_MEM_REQUEST is unset in the environment.",
+    )
+
+    def effective_op_tags(self) -> Dict[str, Any]:
+        """Op-tags actually applied to the generated ``@multi_asset``.
+
+        Resolves ``k8s_resource_env_prefix`` (if set) into the
+        ``dagster-k8s/config`` resource shape via
+        :func:`dag_tools.utils.k8s.resolve_k8s_resource_tags`, then
+        deep-merges any explicit :attr:`op_tags` on top — explicit values
+        win on leaf conflicts, so an operator can override a single
+        resource value or add unrelated tags (node selectors, tolerations)
+        alongside the env-driven resources.
+        """
+        from dag_tools.utils.k8s import resolve_op_tags_with_env_prefix
+
+        return resolve_op_tags_with_env_prefix(
+            env_prefix=self.k8s_resource_env_prefix,
+            explicit_tags=self.op_tags,
+            default_cpu=self.k8s_default_cpu,
+            default_mem=self.k8s_default_mem,
+        )
 
 
 def include_actual_dlt_assets(
