@@ -1,11 +1,13 @@
 name: Build Python Package
 
-# Builds the dag_tools wheel on every push and PR so consumers can grab the
-# latest from a workflow artifact. On tag pushes (vX.Y.Z), the wheel is also
-# attached to a GitHub Release so it can be installed by pinned URL from
-# downstream projects:
+# Builds the edgy-dag-tools sdist+wheel on every push and PR so consumers can
+# grab the latest from a workflow artifact. On tag pushes (vX.Y.Z) the artifacts
+# are attached to a GitHub Release AND published to PyPI (trusted publishing).
+# Distribution name is `edgy-dag-tools`; the import package is `dag_tools`.
 #
-#   uv add "dag_tools @ https://github.com/edgy-solutions/dag-tools/releases/download/v0.1.0/dag_tools-0.1.0-py3-none-any.whl"
+#   pip install edgy-dag-tools
+#   # or pin a Release wheel by URL:
+#   uv add "edgy-dag-tools @ https://github.com/edgy-solutions/dag-tools/releases/download/v0.1.1/edgy_dag_tools-0.1.1-py3-none-any.whl"
 
 on:
   push:

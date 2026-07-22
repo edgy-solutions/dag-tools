@@ -1,5 +1,9 @@
 [project]
-name = "dag_tools"
+# Distribution (pip-install) name. Differs from the import package
+# (`dag_tools`) because PyPI's confusable-name check rejects
+# dag-tools/dag_tools (collapses to "dagtools", which is taken). The
+# import name is unchanged: `pip install edgy-dag-tools` -> `import dag_tools`.
+name = "edgy-dag-tools"
 version = "0.1.1"
 description = "Central library of common Dagster utilities, resources, IO managers, sensors, declarative components, and asset patterns for data tooling projects."
 readme = "README.md"
@@ -93,7 +97,7 @@ dev = [
     "moto[s3]>=5",
 ]
 all = [
-    "dag_tools[orchestrator,worker,qual,broker,dev]",
+    "edgy-dag-tools[orchestrator,worker,qual,broker,dev]",
 ]
 
 [project.scripts]
@@ -107,6 +111,12 @@ Issues = "https://github.com/edgy-solutions/dag-tools/issues"
 [build-system]
 requires = ["hatchling>=1.19.0"]
 build-backend = "hatchling.build"
+
+# Distribution name is `edgy-dag-tools` but the import package is `dag_tools`,
+# so hatchling can't auto-derive the package dir from the project name — name
+# it explicitly.
+[tool.hatch.build.targets.wheel]
+packages = ["dag_tools"]
 
 [tool.dagster]
 module_name = "dag_tools.definitions"

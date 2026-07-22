@@ -36,7 +36,7 @@ This library follows a **Dagster-first** configuration approach.
   - `S3Storage` + `InventoryRegistry` with immutable per-build keys and a **write-last** `latest.json` pointer so readers never observe a partial publish. See `dag_tools/qual/registry/layout.py` for the bucket layout contract.
   - `templates/Jenkinsfile.survey` — drop-in Jenkins stage for adding a repo to the survey fleet.
 
-  Install via the `qual` extras: `pip install dag_tools[qual]`. **Full system spec, ADRs, and implementation status:** [docs/RECIPE.md](./docs/RECIPE.md).
+  Install via the `qual` extras: `pip install "edgy-dag-tools[qual]"` (the pip/distribution name is `edgy-dag-tools`; the import package stays `dag_tools`). **Full system spec, ADRs, and implementation status:** [docs/RECIPE.md](./docs/RECIPE.md).
 
 ## Control Plane vs. Data Plane
 To ensure scalability and security, `dag-tools` enforces a strict separation between:

@@ -134,7 +134,7 @@ stage('dagster-survey') {
   steps {
     sh '''
       python -m pip install --upgrade pip
-      python -m pip install "dag_tools[qual]"
+      python -m pip install "edgy-dag-tools[qual]"
       dagtools \
         --registry "${DAGTOOLS_REGISTRY}" \
         --endpoint-url "${DAGTOOLS_S3_ENDPOINT}" \
