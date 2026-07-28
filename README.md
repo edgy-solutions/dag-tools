@@ -14,7 +14,7 @@ This library follows a **Dagster-first** configuration approach.
 3. **Consistency**: Downstream users should interact with a consistent Dagster-centric experience regardless of the specific integration being used.
 
 ## Structure
-- `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`) that allow users to deploy complex workloads via YAML.
+- `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
@@ -151,6 +151,34 @@ attributes:
   log_platform_mappings:
     "Databricks Job Run ID": "databricks"
 ```
+
+### Grist Ingest Component
+Publish [Grist](https://www.getgrist.com/) documents/tables into Postgres so the pipeline can consume them. A single component wires a Grist resource, a SQL IO manager, a dynamic-partitioned ingest asset, and a discovery sensor. Each discovered table becomes a **human-friendly** dynamic partition — `<workspace>__<doc>__<table>`, normalized — which is also the destination Postgres table name; the opaque Grist doc/table ids travel in run config, not the key.
+
+```yaml
+type: dag_tools.components.grist_ingest.GristIngestComponent
+
+attributes:
+  name: crm                       # base name for the asset/sensor/job/resources
+  grist:
+    host: "{{ env.GRIST_HOST }}"     # e.g. grist.example.com (no scheme)
+    org: "{{ env.GRIST_ORG }}"
+    token: "{{ env.GRIST_TOKEN }}"
+  postgres:                          # SQL IO manager destination
+    protocol: postgresql
+    host: "{{ env.PG_HOST }}"
+    port: 5432
+    database: analytics
+    schema: grist
+    username: "{{ env.PG_USER }}"
+    password: "{{ env.PG_PASSWORD }}"
+  # (Optional)
+  include_workspace_in_name: true    # prefix friendly names with the workspace
+  minimum_interval_seconds: 60       # sensor poll interval
+  default_status: STOPPED            # or RUNNING
+```
+
+The sensor polls Grist for updated documents (cursor = the max `updatedAt` seen), registers a dynamic partition per changed table, and fires a run that loads the table into a DataFrame and writes it to `<schema>.<friendly_name>`. Rename a Grist doc and the friendly name follows it (a new table); friendly-name collisions within one sweep are disambiguated automatically so two tables never clobber one Postgres table.
 
 ### 3. S3 to Arrow Storage Component
 This component tracks an S3 Bucket and registers dynamic partitions for new incoming files chronologically. It triggers a PyArrow job that converts the raw bytes natively through your specified `io_manager`.

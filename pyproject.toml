@@ -123,5 +123,5 @@ module_name = "dag_tools.definitions"
 code_location_name = "dag_tools"
 
 [tool.dagster.components]
-register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage", "dag_tools.components.s3_sensor", "dag_tools.components.restate_dlt_sync", "dag_tools.components.restate_api_sync"]
+register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage", "dag_tools.components.s3_sensor", "dag_tools.components.restate_dlt_sync", "dag_tools.components.restate_api_sync", "dag_tools.components.grist_ingest"]
 
