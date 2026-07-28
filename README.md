@@ -180,6 +180,8 @@ attributes:
 
 The sensor polls Grist for updated documents (cursor = the max `updatedAt` seen), registers a dynamic partition per changed table, and fires a run that loads the table into a DataFrame and writes it to `<schema>.<friendly_name>`. Rename a Grist doc and the friendly name follows it (a new table); friendly-name collisions within one sweep are disambiguated automatically so two tables never clobber one Postgres table.
 
+**In the user-deployment container** the surface is **off by default** — no default Grist/Postgres connection can be guessed. The code-location (`dag_tools.user_deployment.definitions`) enables it only when `DAG_TOOLS_GRIST_CONFIG` points at a mounted YAML holding the `attributes` above (optionally wrapped as `{enabled: true, attributes: {...}}`). `{{ env.VAR }}` references inside that YAML are resolved against the container environment at load time, so tokens/passwords stay in k8s Secrets rather than the ConfigMap.
+
 ### 3. S3 to Arrow Storage Component
 This component tracks an S3 Bucket and registers dynamic partitions for new incoming files chronologically. It triggers a PyArrow job that converts the raw bytes natively through your specified `io_manager`.
 
