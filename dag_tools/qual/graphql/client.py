@@ -151,7 +151,12 @@ class DagsterGraphQLClient:
         self.auth_token = auth_token
         self.timeout = timeout
         # Dependency injection makes the client trivially mockable in tests.
-        self._http = http or httpx.Client(timeout=timeout)
+        # follow_redirects stays False (httpx default): an auth proxy /
+        # OpenShift OAuth in front of the GraphQL endpoint answers an
+        # unauthenticated request with a 302 to a login page. Following it
+        # would just fetch HTML; instead we surface the redirect as a clear
+        # "you're not authenticated" error in ``post``.
+        self._http = http or httpx.Client(timeout=timeout, follow_redirects=False)
 
     def close(self) -> None:
         try:
@@ -167,6 +172,29 @@ class DagsterGraphQLClient:
 
     # -- core post -------------------------------------------------------
 
+    def _auth_hint(self, message: str) -> str:
+        """Append actionable auth guidance to an error message.
+
+        The advice differs depending on whether a token was sent at all:
+        no token -> tell the operator how to supply one; token present ->
+        it's likely wrong/expired for this deployment."""
+        if self.auth_token:
+            tail = (
+                " A bearer token WAS sent but the endpoint still rejected it — "
+                "the token is likely expired or not valid for this deployment. "
+                "Refresh it (e.g. `oc whoami -t` for OpenShift) and re-export the "
+                "env var referenced by `dagtools qual init --graphql-auth-env`."
+            )
+        else:
+            tail = (
+                " No auth token was sent. Supply one: rerun `dagtools qual init "
+                "--graphql-auth-env <ENV_VAR>` (records `auth: env:<ENV_VAR>` in "
+                "the manifest) and export that variable with a valid bearer token "
+                "(e.g. `export <ENV_VAR>=$(oc whoami -t)` for an OpenShift-fronted "
+                "deployment)."
+            )
+        return message + tail
+
     def post(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run a GraphQL request. Returns the ``data`` block.
 
@@ -181,6 +209,30 @@ class DagsterGraphQLClient:
             resp = self._http.post(self.endpoint_url, json=body, headers=headers)
         except httpx.HTTPError as e:
             raise DagsterGraphQLError(f"transport error: {e}") from e
+
+        # A 3xx redirect is almost never a real GraphQL response — an auth
+        # proxy (OpenShift OAuth, an ingress login gate, etc.) bounces an
+        # UNAUTHENTICATED request to a login page. Catch it explicitly:
+        # without this the empty 302 body slid into resp.json() and surfaced
+        # as a cryptic "non-JSON response", hiding the actual cause.
+        if 300 <= resp.status_code < 400:
+            location = resp.headers.get("location", "")
+            raise DagsterGraphQLError(
+                self._auth_hint(
+                    f"HTTP {resp.status_code} redirect from {self.endpoint_url}"
+                    + (f" -> {location}" if location else "")
+                    + " — the endpoint returned a redirect instead of a GraphQL "
+                    "response, which almost always means the request was NOT "
+                    "authenticated (an auth proxy bounced it to a login page)."
+                )
+            )
+        if resp.status_code in (401, 403):
+            raise DagsterGraphQLError(
+                self._auth_hint(
+                    f"HTTP {resp.status_code} from {self.endpoint_url}: "
+                    f"{resp.text[:300]}"
+                )
+            )
         if resp.status_code >= 400:
             raise DagsterGraphQLError(
                 f"HTTP {resp.status_code} from {self.endpoint_url}: {resp.text[:500]}"
@@ -188,7 +240,10 @@ class DagsterGraphQLClient:
         try:
             payload = resp.json()
         except Exception as e:
-            raise DagsterGraphQLError(f"non-JSON response: {e}") from e
+            raise DagsterGraphQLError(
+                f"non-JSON response from {self.endpoint_url} "
+                f"(HTTP {resp.status_code}): {e}"
+            ) from e
         if payload.get("errors"):
             raise DagsterGraphQLError(
                 f"GraphQL errors: {json.dumps(payload['errors'])[:1000]}"
@@ -278,8 +333,26 @@ mutation DagtoolsLaunchAssetRun($params: ExecutionParams!) {
         msg = result.get("message")
         if not msg and result.get("errors"):
             msg = "; ".join(e.get("message", "?") for e in result["errors"])
+
+        hint = ""
+        if typename == "RunConfigValidationInvalid" and msg and "ops" in msg:
+            # The asset's op requires run config the qualification launcher
+            # can't supply (it launches representatives with empty config).
+            # Sensor-driven / dynamically-partitioned ingest assets (e.g. a
+            # Grist or DLT ingest whose sensor injects per-run config) are
+            # the usual culprits — they aren't materializable as a naive
+            # regression representative.
+            hint = (
+                " — this asset requires run config that `dagtools qual run` "
+                "does not provide (it launches with empty config). It's most "
+                "likely a sensor-driven / partition-config asset that isn't a "
+                "meaningful materialization-parity representative. Exclude it "
+                "from qualification by tagging the asset `observe_only: \"true\"` "
+                "(or `synthetic_required: \"true\"`) so Q1 classifies it "
+                "non-RUNNABLE and Q2 skips it."
+            )
         raise DagsterGraphQLError(
-            f"launch failed ({typename or 'unknown'}): {msg or 'no detail'}"
+            f"launch failed ({typename or 'unknown'}): {msg or 'no detail'}{hint}"
         )
 
     # -- poll -----------------------------------------------------------

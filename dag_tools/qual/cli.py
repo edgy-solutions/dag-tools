@@ -601,6 +601,10 @@ def _print_run_table(outcome) -> None:
             f"  [{status:9s}] {rep.class_hash}  {rep.repo:30s}  {ak}  "
             f"run={rep.run_id or '-'}"
         )
+        # Surface the failure reason inline — otherwise a failed/skipped rep
+        # shows no cause and the operator has to dig into the state file.
+        if rep.error:
+            typer.echo(f"      └─ {rep.error}")
 
 
 @qual_app.command("preflight")

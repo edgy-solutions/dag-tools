@@ -77,6 +77,52 @@ def test_post_raises_on_graphql_errors_block():
         client.post("query {}", {})
 
 
+def _mock_http_redirect(status_code=302, location="https://oauth/login") -> MagicMock:
+    """A redirect response — auth proxy bouncing an unauthenticated request.
+    The empty body would explode in resp.json() if the client didn't catch
+    the 3xx first."""
+    mock = MagicMock(spec=httpx.Client)
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.headers = {"location": location}
+    resp.text = ""
+    resp.json.side_effect = ValueError("Expecting value: line 1 column 1")
+    mock.post.return_value = resp
+    return mock
+
+
+def test_post_302_redirect_raises_clear_auth_error_not_json_error():
+    """Regression: a 302 (auth proxy) used to slide into resp.json() and
+    surface as a cryptic 'non-JSON response'. It must now be a clear
+    redirect/auth error that tells the operator to supply a token."""
+    http = _mock_http_redirect()
+    client = DagsterGraphQLClient("http://x/graphql", http=http)  # no token
+    with pytest.raises(DagsterGraphQLError) as exc:
+        client.post("query {}", {})
+    msg = str(exc.value)
+    assert "redirect" in msg.lower()
+    assert "not" in msg.lower() and "authenticated" in msg.lower()
+    assert "--graphql-auth-env" in msg  # actionable
+    assert "non-JSON" not in msg
+
+
+def test_post_401_raises_auth_error():
+    http = _mock_http_with_response({}, status_code=401)
+    client = DagsterGraphQLClient("http://x/graphql", http=http)
+    with pytest.raises(DagsterGraphQLError) as exc:
+        client.post("query {}", {})
+    assert "--graphql-auth-env" in str(exc.value)
+
+
+def test_post_redirect_hint_differs_when_token_already_sent():
+    http = _mock_http_redirect()
+    client = DagsterGraphQLClient("http://x/graphql", http=http, auth_token="stale")
+    with pytest.raises(DagsterGraphQLError) as exc:
+        client.post("query {}", {})
+    # Token WAS sent -> the hint should say it's likely expired/invalid.
+    assert "expired" in str(exc.value).lower()
+
+
 def test_post_sends_auth_header_when_token_set():
     http = _mock_http_with_response({"data": {}})
     client = DagsterGraphQLClient("http://x/graphql", http=http, auth_token="t1")
@@ -116,6 +162,32 @@ def test_launch_asset_run_returns_run_id_on_success():
         tags={"dagtools/qual": "q1"},
     )
     assert run_id == "run-xyz"
+
+
+def test_launch_run_config_invalid_missing_ops_gives_actionable_hint():
+    """A config-requiring asset (e.g. a sensor-driven ingest) launched with
+    empty config returns RunConfigValidationInvalid 'Missing ... ops'. The
+    error must point the operator at tagging it out of qualification."""
+    http = _mock_http_with_response({
+        "data": {
+            "launchPipelineExecution": {
+                "__typename": "RunConfigValidationInvalid",
+                "errors": [{
+                    "message": "Missing required config entry \"ops\" at the root.",
+                    "reason": "MISSING_REQUIRED_FIELD",
+                }],
+            }
+        }
+    })
+    client = DagsterGraphQLClient("http://x/graphql", http=http)
+    with pytest.raises(DagsterGraphQLError) as exc:
+        client.launch_asset_run(
+            location_name="loc", repository_name="__repository__",
+            job_name="__ASSET_JOB", asset_selection=[["grist_ingest"]],
+        )
+    msg = str(exc.value)
+    assert "observe_only" in msg
+    assert "empty config" in msg
 
 
 def test_launch_asset_run_raises_on_typed_failure_shape():

@@ -324,10 +324,13 @@ dbt representatives: ensure manifests were generated with the side's dbt
 version; build against the staging schema with seed/`--empty`-style minimal
 data.
 
-**Local orchestration snapshots, baseline side**:
+**Local orchestration snapshots, baseline side** *(⚠️ planned — the
+`dagtools qual orchestration` command is NOT implemented yet; this
+subsection describes the intended design. Skip it for now and use
+`--accept-orchestration-deferred` on `qual report`.)*:
 
 ```
-dagtools qual orchestration --id <qual_id> --side baseline
+dagtools qual orchestration --id <qual_id> --side baseline   # NOT YET IMPLEMENTED
 ```
 
 In-process under baseline pins; evaluates every sensor/schedule with
@@ -363,7 +366,7 @@ document before proceeding.
 
 ```
 dagtools qual run --id <qual_id> --side candidate
-dagtools qual orchestration --id <qual_id> --side candidate
+dagtools qual orchestration --id <qual_id> --side candidate   # NOT YET IMPLEMENTED (planned)
 ```
 
 Identical manifest, identical representatives, identical partition keys
