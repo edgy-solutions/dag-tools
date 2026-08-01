@@ -1,30 +1,47 @@
-"""Cortex Polars IO manager — the unified mesh-aware IO manager.
+"""Cortex Polars IO manager — the mesh's READ facade.
 
-This module ships the Dagster ``IOManager`` that every mesh-participating
-asset uses as its read-side facade. On ``load_input`` it delegates to
+This module ships the Dagster ``IOManager`` that mesh-consuming assets
+use to read data. On ``load_input`` it delegates to
 ``CortexDataClient.get_dataframe(urn)`` — which goes through the central
 gateway to look up the asset's physical location, then dispatches to
 the right backend reader (Parquet / Delta / Iceberg / PostgreSQL /
-ClickHouse). On ``handle_output`` it writes a Polars DataFrame to S3 as
-parquet at a path determined by the IO manager's config plus the asset
-key, and emits ``datahub/urn`` + ``physical_uri`` metadata on the
-materialization event for downstream lineage tooling.
+ClickHouse).
 
-The IO manager is the consumer-side of the mesh contract: every
-Dagster asset using it gets uniform, gateway-mediated reads regardless
-of where each upstream asset's physical data actually lives. The
-producer-side is ``physical_coordinates``, which a remote domain
-broker calls to learn how to advertise each asset through the central
-gateway — closing the loop.
+**This IO manager is read-only.** ``handle_output`` deliberately raises.
+
+Why: Dagster loads an asset's input using the IO manager of the
+*upstream* asset that produced it. So this manager is attached to the
+assets you want to READ — including foreign assets declared as
+external stubs, whose data lives in another deployment entirely. That
+makes it a consumer-side marker, and it must never be mistaken for a
+statement of ownership.
+
+Earlier revisions bolted producer-side behavior onto it — writing
+parquet, emitting the URN to DataHub, and implementing
+``physical_coordinates`` so the domain broker would advertise the
+asset through the gateway. Both announcements encoded "this deployment
+owns this asset", which is exactly wrong for a read facade: attach it
+to a foreign stub and your broker would advertise
+``s3://<your-bucket>/<your-prefix>/<their-asset>.parquet`` — a path you
+never wrote — then compete with the real owner for the same routing
+key. Those behaviors are gone.
+
+To PUBLISH an asset to the mesh, use a producer IO manager that
+implements ``physical_coordinates`` honestly:
+:class:`~dag_tools.io_managers.arrow.ConfigurableArrowIOManager`
+(parquet on S3), :class:`~dag_tools.io_managers.delta.*`, or
+:class:`~dag_tools.io_managers.sql.ConfigurableSQLIOManager`.
+
+Catalog registration (DataHub) is handled globally by
+:class:`~dag_tools.components.datahub_lineage.DatahubLineageComponent`,
+an ``ASSET_MATERIALIZATION`` sensor — not per-IO-manager.
 """
 
-import os
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Optional
 
 from dagster import (
     ConfigurableIOManager,
     InputContext,
-    MetadataValue,
     OutputContext,
 )
 from pydantic import Field
@@ -49,41 +66,47 @@ from pydantic import Field
 # and the alternative fix options (raising the gRPC timeout,
 # demoting heavy base deps to optional extras); this is Option A.
 #
-# When future code reaches for ``pl`` or ``CortexDataClient`` here,
-# move it inside the method body or accept the import-cost regression.
-
-
-# Discriminator the cortex data client uses to pick the parquet read
-# path. Kept as a module constant so any change to the wire string
-# only happens in one place across the IO manager + the client.
-_SOURCE_TYPE = "s3_parquet"
+# When future code reaches for ``CortexDataClient`` here, move it inside
+# the method body or accept the import-cost regression.
 
 
 class CortexPolarsIOManager(ConfigurableIOManager):
-    """Dagster IO manager that talks to the rest of the mesh through the central gateway.
+    """Read-only Dagster IO manager that fetches mesh data through the gateway.
 
-    Reads: every upstream asset is fetched through ``CortexDataClient``,
-    so the asset's compute function gets a Polars LazyFrame regardless
-    of whether the upstream actually lives on S3 parquet, Delta, Iceberg,
-    PostgreSQL, or ClickHouse.
+    Reads: the asset is fetched through ``CortexDataClient``, so the
+    consuming compute function gets a Polars LazyFrame regardless of
+    whether the data actually lives on S3 parquet, Delta, Iceberg,
+    PostgreSQL, or ClickHouse — and regardless of which deployment owns
+    it.
 
-    Writes: outputs are persisted as parquet at
-    ``s3://{s3_bucket}/{prefix}/{asset_key}.parquet`` and the
-    materialization event carries the resolved DataHub URN plus the
-    physical S3 path as metadata, so lineage tools and the broker can
-    pick them up after the fact.
+    Writes: **unsupported.** ``handle_output`` raises. See the module
+    docstring for why, and for which IO managers to use instead when you
+    want to publish an asset to the mesh.
 
-    Mesh publishing: ``physical_coordinates`` returns the routing
-    ticket a remote broker uses to advertise this IO manager's assets
-    through the central gateway. The broker walks Definitions, calls
-    ``physical_coordinates`` per asset, and pushes the resulting URN
-    list to the gateway — so consumers using a different
-    ``CortexPolarsIOManager`` instance somewhere else can read this
-    one's outputs without coordinating directly.
+    Typical use — declare the foreign asset you want to read as an
+    external stub and bind it to this IO manager::
+
+        foreign = AssetSpec(
+            key="other_domain_sales",
+            metadata={"dagster/io_manager_key": "cortex"},
+        )
+
+        @asset
+        def my_report(other_domain_sales):   # loaded via THIS manager
+            ...
     """
 
-    s3_bucket: str = Field(description="S3 bucket where this IO manager writes asset data.")
-    prefix: str = Field(description="S3 prefix (folder path) under the bucket.")
+    s3_bucket: str = Field(
+        default="",
+        description=(
+            "Deprecated / unused — retained so existing configs keep "
+            "validating. This manager no longer writes."
+        ),
+    )
+    prefix: str = Field(
+        default="",
+        description="Deprecated / unused — this manager no longer writes.",
+    )
     broker_url: str = Field(description="Central gateway URL the consumer side talks to.")
     client_id: str = Field(description="Machine-to-machine OAuth2 client ID for the cortex data client.")
     client_secret: str = Field(description="Machine-to-machine OAuth2 client secret.")
@@ -130,284 +153,29 @@ class CortexPolarsIOManager(ConfigurableIOManager):
         return client.get_dataframe(urn)
 
     def handle_output(self, context: OutputContext, obj: Any) -> None:
-        """Persist a Polars DataFrame as parquet to the configured S3 location.
+        """Always raises — this IO manager is a read-only mesh facade.
 
-        The path is fully determined by the IO manager's config plus
-        the asset key — so ``physical_coordinates`` can return the same
-        path deterministically without needing the asset to have been
-        materialized yet. The materialization event also carries
-        ``datahub/urn`` and ``physical_uri`` for after-the-fact lineage
-        lookups, and if ``DATAHUB_SERVER`` is set the URN is pushed to
-        DataHub directly via the metadata REST API.
+        Writing here is a category error. Dagster loads an input using the
+        IO manager of the asset that PRODUCED it, so this manager is bound
+        to assets you want to read — often external stubs for data another
+        deployment owns. Letting it write (and, historically, announce that
+        write to DataHub and the domain broker) made a consumer-side marker
+        masquerade as a claim of ownership, so a deployment would advertise
+        routing for assets it does not own.
+
+        Publish with an IO manager that owns its output and can advertise
+        it truthfully via ``physical_coordinates``:
+
+          * ``ConfigurableArrowIOManager`` — parquet on S3
+          * ``ConfigurableSQLIOManager``   — PostgreSQL / ClickHouse
+          * the Delta IO manager           — Delta Lake on S3
         """
-        # Lazy import — see module-level note on import discipline.
-        import polars as pl
-
-        if not isinstance(obj, (pl.DataFrame, pl.LazyFrame)):
-            raise ValueError(
-                f"Expected a Polars DataFrame or LazyFrame, got {type(obj)}"
-            )
-
-        s3_path = self._s3_path_for_asset_key(context.asset_key.path)
-        context.log.info(f"Writing output to {s3_path}")
-
-        # Polars uses object_store under the hood; the Dagster pod's
-        # AWS env (set by the IO manager's deployment) supplies the
-        # credentials transparently.
-        if isinstance(obj, pl.LazyFrame):
-            obj.sink_parquet(s3_path)
-        else:
-            obj.write_parquet(s3_path)
-
-        key_str = context.asset_key.to_user_string()
-        urn = (
-            f"urn:li:dataset:(urn:li:dataPlatform:dagster,"
-            f"{key_str.replace('/', '.')},PROD)"
+        raise NotImplementedError(
+            f"CortexPolarsIOManager is READ-ONLY and cannot materialize "
+            f"{context.asset_key.to_user_string() if context.has_asset_key else 'this output'!r}. "
+            "It exists to READ mesh data through the central gateway; assets bound "
+            "to it may be owned by another deployment, so writing (and advertising "
+            "that write) here would claim ownership this deployment does not have. "
+            "To publish an asset, use ConfigurableArrowIOManager (parquet on S3), "
+            "ConfigurableSQLIOManager (postgres/clickhouse), or the Delta IO manager."
         )
-        context.add_output_metadata(
-            {
-                "physical_uri": MetadataValue.path(s3_path),
-                "datahub/urn": MetadataValue.text(urn),
-            }
-        )
-
-        # Emit the URN directly to DataHub if a server is configured.
-        # Done in-line with the write rather than via an
-        # ASSET_MATERIALIZATION sensor for two reasons: no sensor-lag
-        # window where the URN is materialized but unindexed, and no
-        # version-skew between dagster and acryl-datahub-dagster-plugin.
-        # Failures here are non-fatal — the write already succeeded
-        # and the materialization metadata is the durable record.
-        #
-        # Hand the underlying Polars schema in too — the catalog UI
-        # and downstream routing layers can only answer column-aware
-        # questions about an asset if the columns are actually
-        # advertised. Passing the materialized DataFrame's schema in
-        # makes "what's the breakdown by region?" answerable straight
-        # from the catalog without first having to read the parquet.
-        schema = self._collect_schema(obj)
-        self._emit_to_datahub(context, urn, s3_path, schema)
-
-    @staticmethod
-    def _collect_schema(obj: Any) -> Optional[Dict[str, str]]:
-        """Extract a {column_name: polars_type_str} map from the output.
-
-        For a ``LazyFrame`` we use ``collect_schema()`` to avoid
-        forcing a materialization (we already wrote the data above —
-        no point in re-collecting). Returns ``None`` on any failure
-        so the caller can still emit the URN + properties without the
-        schema aspect.
-        """
-        try:
-            # Lazy import — see module-level note on import discipline.
-            import polars as pl
-
-            if isinstance(obj, pl.LazyFrame):
-                schema = obj.collect_schema()
-            else:
-                schema = obj.schema
-            return {name: str(dtype) for name, dtype in schema.items()}
-        except Exception:
-            return None
-
-    @staticmethod
-    def _emit_to_datahub(
-        context: OutputContext,
-        urn: str,
-        physical_uri: str,
-        schema: Optional[Dict[str, str]] = None,
-    ) -> None:
-        """Push the materialized URN + schema to DataHub via DataHubGraph.
-
-        ``DATAHUB_SERVER`` env var holds the GMS base URL (not the
-        GraphQL endpoint — that's a different layer). When unset, this
-        is a no-op so the IO manager works on clusters without DataHub
-        installed.
-
-        Two aspects are emitted when a schema is available:
-
-          * ``DatasetPropertiesClass`` — name, description, physical_uri.
-            Always emitted (it's what makes the URN visible to the
-            DataHub UI / search index).
-          * ``SchemaMetadataClass`` — one ``SchemaFieldClass`` per
-            column, with a polars-derived type mapped onto the
-            DataHub type hierarchy. Lets catalog-aware engines answer
-            column-aware questions ("what's the breakdown by X?")
-            without first reading the parquet.
-
-        Any DataHub-side failure is logged and swallowed — the IO
-        manager's job is to write data, and emitting to the catalog
-        is best-effort.
-        """
-        import os
-        server = os.environ.get("DATAHUB_SERVER")
-        if not server:
-            context.log.info(
-                "DATAHUB_SERVER unset; skipping DataHub emit for %s", urn
-            )
-            return
-        try:
-            from datahub.emitter.mcp import MetadataChangeProposalWrapper
-            from datahub.ingestion.graph.client import (
-                DataHubGraph,
-                DatahubClientConfig,
-            )
-            from datahub.metadata.schema_classes import (
-                DatasetPropertiesClass,
-                NumberTypeClass,
-                OtherSchemaClass,
-                SchemaFieldClass,
-                SchemaFieldDataTypeClass,
-                SchemaMetadataClass,
-                StringTypeClass,
-                BooleanTypeClass,
-                DateTypeClass,
-                TimeTypeClass,
-            )
-
-            # A PAT is required when the metadata service runs with
-            # METADATA_SERVICE_AUTH_ENABLED=true (the correct posture). Read it from
-            # DATAHUB_TOKEN; None = unauthenticated (only works on an open GMS).
-            token = os.environ.get("DATAHUB_TOKEN") or None
-            graph = DataHubGraph(DatahubClientConfig(server=server, token=token))
-            asset_name = context.asset_key.to_user_string().replace("/", ".")
-
-            # Properties aspect — always sent.
-            properties_mcp = MetadataChangeProposalWrapper(
-                entityUrn=urn,
-                aspect=DatasetPropertiesClass(
-                    name=asset_name,
-                    description=(
-                        f"Dagster asset materialized to {physical_uri}"
-                    ),
-                    customProperties={
-                        "physical_uri": physical_uri,
-                        "dagster_asset_key": asset_name,
-                    },
-                ),
-            )
-            graph.emit_mcp(properties_mcp)
-
-            # Schema aspect — only sent when we could extract columns.
-            if schema:
-                fields = [
-                    SchemaFieldClass(
-                        fieldPath=col,
-                        type=SchemaFieldDataTypeClass(
-                            type=CortexPolarsIOManager._polars_type_to_datahub(dtype)
-                        ),
-                        nativeDataType=dtype,
-                    )
-                    for col, dtype in schema.items()
-                ]
-                schema_mcp = MetadataChangeProposalWrapper(
-                    entityUrn=urn,
-                    aspect=SchemaMetadataClass(
-                        schemaName=asset_name,
-                        platform="urn:li:dataPlatform:dagster",
-                        version=0,
-                        hash="",
-                        fields=fields,
-                        platformSchema=OtherSchemaClass(rawSchema=""),
-                    ),
-                )
-                graph.emit_mcp(schema_mcp)
-
-            context.log.info(
-                f"Emitted URN + {len(schema or {})} columns to DataHub at {server}: {urn}"
-            )
-        except Exception as exc:
-            # Non-fatal: a DataHub outage shouldn't fail the
-            # materialization. Logged at WARNING so it's surfaced in
-            # Dagit but doesn't trip alerting on transient blips.
-            context.log.warning(
-                "DataHub emit failed for %s: %s", urn, exc
-            )
-
-    @staticmethod
-    def _polars_type_to_datahub(polars_dtype: str) -> Any:
-        """Map a polars dtype string onto a DataHub schema type class.
-
-        Polars dtype names cover a handful of recognizable shapes
-        (Int64, Float32, String/Utf8, Boolean, Date, Datetime, Time,
-        Duration). Everything else falls through to ``StringTypeClass``
-        which DataHub treats as a generic — better to under-claim than
-        misclassify.
-        """
-        from datahub.metadata.schema_classes import (
-            BooleanTypeClass,
-            DateTypeClass,
-            NumberTypeClass,
-            StringTypeClass,
-            TimeTypeClass,
-        )
-        lower = polars_dtype.lower()
-        if any(t in lower for t in ("int", "float", "decimal")):
-            return NumberTypeClass()
-        if "bool" in lower:
-            return BooleanTypeClass()
-        if "date" in lower:
-            return DateTypeClass()
-        if "time" in lower or "duration" in lower:
-            return TimeTypeClass()
-        return StringTypeClass()
-
-    def physical_coordinates(
-        self, asset_key_path: Sequence[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — routing ticket for an asset.
-
-        A remote broker registering this IO manager's assets with the
-        central gateway calls this method to learn how each asset can
-        be read. The returned dict matches the ticket shape the cortex
-        data client consumes from the gateway's authorize response:
-        ``source_type`` discriminates the read path (``"s3_parquet"``),
-        ``physical_uri`` is the s3 URI the IO manager would write to
-        on materialization, and ``credentials`` carries the AWS auth
-        needed for the parquet read.
-
-        AWS credentials come from the broker pod's environment
-        (``AWS_ACCESS_KEY_ID`` etc.) — the broker is expected to be
-        deployed with the same MinIO / S3 access the Dagster pod
-        would have. ``AWS_ENDPOINT_URL`` is included only when set,
-        so a missing override falls back to real AWS.
-        """
-        physical_uri = self._s3_path_for_asset_key(asset_key_path)
-        credentials = self._aws_credentials_from_env()
-        return {
-            "source_type": _SOURCE_TYPE,
-            "physical_uri": physical_uri,
-            "credentials": credentials,
-        }
-
-    def _s3_path_for_asset_key(self, asset_key_path: Sequence[str]) -> str:
-        """Build the s3 path this IO manager would write to for ``asset_key_path``.
-
-        The last segment of the asset key becomes the parquet file
-        name; intermediate segments are dropped because they map to
-        Dagster's logical grouping, not to a directory layout on S3.
-        Keep this method aligned with ``handle_output`` — they must
-        produce identical paths or the broker will advertise URIs the
-        write path never produced.
-        """
-        return f"s3://{self.s3_bucket}/{self.prefix}/{asset_key_path[-1]}.parquet"
-
-    @staticmethod
-    def _aws_credentials_from_env() -> Dict[str, str]:
-        """Build the credentials dict from the pod's AWS environment.
-
-        Matches the keys the cortex data client expects in its
-        ``_s3_storage_options`` builder — lowercase boto/polars-style
-        names. ``aws_endpoint_url`` is only included when set so
-        absence falls through to real AWS rather than failing with a
-        bad endpoint.
-        """
-        creds: Dict[str, str] = {
-            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-            "aws_region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-        }
-        endpoint = os.environ.get("AWS_ENDPOINT_URL")
-        if endpoint:
-            creds["aws_endpoint_url"] = endpoint
-        return creds

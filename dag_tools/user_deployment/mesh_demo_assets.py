@@ -36,7 +36,11 @@ from dagster import (
     asset,
 )
 
-from dag_tools.io_managers.cortex_io_manager import CortexPolarsIOManager
+from dag_tools.io_managers.arrow import (
+    ConfigurableArrowIOManager,
+    S3FSCommonConfig,
+    S3FSConfig,
+)
 
 
 # Lazy ``polars`` import inside the asset compute keeps definitions-
@@ -107,6 +111,17 @@ def build_demo_defs() -> Definitions:
     """Build a Definitions containing the synthetic demo asset and its
     IO manager.
 
+    The demo asset PRODUCES data, so it uses a producer IO manager —
+    ``ConfigurableArrowIOManager`` (parquet on S3). That manager
+    implements ``physical_coordinates``, so the domain broker can
+    truthfully advertise this asset's location to the central gateway
+    and mesh consumers can read it back.
+
+    (It deliberately does NOT use ``CortexPolarsIOManager``: that one is
+    the mesh's read-only facade — it's bound to assets you *consume*,
+    which may be owned by another deployment, so it must never announce
+    ownership. See that module's docstring.)
+
     All config comes from env vars set by the helm chart's
     ``userDeployments.dag-tools.codeLocation.env`` block:
 
@@ -116,32 +131,27 @@ def build_demo_defs() -> Definitions:
       ``minio-bucket-init`` Helm hook creates it).
     * ``MESH_DEMO_PREFIX`` (default ``mesh_demo``) — path prefix
       under the bucket.
-    * ``CENTRAL_GATEWAY_URL`` (default
-      ``http://iagent-central-gateway:8090``) — required by the IO
-      manager's schema (the demo asset only produces, but the
-      ConfigurableIOManager requires this field).
-    * ``CORTEX_CLIENT_ID`` / ``CORTEX_CLIENT_SECRET`` —
-      M2M OAuth2 credentials for upstream reads via the gateway.
-      Empty when this asset only produces (the demo case).
-    * ``KEYCLOAK_TOKEN_URL`` — leave empty to use the cortex data
-      client's default (in-cluster Keycloak service).
+    * ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` /
+      ``AWS_ENDPOINT_URL`` / ``AWS_DEFAULT_REGION`` — MinIO credentials
+      and endpoint. These are the same values the broker pod carries, so
+      the advertised routing ticket resolves for consumers too.
     """
     s3_bucket = os.getenv("DAG_TOOLS_DEMO_S3_BUCKET", "dag-lake")
     prefix = os.getenv("MESH_DEMO_PREFIX", "mesh_demo")
-    broker_url = os.getenv(
-        "CENTRAL_GATEWAY_URL", "http://iagent-central-gateway:8090"
-    )
-    client_id = os.getenv("CORTEX_CLIENT_ID", "")
-    client_secret = os.getenv("CORTEX_CLIENT_SECRET", "")
-    keycloak_url = os.getenv("KEYCLOAK_TOKEN_URL", "") or None
+    endpoint = os.getenv("AWS_ENDPOINT_URL", "")
 
-    io_manager = CortexPolarsIOManager(
-        s3_bucket=s3_bucket,
-        prefix=prefix,
-        broker_url=broker_url,
-        client_id=client_id,
-        client_secret=client_secret,
-        keycloak_url=keycloak_url,
+    io_manager = ConfigurableArrowIOManager(
+        uri_base=f"s3://{s3_bucket}/{prefix}",
+        fs=S3FSConfig(
+            common=S3FSCommonConfig(
+                access_key_id=os.getenv("AWS_ACCESS_KEY_ID", ""),
+                secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+                end_point=endpoint,
+                region=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+                # MinIO in-cluster is plain HTTP; real AWS/S3 is HTTPS.
+                allow_http=endpoint.startswith("http://"),
+            ),
+        ),
     )
 
     return Definitions(

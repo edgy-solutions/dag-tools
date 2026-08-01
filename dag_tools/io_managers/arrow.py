@@ -1,4 +1,4 @@
-from typing import Any, Dict, Literal, Optional, Union, get_args, get_origin
+from typing import Any, Dict, Literal, Optional, Sequence, Union, get_args, get_origin
 
 import fsspec
 import pandas as pd
@@ -49,6 +49,33 @@ class S3FSConfig(Config):
 class LocalFSConfig(Config):
     type_: Literal["local"] = 'local'
     use_mmap: Optional[bool] = False
+
+
+def _to_arrow_if_polars(item: Any) -> Any:
+    """Convert a Polars DataFrame/LazyFrame to a ``pa.Table``; pass anything
+    else through untouched.
+
+    Polars is the mesh's standard in-memory frame (the cortex data client
+    hands back LazyFrames), so assets naturally return Polars objects.
+    Arrow's writer only speaks pandas/pyarrow, and converting is zero-copy
+    for most dtypes — so we bridge here instead of making every asset
+    author call ``.to_arrow()``.
+
+    The import is local: polars is a heavyweight import and this module is
+    on the code-location startup path, where import cost has previously
+    blown the Dagster gRPC launch budget.
+    """
+    try:
+        import polars as pl
+    except ImportError:
+        return item
+
+    if isinstance(item, pl.LazyFrame):
+        # We're about to write it out, so collecting is unavoidable.
+        return item.collect().to_arrow()
+    if isinstance(item, pl.DataFrame):
+        return item.to_arrow()
+    return item
 
 
 def fix_double_bucket_path(path: UPath) -> UPath:
@@ -159,18 +186,25 @@ class ArrowIOManager(UPathIOManager):
     def dump_to_path(self, context: OutputContext, obj: Any, path: UPath) -> None:
         if not isinstance(obj, dict):
             obj = {'': obj}
-            
+
         for key, item in obj.items():
             format, target_path = self._uri_and_format_for_path(path, key)
-            
+
+            # Polars is the mesh's lingua franca, so accept it here and
+            # convert to Arrow rather than forcing callers to hand-convert.
+            # A LazyFrame is collected first — we're about to write it out,
+            # so the materialization is unavoidable either way. Imported
+            # lazily to keep module-load cost off the gRPC startup path.
+            item = _to_arrow_if_polars(item)
+
             if isinstance(item, (pd.DataFrame, pa.Table, pa.RecordBatch, pa.dataset.FileSystemDataset, pa.RecordBatchReader)):
                 if not isinstance(item, pa.dataset.FileSystemDataset):
                     context.log.info(f"Row count: {len(item)}")
                 pa.dataset.write_dataset(
-                    item, 
-                    target_path, 
-                    format=format, 
-                    filesystem=self.s3fs, 
+                    item,
+                    target_path,
+                    format=format,
+                    filesystem=self.s3fs,
                     existing_data_behavior='overwrite_or_ignore'
                 )
             else:
@@ -229,3 +263,67 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
             load_csv_columns_as_strings=self.load_csv_columns_as_strings,
             load_csv_skip_rows=self.load_csv_skip_rows
         )
+
+    def physical_coordinates(self, asset_key_path: Sequence[str]) -> Optional[Dict[str, Any]]:
+        """Mesh-publishing protocol — the routing ticket for an asset.
+
+        The domain broker calls this (it reads the object registered in
+        ``Definitions(resources=...)``, i.e. this factory) to learn how a
+        consumer can read each asset, then advertises the URN through the
+        central gateway.
+
+        Returns ``None`` — meaning "don't advertise this asset" — unless
+        the output is genuinely readable by the cortex data client:
+
+          * The filesystem must be S3-backed. A ``LocalFSConfig`` asset
+            exists only on one pod's disk; advertising it would hand
+            consumers a path they cannot reach.
+          * ``uri_base`` must be an ``s3://`` URI, for the same reason.
+          * The target must be parquet. This IO manager also writes CSV
+            (when the asset key carries a ``.csv`` suffix), and the client
+            has no CSV read path — only ``s3_parquet``/``s3_delta``/
+            ``s3_iceberg``/``postgres``/``clickhouse``.
+
+        Returning ``None`` rather than guessing is deliberate: an
+        advertised-but-unreadable location is worse than an unadvertised
+        asset, because the gateway will confidently route consumers to it.
+
+        The advertised URI is the dataset *directory* pyarrow writes
+        (``<uri_base>/<asset_key>.parquet/`` containing part files) —
+        verified readable by ``pl.scan_parquet`` as-is, which is what the
+        client calls.
+        """
+        # Only S3-backed configs describe a location another pod can read.
+        if not isinstance(self.fs, (S3FSConfig, FsspecS3FSConfig)):
+            return None
+        if not self.uri_base.startswith("s3://"):
+            return None
+
+        path = list(asset_key_path or [])
+        if not path:
+            return None
+
+        # Mirror ArrowIOManager._uri_for_path: a key that already carries a
+        # known suffix keeps it; otherwise the default format applies.
+        suffix = UPath(path[-1]).suffix
+        fmt = suffix[1:] if suffix and suffix[1:] in formats else default_format
+        if fmt != "parquet":
+            return None
+
+        leaf = path[-1] if suffix else f"{path[-1]}.{default_format}"
+        physical_uri = "/".join([self.uri_base.rstrip("/"), *path[:-1], leaf])
+
+        common = self.fs.common
+        credentials: Dict[str, Any] = {
+            "aws_access_key_id": common.access_key_id,
+            "aws_secret_access_key": common.secret_access_key,
+            "aws_region": common.region or "us-east-1",
+        }
+        if common.end_point:
+            credentials["aws_endpoint_url"] = common.end_point
+
+        return {
+            "source_type": "s3_parquet",
+            "physical_uri": physical_uri,
+            "credentials": credentials,
+        }
