@@ -157,16 +157,20 @@ class DatahubLineageComponent(Component, Resolvable, Model):
         ) -> Dict[str, DatasetLineage]:
             
             lineage_map: Dict[str, DatasetLineage] = {}
-            defs = sensor_context.instance.get_run_records(filters=dg.RunsFilter(run_ids=[sensor_context.dagster_run.run_id]))[0].run.asset_selection
-            
-            # Using the run_id to fetch materialization logs 
+
+            # NOTE: an earlier version fetched the run's asset_selection here
+            # via ``get_run_records(...)[0].run.asset_selection``. That was
+            # dead code — the value was never read — and it crashed the whole
+            # emit with ``AttributeError: 'RunRecord' object has no attribute
+            # 'run'`` (the attribute is ``dagster_run``). Every materialization
+            # event we need is already in the logs below, keyed by run_id.
+
+            # Using the run_id to fetch materialization logs
             logs = sensor_context.instance.all_logs(
                 sensor_context.dagster_run.run_id,
                 of_type={DagsterEventType.ASSET_MATERIALIZATION},
             )
-            
-            # Since component `context.defs` is static, we fetch the running definitions via the instance if needed,
-            # but usually the registry resolves dynamically. For safety we just use the raw records.
+
             for log in logs:
                 mat = log.asset_materialization
                 if not mat:
