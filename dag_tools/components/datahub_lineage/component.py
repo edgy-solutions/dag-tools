@@ -65,6 +65,56 @@ def asset_keys_to_dataset_urn_converter(
         name=name,
     )
 
+def _extract_upstream_urns(metadata: Any) -> List[str]:
+    """Pull the ``datahub.inputs`` URN strings off a materialization's metadata.
+
+    ``get_datahub_metadata()`` writes a LIST of urn strings, but Dagster wraps
+    metadata values in a MetadataValue subclass whose payload lives on
+    ``.value`` (JSON/list) or ``.text`` (text). Normalize any of those shapes
+    to a flat list of strings, dropping anything that isn't one.
+    """
+    raw = (metadata or {}).get("datahub.inputs")
+    if raw is None:
+        return []
+    payload = getattr(raw, "value", None)
+    if payload is None:
+        payload = getattr(raw, "text", None)
+    if payload is None:
+        payload = raw
+
+    if isinstance(payload, str):
+        candidates: List[Any] = [payload]
+    elif isinstance(payload, (list, tuple, set)):
+        candidates = list(payload)
+    else:
+        return []
+
+    out: List[str] = []
+    for c in candidates:
+        # Tolerate one level of nesting (an older writer appended the list itself).
+        if isinstance(c, (list, tuple, set)):
+            out.extend(str(i) for i in c if isinstance(i, str))
+        elif isinstance(c, str):
+            out.append(c)
+    return out
+
+
+def _to_dataset_urns(urn_strings: Sequence[str]) -> set:
+    """Convert URN strings to ``DatasetUrn`` objects, skipping malformed ones.
+
+    ``DatasetLineage`` holds ``Set[DatasetUrn]``, not strings. A single bad
+    URN must not abort the emit for every other asset in the run, so parse
+    failures are skipped rather than raised.
+    """
+    urns = set()
+    for s in urn_strings or []:
+        try:
+            urns.add(DatasetUrn.from_string(s))
+        except Exception:
+            continue
+    return urns
+
+
 def get_datahub_metadata(source_keys: Sequence[Sequence[str]], platform: str) -> Dict[str, List[str]]:
     """Generates the metadata dictionary required to tag Dagster assets with upstream Datahub urns."""
     urns = []
@@ -208,15 +258,13 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                 # Prepare the properties mapping
                 properties = {k: str(v.value) for k, v in mat.metadata.items() if hasattr(v, 'value')}
 
-                # Extrapolate dependencies (using safe .get instead of raw index)
-                # Note: `constant.DATAHUB_INPUTS` tagging requires pulling the definition spec, 
-                # but currently we don't have direct access to the asset object from the log.
-                # If you use the native metadata inputs, you can parse it from `mat.metadata` directly.
-                upstreams_uris = []
-                if 'datahub.inputs' in mat.metadata and isinstance(mat.metadata['datahub.inputs'], TextMetadataValue):
-                    upstreams_uris.append(mat.metadata['datahub.inputs'].value)
-                elif 'datahub.inputs' in properties:
-                    pass
+                # Upstream URNs come from the ``datahub.inputs`` metadata that
+                # get_datahub_metadata() attaches (a LIST of urn strings), so
+                # normalize whatever metadata wrapper Dagster used back into a
+                # flat list of strings. The previous code only handled
+                # TextMetadataValue and appended the raw ``.value`` — which for
+                # the list case would have nested a list inside the list.
+                upstreams_uris = _extract_upstream_urns(mat.metadata)
 
                 sensor_context.log.info(f"Emitting asset {asset_key_path} to DataHub graph.")
                 dagster_generator.emit_asset(
@@ -228,11 +276,33 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     upstreams=upstreams_uris if upstreams_uris else None,
                     materialize_dependencies=dagster_generator.config.materialize_dependencies,
                 )
-                
-                # FIX: Properly return the lineage mapping safely instead of discarding it silently
-                lineage_map[asset_downstream_urn.urn()] = DatasetLineage(
-                    upstream_urns=upstreams_uris
-                )
+
+                # Record the lineage for THIS step so the plugin can merge it
+                # with what it derives from the logs itself.
+                #
+                # DatasetLineage is a NamedTuple(inputs, outputs) of
+                # Set[DatasetUrn]. An earlier version called it with
+                # ``upstream_urns=`` (a kwarg that does not exist) and passed
+                # strings — raising TypeError on the very last statement of
+                # this extractor. Because the plugin calls the extractor
+                # BEFORE generate_dataflow / emit_job_run, that exception
+                # aborted the whole emit: no DataFlow, no DataJob, no
+                # DataProcessInstance, and none of the merged lineage.
+                #
+                # Key by step_key to line up with the plugin's own
+                # process_dagster_logs() map (also Dict[str, Set[DatasetUrn]],
+                # keyed per step); the two are merged by key.
+                inputs = _to_dataset_urns(upstreams_uris)
+                outputs = {asset_downstream_urn}
+                key = log.step_key or asset_downstream_urn.urn()
+                if key in lineage_map:
+                    prior = lineage_map[key]
+                    lineage_map[key] = DatasetLineage(
+                        inputs=prior.inputs | inputs,
+                        outputs=prior.outputs | outputs,
+                    )
+                else:
+                    lineage_map[key] = DatasetLineage(inputs=inputs, outputs=outputs)
 
             return lineage_map
 

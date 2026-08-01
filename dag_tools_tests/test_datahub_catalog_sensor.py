@@ -45,6 +45,58 @@ def test_non_filesystem_platform_unchanged():
 
 
 # ---------------------------------------------------------------------------
+# Lineage extraction helpers
+# ---------------------------------------------------------------------------
+
+_UP = "urn:li:dataset:(urn:li:dataPlatform:s3,upstream_tbl,PROD)"
+
+
+class _MetaValue:
+    """Stand-in for a Dagster MetadataValue wrapper."""
+
+    def __init__(self, value):
+        self.value = value
+
+
+def test_extract_upstream_urns_handles_every_metadata_shape():
+    """get_datahub_metadata writes a LIST of urn strings, but Dagster wraps
+    it in a MetadataValue. The old code only handled TextMetadataValue and
+    appended the raw .value, nesting a list inside a list."""
+    from dag_tools.components.datahub_lineage.component import _extract_upstream_urns
+
+    assert _extract_upstream_urns({"datahub.inputs": _MetaValue([_UP])}) == [_UP]
+    assert _extract_upstream_urns({"datahub.inputs": _MetaValue([[_UP]])}) == [_UP]
+    assert _extract_upstream_urns({"datahub.inputs": _MetaValue(_UP)}) == [_UP]
+    assert _extract_upstream_urns({}) == []
+    assert _extract_upstream_urns(None) == []
+
+
+def test_to_dataset_urns_skips_malformed_without_aborting():
+    """One bad URN must not abort the emit for every other asset in the run."""
+    from dag_tools.components.datahub_lineage.component import _to_dataset_urns
+
+    urns = _to_dataset_urns([_UP, "not-a-urn", ""])
+    assert len(urns) == 1
+
+
+def test_dataset_lineage_is_constructed_with_the_real_signature():
+    """Regression: the extractor called DatasetLineage(upstream_urns=[...]),
+    a kwarg that does not exist — raising TypeError on its LAST statement.
+    Because the plugin runs the extractor BEFORE generate_dataflow /
+    emit_job_run, that killed the entire emit: no DataFlow, no DataJob, no
+    DataProcessInstance, and no merged lineage."""
+    pytest.importorskip("datahub_dagster_plugin")
+    from datahub_dagster_plugin.client.dagster_generator import DatasetLineage
+
+    from dag_tools.components.datahub_lineage.component import _to_dataset_urns
+
+    # The real shape is a NamedTuple of Set[DatasetUrn].
+    assert DatasetLineage._fields == ("inputs", "outputs")
+    lin = DatasetLineage(inputs=_to_dataset_urns([_UP]), outputs=set())
+    assert len(lin.inputs) == 1
+
+
+# ---------------------------------------------------------------------------
 # Sensor construction (needs the plugin)
 # ---------------------------------------------------------------------------
 
