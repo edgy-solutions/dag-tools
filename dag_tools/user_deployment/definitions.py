@@ -165,13 +165,74 @@ def _build_grist_defs() -> Definitions:
         raise
 
 
+def _build_datahub_defs() -> Definitions:
+    """Register the global DataHub catalog sensor when configured.
+
+    Gated on ``DATAHUB_SERVER`` (the GMS base URL, already set by the
+    chart's ``userDeployments.*.codeLocation.env``). Unset -> no sensor,
+    and nothing DataHub-related is imported.
+
+    This is the deployment's ONLY catalog path. IO managers deliberately
+    do not emit to DataHub themselves: an IO manager is bound per-asset
+    and (for the mesh read facade) may be bound to assets another
+    deployment owns, so catalog registration belongs at the
+    materialization-event level, where "this deployment actually
+    produced this" is unambiguous.
+
+    ``DATAHUB_SENSOR_STATUS`` (``RUNNING``/``STOPPED``, default
+    ``RUNNING``) controls whether the sensor is live on load. The
+    upstream ``make_datahub_sensor`` defaults to STOPPED, which reads as
+    a broken integration — the sensor exists but silently never fires —
+    so we default it on wherever DataHub is deliberately configured.
+
+    Failures are non-fatal. Catalog registration is observability; a bad
+    DataHub URL or a missing plugin must not take the code location
+    offline, because that would stop every materialization in the
+    deployment.
+    """
+    server = os.getenv("DATAHUB_SERVER")
+    if not server:
+        return Definitions()
+
+    # The sensor is built from acryl-datahub-dagster-plugin. Check it
+    # explicitly: the component swallows its own ImportError, so without
+    # this guard a missing plugin surfaces as a confusing NameError.
+    try:
+        import datahub_dagster_plugin  # noqa: F401
+    except ImportError:
+        logger.warning(
+            "DATAHUB_SERVER=%s is set but acryl-datahub-dagster-plugin is not "
+            "installed; skipping DataHub catalog sensor. Install the plugin to "
+            "enable catalog registration.", server,
+        )
+        return Definitions()
+
+    try:
+        from dag_tools.components.datahub_lineage.component import (
+            DatahubLineageComponent,
+        )
+
+        component = DatahubLineageComponent(
+            datahub_config={"server": server},
+            default_status=os.getenv("DATAHUB_SENSOR_STATUS", "RUNNING"),
+        )
+        defs = component.build_defs(None)
+        logger.info("DataHub catalog sensor registered against %s", server)
+        return defs
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Failed to build the DataHub catalog sensor (%s); continuing without "
+            "it so materializations still run.", exc,
+        )
+        return Definitions()
+
+
 def _build_combined_defs() -> Definitions:
     if _demo_mode_on():
-        # Lazy import: only pull mesh_demo_assets (and polars,
-        # CortexPolarsIOManager) into the deployment's module graph
-        # when demo mode is actually on. Cleaner blast-radius if a
-        # production import of this module accidentally happens with
-        # the env var unset.
+        # Lazy import: only pull mesh_demo_assets (and polars, the arrow
+        # IO manager) into the deployment's module graph when demo mode
+        # is actually on. Cleaner blast-radius if a production import of
+        # this module accidentally happens with the env var unset.
         from dag_tools.user_deployment.mesh_demo_assets import build_demo_defs
 
         demo = build_demo_defs()
@@ -179,9 +240,11 @@ def _build_combined_defs() -> Definitions:
     else:
         base = _build_singleton_defs()
 
-    # Grist is orthogonal to the demo/singleton switch — merge it in when
-    # configured (no-op when disabled).
-    return Definitions.merge(base, _build_grist_defs())
+    # Grist and the DataHub catalog sensor are both orthogonal to the
+    # demo/singleton switch — merge them in when configured (no-ops when
+    # not). The catalog sensor observes whatever the surfaces above
+    # materialize, so it goes last.
+    return Definitions.merge(base, _build_grist_defs(), _build_datahub_defs())
 
 
 defs = _build_combined_defs()

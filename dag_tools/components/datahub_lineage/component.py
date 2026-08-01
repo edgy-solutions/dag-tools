@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from typing import Annotated, Any, Dict, List, Optional, Sequence
@@ -12,7 +13,7 @@ from dag_tools.utils.translation_registry import AssetNormalizationRegistry
 
 # External imports required for Datahub Integration
 try:
-    from datahub.ingestion.graph.client import DataHubGraph
+    from datahub.ingestion.graph.client import DatahubClientConfig, DataHubGraph
     from datahub.utilities.urns.dataset_urn import DatasetUrn
     from datahub_dagster_plugin.client.dagster_generator import Constant, DagsterGenerator, DatasetLineage
     from datahub_dagster_plugin.sensors.datahub_sensors import DatahubDagsterSourceConfig
@@ -45,7 +46,15 @@ def asset_keys_to_dataset_urn_converter(
     platform = platform if platform else platform_value if platform_present else 'unknown'
     
     path = "/".join(asset_key[1:]).lower()
-    name = ".".join(asset_key).lower() if platform not in filesystem_platforms else f"{asset_key[0].lower()}.{path}"
+    if platform not in filesystem_platforms:
+        name = ".".join(asset_key).lower()
+    else:
+        # Guard the single-segment case: with no trailing path, the old
+        # f"{head}.{path}" produced a malformed URN name ending in a dot
+        # (e.g. "mesh_demo_customers."), which then became the dataset's
+        # permanent identity in the catalog.
+        head = asset_key[0].lower()
+        name = f"{head}.{path}" if path else head
     
     # Use the specified environment fabric if present, else fallback to 'prod'
     env = asset_key[0] if fabric_present else 'prod'
@@ -101,6 +110,27 @@ class DatahubLineageComponent(Component, Resolvable, Model):
         Dict[str, str],
         Resolver.default(description="Mapping of log metadata keys to DataHub platform names.")
     ] = field(default_factory=lambda: {"Databricks Job Run ID": "databricks"})
+
+    default_status: Annotated[
+        str,
+        Resolver.default(description=(
+            "Whether the emitted sensor starts RUNNING or STOPPED. The "
+            "underlying make_datahub_sensor defaults to STOPPED, which means "
+            "nothing reaches DataHub until someone enables the sensor in the "
+            "Dagster UI. Set RUNNING to have catalog registration active as "
+            "soon as the code location loads."
+        ))
+    ] = "STOPPED"
+
+    sensor_name: Annotated[
+        Optional[str],
+        Resolver.default(description="Override the generated sensor's name.")
+    ] = None
+
+    minimum_interval_seconds: Annotated[
+        Optional[int],
+        Resolver.default(description="Minimum seconds between sensor evaluations.")
+    ] = None
 
     def build_defs(self, context: ComponentLoadContext) -> dg.Definitions:
         """Constructs and returns the DataHub sensor definition."""
@@ -202,14 +232,33 @@ class DatahubLineageComponent(Component, Resolvable, Model):
 
             return lineage_map
 
-        # Build Datahub Config dynamically
-        server_val = self.datahub_config.get("server", "")
-        resolved_server = server_val.get_value() if isinstance(server_val, EnvVar) else server_val
-        
-        base_config_params = {"server": resolved_server}
+        # Build Datahub Config dynamically.
+        #
+        # DatahubDagsterSourceConfig requires a NESTED datahub_client_config;
+        # it rejects a bare ``server`` (extra_forbidden) and errors on the
+        # missing nested field. An earlier version passed ``{"server": ...}``
+        # flat, so building the sensor always failed pydantic validation —
+        # i.e. this component could never actually register anything.
+        config_source = self.datahub_config or {}
 
-        # Handle integration
-        dh_config = DatahubDagsterSourceConfig.model_validate(base_config_params)
+        def _resolve(value: Any) -> Any:
+            return value.get_value() if isinstance(value, EnvVar) else value
+
+        resolved_server = _resolve(config_source.get("server", ""))
+
+        client_params: Dict[str, Any] = {"server": resolved_server}
+
+        # A PAT is required when the metadata service runs with
+        # METADATA_SERVICE_AUTH_ENABLED=true (the correct posture). Accept it
+        # from config, else the standard DATAHUB_TOKEN env var; None means
+        # unauthenticated, which only works against an open GMS.
+        token = _resolve(config_source.get("token")) or os.environ.get("DATAHUB_TOKEN")
+        if token:
+            client_params["token"] = token
+
+        dh_config = DatahubDagsterSourceConfig(
+            datahub_client_config=DatahubClientConfig(**client_params)
+        )
         
         # Override the defaults
         dh_config = dh_config.model_copy(update={
@@ -218,7 +267,26 @@ class DatahubLineageComponent(Component, Resolvable, Model):
             'capture_asset_materialization': False
         })
         
-        # Build the physical sensor loop
-        sensor_def = _make_datahub_sensor(config=dh_config)
-        
+        # Build the physical sensor loop.
+        #
+        # default_status is passed explicitly: make_datahub_sensor defaults
+        # to STOPPED, so without this the sensor is defined but idle and
+        # nothing ever reaches DataHub until an operator toggles it in the
+        # UI — a silent no-op that looks like a broken integration.
+        from dagster import DefaultSensorStatus
+
+        status = (
+            DefaultSensorStatus.RUNNING
+            if str(self.default_status).upper() == "RUNNING"
+            else DefaultSensorStatus.STOPPED
+        )
+
+        sensor_kwargs: Dict[str, Any] = {"config": dh_config, "default_status": status}
+        if self.sensor_name:
+            sensor_kwargs["name"] = self.sensor_name
+        if self.minimum_interval_seconds is not None:
+            sensor_kwargs["minimum_interval_seconds"] = self.minimum_interval_seconds
+
+        sensor_def = _make_datahub_sensor(**sensor_kwargs)
+
         return dg.Definitions(sensors=[sensor_def])

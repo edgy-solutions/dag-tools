@@ -78,8 +78,12 @@ COPY . /app
 #     Pub-tools includes this transitively via ``.[orchestrator]``;
 #     dag-tools' trimmed install dropped that group, so it must be
 #     listed explicitly here.
-#   * ``acryl-datahub`` — CortexPolarsIOManager.handle_output emits
-#     URNs to DataHub on materialization.
+#   * ``acryl-datahub`` + ``acryl-datahub-dagster-plugin`` — catalog
+#     registration. dag_tools.components.datahub_lineage builds a global
+#     ASSET_MATERIALIZATION sensor from the plugin's make_datahub_sensor;
+#     definitions.py registers it when DATAHUB_SERVER is set. (IO managers
+#     no longer emit to DataHub themselves — the sensor is the single,
+#     decoupled catalog path.)
 #   * ``boto3`` + ``s3fs`` — S3 writes.
 #   * ``.[broker]`` extras — fastapi, hypercorn, pydantic, httpx,
 #     boto3 for the broker pod (same image, helm picks the
@@ -97,6 +101,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         dagster-aws \
         dagster-postgres \
         acryl-datahub \
+        acryl-datahub-dagster-plugin \
         boto3 \
         s3fs
 

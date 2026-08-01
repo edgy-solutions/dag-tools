@@ -231,7 +231,17 @@ class ArrowIOManager(UPathIOManager):
 
     def get_metadata(self, context: OutputContext, obj: Any) -> Dict[str, MetadataValue]:
         path = self._get_path(context)
-        return {"uri": MetadataValue.path(self._uri_for_path(path))}
+        metadata: Dict[str, MetadataValue] = {
+            "uri": MetadataValue.path(self._uri_for_path(path))
+        }
+        # The DataHub catalog sensor reads ``destination_name`` off the
+        # materialization event to decide which platform the dataset
+        # belongs to. Declaring it here means S3-backed assets land in the
+        # catalog as ``dataPlatform:s3`` instead of falling through to
+        # ``unknown``. Only claimed when the output really is on S3.
+        if self.uri_base.startswith("s3://"):
+            metadata["destination_name"] = MetadataValue.text("s3")
+        return metadata
 
     def get_op_output_relative_path(self, context: Union[InputContext, OutputContext]) -> UPath:
         return UPath("storage", super().get_op_output_relative_path(context))
