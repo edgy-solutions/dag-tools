@@ -66,6 +66,14 @@ orchestrator = [
     "pandas>=2.3.3",
     "pyarrow>=23.0.1",
     "s3fs>=0.4.2",
+    # dag_tools.resources.duckdb / dag_tools.io_managers.duckdb — DuckDB's
+    # httpfs extension reads and writes s3:// directly, so a query-shaped
+    # asset streams to parquet without the rows passing through Python.
+    # NOTE: httpfs is normally downloaded from duckdb.org on first use;
+    # bake it in at image build time if the cluster restricts egress and
+    # point DUCKDB_EXTENSION_DIRECTORY at it, or DuckDBResource will fail
+    # with guidance.
+    "duckdb>=1.1",
 ]
 worker = [
     "restate-sdk>=0.14.0,<0.15.0",

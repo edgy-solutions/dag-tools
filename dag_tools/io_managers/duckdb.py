@@ -1,0 +1,346 @@
+"""DuckDB IO manager — SQL-shaped assets that never materialize in RAM.
+
+The complement to :mod:`dag_tools.io_managers.arrow`. Arrow writes frames
+that already exist in memory; this one writes *queries*, letting DuckDB
+stream the result from source to object storage without the rows passing
+through Python.
+
+An asset returns a ``DuckDBPyRelation`` — a lazy query — and the IO
+manager writes it out::
+
+    @asset(io_manager_key="duckdb_io")
+    def orders(duck: DuckDBResource):
+        con = duck.connect()          # NOT get_connection(); see below
+        return con.sql("SELECT * FROM read_csv('s3://raw/orders.csv')")
+
+Why this exists alongside Arrow
+-------------------------------
+Measured against MinIO at 5M rows (569 MB CSV -> filtered parquet), the
+DuckDB writer beat routing the same query through Arrow on every axis:
+
+    direct, memory_limit=256MB   5.53s   peak RSS +136 MB   42.8 MB out
+    arrow  (RecordBatchReader)   8.12s   peak RSS +250 MB   56.8 MB out
+
+The Arrow path still works and stays supported — it is the right choice
+when an asset already holds a frame. This one is for the case where the
+work is a query and materializing it is pure cost.
+
+Output shape
+------------
+Writes a *directory* of ``data_N.parquet`` parts, matching Arrow's
+layout so consumers cannot tell the two apart, and so a large asset
+splits across files instead of producing one unwieldy object. See
+``file_size_bytes``.
+
+Connection lifetime
+-------------------
+A relation is lazy — nothing has executed when the asset returns, and the
+write happens later, in ``handle_output``. The relation stays bound to
+the connection that created it, so that connection must still be open
+then. Use :meth:`DuckDBResource.connect`, whose lifetime you control, and
+NOT ``get_connection()``, which closes on block exit. Getting this wrong
+raises with an explanation rather than a bare DuckDB error.
+"""
+from typing import Any, Dict, List, Optional, Sequence
+
+from dagster import (
+    ConfigurableIOManagerFactory,
+    InputContext,
+    IOManager,
+    MetadataValue,
+    OutputContext,
+)
+from pydantic import Field
+
+from dag_tools.resources.duckdb import DuckDBResource
+
+DEFAULT_FORMAT = "parquet"
+
+
+def _is_relation(obj: Any) -> bool:
+    """Duck-typed so importing duckdb stays off the module load path.
+
+    This module is imported when a code location boots; a heavyweight
+    import there has previously blown the Dagster gRPC launch budget.
+    """
+    return type(obj).__name__ == "DuckDBPyRelation"
+
+
+class DuckDBIOManager(IOManager):
+    """Writes DuckDB relations to object storage; reads them back lazily."""
+
+    def __init__(
+        self,
+        resource: DuckDBResource,
+        uri_base: str,
+        file_size_bytes: Optional[str] = "128MB",
+        compression: Optional[str] = None,
+        partition_by: Optional[Sequence[str]] = None,
+    ):
+        self.resource = resource
+        self.uri_base = uri_base.rstrip("/")
+        self.file_size_bytes = file_size_bytes
+        self.compression = compression
+        self.partition_by = list(partition_by) if partition_by else None
+        # Reads hand back lazy relations, so the connection behind them has
+        # to outlive load_input. Held on the manager, which Dagster scopes
+        # to the run.
+        self._con: Any = None
+
+    # -- paths -------------------------------------------------------------
+
+    def _uri_for(self, context: Any) -> str:
+        """``<uri_base>/<asset key path>.parquet``.
+
+        Deliberately identical to ``ArrowIOManager``'s layout: the two
+        managers are interchangeable from a reader's point of view, and an
+        asset can be moved between them without consumers noticing.
+        """
+        if context.has_asset_key:
+            path = list(context.asset_key.path)
+        else:
+            path = list(context.get_identifier())
+        leaf = path[-1]
+        if not leaf.endswith(f".{DEFAULT_FORMAT}"):
+            leaf = f"{leaf}.{DEFAULT_FORMAT}"
+        return "/".join([self.uri_base, *path[:-1], leaf])
+
+    def _connection(self) -> Any:
+        if self._con is None:
+            self._con = self.resource.connect()
+        return self._con
+
+    # -- write -------------------------------------------------------------
+
+    def handle_output(self, context: OutputContext, obj: Any) -> None:
+        if obj is None:
+            # Assets that write their own output and return None (or a
+            # MaterializeResult) have nothing for us to store.
+            return
+
+        uri = self._uri_for(context)
+        relation = self._as_relation(obj, uri)
+
+        options: Dict[str, Any] = {"overwrite": True}
+        if self.file_size_bytes:
+            # Any value here makes DuckDB emit a directory of data_N.parquet
+            # parts rather than a single file — which is the shape we want
+            # unconditionally, so that a small asset and a large one look
+            # the same to a reader and a large one can split.
+            options["file_size_bytes"] = self.file_size_bytes
+        if self.compression:
+            options["compression"] = self.compression
+        if self.partition_by:
+            options["partition_by"] = self.partition_by
+
+        context.log.info(f"Writing DuckDB relation to: {uri}")
+        self._ensure_local_parent(uri)
+        try:
+            relation.write_parquet(uri, **options)
+        except Exception as e:
+            raise RuntimeError(self._write_failure_hint(uri, e)) from e
+
+        context.add_output_metadata(self.get_metadata())
+
+    def _as_relation(self, obj: Any, uri: str) -> Any:
+        """Coerce what the asset returned into something DuckDB can write.
+
+        A relation is the intended input and passes straight through — it
+        carries its own connection, already configured for S3 by the
+        resource that made it.
+
+        In-memory frames are accepted too, because a pipeline will mix the
+        two and forcing the author to switch IO managers mid-graph is worse
+        than a cheap conversion. They go through this manager's own
+        connection. Arrow conversion is zero-copy for most dtypes.
+        """
+        if _is_relation(obj):
+            return obj
+
+        con = self._connection()
+
+        try:
+            import polars as pl
+
+            if isinstance(obj, pl.LazyFrame):
+                obj = obj.collect()
+            if isinstance(obj, pl.DataFrame):
+                obj = obj.to_arrow()
+        except ImportError:
+            pass
+
+        try:
+            import pyarrow as pa
+
+            if isinstance(obj, (pa.Table, pa.RecordBatchReader)):
+                return con.from_arrow(obj)
+        except ImportError:
+            pass
+
+        try:
+            import pandas as pd
+
+            if isinstance(obj, pd.DataFrame):
+                return con.from_df(obj)
+        except ImportError:
+            pass
+
+        raise TypeError(
+            f"DuckDBIOManager cannot write {type(obj).__name__} to {uri}. "
+            f"Return a DuckDBPyRelation (e.g. con.sql(...)) for the streaming "
+            f"path, or a polars/pandas DataFrame or pyarrow Table."
+        )
+
+    @staticmethod
+    def _ensure_local_parent(uri: str) -> None:
+        """Create intermediate directories for local targets.
+
+        DuckDB creates the leaf output directory but not its parents, so a
+        key-prefixed asset (``sales/orders``) fails on a local filesystem
+        with "cannot find the path specified". Object stores have no real
+        directories, so this is a no-op there.
+        """
+        if "://" in uri:
+            return
+        import pathlib
+
+        pathlib.Path(uri).parent.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _write_failure_hint(uri: str, error: Exception) -> str:
+        """Turn the two predictable failures into instructions.
+
+        Both present as opaque DuckDB errors that give no hint the cause is
+        how the asset acquired its connection.
+        """
+        detail = str(error)
+        hint = ""
+        if "closed" in detail.lower():
+            hint = (
+                " The relation's connection is already closed. A relation is "
+                "lazy — it executes here, in handle_output, not when the asset "
+                "returns — so the connection must still be open. Use "
+                "DuckDBResource.connect() rather than get_connection(), which "
+                "closes on block exit."
+            )
+        elif uri.startswith("s3://"):
+            hint = (
+                " If this is an authentication or httpfs error, the relation "
+                "was likely built on a bare duckdb.connect() rather than a "
+                "connection from DuckDBResource, so it carries no S3 "
+                "credentials."
+            )
+        return f"DuckDB failed writing to {uri}: {detail}{hint}"
+
+    # -- read --------------------------------------------------------------
+
+    def load_input(self, context: InputContext) -> Any:
+        """Return a lazy relation over the stored parquet.
+
+        Lazy on purpose: a downstream asset can push its filters and
+        projections into DuckDB rather than reading the whole dataset in
+        to discard most of it.
+        """
+        uri = self._uri_for(context.upstream_output or context)
+        context.log.info(f"Reading DuckDB relation from: {uri}")
+        con = self._connection()
+        # A directory of parts is the normal shape, so always glob; DuckDB
+        # accepts the pattern for the single-file case too.
+        return con.read_parquet(f"{uri}/**/*.parquet")
+
+    # -- metadata ----------------------------------------------------------
+
+    def get_metadata(self) -> Dict[str, MetadataValue]:
+        metadata: Dict[str, MetadataValue] = {}
+        if self.uri_base.startswith("s3://"):
+            # The DataHub catalog sensor reads destination_name off the
+            # materialization event to pick a platform; without it the
+            # dataset lands as "unknown".
+            metadata["destination_name"] = MetadataValue.text("s3")
+        return metadata
+
+
+class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
+    """Config surface for :class:`DuckDBIOManager`."""
+
+    duckdb: DuckDBResource
+    uri_base: str
+    file_size_bytes: Optional[str] = Field(
+        default="128MB",
+        description=(
+            "Target size per part file. Setting any value makes DuckDB write a "
+            "directory of data_N.parquet parts instead of one file, which is "
+            "the shape we want unconditionally — it matches the Arrow IO "
+            "manager, and lets a large asset split rather than produce one "
+            "unwieldy object. Set to null for a single file."
+        ),
+    )
+    compression: Optional[str] = Field(
+        default=None, description="Parquet codec (snappy, zstd, gzip). DuckDB's default if unset."
+    )
+    # List, not Sequence: Dagster's config system rejects typing.Sequence.
+    partition_by: Optional[List[str]] = Field(
+        default=None,
+        description="Hive-partition the output by these columns.",
+    )
+
+    def create_io_manager(self, context) -> DuckDBIOManager:
+        return DuckDBIOManager(
+            resource=self.duckdb,
+            uri_base=self.uri_base,
+            file_size_bytes=self.file_size_bytes,
+            compression=self.compression,
+            partition_by=self.partition_by,
+        )
+
+    def physical_coordinates(self, asset_key_path: Sequence[str]) -> Optional[Dict[str, Any]]:
+        """Mesh-publishing protocol — the routing ticket for an asset.
+
+        The domain broker calls this on the object registered in
+        ``Definitions(resources=...)`` to learn how a consumer can reach
+        each asset, then advertises it through the gateway.
+
+        Returns ``None`` — "don't advertise" — unless the output is
+        genuinely readable by the cortex data client. An advertised but
+        unreadable location is worse than an unadvertised asset, because
+        the gateway will confidently route consumers to it.
+
+        The advertised URI is the dataset directory and MUST carry a
+        trailing slash. The client calls ``pl.scan_parquet(physical_uri)``
+        verbatim; against S3 a slash-less path is treated as an object key
+        and the HEAD returns 404, though it works locally either way — a
+        difference only a real object store reveals. Same contract the
+        Arrow manager advertises, so the two stay interchangeable.
+        """
+        if not self.uri_base.startswith("s3://"):
+            # Local disk exists on one pod only.
+            return None
+
+        path = list(asset_key_path or [])
+        if not path:
+            return None
+
+        leaf = path[-1]
+        if not leaf.endswith(f".{DEFAULT_FORMAT}"):
+            leaf = f"{leaf}.{DEFAULT_FORMAT}"
+        if not self.file_size_bytes:
+            # Configured for a single file, so the URI names an object.
+            return self._ticket("/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]))
+        # Directory of part files — trailing slash required, see docstring.
+        return self._ticket("/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]) + "/")
+
+    def _ticket(self, physical_uri: str) -> Dict[str, Any]:
+
+        credentials: Dict[str, Any] = {
+            "aws_access_key_id": self.duckdb.aws_access_key_id,
+            "aws_secret_access_key": self.duckdb.aws_secret_access_key,
+            "aws_region": self.duckdb.aws_region or "us-east-1",
+        }
+        if self.duckdb.endpoint_url:
+            credentials["aws_endpoint_url"] = self.duckdb.endpoint_url
+
+        return {
+            "source_type": "s3_parquet",
+            "physical_uri": physical_uri,
+            "credentials": credentials,
+        }
