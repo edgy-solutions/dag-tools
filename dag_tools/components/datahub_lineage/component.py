@@ -422,6 +422,29 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     materialize_dependencies=dagster_generator.config.materialize_dependencies,
                 )
 
+                # emit_asset attaches the schema to the DAGSTER dataset (the
+                # asset entity) only. But the physical dataset -- the s3 /
+                # postgres / delta-lake entry -- is the one someone browsing
+                # the catalog by platform actually opens, and it was showing
+                # lineage with an empty schema tab. Mirror the columns onto
+                # it so the physical table describes itself.
+                #
+                # Best-effort: the asset is already registered by this point,
+                # so a failure here costs a schema tab, not the emit.
+                if table_schema is not None and asset_downstream_urn is not None:
+                    try:
+                        graph.emit_mcp(
+                            dagster_generator.convert_table_schema_to_schema_metadata(
+                                table_schema=table_schema,
+                                parent_urn=asset_downstream_urn,
+                            )
+                        )
+                    except Exception as e:
+                        sensor_context.log.warning(
+                            "Could not attach schema to %s: %s",
+                            asset_downstream_urn.urn(), e,
+                        )
+
                 # Record the lineage for THIS step so the plugin can merge it
                 # with what it derives from the logs itself.
                 #
