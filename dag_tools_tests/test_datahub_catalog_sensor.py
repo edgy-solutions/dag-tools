@@ -97,6 +97,101 @@ def test_dataset_lineage_is_constructed_with_the_real_signature():
 
 
 # ---------------------------------------------------------------------------
+# Lineage from the asset graph
+# ---------------------------------------------------------------------------
+
+
+def test_graph_upstreams_capture_a_deps_edge():
+    """The common case, and the one that failed silently in cluster.
+
+    `datahub.inputs` only exists on assets that opted in via
+    get_datahub_metadata(). An asset declaring deps=[other] has a real edge
+    in the asset graph but no such metadata, so its lineage came out empty
+    while the asset itself registered fine -- nothing surfaced the gap.
+    Verified against publog, where publog/v_h2_fsg deps on
+    publog/source/h_series and DataHub recorded upstreamLineage: 0."""
+    pytest.importorskip("datahub_dagster_plugin")
+    from dagster import AssetKey, Definitions, asset
+
+    from dag_tools.components.datahub_lineage.component import _graph_upstream_urns
+
+    @asset(key=AssetKey(["publog", "source", "h_series"]))
+    def staging():
+        ...
+
+    @asset(key=AssetKey(["publog", "v_h2_fsg"]), deps=[staging])
+    def table():
+        ...
+
+    defs = Definitions(assets=[staging, table])
+    repo = defs.get_repository_def()
+
+    class Ctx:
+        repository_def = repo
+        log = _NullLog()
+
+    class Gen:
+        """Stands in for DagsterGenerator; the real one is what makes the
+        URN identical to the parent's own emitted URN."""
+
+        @staticmethod
+        def dataset_urn_from_asset(path):
+            from datahub.utilities.urns.dataset_urn import DatasetUrn
+
+            return DatasetUrn(platform="dagster", name=".".join(path), env="PROD")
+
+    urns = _graph_upstream_urns(Ctx(), AssetKey(["publog", "v_h2_fsg"]), Gen())
+    assert urns == [
+        "urn:li:dataset:(urn:li:dataPlatform:dagster,publog.source.h_series,PROD)"
+    ]
+
+
+def test_graph_upstreams_empty_for_a_root_asset():
+    pytest.importorskip("datahub_dagster_plugin")
+    from dagster import AssetKey, Definitions, asset
+
+    from dag_tools.components.datahub_lineage.component import _graph_upstream_urns
+
+    @asset(key=AssetKey(["root"]))
+    def root():
+        ...
+
+    class Ctx:
+        repository_def = Definitions(assets=[root]).get_repository_def()
+        log = _NullLog()
+
+    class Gen:
+        @staticmethod
+        def dataset_urn_from_asset(path):
+            raise AssertionError("no parents, should not be called")
+
+    assert _graph_upstream_urns(Ctx(), AssetKey(["root"]), Gen()) == []
+
+
+def test_graph_upstreams_degrade_rather_than_abort():
+    """Lineage is worth less than the materialization record: if the graph
+    cannot be read the emit must still happen."""
+    from dag_tools.components.datahub_lineage.component import _graph_upstream_urns
+
+    class Broken:
+        log = _NullLog()
+
+        @property
+        def repository_def(self):
+            raise RuntimeError("no repository in scope")
+
+    assert _graph_upstream_urns(Broken(), object(), object()) == []
+
+
+class _NullLog:
+    def warning(self, *a, **k):
+        ...
+
+    def info(self, *a, **k):
+        ...
+
+
+# ---------------------------------------------------------------------------
 # Sensor construction (needs the plugin)
 # ---------------------------------------------------------------------------
 

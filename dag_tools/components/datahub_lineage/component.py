@@ -99,6 +99,49 @@ def _extract_upstream_urns(metadata: Any) -> List[str]:
     return out
 
 
+def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) -> List[str]:
+    """Upstream URNs taken from the Dagster asset graph itself.
+
+    ``datahub.inputs`` metadata only exists on assets that opted in by
+    calling ``get_datahub_metadata()``. An asset declaring
+    ``deps=[other_key]`` -- or taking an upstream as a function argument --
+    has a real edge in the asset graph but publishes no such metadata, so
+    lineage for it was silently empty. That is the common case: it is how
+    Dagster models dependencies, and nothing warns you that the catalog did
+    not record it.
+
+    Reading the graph makes lineage the default rather than an opt-in.
+    ``datahub.inputs`` still works and is merged with this, since it can
+    name upstreams that live outside Dagster entirely.
+
+    URNs are built with the plugin's own ``dataset_urn_from_asset`` so they
+    are byte-identical to the ones ``emit_asset`` creates for those parents
+    -- a hand-rolled URN that differs in case or separator produces a
+    dangling edge to an entity that does not exist.
+
+    Best-effort: lineage is worth less than the materialization record, so
+    any failure here degrades to "no graph lineage" rather than aborting
+    the emit for the whole run.
+    """
+    try:
+        repository_def = sensor_context.repository_def
+        if repository_def is None:
+            return []
+        asset_graph = repository_def.asset_graph
+        parents = asset_graph.get(asset_key).parent_keys
+    except Exception as e:
+        sensor_context.log.warning(f"Could not read asset graph for lineage: {e}")
+        return []
+
+    urns: List[str] = []
+    for parent in parents or []:
+        try:
+            urns.append(generator.dataset_urn_from_asset(parent.path).urn())
+        except Exception:
+            continue
+    return urns
+
+
 def _to_dataset_urns(urn_strings: Sequence[str]) -> set:
     """Convert URN strings to ``DatasetUrn`` objects, skipping malformed ones.
 
@@ -265,6 +308,17 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                 # TextMetadataValue and appended the raw ``.value`` — which for
                 # the list case would have nested a list inside the list.
                 upstreams_uris = _extract_upstream_urns(mat.metadata)
+
+                # ...plus whatever the asset graph already knows. Assets
+                # normally declare dependencies with deps=[...] or a function
+                # argument, neither of which writes datahub.inputs, so without
+                # this the catalog records the asset but none of its lineage.
+                # Deduplicated because an asset may declare both.
+                for urn in _graph_upstream_urns(
+                    sensor_context, mat.asset_key, dagster_generator
+                ):
+                    if urn not in upstreams_uris:
+                        upstreams_uris.append(urn)
 
                 sensor_context.log.info(f"Emitting asset {asset_key_path} to DataHub graph.")
                 dagster_generator.emit_asset(
