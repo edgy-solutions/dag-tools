@@ -306,9 +306,13 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
         asset, because the gateway will confidently route consumers to it.
 
         The advertised URI is the dataset *directory* pyarrow writes
-        (``<uri_base>/<asset_key>.parquet/`` containing part files) —
-        verified readable by ``pl.scan_parquet`` as-is, which is what the
-        client calls.
+        (``<uri_base>/<asset_key>.parquet/`` containing part files), and it
+        MUST carry the trailing slash. The client calls
+        ``pl.scan_parquet(physical_uri)`` verbatim; on a local filesystem
+        polars will glob a bare directory path either way, but against S3 it
+        treats a slash-less path as an object key and the HEAD returns 404.
+        That difference is invisible in a local test and only shows up
+        against a real object store.
         """
         # Only S3-backed configs describe a location another pod can read.
         if not isinstance(self.fs, (S3FSConfig, FsspecS3FSConfig)):
@@ -328,7 +332,10 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
             return None
 
         leaf = path[-1] if suffix else f"{path[-1]}.{default_format}"
-        physical_uri = "/".join([self.uri_base.rstrip("/"), *path[:-1], leaf])
+        # Trailing slash: marks this as a directory of part files so the
+        # consumer's scan_parquet lists it instead of HEAD-ing a key that
+        # does not exist.
+        physical_uri = "/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]) + "/"
 
         common = self.fs.common
         credentials: Dict[str, Any] = {

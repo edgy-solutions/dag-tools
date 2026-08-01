@@ -120,7 +120,16 @@ def test_advertised_uri_matches_actual_write_path(tmp_path):
     actual_rel = part.parent.relative_to(tmp_path).as_posix()
 
     ticket = _s3_iom().physical_coordinates(["mesh_demo_customers"])
-    assert ticket["physical_uri"] == f"s3://dag-lake/mesh_demo/{actual_rel}"
+    assert ticket["physical_uri"] == f"s3://dag-lake/mesh_demo/{actual_rel}/"
+
+
+def test_advertised_uri_marks_the_directory_with_a_trailing_slash():
+    """The client calls pl.scan_parquet(physical_uri) verbatim. Against S3
+    a slash-less path is read as an object key and HEADs to a 404, even
+    though polars globs the same path fine on a local disk — so a local
+    test passes while every real mesh read fails. Verified against MinIO."""
+    for key in (["mesh_demo_customers"], ["sales", "orders"]):
+        assert _s3_iom().physical_coordinates(key)["physical_uri"].endswith(".parquet/")
 
 
 def test_advertised_ticket_shape_is_client_readable():
@@ -135,7 +144,7 @@ def test_advertised_ticket_shape_is_client_readable():
 
 def test_advertises_nested_asset_key():
     ticket = _s3_iom().physical_coordinates(["sales", "orders"])
-    assert ticket["physical_uri"] == "s3://dag-lake/mesh_demo/sales/orders.parquet"
+    assert ticket["physical_uri"] == "s3://dag-lake/mesh_demo/sales/orders.parquet/"
 
 
 # ---------------------------------------------------------------------------
