@@ -57,6 +57,11 @@ from dag_tools.resources.duckdb import DuckDBResource, duckdb_path
 
 DEFAULT_FORMAT = "parquet"
 
+# What this manager produces, in the vocabulary the cortex data client
+# dispatches on. Used for BOTH the mesh routing ticket and the
+# ``destination_name`` the catalog sensor reads, so the two cannot drift.
+_SOURCE_TYPE = "s3_parquet"
+
 
 def _is_relation(obj: Any) -> bool:
     """Duck-typed so importing duckdb stays off the module load path.
@@ -312,10 +317,11 @@ class DuckDBIOManager(IOManager):
     def get_metadata(self) -> Dict[str, MetadataValue]:
         metadata: Dict[str, MetadataValue] = {}
         if self.uri_base.startswith("s3://"):
-            # The DataHub catalog sensor reads destination_name off the
-            # materialization event to pick a platform; without it the
-            # dataset lands as "unknown".
-            metadata["destination_name"] = MetadataValue.text("s3")
+            # Declare what was written in this manager's own vocabulary --
+            # the same source_type the mesh ticket carries. The catalog
+            # sensor translates it into DataHub's naming; an IO manager has
+            # no business knowing what DataHub calls things.
+            metadata["destination_name"] = MetadataValue.text(_SOURCE_TYPE)
         return metadata
 
 
@@ -394,7 +400,7 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
             credentials["aws_endpoint_url"] = self.duckdb.endpoint_url
 
         return {
-            "source_type": "s3_parquet",
+            "source_type": _SOURCE_TYPE,
             "physical_uri": physical_uri,
             "credentials": credentials,
         }

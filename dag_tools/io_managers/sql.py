@@ -258,36 +258,47 @@ class SQLIOManager(IOManager):
             else:
                 path = context.asset_key.path
             self.handle_an_output(context, obj, path)
-            self._emit_column_schema(context, obj)
+            self._emit_output_metadata(context, obj)
             return
         if isinstance(obj, Mapping):
             for p, o in obj.items():
                 self.handle_an_output(context, o, p)
-            self._emit_column_schema(context, obj)
+            self._emit_output_metadata(context, obj)
             return
         raise ValueError(f"Unsupported object type {type(obj)} for SQLIOManager.")
 
-    @staticmethod
-    def _emit_column_schema(context: OutputContext, obj: Any) -> None:
-        """Publish the written table's columns as output metadata.
+    def _emit_output_metadata(self, context: OutputContext, obj: Any) -> None:
+        """Publish the written table's platform and columns.
 
         This manager advertises its tables to the mesh through
         ``physical_coordinates``, so a consumer that finds one in the
-        DataHub catalog should be able to see its shape — the catalog
-        sensor turns this metadata into a schemaMetadata aspect.
+        DataHub catalog should be able to see what it is and what shape it
+        has. ``destination_name`` names the platform in THIS manager's
+        vocabulary — the same source_type the mesh ticket carries — and
+        the catalog sensor translates it into DataHub's naming. Without
+        it, SQL assets registered under the ``unknown`` platform.
 
         Emitted once per output, after the writes: metadata can only be
         set once per output, so the multi-table case describes the first
         DataFrame rather than calling this per table.
         """
         metadata: Dict[str, Any] = {}
+
+        source_type = _DIALECT_TO_SOURCE_TYPE.get(self._config.protocol)
+        if source_type:
+            # Only for dialects the mesh can actually route; claiming a
+            # platform for one that has no client read path would put an
+            # unreachable dataset in the catalog.
+            metadata["destination_name"] = source_type
+
         add_column_schema(metadata, obj)
-        if metadata:
-            try:
-                context.add_output_metadata(metadata)
-            except Exception:
-                # Never fail a write whose data already landed.
-                pass
+        if not metadata:
+            return
+        try:
+            context.add_output_metadata(metadata)
+        except Exception:
+            # Never fail a write whose data already landed.
+            pass
 
     def load_input(self, context: InputContext) -> pd.DataFrame:
         """Load a SQL table as a pandas DataFrame using connectorx.

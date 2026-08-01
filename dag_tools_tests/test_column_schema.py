@@ -197,12 +197,21 @@ def test_delta_io_manager_publishes_schema(tmp_path):
     assert [c.name for c in md[COLUMN_SCHEMA_KEY].schema.columns] == ["id", "region"]
 
 
-def test_sql_io_manager_publishes_schema(tmp_path):
+def _sql_manager(protocol="postgres"):
+    from dag_tools.io_managers.sql import SQLConfig, SQLIOManager
+
+    return SQLIOManager(
+        SQLConfig(
+            protocol=protocol, host="h", port=5432,
+            database="db", username="u", password="p",
+        )
+    )
+
+
+def test_sql_io_manager_publishes_schema():
     """SQLIOManager writes to a live database, so the metadata call is
     exercised directly against a captured context."""
     pd = pytest.importorskip("pandas")
-
-    from dag_tools.io_managers.sql import SQLIOManager
 
     captured = {}
 
@@ -210,7 +219,9 @@ def test_sql_io_manager_publishes_schema(tmp_path):
         def add_output_metadata(self, md):
             captured.update(md)
 
-    SQLIOManager._emit_column_schema(Ctx(), pd.DataFrame({"id": [1], "region": ["a"]}))
+    _sql_manager()._emit_output_metadata(
+        Ctx(), pd.DataFrame({"id": [1], "region": ["a"]})
+    )
     assert COLUMN_SCHEMA_KEY in captured
     assert [c.name for c in captured[COLUMN_SCHEMA_KEY].schema.columns] == [
         "id",
@@ -224,10 +235,8 @@ def test_sql_metadata_failure_never_fails_the_write():
     failed materialization."""
     pd = pytest.importorskip("pandas")
 
-    from dag_tools.io_managers.sql import SQLIOManager
-
     class Hostile:
         def add_output_metadata(self, md):
             raise RuntimeError("metadata already set")
 
-    SQLIOManager._emit_column_schema(Hostile(), pd.DataFrame({"id": [1]}))
+    _sql_manager()._emit_output_metadata(Hostile(), pd.DataFrame({"id": [1]}))

@@ -15,6 +15,11 @@ from dagster import (
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model, Resolver
+from dag_tools.components.datahub_lineage.platforms import (
+    FILESYSTEM_PLATFORMS,
+    UNKNOWN_PLATFORM,
+    resolve_platform,
+)
 from dag_tools.utils.translation_registry import AssetNormalizationRegistry
 
 # External imports required for Datahub Integration
@@ -229,13 +234,30 @@ class DatahubLineageComponent(Component, Resolvable, Model):
 
     filesystem_platforms: Annotated[
         List[str],
-        Resolver.default(description="List of platform prefixes that represent file systems.")
-    ] = field(default_factory=lambda: ["s3", "abs", "filesystem"])
+        Resolver.default(description=(
+            "Platforms whose dataset names are laid out as a path rather than "
+            "a dotted identifier. Must stay in step with the platform mapping: "
+            "the name format is chosen by platform, so a mapped-to name that is "
+            "missing here silently changes the dataset's NAME, and a different "
+            "name is a different entity."
+        ))
+    ] = field(default_factory=lambda: list(FILESYSTEM_PLATFORMS))
 
     log_platform_mappings: Annotated[
         Dict[str, str],
         Resolver.default(description="Mapping of log metadata keys to DataHub platform names.")
     ] = field(default_factory=lambda: {"Databricks Job Run ID": "databricks"})
+
+    platform_mappings: Annotated[
+        Dict[str, str],
+        Resolver.default(description=(
+            "Overrides for translating a producer's declared platform into "
+            "DataHub's name for it, e.g. {'s3_delta': 'delta-lake'}. Checked "
+            "before the built-in tables, so a new backend or a renamed "
+            "DataHub platform can be handled from config rather than a "
+            "release. See dag_tools.components.datahub_lineage.platforms."
+        ))
+    ] = field(default_factory=dict)
 
     default_status: Annotated[
         str,
@@ -316,15 +338,29 @@ class DatahubLineageComponent(Component, Resolvable, Model):
 
                 # 2. Fall back to generic rule-based conversion
                 if not asset_downstream_urn:
-                    platform = 'unknown'
+                    # The producer names its own platform. It is the only
+                    # party that knows what it actually wrote -- inferring
+                    # it from asset-key prefixes meant every key had to be
+                    # spelled a way the inference recognised, against a
+                    # hardcoded list that lived nowhere near the backend.
+                    declared = None
                     if 'destination_name' in mat.metadata:
-                        platform = str(mat.metadata['destination_name'].value)
+                        declared = str(mat.metadata['destination_name'].value)
                     else:
                         for log_key, mapped_platform in self.log_platform_mappings.items():
                             if log_key in mat.metadata:
-                                platform = mapped_platform
+                                declared = mapped_platform
                                 break
-                        
+
+                    # ...but it names it in ITS vocabulary, not DataHub's:
+                    # a Delta table on S3 is "s3_delta" to the IO manager
+                    # and "delta-lake" to DataHub. See platforms.py.
+                    platform = resolve_platform(declared, self.platform_mappings)
+                    if declared and platform == UNKNOWN_PLATFORM:
+                        sensor_context.log.warning(
+                            "Asset %s declared platform %r, which resolved to "
+                            "'unknown'.", asset_key_path, declared,
+                        )
                     asset_downstream_urn = _bound_converter(asset_key_path, platform)
                     sensor_context.log.info(f"Resolved URN from asset key: {asset_downstream_urn}")
 

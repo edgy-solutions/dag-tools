@@ -716,6 +716,17 @@ class DeltaIOManager(UPathIOManager):
         metadata: Dict[str, MetadataValue] = {
             "uri": MetadataValue.path(str(self._uri_for_path(path)))
         }
+        # Declare the platform in this manager's own vocabulary -- the same
+        # source_type the mesh ticket carries. The catalog sensor
+        # translates it (``s3_delta`` becomes DataHub's ``delta-lake``,
+        # NOT ``s3``: DataHub classifies the table format, not the bucket).
+        # Without this, Delta assets registered under the ``unknown``
+        # platform.
+        #
+        # Not claimed for a local write -- there is no platform there worth
+        # advertising, and the ticket is None for the same reason.
+        if not isinstance(self._config, LocalFSConfig):
+            metadata["destination_name"] = MetadataValue.text(_DELTA_SOURCE_TYPE)
         add_column_schema(metadata, obj)
         return metadata
 

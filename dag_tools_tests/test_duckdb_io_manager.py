@@ -382,8 +382,14 @@ def test_layout_matches_arrow_io_manager():
 
 
 def test_s3_output_declares_platform_for_the_catalog():
+    """The manager names the platform in ITS vocabulary -- the same
+    source_type the mesh ticket carries -- and the catalog sensor
+    translates it to DataHub's name. An IO manager should not have to
+    know what DataHub calls things."""
     iom = DuckDBIOManager(DuckDBResource(), "s3://dag-lake/pub")
-    assert iom.get_metadata()["destination_name"].text == "s3"
+    declared = iom.get_metadata()["destination_name"].text
+    ticket = _s3_iom().physical_coordinates(["x"])
+    assert declared == ticket["source_type"] == "s3_parquet"
 
 
 def test_local_output_declares_no_platform():

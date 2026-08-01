@@ -26,6 +26,11 @@ from dag_tools.io_managers.column_schema import add_column_schema
 formats = ['parquet', 'csv']
 default_format = formats[0]
 
+# What this manager produces, in the vocabulary the cortex data client
+# dispatches on. Used for BOTH the mesh routing ticket and the
+# ``destination_name`` the catalog sensor reads, so the two cannot drift.
+_SOURCE_TYPE = "s3_parquet"
+
 
 class S3FSCommonConfig(Config):
     access_key_id: str
@@ -245,13 +250,17 @@ class ArrowIOManager(UPathIOManager):
         }
         # Columns of what was written — see dag_tools.io_managers.column_schema.
         add_column_schema(metadata, obj)
-        # The DataHub catalog sensor reads ``destination_name`` off the
-        # materialization event to decide which platform the dataset
-        # belongs to. Declaring it here means S3-backed assets land in the
-        # catalog as ``dataPlatform:s3`` instead of falling through to
-        # ``unknown``. Only claimed when the output really is on S3.
+        # Declare what this manager wrote, in its own vocabulary: the same
+        # source_type it advertises to the mesh, so the catalog and the
+        # routing ticket can never disagree about what an asset is. The
+        # catalog sensor translates it into DataHub's naming (see
+        # dag_tools.components.datahub_lineage.platforms) -- an IO manager
+        # has no business knowing what DataHub calls things.
+        #
+        # Only claimed when the output really is on S3; a local write has
+        # no platform worth advertising.
         if self.uri_base.startswith("s3://"):
-            metadata["destination_name"] = MetadataValue.text("s3")
+            metadata["destination_name"] = MetadataValue.text(_SOURCE_TYPE)
         return metadata
 
     def get_op_output_relative_path(self, context: Union[InputContext, OutputContext]) -> UPath:
@@ -351,7 +360,7 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
             credentials["aws_endpoint_url"] = common.end_point
 
         return {
-            "source_type": "s3_parquet",
+            "source_type": _SOURCE_TYPE,
             "physical_uri": physical_uri,
             "credentials": credentials,
         }
