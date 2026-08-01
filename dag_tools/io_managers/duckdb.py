@@ -52,7 +52,7 @@ from dagster import (
 )
 from pydantic import Field
 
-from dag_tools.resources.duckdb import DuckDBResource
+from dag_tools.resources.duckdb import DuckDBResource, duckdb_path
 
 DEFAULT_FORMAT = "parquet"
 
@@ -141,7 +141,10 @@ class DuckDBIOManager(IOManager):
             # MaterializeResult) have nothing for us to store.
             return
 
-        uri = self._uri_for(context)
+        # DuckDB addresses local files by plain path but object stores by
+        # URL, so a file:// uri_base (the usual local/dev configuration) has
+        # to be converted; s3:// passes through untouched.
+        uri = duckdb_path(self._uri_for(context))
         relation = self._as_relation(obj, uri)
 
         options: Dict[str, Any] = {"overwrite": True}
@@ -247,6 +250,10 @@ class DuckDBIOManager(IOManager):
         key-prefixed asset (``sales/orders``) fails on a local filesystem
         with "cannot find the path specified". Object stores have no real
         directories, so this is a no-op there.
+
+        Expects the DuckDB-form path: a ``file://`` URI still names a local
+        directory that has to exist, so testing for ``://`` before the
+        conversion would skip exactly the case that needs this.
         """
         if "://" in uri:
             return
@@ -289,7 +296,7 @@ class DuckDBIOManager(IOManager):
         projections into DuckDB rather than reading the whole dataset in
         to discard most of it.
         """
-        uri = self._uri_for(context.upstream_output or context)
+        uri = duckdb_path(self._uri_for(context.upstream_output or context))
         context.log.info(f"Reading DuckDB relation from: {uri}")
         con = self._connection()
         # A directory of parts is the normal shape, so always glob; DuckDB

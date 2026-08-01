@@ -221,6 +221,25 @@ def test_downstream_reads_upstream_output(tmp_path):
     assert result.output_for_node("down") == 20
 
 
+def test_file_scheme_uri_base(tmp_path):
+    """A file:// uri_base is the normal local/dev configuration. DuckDB
+    addresses local files by plain path, so the URI has to be converted --
+    and the parent-directory guard has to run for it too, which it did not
+    when it tested for '://' before the conversion."""
+    iom = ConfigurableDuckDBIOManager(
+        duckdb=DuckDBResource(), uri_base=(tmp_path / "lake").as_uri()
+    )
+
+    @asset(name="orders", key_prefix=["publog"], io_manager_key="iom")
+    def orders(duck: DuckDBResource):
+        return duck.connect().sql("SELECT 1 AS id")
+
+    assert materialize(
+        [orders], resources={"iom": iom, "duck": DuckDBResource()}
+    ).success
+    assert (tmp_path / "lake" / "publog" / "orders.parquet").is_dir()
+
+
 def test_nested_asset_key_path(tmp_path):
     @asset(name="orders", key_prefix=["sales"], io_manager_key="iom")
     def orders(duck: DuckDBResource):
