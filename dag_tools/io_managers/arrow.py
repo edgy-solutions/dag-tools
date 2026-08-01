@@ -20,6 +20,8 @@ from dagster import (
     UPathIOManager,
 )
 
+from dag_tools.io_managers.column_schema import add_column_schema
+
 
 formats = ['parquet', 'csv']
 default_format = formats[0]
@@ -236,69 +238,13 @@ class ArrowIOManager(UPathIOManager):
     def make_directory(self, path: UPath) -> None:
         return None
 
-    @staticmethod
-    def _column_schema(obj: Any) -> Optional[MetadataValue]:
-        """Column names and types of the object being written.
-
-        Travels on the materialization as ``dagster/column_schema``: the
-        Dagster UI renders it, and the DataHub catalog sensor turns it into
-        a schemaMetadata aspect. Column-level schema used to reach the
-        catalog through ``CortexPolarsIOManager``'s direct emit; that was
-        removed and nothing replaced it, so datasets registered with
-        lineage but no columns.
-
-        Reads the declared schema only -- never materializes. That matters
-        for a ``RecordBatchReader``, which is a one-shot stream: consuming
-        it here would drain it before the write.
-
-        Best-effort; a missing schema must not fail a write.
-        """
-        from dagster import TableColumn, TableSchema
-
-        try:
-            if isinstance(obj, dict):
-                # dump_to_path writes each value separately; the metadata
-                # slot is singular, so describe the first.
-                obj = next(iter(obj.values()), None)
-
-            columns = None
-            try:
-                import polars as pl
-
-                if isinstance(obj, pl.LazyFrame):
-                    s = obj.collect_schema()
-                    columns = list(zip(s.names(), (str(t) for t in s.dtypes())))
-                elif isinstance(obj, pl.DataFrame):
-                    columns = [(n, str(t)) for n, t in zip(obj.columns, obj.dtypes)]
-            except ImportError:
-                pass
-
-            if columns is None and isinstance(obj, pd.DataFrame):
-                columns = [(str(n), str(t)) for n, t in obj.dtypes.items()]
-
-            if columns is None:
-                schema = getattr(obj, "schema", None)
-                if schema is not None and hasattr(schema, "names"):
-                    columns = [
-                        (n, str(schema.field(n).type)) for n in schema.names
-                    ]
-
-            if not columns:
-                return None
-            return MetadataValue.table_schema(
-                TableSchema(columns=[TableColumn(name=n, type=t) for n, t in columns])
-            )
-        except Exception:
-            return None
-
     def get_metadata(self, context: OutputContext, obj: Any) -> Dict[str, MetadataValue]:
         path = self._get_path(context)
         metadata: Dict[str, MetadataValue] = {
             "uri": MetadataValue.path(self._uri_for_path(path))
         }
-        schema = self._column_schema(obj)
-        if schema is not None:
-            metadata["dagster/column_schema"] = schema
+        # Columns of what was written — see dag_tools.io_managers.column_schema.
+        add_column_schema(metadata, obj)
         # The DataHub catalog sensor reads ``destination_name`` off the
         # materialization event to decide which platform the dataset
         # belongs to. Declaring it here means S3-backed assets land in the

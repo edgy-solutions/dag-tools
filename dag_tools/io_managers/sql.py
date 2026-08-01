@@ -59,6 +59,7 @@ from dagster import (
 )
 from pydantic import Field
 
+from dag_tools.io_managers.column_schema import add_column_schema
 from dag_tools.utils.helper import ConfigureFromDict
 
 logger = logging.getLogger(__name__)
@@ -257,12 +258,36 @@ class SQLIOManager(IOManager):
             else:
                 path = context.asset_key.path
             self.handle_an_output(context, obj, path)
+            self._emit_column_schema(context, obj)
             return
         if isinstance(obj, Mapping):
             for p, o in obj.items():
                 self.handle_an_output(context, o, p)
+            self._emit_column_schema(context, obj)
             return
         raise ValueError(f"Unsupported object type {type(obj)} for SQLIOManager.")
+
+    @staticmethod
+    def _emit_column_schema(context: OutputContext, obj: Any) -> None:
+        """Publish the written table's columns as output metadata.
+
+        This manager advertises its tables to the mesh through
+        ``physical_coordinates``, so a consumer that finds one in the
+        DataHub catalog should be able to see its shape — the catalog
+        sensor turns this metadata into a schemaMetadata aspect.
+
+        Emitted once per output, after the writes: metadata can only be
+        set once per output, so the multi-table case describes the first
+        DataFrame rather than calling this per table.
+        """
+        metadata: Dict[str, Any] = {}
+        add_column_schema(metadata, obj)
+        if metadata:
+            try:
+                context.add_output_metadata(metadata)
+            except Exception:
+                # Never fail a write whose data already landed.
+                pass
 
     def load_input(self, context: InputContext) -> pd.DataFrame:
         """Load a SQL table as a pandas DataFrame using connectorx.

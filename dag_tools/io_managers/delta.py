@@ -88,6 +88,7 @@ from pyarrow.fs import FSSpecHandler, PyFileSystem
 from pydantic import Field
 from upath import UPath
 
+from dag_tools.io_managers.column_schema import add_column_schema
 from dag_tools.utils.helper import ConfigureFromDict
 
 
@@ -633,13 +634,21 @@ class DeltaIOManager(UPathIOManager):
     def get_metadata(
         self, context: OutputContext, obj: Any
     ) -> Dict[str, MetadataValue]:
-        """Attach the Delta table URI as Dagster output metadata.
+        """Attach the Delta table URI and column schema as output metadata.
 
-        Surfaced in Dagit alongside the materialization event so users
-        can copy the physical location of the table they just produced.
+        The URI is surfaced in Dagit alongside the materialization event so
+        users can copy the physical location of the table they just
+        produced. The columns feed the DataHub catalog sensor, which turns
+        them into a schemaMetadata aspect — this manager advertises its
+        tables to the mesh via ``physical_coordinates``, so a consumer
+        finding one in the catalog should be able to see its shape.
         """
         path = self._get_path(context)
-        return {"uri": MetadataValue.path(self._uri_for_path(path))}
+        metadata: Dict[str, MetadataValue] = {
+            "uri": MetadataValue.path(self._uri_for_path(path))
+        }
+        add_column_schema(metadata, obj)
+        return metadata
 
     def get_op_output_relative_path(
         self, context: Union[InputContext, OutputContext]
