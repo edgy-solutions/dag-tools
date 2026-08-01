@@ -280,6 +280,18 @@ def _drive_state(
     """Inner loop: walk the reps, launch / reconcile / collect."""
     rep_lookup = _build_rep_lookup(matrix)
 
+    # Fetched ONCE per side, not per representative: it is a whole-
+    # deployment snapshot and asking again per launch would add a round
+    # trip for every rep while telling us nothing new. Empty dict on
+    # failure — plan_asset_selection degrades to the plain single-key
+    # selection rather than blocking the run.
+    launch_info = client.get_asset_launch_info()
+    if not launch_info:
+        logger.warning(
+            "no asset launch info from the deployment; partitioned assets "
+            "and multi_asset siblings may fail to launch"
+        )
+
     for rep_state in pending_or_resumable(state):
         if only_class and rep_state.class_hash != only_class:
             continue
@@ -323,6 +335,7 @@ def _drive_state(
                 qual_id=qual_id, side=side, manifest=manifest,
                 location_name=manifest.deployment.location_name,
                 job_name=manifest.deployment.job_name,
+                launch_info=launch_info,
             )
         except DagsterGraphQLError as e:
             rep_state = transition(

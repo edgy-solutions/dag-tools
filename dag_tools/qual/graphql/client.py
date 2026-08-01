@@ -565,6 +565,60 @@ query DagtoolsLocationAssets {
                         out.append([str(p) for p in ak])
         return out
 
+    ASSET_LAUNCH_INFO_QUERY = """
+query DagtoolsAssetLaunchInfo {
+  assetNodes {
+    assetKey { path }
+    isPartitioned
+    partitionKeys
+    opNames
+  }
+}
+""".strip()
+
+    def get_asset_launch_info(self) -> Dict[str, Dict[str, Any]]:
+        """Per-asset facts needed to launch it correctly, keyed by
+        ``"/".join(asset_key)``.
+
+        The DEPLOYMENT is the authority here, not the survey. Two launch
+        failures depend on facts the survey does not carry through to a
+        Representative:
+
+          * a partitioned asset launched with no partition selected dies
+            with ``Cannot access partition_key for a non-partitioned
+            run`` the moment its body touches ``context.partition_key``;
+
+          * one output of a non-subsettable ``multi_asset`` selected on
+            its own is rejected outright with
+            ``DagsterInvalidSubsetError`` — the whole op has to be
+            selected.
+
+        ``opNames`` is what makes the second solvable: assets produced by
+        the same op share an op name, so the siblings of a multi_asset
+        fall straight out of this response.
+
+        Soft-failing: returns ``{}`` if the deployment cannot answer, so
+        callers degrade to the previous single-key behaviour rather than
+        refusing to launch anything.
+        """
+        try:
+            data = self.post(self.ASSET_LAUNCH_INFO_QUERY)
+        except Exception as e:
+            logger.warning("get_asset_launch_info: query failed: %s", e)
+            return {}
+        out: Dict[str, Dict[str, Any]] = {}
+        for node in data.get("assetNodes") or []:
+            ak = (node.get("assetKey") or {}).get("path")
+            if not isinstance(ak, list) or not ak:
+                continue
+            out["/".join(str(p) for p in ak)] = {
+                "asset_key": [str(p) for p in ak],
+                "is_partitioned": bool(node.get("isPartitioned")),
+                "partition_keys": list(node.get("partitionKeys") or []),
+                "op_names": list(node.get("opNames") or []),
+            }
+        return out
+
     def get_event_log(self, run_id: str) -> List[EventLogEntry]:
         """Pull all event-log entries for a run. Soft-failing per entry —
         if Dagster adds a new event subtype, unknown shapes still come

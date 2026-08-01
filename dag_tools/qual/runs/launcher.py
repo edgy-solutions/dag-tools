@@ -58,6 +58,7 @@ def launch_representative(
     location_name: Optional[str] = None,
     job_name: Optional[str] = None,
     run_config: Optional[Dict[str, Any]] = None,
+    launch_info: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
     """Submit the launch mutation for one representative.
 
@@ -75,6 +76,10 @@ def launch_representative(
         :data:`DEFAULT_JOB_NAME`.
       run_config: explicit run config; merged on top of the staging
         overrides resolved from the manifest.
+      launch_info: per-asset facts from
+        :meth:`DagsterGraphQLClient.get_asset_launch_info`, used to expand
+        multi_asset siblings into the selection and to pick a partition.
+        Optional — omitting it reproduces the old single-key behaviour.
 
     Returns the new ``run_id``.
     """
@@ -93,14 +98,86 @@ def launch_representative(
     if manifest.staging_overrides:
         resolved_config.setdefault("__staging_overrides__", manifest.staging_overrides)
 
+    selection, partition_key = plan_asset_selection(
+        list(rep.asset_key), launch_info or {}
+    )
+    if partition_key is not None:
+        # Dagster resolves context.partition_key from the RUN TAG, so this
+        # is what turns an asset job into a partitioned run.
+        tags[PARTITION_NAME_TAG] = partition_key
+
     return client.launch_asset_run(
         location_name=location_name or "default",
         repository_name=DEFAULT_REPOSITORY_NAME,
         job_name=job_name or DEFAULT_JOB_NAME,
-        asset_selection=[list(rep.asset_key)],
+        asset_selection=selection,
         run_config=resolved_config,
         tags=tags,
     )
+
+
+PARTITION_NAME_TAG = "dagster/partition"
+"""Dagster reads the run's partition from this tag. Hardcoded rather than
+imported from ``dagster`` because the qualification CLI is installed
+WITHOUT dagster -- it drives a deployment over GraphQL, and its extras
+deliberately pin no dagster version so it can run against the one being
+qualified."""
+
+
+def plan_asset_selection(
+    asset_key: List[str],
+    launch_info: Dict[str, Dict[str, Any]],
+) -> tuple[List[List[str]], Optional[str]]:
+    """Work out what to select, and which partition, for one asset.
+
+    Returns ``(asset_selection, partition_key)``.
+
+    Two corrections, both discovered by launching a real code location
+    rather than a hand-made one:
+
+    * **multi_asset siblings.** A non-subsettable ``multi_asset`` refuses
+      a partial selection outright::
+
+          DagsterInvalidSubsetError: ... contains asset keys
+          [order_lines, orders] ... but attempted to select only
+          [order_lines]. This AssetsDefinition does not support subsetting.
+
+      Assets produced by one op share an ``opNames`` entry, so the
+      siblings are recoverable from the deployment and get selected
+      together.
+
+    * **partitioned assets.** Launched with no partition, the run is not
+      a partitioned run, and the asset dies as soon as it reads
+      ``context.partition_key``. The LAST partition is chosen: for a
+      time-based definition that is the most recent period, which is the
+      one whose data is most likely to exist and the closest analogue to
+      what production would just have run.
+
+    Degrades to ``([asset_key], None)`` when the deployment told us
+    nothing, which is exactly the old behaviour.
+    """
+    key_str = "/".join(asset_key)
+    info = launch_info.get(key_str)
+    if not info:
+        return [list(asset_key)], None
+
+    selection: List[List[str]] = [list(asset_key)]
+    op_names = set(info.get("op_names") or [])
+    if op_names:
+        for other_key, other in launch_info.items():
+            if other_key == key_str:
+                continue
+            if op_names & set(other.get("op_names") or []):
+                selection.append(list(other["asset_key"]))
+
+    partition_key: Optional[str] = None
+    if info.get("is_partitioned"):
+        keys = info.get("partition_keys") or []
+        partition_key = str(keys[-1]) if keys else None
+
+    # Deterministic order so a re-run produces an identical selection.
+    selection.sort()
+    return selection, partition_key
 
 
 def _class_hash_from_rep(rep: Representative) -> str:

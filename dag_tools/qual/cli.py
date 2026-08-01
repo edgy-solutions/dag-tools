@@ -41,6 +41,37 @@ class OutputFormat(str, Enum):
     TABLE = "table"
 
 
+def _make_stdio_unicode_safe() -> None:
+    """Stop the CLI dying on its own output.
+
+    Windows consoles default to cp1252, which cannot encode the box-drawing
+    and em-dash characters this CLI prints. ``typer.echo`` then raises
+    UnicodeEncodeError *from inside the reporting code* -- and the first
+    place that bit was the branch that prints a representative's error, so
+    the tool crashed precisely when it had something important to say and
+    buried the real failure under an encoding traceback.
+
+    Reconfiguring with ``errors="replace"`` is deliberate: a console that
+    cannot render a glyph should show a placeholder, never abort the run.
+    Applied here rather than per-string so new output cannot reintroduce
+    it. Python >= 3.7 for ``reconfigure``; guarded because stdout may be
+    replaced by something without it (pytest capture, some CI shims).
+    """
+    for stream in ("stdout", "stderr"):
+        s = getattr(sys, stream, None)
+        reconfigure = getattr(s, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Not fatal: worst case we are back to the previous behaviour.
+            pass
+
+
+_make_stdio_unicode_safe()
+
+
 # --- top-level app ----------------------------------------------------------
 
 app = typer.Typer(
