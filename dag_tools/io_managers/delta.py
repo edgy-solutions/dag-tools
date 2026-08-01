@@ -241,6 +241,36 @@ def _s3_credentials_for_ticket(config) -> Dict[str, str]:
     }
 
 
+def _delta_ticket(
+    config, uri_base: str, asset_key_path: Sequence[str]
+) -> Optional[Dict[str, Any]]:
+    """The mesh routing ticket for one asset.
+
+    Module-level so the IO manager and its Configurable factory return
+    exactly the same thing. Both have to expose ``physical_coordinates``
+    — the broker reads whichever object sits in
+    ``Definitions(resources=...)``, which is the factory — and computing
+    the ticket in two places is how an advertised location drifts from
+    the real one.
+    """
+    if isinstance(config, LocalFSConfig):
+        # Local disk exists on one pod; the broker is a different pod.
+        return None
+    path = "/".join(asset_key_path)
+    # No ``storage/`` segment. That prefix comes from
+    # get_op_output_relative_path, which UPathIOManager uses for OP
+    # outputs; assets go through get_asset_relative_path and land at
+    # <uri_base>/<asset key>. The broker advertises assets, so the old
+    # ``/storage/`` ticket pointed at a prefix that holds nothing --
+    # consumers got "No files in log segment" from a route the gateway
+    # served with full confidence.
+    return {
+        "source_type": _DELTA_SOURCE_TYPE,
+        "physical_uri": f"{uri_base.rstrip('/')}/{path}",
+        "credentials": _s3_credentials_for_ticket(config),
+    }
+
+
 class DeltaIOManager(UPathIOManager):
     """Dagster ``UPathIOManager`` that materializes assets as Delta tables.
 
@@ -273,8 +303,19 @@ class DeltaIOManager(UPathIOManager):
         # through (the transaction log still routes via deltalake-rs).
         self._s3fs_patch: Optional[Any] = None
 
-        if isinstance(config, (S3FSConfig, PolarsS3FSConfig)):
+        # Every S3-backed backend needs storage_options, not just the ones
+        # that read through deltalake-rs. Writes used to hand credentials
+        # to write_deltalake as a PyArrow ``filesystem``; deltalake 1.x
+        # removed that argument, so storage_options is now the only way
+        # credentials reach a write. The PyArrow filesystems below are
+        # still built — reads and the cache layer continue to use them.
+        if isinstance(
+            config,
+            (S3FSConfig, PolarsS3FSConfig, FsspecS3FSConfig, ArrowS3FSConfig),
+        ):
             self._storage_options = _s3_storage_options(config)
+
+        if isinstance(config, (S3FSConfig, PolarsS3FSConfig)):
             if config.cache_storage:
                 self._s3fs_patch = self._init_s3fs(config)
         elif isinstance(config, FsspecS3FSConfig):
@@ -425,53 +466,67 @@ class DeltaIOManager(UPathIOManager):
 
     @staticmethod
     def _dump_via_deltalake(
-        context: OutputContext, path, item, storage_options, filesystem
+        context: OutputContext, path, item, storage_options
     ) -> None:
         """Write path via ``deltalake.writer.write_deltalake``.
 
         Accepts pandas DataFrames, PyArrow Tables / RecordBatches /
         RecordBatchReaders directly, plus Polars DataFrames (converted
-        to Arrow first), plus PyArrow Datasets (written as batches with
-        the dataset's schema preserved). Other types fail loudly rather
-        than silently dropping data.
+        to Arrow first), plus PyArrow Datasets. Other types fail loudly
+        rather than silently dropping data.
 
-        ``mode='overwrite'`` plus ``overwrite_schema=True`` makes the
+        ``mode='overwrite'`` plus ``schema_mode='overwrite'`` makes the
         writer accept schema evolution between materializations — the
         old table version is preserved in the transaction log, so
         previous snapshots remain accessible via time travel.
+
+        Credentials travel in ``storage_options``, never as a PyArrow
+        filesystem: ``write_deltalake`` took a ``filesystem`` argument
+        until deltalake 1.x removed it (along with ``schema``, and
+        ``overwrite_schema`` in favour of ``schema_mode``). Reads still
+        accept ``filesystem`` — ``to_pandas`` / ``to_pyarrow_*`` all
+        keep it — so the PyArrow-filesystem backends remain useful for
+        reading and caching, and only the write side changed.
         """
+        if isinstance(item, pl.LazyFrame):
+            item = item.collect()
         if isinstance(item, pl.DataFrame):
             item = item.to_arrow()
-        if isinstance(
+        if isinstance(item, ds.Dataset):
+            # A Dataset is lazy. Handing over a RecordBatchReader keeps it
+            # that way -- the writer pulls batches as it goes -- and the
+            # reader carries the schema, which is what the removed
+            # ``schema=`` argument used to supply.
+            item = item.scanner().to_reader()
+
+        if not isinstance(
             item, (pd.DataFrame, pa.Table, pa.RecordBatch, pa.RecordBatchReader)
         ):
-            context.log.info(f"Row count: {len(item)}")
-            write_deltalake(
-                path,
-                item,
-                storage_options=storage_options,
-                mode="overwrite",
-                overwrite_schema=True,
-                filesystem=filesystem,
-            )
-        elif isinstance(item, ds.Dataset):
-            write_deltalake(
-                path,
-                item.to_batches(),
-                storage_options=storage_options,
-                mode="overwrite",
-                schema=item.schema,
-                overwrite_schema=True,
-                filesystem=filesystem,
-            )
-        else:
             raise ValueError(
                 f"Unsupported object type {type(item)} for DeltaIOManager."
             )
 
+        # A RecordBatchReader is a one-shot stream with no length, and
+        # counting it here would drain it before the write.
+        if hasattr(item, "__len__"):
+            context.log.info(f"Row count: {len(item)}")
+
+        # str(), not the UPath itself: deltalake accepts only str / Path /
+        # DeltaTable. A LOCAL UPath subclasses pathlib.Path and slips
+        # through, but an s3:// UPath does not — so passing the object
+        # works on a local filesystem and raises "table_or_uri must be a
+        # str, Path or DeltaTable" against real object storage.
+        write_deltalake(
+            str(path),
+            item,
+            storage_options=storage_options,
+            mode="overwrite",
+            schema_mode="overwrite",
+        )
+
     @staticmethod
     def _dump_via_polars(
-        context: OutputContext, path, item, storage_options, filesystem
+        context: OutputContext, path, item, storage_options
     ) -> None:
         """Write path via ``polars.DataFrame.write_delta``.
 
@@ -480,16 +535,24 @@ class DeltaIOManager(UPathIOManager):
         or LazyFrame fails loudly — this write path is opt-in via the
         ``PolarsS3FSConfig`` backend, and using a different shape there
         is almost always a misconfiguration.
+
+        Schema evolution goes through ``delta_write_options`` rather than
+        Polars' own ``overwrite_schema=``, which is deprecated. Note that
+        everything in ``delta_write_options`` is forwarded verbatim to
+        ``write_deltalake``, so a ``filesystem`` entry there raises the
+        same TypeError as passing it directly — it cannot be used to
+        smuggle a PyArrow filesystem back into the write.
         """
         if isinstance(item, pl.LazyFrame):
             item = item.collect(streaming=True)
         if isinstance(item, pl.DataFrame):
+            # str() for the same reason as the deltalake path: an s3://
+            # UPath is not a pathlib.Path and is rejected downstream.
             item.write_delta(
-                path,
+                str(path),
                 mode="overwrite",
-                overwrite_schema=True,
                 storage_options=storage_options,
-                delta_write_options={"filesystem": filesystem},
+                delta_write_options={"schema_mode": "overwrite"},
             )
         else:
             raise ValueError(
@@ -540,16 +603,17 @@ class DeltaIOManager(UPathIOManager):
         base = self._uri_for_path(path)
         for key, item in obj.items():
             target_path = base.joinpath(key) if key else base
-            filesystem = None
-            if self._s3fs:
-                filesystem = pa.fs.SubTreeFileSystem(target_path.path, self._s3fs)
+            # No PyArrow filesystem here: deltalake 1.x removed
+            # write_deltalake's ``filesystem`` argument, so writes reach
+            # object storage through storage_options alone. Reads still
+            # use self._s3fs, which is why it is still built.
             if isinstance(self._config, PolarsS3FSConfig):
                 self._dump_via_polars(
-                    context, target_path, item, self._storage_options, filesystem
+                    context, target_path, item, self._storage_options
                 )
             else:
                 self._dump_via_deltalake(
-                    context, target_path, item, self._storage_options, filesystem
+                    context, target_path, item, self._storage_options
                 )
 
     def path_exists(self, path: UPath) -> bool:
@@ -644,8 +708,13 @@ class DeltaIOManager(UPathIOManager):
         finding one in the catalog should be able to see its shape.
         """
         path = self._get_path(context)
+        # str(), not the UPath: MetadataValue.path requires str | PathLike,
+        # and an s3:// UPath is NOT PathLike (a local one is). Passing the
+        # object therefore worked on a local filesystem and raised a
+        # param-type mismatch against S3 -- after the data had already been
+        # written, so the table existed but the step failed.
         metadata: Dict[str, MetadataValue] = {
-            "uri": MetadataValue.path(self._uri_for_path(path))
+            "uri": MetadataValue.path(str(self._uri_for_path(path)))
         }
         add_column_schema(metadata, obj)
         return metadata
@@ -692,15 +761,7 @@ class DeltaIOManager(UPathIOManager):
         layout the IO manager itself uses (see
         ``get_op_output_relative_path``).
         """
-        if isinstance(self._config, LocalFSConfig):
-            return None
-        path = "/".join(asset_key_path)
-        physical_uri = f"{self._uri_base.rstrip('/')}/storage/{path}"
-        return {
-            "source_type": _DELTA_SOURCE_TYPE,
-            "physical_uri": physical_uri,
-            "credentials": _s3_credentials_for_ticket(self._config),
-        }
+        return _delta_ticket(self._config, self._uri_base, asset_key_path)
 
 
 class ConfigurableDeltaIOManager(ConfigurableIOManagerFactory, ConfigureFromDict):
@@ -722,3 +783,24 @@ class ConfigurableDeltaIOManager(ConfigurableIOManagerFactory, ConfigureFromDict
 
     def create_io_manager(self, context) -> DeltaIOManager:
         return DeltaIOManager(self.fs, self.uri_base)
+
+    def physical_coordinates(
+        self, asset_key_path: Sequence[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Mesh-publishing protocol — see :func:`_delta_ticket`.
+
+        This has to live on the FACTORY, not only on ``DeltaIOManager``.
+        The domain broker looks up the object registered in
+        ``Definitions(resources=...)`` and checks it for
+        ``physical_coordinates``; that object is this factory, so with the
+        method only on the inner manager the check failed and every Delta
+        asset silently fell through to the broker's placeholder ticket
+        (bucket ``my-data-lake``) — a routing entry that resolves to
+        nothing.
+
+        Computed from config rather than by building the IO manager:
+        constructing one instantiates S3 filesystems and can create a
+        local cache directory, which is far too much work for answering
+        "where does this asset live".
+        """
+        return _delta_ticket(self.fs, self.uri_base, asset_key_path)

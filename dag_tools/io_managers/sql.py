@@ -407,3 +407,23 @@ class ConfigurableSQLIOManager(ConfigurableIOManagerFactory, ConfigureFromDict):
 
     def create_io_manager(self, context) -> SQLIOManager:
         return SQLIOManager(self.config)
+
+    def physical_coordinates(
+        self, asset_key_path: Sequence[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Mesh-publishing protocol — delegates to :class:`SQLIOManager`.
+
+        This has to live on the FACTORY, not only on ``SQLIOManager``.
+        The domain broker looks up the object registered in
+        ``Definitions(resources=...)`` and checks it for
+        ``physical_coordinates``; that object is this factory, so with the
+        method only on the inner manager the check failed and every SQL
+        asset silently fell through to the broker's placeholder ticket
+        (host ``db.local``) — a routing entry that resolves to nothing.
+
+        Delegating is cheap here: ``SQLIOManager.__init__`` only assembles
+        a connection URI string and picks a resolver function; it opens no
+        connection. Unlike the Delta factory, which computes its ticket
+        from config because building that IO manager creates filesystems.
+        """
+        return self.create_io_manager(None).physical_coordinates(asset_key_path)
