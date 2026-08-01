@@ -65,6 +65,29 @@ def test_arrow_writes_polars_dataframe(tmp_path):
     assert written, "polars DataFrame produced no parquet output"
 
 
+def test_arrow_writes_streaming_record_batch_reader(tmp_path):
+    """RecordBatchReader is in dump_to_path's accepted-types tuple, but the
+    row-count log called len() on it — which streaming readers don't
+    support — so the advertised streaming path always raised TypeError.
+
+    This is the path duckdb uses (.fetch_arrow_reader()), which is how a
+    SQL-shaped asset streams to parquet without materializing in RAM."""
+    import pyarrow as pa
+
+    table = pa.table({"id": [1, 2, 3], "region": ["a", "b", "c"]})
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches(1))
+
+    @asset(name="streamed_asset", io_manager_key="iom")
+    def streamed_asset():
+        return reader
+
+    iom = ConfigurableArrowIOManager(fs=LocalFSConfig(), uri_base=str(tmp_path))
+    assert materialize([streamed_asset], resources={"iom": iom}).success
+    written = list(tmp_path.rglob("part-*.parquet"))
+    assert written, "streaming reader produced no parquet output"
+    assert pl.read_parquet(written[0]).height == 3
+
+
 def test_arrow_writes_polars_lazyframe(tmp_path):
     @asset(name="polars_lf_asset", io_manager_key="iom")
     def polars_lf_asset():

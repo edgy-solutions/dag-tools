@@ -198,7 +198,14 @@ class ArrowIOManager(UPathIOManager):
             item = _to_arrow_if_polars(item)
 
             if isinstance(item, (pd.DataFrame, pa.Table, pa.RecordBatch, pa.dataset.FileSystemDataset, pa.RecordBatchReader)):
-                if not isinstance(item, pa.dataset.FileSystemDataset):
+                # Row count is only knowable for materialized objects. A
+                # FileSystemDataset is lazy, and a RecordBatchReader is a
+                # one-shot STREAM — calling len() on it raises TypeError,
+                # which used to abort the write for exactly the streaming
+                # case the isinstance tuple above claims to support
+                # (e.g. duckdb's .fetch_arrow_reader()). Consuming it to
+                # count would also drain the stream before the write.
+                if hasattr(item, "__len__"):
                     context.log.info(f"Row count: {len(item)}")
                 pa.dataset.write_dataset(
                     item,
