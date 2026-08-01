@@ -119,6 +119,30 @@ def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[
     return _build_asset_info_from_record(record)
 
 
+def _materializable_asset_keys(defs):
+    """Return the set of asset-key tuples this deployment can materialize.
+
+    Used to keep external/source stubs (read handles for assets another
+    deployment owns) out of the broker's advertisement sweep.
+
+    Returns ``None`` when the split can't be determined — an older or
+    newer Dagster without ``resolve_asset_graph().materializable_asset_keys``.
+    Callers treat ``None`` as "don't filter", preserving prior behavior
+    rather than silently advertising nothing: an over-advertising broker
+    is a routing bug, but a broker that advertises *nothing* takes the
+    whole domain offline. Fail toward the status quo, and log it.
+    """
+    try:
+        graph = defs.resolve_asset_graph()
+        return {tuple(k.path) for k in graph.materializable_asset_keys}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Could not determine materializable assets (%s); advertising all "
+            "assets. External/source stubs may be advertised.", exc,
+        )
+        return None
+
+
 def load_dagster_definitions():
     """Load local Dagster definitions and populate LOCAL_ASSETS keyed by URN."""
     if not DAGSTER_DEFS_MODULE or not Definitions:
@@ -155,6 +179,36 @@ def load_dagster_definitions():
         # One walk over Definitions — the shared inventory also derives the
         # URN sidecar via the same datahub converter, so we don't re-call it.
         records = extract_records(defs)
+
+        # Advertise ONLY what this deployment can actually materialize.
+        #
+        # A Definitions routinely contains external/source stubs: read
+        # handles for assets another deployment owns (declared so a local
+        # asset can consume them through the mesh). Those look identical
+        # to locally-produced assets in the inventory — same shape, same
+        # io_manager_key — so without this filter the broker would
+        # advertise a physical location for data it does not own and has
+        # never written. The gateway stores routes last-writer-wins on a
+        # short TTL, so two brokers claiming one asset key make the route
+        # flap between the real owner and the phantom.
+        #
+        # ``materializable_asset_keys`` is Dagster's own executable/external
+        # split, so this stays correct regardless of which IO manager is
+        # bound — a structural guard rather than a per-IO-manager
+        # convention.
+        materializable = _materializable_asset_keys(defs)
+        if materializable is not None:
+            before = len(records)
+            records = [
+                r for r in records
+                if tuple(r.asset_key or []) in materializable
+            ]
+            skipped = before - len(records)
+            if skipped:
+                logger.info(
+                    "Skipping %d external/source asset(s) — not owned by this "
+                    "deployment, so not advertised to the gateway.", skipped,
+                )
 
         # Build a {io_manager_key: io_manager_instance} lookup so each
         # record can resolve its bound IO manager and (if the IO manager
