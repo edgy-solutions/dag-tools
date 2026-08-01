@@ -84,6 +84,15 @@ COPY . /app
 #     definitions.py registers it when DATAHUB_SERVER is set. (IO managers
 #     no longer emit to DataHub themselves — the sensor is the single,
 #     decoupled catalog path.)
+#   * ``pandas`` — REQUIRED by dag_tools.io_managers.arrow, which imports
+#     it at module level (it converts between Arrow, pandas, and polars
+#     frames). The mesh demo asset publishes through that IO manager, so
+#     definitions.py pulls it in transitively. Without pandas the whole
+#     code location fails to import with
+#     ``DagsterImportError: No module named 'pandas'`` — the gRPC server
+#     never starts and Dagster reports the location as unavailable.
+#     (pyarrow is already a base dag-tools dependency, so it comes in
+#     via the ``.`` install.)
 #   * ``boto3`` + ``s3fs`` — S3 writes.
 #   * ``.[broker]`` extras — fastapi, hypercorn, pydantic, httpx,
 #     boto3 for the broker pod (same image, helm picks the
@@ -102,6 +111,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         dagster-postgres \
         acryl-datahub \
         acryl-datahub-dagster-plugin \
+        pandas \
         boto3 \
         s3fs
 
