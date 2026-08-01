@@ -66,6 +66,33 @@ def _is_relation(obj: Any) -> bool:
     return type(obj).__name__ == "DuckDBPyRelation"
 
 
+def asset_uri(
+    uri_base: str, asset_key_path: Sequence[str], directory: bool = True
+) -> str:
+    """Where this IO manager stores a given asset key.
+
+    The single source of truth for the layout, used by the writer, by
+    ``physical_coordinates``, and by callers that need to reason about the
+    output without owning it (a freshness check, say). Keeping one
+    function is deliberate: when the write path and the advertised path
+    were computed separately, they drifted, and a routing ticket that
+    points where the data isn't is worse than no ticket at all.
+
+    ``directory=True`` appends the trailing slash that marks a dataset
+    directory of part files -- required, because a consumer's
+    ``scan_parquet`` treats a slash-less S3 path as an object key.
+
+    Layout matches ``ArrowIOManager`` so the two are interchangeable:
+    ``<uri_base>/<asset key path>.parquet``.
+    """
+    path = list(asset_key_path)
+    leaf = path[-1]
+    if not leaf.endswith(f".{DEFAULT_FORMAT}"):
+        leaf = f"{leaf}.{DEFAULT_FORMAT}"
+    uri = "/".join([uri_base.rstrip("/"), *path[:-1], leaf])
+    return uri + "/" if directory else uri
+
+
 class DuckDBIOManager(IOManager):
     """Writes DuckDB relations to object storage; reads them back lazily."""
 
@@ -90,20 +117,16 @@ class DuckDBIOManager(IOManager):
     # -- paths -------------------------------------------------------------
 
     def _uri_for(self, context: Any) -> str:
-        """``<uri_base>/<asset key path>.parquet``.
+        """Write target for a context. See :func:`asset_uri`.
 
-        Deliberately identical to ``ArrowIOManager``'s layout: the two
-        managers are interchangeable from a reader's point of view, and an
-        asset can be moved between them without consumers noticing.
+        No trailing slash here: this is handed to DuckDB's writer, which
+        creates the directory itself and rejects the slash form.
         """
         if context.has_asset_key:
             path = list(context.asset_key.path)
         else:
             path = list(context.get_identifier())
-        leaf = path[-1]
-        if not leaf.endswith(f".{DEFAULT_FORMAT}"):
-            leaf = f"{leaf}.{DEFAULT_FORMAT}"
-        return "/".join([self.uri_base, *path[:-1], leaf])
+        return asset_uri(self.uri_base, path, directory=False)
 
     def _connection(self) -> Any:
         if self._con is None:
@@ -140,7 +163,32 @@ class DuckDBIOManager(IOManager):
         except Exception as e:
             raise RuntimeError(self._write_failure_hint(uri, e)) from e
 
-        context.add_output_metadata(self.get_metadata())
+        metadata = self.get_metadata()
+        metadata["uri"] = MetadataValue.path(uri)
+        rows = self._row_count(uri)
+        if rows is not None:
+            metadata["dagster/row_count"] = MetadataValue.int(rows)
+        context.add_output_metadata(metadata)
+
+    def _row_count(self, uri: str) -> Optional[int]:
+        """Row count of what was just written, from the Parquet footer.
+
+        Counting the relation before the write would execute the query
+        twice, and counting after the write is nearly free: Parquet stores
+        the row count in each file's footer, so this reads metadata rather
+        than rescanning the data.
+
+        Best-effort -- a missing row count costs a metadata field, so it
+        must never fail the materialization that already succeeded.
+        """
+        try:
+            target = f"{uri}/**/*.parquet" if self.file_size_bytes else uri
+            (rows,) = self._connection().execute(
+                "SELECT count(*) FROM read_parquet(?)", [target]
+            ).fetchone()
+            return int(rows)
+        except Exception:
+            return None
 
     def _as_relation(self, obj: Any, uri: str) -> Any:
         """Coerce what the asset returned into something DuckDB can write.
@@ -320,17 +368,12 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
         if not path:
             return None
 
-        leaf = path[-1]
-        if not leaf.endswith(f".{DEFAULT_FORMAT}"):
-            leaf = f"{leaf}.{DEFAULT_FORMAT}"
-        if not self.file_size_bytes:
-            # Configured for a single file, so the URI names an object.
-            return self._ticket("/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]))
-        # Directory of part files — trailing slash required, see docstring.
-        return self._ticket("/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]) + "/")
+        # file_size_bytes off means a single object, so no trailing slash.
+        return self._ticket(
+            asset_uri(self.uri_base, path, directory=bool(self.file_size_bytes))
+        )
 
     def _ticket(self, physical_uri: str) -> Dict[str, Any]:
-
         credentials: Dict[str, Any] = {
             "aws_access_key_id": self.duckdb.aws_access_key_id,
             "aws_secret_access_key": self.duckdb.aws_secret_access_key,

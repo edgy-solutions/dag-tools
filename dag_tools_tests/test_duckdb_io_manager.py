@@ -18,7 +18,11 @@ pytest.importorskip("polars")
 import polars as pl
 from dagster import asset, materialize
 
-from dag_tools.io_managers.duckdb import ConfigurableDuckDBIOManager, DuckDBIOManager
+from dag_tools.io_managers.duckdb import (
+    ConfigurableDuckDBIOManager,
+    DuckDBIOManager,
+    asset_uri,
+)
 from dag_tools.resources.duckdb import DuckDBResource
 
 
@@ -61,6 +65,22 @@ def test_writes_a_relation(tmp_path):
     written = list((tmp_path / "orders.parquet").rglob("*.parquet"))
     assert written, "relation produced no parquet output"
     assert pl.scan_parquet(tmp_path / "orders.parquet").select(pl.len()).collect().item() == 50
+
+
+def test_reports_row_count_and_uri_metadata(tmp_path):
+    """Row count comes from the Parquet footer after the write, so it costs
+    a metadata read rather than executing the query a second time."""
+    @asset(name="counted", io_manager_key="iom")
+    def counted(duck: DuckDBResource):
+        return duck.connect().sql("SELECT i FROM range(42) t(i)")
+
+    result = materialize(
+        [counted], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()}
+    )
+    md = result.get_asset_materialization_events()[0] \
+        .step_materialization_data.materialization.metadata
+    assert md["dagster/row_count"].value == 42
+    assert "counted.parquet" in md["uri"].value
 
 
 def test_output_is_a_directory_of_parts(tmp_path):
@@ -227,6 +247,24 @@ def test_advertised_uri_matches_actual_write_path(tmp_path):
 
     ticket = _s3_iom().physical_coordinates(["mesh_customers"])
     assert ticket["physical_uri"] == f"s3://dag-lake/pub/{actual_rel}/"
+
+
+def test_asset_uri_is_the_single_source_of_truth():
+    """The writer and the advertisement used to build the path separately,
+    and drifted -- which is how the missing trailing slash shipped. Both now
+    go through asset_uri, and external callers (a freshness check that needs
+    to stat the output without owning it) can use the same function."""
+    iom = _s3_iom()
+    advertised = iom.physical_coordinates(["sales", "orders"])["physical_uri"]
+    assert advertised == asset_uri("s3://dag-lake/pub", ["sales", "orders"])
+    # The writer target is the same location without the directory marker.
+    assert advertised.rstrip("/") == asset_uri(
+        "s3://dag-lake/pub", ["sales", "orders"], directory=False
+    )
+
+
+def test_asset_uri_leaves_an_explicit_parquet_suffix_alone():
+    assert asset_uri("s3://b", ["report.parquet"]) == "s3://b/report.parquet/"
 
 
 def test_advertised_uri_marks_the_directory_with_a_trailing_slash():
