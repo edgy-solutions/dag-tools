@@ -356,16 +356,29 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     # a Delta table on S3 is "s3_delta" to the IO manager
                     # and "delta-lake" to DataHub. See platforms.py.
                     platform = resolve_platform(declared, self.platform_mappings)
-                    if declared and platform == UNKNOWN_PLATFORM:
-                        sensor_context.log.warning(
-                            "Asset %s declared platform %r, which resolved to "
-                            "'unknown'.", asset_key_path, declared,
+                    if platform == UNKNOWN_PLATFORM:
+                        # No platform declared, so there is nothing truthful
+                        # to say about WHERE this asset lives. Emitting a
+                        # physical dataset anyway produced a second entity on
+                        # DataHub's "unknown" platform -- a permanent twin of
+                        # the real asset, indistinguishable in the UI from a
+                        # genuine dataset, created afresh on every run.
+                        #
+                        # The asset itself is still catalogued below; only
+                        # the physical-location half is withheld. That is the
+                        # honest split: we know the asset exists, we do not
+                        # know what it is stored in.
+                        sensor_context.log.info(
+                            "Asset %s declared no platform%s; cataloguing the "
+                            "asset without a physical dataset.",
+                            asset_key_path,
+                            f" (got {declared!r})" if declared else "",
                         )
-                    asset_downstream_urn = _bound_converter(asset_key_path, platform)
-                    sensor_context.log.info(f"Resolved URN from asset key: {asset_downstream_urn}")
-
-                if not asset_downstream_urn:
-                    continue
+                    else:
+                        asset_downstream_urn = _bound_converter(asset_key_path, platform)
+                        sensor_context.log.info(
+                            f"Resolved URN from asset key: {asset_downstream_urn}"
+                        )
 
                 # Prepare the properties mapping
                 properties = {k: str(v.value) for k, v in mat.metadata.items() if hasattr(v, 'value')}
@@ -401,7 +414,9 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     asset_key_path,
                     mat.description if mat.description else None,
                     properties,
-                    downstreams={asset_downstream_urn.urn()},
+                    downstreams=(
+                        {asset_downstream_urn.urn()} if asset_downstream_urn else None
+                    ),
                     upstreams=upstreams_uris if upstreams_uris else None,
                     schema=table_schema,
                     materialize_dependencies=dagster_generator.config.materialize_dependencies,
@@ -423,8 +438,16 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                 # process_dagster_logs() map (also Dict[str, Set[DatasetUrn]],
                 # keyed per step); the two are merged by key.
                 inputs = _to_dataset_urns(upstreams_uris)
-                outputs = {asset_downstream_urn}
-                key = log.step_key or asset_downstream_urn.urn()
+                # No physical dataset when the platform is unknown, so the
+                # step has inputs but no output to record. The lineage entry
+                # still matters -- it is what the plugin merges upstream
+                # edges from.
+                outputs = {asset_downstream_urn} if asset_downstream_urn else set()
+                key = log.step_key or (
+                    asset_downstream_urn.urn()
+                    if asset_downstream_urn
+                    else ".".join(asset_key_path)
+                )
                 if key in lineage_map:
                     prior = lineage_map[key]
                     lineage_map[key] = DatasetLineage(

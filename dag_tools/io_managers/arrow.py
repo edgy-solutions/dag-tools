@@ -29,7 +29,7 @@ default_format = formats[0]
 # What this manager produces, in the vocabulary the cortex data client
 # dispatches on. Used for BOTH the mesh routing ticket and the
 # ``destination_name`` the catalog sensor reads, so the two cannot drift.
-_SOURCE_TYPE = "s3_parquet"
+SOURCE_TYPE = "s3_parquet"
 
 
 class S3FSCommonConfig(Config):
@@ -260,7 +260,7 @@ class ArrowIOManager(UPathIOManager):
         # Only claimed when the output really is on S3; a local write has
         # no platform worth advertising.
         if self.uri_base.startswith("s3://"):
-            metadata["destination_name"] = MetadataValue.text(_SOURCE_TYPE)
+            metadata["destination_name"] = MetadataValue.text(SOURCE_TYPE)
         return metadata
 
     def get_op_output_relative_path(self, context: Union[InputContext, OutputContext]) -> UPath:
@@ -360,7 +360,7 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
             credentials["aws_endpoint_url"] = common.end_point
 
         return {
-            "source_type": _SOURCE_TYPE,
+            "source_type": SOURCE_TYPE,
             "physical_uri": physical_uri,
             "credentials": credentials,
         }

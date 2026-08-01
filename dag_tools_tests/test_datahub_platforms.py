@@ -154,7 +154,7 @@ def _declared_and_advertised():
             ConfigurableArrowIOManager,
             S3FSCommonConfig,
             S3FSConfig,
-            _SOURCE_TYPE,
+            SOURCE_TYPE,
         )
         from dagster import build_output_context
 
@@ -256,8 +256,22 @@ def _declared_and_advertised():
 PRODUCERS = _declared_and_advertised()
 
 
-def test_producers_were_collected():
-    assert PRODUCERS, "no producing IO managers could be constructed"
+def test_every_producer_was_collected():
+    """Name them explicitly rather than just asserting non-empty.
+
+    The collector swallows ImportError so an absent optional dependency
+    does not fail the file -- but that also means a renamed symbol makes a
+    producer quietly disappear from the matrix, and the suite still passes
+    with fewer cases than it claims to cover. (It happened: renaming
+    _SOURCE_TYPE to SOURCE_TYPE silently dropped arrow.)
+    """
+    collected = {label for label, _, _ in PRODUCERS}
+    expected = {"arrow", "duckdb", "delta", "sql"}
+    missing = expected - collected
+    assert not missing, (
+        f"producers missing from the matrix: {sorted(missing)} — an import "
+        f"failed silently, so they are not actually being checked"
+    )
 
 
 @pytest.mark.parametrize(

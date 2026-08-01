@@ -60,7 +60,7 @@ DEFAULT_FORMAT = "parquet"
 # What this manager produces, in the vocabulary the cortex data client
 # dispatches on. Used for BOTH the mesh routing ticket and the
 # ``destination_name`` the catalog sensor reads, so the two cannot drift.
-_SOURCE_TYPE = "s3_parquet"
+SOURCE_TYPE = "s3_parquet"
 
 
 def _is_relation(obj: Any) -> bool:
@@ -321,7 +321,7 @@ class DuckDBIOManager(IOManager):
             # the same source_type the mesh ticket carries. The catalog
             # sensor translates it into DataHub's naming; an IO manager has
             # no business knowing what DataHub calls things.
-            metadata["destination_name"] = MetadataValue.text(_SOURCE_TYPE)
+            metadata["destination_name"] = MetadataValue.text(SOURCE_TYPE)
         return metadata
 
 
@@ -400,7 +400,7 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
             credentials["aws_endpoint_url"] = self.duckdb.endpoint_url
 
         return {
-            "source_type": _SOURCE_TYPE,
+            "source_type": SOURCE_TYPE,
             "physical_uri": physical_uri,
             "credentials": credentials,
         }
