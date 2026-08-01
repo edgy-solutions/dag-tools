@@ -11,6 +11,17 @@ from dagster import (
     EnvVar,
     RunStatusSensorContext,
     TableSchemaMetadataValue,
+    # Imported from the PUBLIC namespace, and deliberately not inside the
+    # optional-datahub try/except below. It used to come from
+    # ``dagster._core.definitions.events``, a private path where the symbol
+    # does not actually live — on 1.10.19 or 1.13.16. Because that import
+    # sat inside ``except ImportError: pass`` it failed silently, leaving
+    # the name unbound, and the ``datahub_urn`` override path raised
+    # NameError the moment anyone used it. Nothing surfaced it: the
+    # isinstance() guard is short-circuited by `if urn_meta and ...`, so
+    # the reference is never evaluated unless an asset actually publishes
+    # that metadata.
+    TextMetadataValue,
 )
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
@@ -29,7 +40,6 @@ try:
     from datahub_dagster_plugin.client.dagster_generator import Constant, DagsterGenerator, DatasetLineage
     from datahub_dagster_plugin.sensors.datahub_sensors import DatahubDagsterSourceConfig
     from datahub_dagster_plugin.sensors.datahub_sensors import make_datahub_sensor as _make_datahub_sensor
-    from dagster._core.definitions.events import TextMetadataValue
 except ImportError:
     pass
 

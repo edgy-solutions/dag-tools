@@ -183,6 +183,40 @@ def test_graph_upstreams_degrade_rather_than_abort():
     assert _graph_upstream_urns(Broken(), object(), object()) == []
 
 
+def test_optional_datahub_imports_do_not_swallow_dagster_symbols():
+    """Regression: TextMetadataValue was imported from
+    dagster._core.definitions.events -- a private path where it does not
+    live, on 1.10.19 or 1.13.16 -- and that import sat inside the optional
+    `except ImportError: pass` for datahub. So it failed silently, the name
+    was never bound, and the documented `datahub_urn` override raised
+    NameError the first time anyone used it.
+
+    Nothing surfaced it, because `if urn_meta and isinstance(...)`
+    short-circuits: the reference is never evaluated unless an asset
+    actually publishes that metadata. Found while probing dag-tools
+    against Dagster 1.10.19 for the upgrade qualification."""
+    from dag_tools.components.datahub_lineage import component as mod
+
+    for name in ("TextMetadataValue", "TableSchemaMetadataValue"):
+        assert hasattr(mod, name), (
+            f"{name} is not bound at module scope — a dagster symbol is "
+            f"being imported inside the optional-datahub try/except, or "
+            f"from a private path that moved"
+        )
+
+
+def test_datahub_urn_override_path_is_executable():
+    """Exercises the branch that the unbound name would have crashed."""
+    from dagster import MetadataValue
+
+    from dag_tools.components.datahub_lineage import component as mod
+
+    urn = "urn:li:dataset:(urn:li:dataPlatform:s3,x.y,PROD)"
+    v = MetadataValue.text(urn)
+    # The real guard: `if urn_meta and isinstance(urn_meta, TextMetadataValue)`
+    assert isinstance(v, mod.TextMetadataValue)
+
+
 def test_table_schema_is_extracted_for_the_catalog():
     """Regression: the catalog lost column-level schema when the cortex IO
     manager's direct DataHub emit was removed. The sensor never passed a
