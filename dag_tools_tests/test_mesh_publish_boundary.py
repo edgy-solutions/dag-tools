@@ -88,6 +88,61 @@ def test_arrow_writes_streaming_record_batch_reader(tmp_path):
     assert pl.read_parquet(written[0]).height == 3
 
 
+@pytest.mark.parametrize("payload", ["polars", "lazy", "arrow", "pandas"])
+def test_arrow_publishes_column_schema(tmp_path, payload):
+    """Column-level schema reached the catalog through the cortex IO
+    manager's direct DataHub emit. That was removed and nothing replaced
+    it, so mesh_demo_customers kept a fossil schema from the last cortex
+    write while its properties went on being refreshed."""
+    import pandas as pd
+    import pyarrow as pa
+
+    make = {
+        "polars": lambda: pl.DataFrame({"id": [1], "region": ["a"]}),
+        "lazy": lambda: pl.LazyFrame({"id": [1], "region": ["a"]}),
+        "arrow": lambda: pa.table({"id": [1], "region": ["a"]}),
+        "pandas": lambda: pd.DataFrame({"id": [1], "region": ["a"]}),
+    }[payload]
+
+    @asset(name="schema_asset", io_manager_key="iom")
+    def schema_asset():
+        return make()
+
+    iom = ConfigurableArrowIOManager(fs=LocalFSConfig(), uri_base=str(tmp_path))
+    result = materialize([schema_asset], resources={"iom": iom})
+    md = (
+        result.get_asset_materialization_events()[0]
+        .step_materialization_data.materialization.metadata
+    )
+    cols = md["dagster/column_schema"].schema.columns
+    assert [c.name for c in cols] == ["id", "region"]
+
+
+def test_arrow_schema_does_not_drain_a_streaming_reader(tmp_path):
+    """A RecordBatchReader is one-shot. Reading its declared schema is
+    fine; consuming it to inspect columns would leave nothing to write."""
+    import pyarrow as pa
+
+    table = pa.table({"id": [1, 2, 3]})
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches(1))
+
+    @asset(name="streamed_schema", io_manager_key="iom")
+    def streamed_schema():
+        return reader
+
+    iom = ConfigurableArrowIOManager(fs=LocalFSConfig(), uri_base=str(tmp_path))
+    result = materialize([streamed_schema], resources={"iom": iom})
+    assert result.success
+    md = (
+        result.get_asset_materialization_events()[0]
+        .step_materialization_data.materialization.metadata
+    )
+    assert [c.name for c in md["dagster/column_schema"].schema.columns] == ["id"]
+    # The rows still landed -- the schema read did not consume the stream.
+    written = list(tmp_path.rglob("part-*.parquet"))
+    assert pl.read_parquet(written[0]).height == 3
+
+
 def test_arrow_writes_polars_lazyframe(tmp_path):
     @asset(name="polars_lf_asset", io_manager_key="iom")
     def polars_lf_asset():

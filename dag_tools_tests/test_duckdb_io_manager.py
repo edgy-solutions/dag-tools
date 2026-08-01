@@ -83,6 +83,31 @@ def test_reports_row_count_and_uri_metadata(tmp_path):
     assert "counted.parquet" in md["uri"].value
 
 
+def test_publishes_column_schema(tmp_path):
+    """Column-level schema in the catalog used to come from the cortex IO
+    manager's direct DataHub emit. That was removed and nothing replaced
+    it, so datasets registered with lineage but no columns. The writer is
+    the natural source -- the relation already carries its schema, so this
+    costs no query."""
+    @asset(name="typed", io_manager_key="iom")
+    def typed(duck: DuckDBResource):
+        return duck.connect().sql(
+            "SELECT 1 AS id, 'x' AS label, 2.5 AS amount"
+        )
+
+    result = materialize(
+        [typed], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()}
+    )
+    md = (
+        result.get_asset_materialization_events()[0]
+        .step_materialization_data.materialization.metadata
+    )
+    cols = md["dagster/column_schema"].schema.columns
+    assert [c.name for c in cols] == ["id", "label", "amount"]
+    # Types are DuckDB's own names, which is what the catalog will show.
+    assert all(c.type for c in cols)
+
+
 def test_output_is_a_directory_of_parts(tmp_path):
     """Matches ArrowIOManager's shape so a reader cannot tell them apart,
     and so a large asset can split across files."""

@@ -183,6 +183,28 @@ def test_graph_upstreams_degrade_rather_than_abort():
     assert _graph_upstream_urns(Broken(), object(), object()) == []
 
 
+def test_table_schema_is_extracted_for_the_catalog():
+    """Regression: the catalog lost column-level schema when the cortex IO
+    manager's direct DataHub emit was removed. The sensor never passed a
+    schema to emit_asset, so datasets registered with lineage but no
+    columns -- and existing datasets kept a stale fossil from the last
+    cortex write. Nothing errored; the aspect was just absent."""
+    from dagster import TableColumn, TableSchema, MetadataValue
+
+    from dag_tools.components.datahub_lineage.component import _extract_table_schema
+
+    v = MetadataValue.table_schema(
+        TableSchema(columns=[TableColumn("fsc", "VARCHAR")])
+    )
+    # Conventional key (what dagster-dbt and the DuckDB IO manager use).
+    assert _extract_table_schema({"dagster/column_schema": v}) is v
+    # Any key works: the type is the contract, not the name.
+    assert _extract_table_schema({"whatever": v}) is v
+    assert _extract_table_schema({"other": _MetaValue("nope")}) is None
+    assert _extract_table_schema({}) is None
+    assert _extract_table_schema(None) is None
+
+
 class _NullLog:
     def warning(self, *a, **k):
         ...

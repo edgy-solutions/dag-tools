@@ -5,7 +5,13 @@ from dataclasses import dataclass, field
 
 from typing import Annotated, Any, Dict, List, Optional, Sequence
 import dagster as dg
-from dagster import AssetKey, DagsterEventType, EnvVar, RunStatusSensorContext
+from dagster import (
+    AssetKey,
+    DagsterEventType,
+    EnvVar,
+    RunStatusSensorContext,
+    TableSchemaMetadataValue,
+)
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model, Resolver
@@ -97,6 +103,33 @@ def _extract_upstream_urns(metadata: Any) -> List[str]:
         elif isinstance(c, str):
             out.append(c)
     return out
+
+
+def _extract_table_schema(metadata: Any) -> Any:
+    """The ``TableSchemaMetadataValue`` off a materialization, if any.
+
+    Column-level schema in the catalog used to come from
+    ``CortexPolarsIOManager``, which emitted to DataHub directly. That emit
+    was removed (an IO manager is bound per-asset and may be bound to
+    assets another deployment owns, so it cannot honestly claim
+    authorship), and the sensor that replaced it never re-emitted schema --
+    so datasets kept their columns as a fossil from the last cortex write
+    and new datasets had none at all. Nothing failed; the aspect was just
+    silently absent.
+
+    Dagster's conventional key is ``dagster/column_schema`` (what
+    dagster-dbt attaches automatically), but the value is accepted under
+    any key so an asset can publish it however it likes -- the type is the
+    contract, not the name.
+    """
+    md = metadata or {}
+    preferred = md.get("dagster/column_schema")
+    if isinstance(preferred, TableSchemaMetadataValue):
+        return preferred
+    for value in md.values():
+        if isinstance(value, TableSchemaMetadataValue):
+            return value
+    return None
 
 
 def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) -> List[str]:
@@ -320,6 +353,12 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     if urn not in upstreams_uris:
                         upstreams_uris.append(urn)
 
+                # Column-level schema, when the asset published one. Without
+                # this the dataset registers with lineage but no columns --
+                # which is what the catalog looked like after the cortex IO
+                # manager's direct emit was removed and nothing replaced it.
+                table_schema = _extract_table_schema(mat.metadata)
+
                 sensor_context.log.info(f"Emitting asset {asset_key_path} to DataHub graph.")
                 dagster_generator.emit_asset(
                     graph,
@@ -328,6 +367,7 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                     properties,
                     downstreams={asset_downstream_urn.urn()},
                     upstreams=upstreams_uris if upstreams_uris else None,
+                    schema=table_schema,
                     materialize_dependencies=dagster_generator.config.materialize_dependencies,
                 )
 

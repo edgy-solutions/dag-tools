@@ -171,7 +171,41 @@ class DuckDBIOManager(IOManager):
         rows = self._row_count(uri)
         if rows is not None:
             metadata["dagster/row_count"] = MetadataValue.int(rows)
+        schema = self._column_schema(relation)
+        if schema is not None:
+            metadata["dagster/column_schema"] = schema
         context.add_output_metadata(metadata)
+
+    @staticmethod
+    def _column_schema(relation: Any) -> Optional[MetadataValue]:
+        """Column names and types of what was written.
+
+        The writer is the one place that knows this for free -- the
+        relation already carries its resolved schema, so no query runs. It
+        travels on the materialization as ``dagster/column_schema``, which
+        is the conventional key: the Dagster UI renders it, and the DataHub
+        catalog sensor turns it into a schemaMetadata aspect.
+
+        Best-effort. A missing schema costs a metadata field; it must not
+        fail a materialization whose data is already written.
+        """
+        try:
+            from dagster import TableColumn, TableSchema
+
+            names = list(relation.columns)
+            types = [str(t) for t in relation.types]
+            if not names:
+                return None
+            return MetadataValue.table_schema(
+                TableSchema(
+                    columns=[
+                        TableColumn(name=n, type=t)
+                        for n, t in zip(names, types)
+                    ]
+                )
+            )
+        except Exception:
+            return None
 
     def _row_count(self, uri: str) -> Optional[int]:
         """Row count of what was just written, from the Parquet footer.
