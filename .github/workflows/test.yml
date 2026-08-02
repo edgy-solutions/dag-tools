@@ -1,0 +1,164 @@
+name: Tests
+
+# Runs the test suite on every push and PR.
+#
+# This did not exist until 2026-08-01. The suite had ~580 tests and NOTHING
+# ran them automatically, which is how the DeltaIOManager write path came to
+# be broken against the deltalake version this package itself declares --
+# its tests were skipping because the dependency was absent, and a skipped
+# test is indistinguishable from a passing one in a summary line.
+#
+# So the jobs below install the COMPLETE optional-dependency set and then
+# fail if anything skipped for a missing import. Coverage that quietly
+# shrinks is the specific problem this workflow exists to prevent.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject declares >=3.10,<3.15, but the floor and ceiling of
+        # that range are not both installable today: connectorx and
+        # restate-sdk lag on 3.13 wheels. Testing 3.11 and 3.12 keeps two
+        # versions honest without the matrix failing on packaging rather
+        # than on this code. Widen once those publish 3.13 wheels.
+        python: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # pyodbc is a BASE dependency and builds against unixodbc headers,
+      # which the runner image does not ship.
+      - name: Install system build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unixodbc-dev
+
+      - name: Create venv
+        run: uv venv --python ${{ matrix.python }}
+
+      # [all] fans out to orchestrator + worker + qual + broker + dev.
+      # Installing the full set is the point: every partial install turns
+      # real coverage into silent skips.
+      #
+      # The override is required, not cosmetic: dagster-dbt pins
+      # sqlglot[rs]<28.1.0 while acryl-datahub pins sqlglot==30.12.0, so
+      # `[all]` is unsatisfiable as published. See ci-constraints.txt for
+      # why overriding is safe here and when to delete it.
+      - name: Install package with all extras
+        run: uv pip install --override ci-constraints.txt -e ".[all]"
+
+      - name: Show resolved versions
+        run: |
+          uv pip list | grep -Ei "^(dagster|deltalake|duckdb|polars|pyarrow|pandas|acryl|moto|typer|connectorx)" || true
+
+      # .venv/bin/python directly, not `uv run`: `uv run` re-syncs the
+      # project environment from pyproject and would drop the extras
+      # installed above -- silently reintroducing the very skips this
+      # workflow exists to catch.
+      - name: Run tests
+        run: |
+          set -o pipefail
+          .venv/bin/python -m pytest dag_tools_tests -q --no-header -rs \
+            --junitxml=junit-${{ matrix.python }}.xml 2>&1 | tee pytest-output.txt
+
+      # The guard, checked against the run above rather than a second
+      # invocation. A test skipped because a package is missing means CI
+      # is under-installed, not that the code is fine -- and it goes
+      # green. Genuine skips (platform-specific, e.g. the Windows
+      # drive-letter path test) give a written reason and are left alone.
+      - name: Fail on dependency-driven skips
+        if: always()
+        run: |
+          if grep -E "SKIPPED.*(could not import|not installed|No module named)" pytest-output.txt; then
+            echo "::error::Tests skipped because a dependency is missing. CI is under-installed —"
+            echo "::error::add the package so these tests actually run instead of silently passing."
+            exit 1
+          fi
+          echo "No dependency-driven skips."
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-py${{ matrix.python }}
+          path: junit-${{ matrix.python }}.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  dagster-floor:
+    name: dagster 1.10.19 (compat floor)
+    runs-on: ubuntu-latest
+    # Non-blocking: this guards a version the project does not formally
+    # support (the `orchestrator` extra already requires dagster>=1.12.18
+    # via dagster-aws>=0.28.18). It exists because production is on
+    # 1.10.19 and has to keep working until that upgrade lands, so a break
+    # here is information rather than a reason to stop the line.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install system build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unixodbc-dev
+
+      - name: Create venv
+        run: uv venv --python 3.11
+
+      # Base dependencies declare NO dagster, so the version under test is
+      # pinned explicitly here. The `orchestrator` extra is deliberately
+      # NOT used: its dagster-aws>=0.28.18 floor is unsatisfiable with
+      # 1.10.19, which is itself the reason production cannot adopt
+      # dag-tools until it upgrades.
+      - name: Install with dagster pinned to the floor
+        run: |
+          uv pip install -e ".[qual,broker,dev]"
+          uv pip install \
+            "dagster==1.10.19" \
+            "dagster-aws==0.26.19" \
+            "dagster-dbt==0.26.19" \
+            "dagster-postgres==0.26.19" \
+            "pyarrow" "polars" "pandas" "duckdb" "deltalake" "s3fs" \
+            "acryl-datahub" "connectorx"
+
+      - name: Show resolved versions
+        run: uv pip list | grep -Ei "^(dagster|deltalake|duckdb|polars|pyarrow)" || true
+
+      # Confirm the pin actually took. Without this the job could quietly
+      # resolve to a newer dagster and report a pass that says nothing
+      # about the floor.
+      - name: Assert dagster is at the floor
+        run: |
+          V=$(.venv/bin/python -c "import dagster; print(dagster.__version__)")
+          echo "dagster == $V"
+          test "$V" = "1.10.19" || { echo "::error::expected dagster 1.10.19, got $V"; exit 1; }
+
+      # dlt / dagster-embedded-elt / dagster-aws are not all installable
+      # against 1.10.19 alongside the rest, so those modules are excluded
+      # explicitly rather than letting a collection error mask the result.
+      - name: Run tests
+        run: |
+          .venv/bin/python -m pytest dag_tools_tests -q --no-header -rs \
+            --ignore=dag_tools_tests/test_ct_logic_mocked.py \
+            --ignore=dag_tools_tests/test_dlt_assets_factory_config.py \
+            --ignore=dag_tools_tests/test_s3_sensor.py \
+            --ignore=dag_tools_tests/test_sql_ct_database_config.py
