@@ -144,8 +144,13 @@ jobs:
             "pyarrow" "polars" "pandas" "duckdb" "deltalake" "s3fs" \
             "acryl-datahub" "acryl-datahub-dagster-plugin" "connectorx"
 
+      # s3fs/botocore are listed because a resolve under this much version
+      # pressure once reached back to s3fs 0.4.2 (2020), which fails with a
+      # TypeError deep inside connect() rather than anything that names the
+      # package. Printing them makes the next such failure diagnosable
+      # from the log alone.
       - name: Show resolved versions
-        run: uv pip list | grep -Ei "^(dagster|deltalake|duckdb|polars|pyarrow)" || true
+        run: uv pip list | grep -Ei "^(dagster|deltalake|duckdb|polars|pyarrow|s3fs|boto|aiobotocore|fsspec)" || true
 
       # Confirm the pin actually took. Without this the job could quietly
       # resolve to a newer dagster and report a pass that says nothing
