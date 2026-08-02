@@ -56,12 +56,6 @@ orchestrator = [
     "dagster-dlt>=0.28.18",
     "dagster-embedded-elt>=0.28.18",
     "dlt[postgres,snowflake,filesystem,clickhouse,databricks]>=1.23.0",
-    "acryl-datahub>=1.4.0.5",
-    # Required by dag_tools.components.datahub_lineage — the global
-    # ASSET_MATERIALIZATION sensor is built from this plugin's
-    # make_datahub_sensor. Without it the component's imports fall into
-    # its ImportError branch and building the sensor fails.
-    "acryl-datahub-dagster-plugin>=1.4.0.5",
     "boto3>=1.34.0",
     "pandas>=2.3.3",
     "pyarrow>=23.0.1",
@@ -85,6 +79,44 @@ orchestrator = [
     # with guidance.
     "duckdb>=1.1",
 ]
+
+# DataHub catalog registration. Required by
+# dag_tools.components.datahub_lineage — the global ASSET_MATERIALIZATION
+# sensor is built from this plugin's make_datahub_sensor, so without it
+# the component's imports fall into their ImportError branch and building
+# the sensor fails.
+#
+# THE UPPER BOUND IS LOAD-BEARING. acryl-datahub-dagster-plugin pulls
+# acryl-datahub[sql-parser], and that extra pins sqlglot:
+#
+#   acryl-datahub <= 1.3.1.x   ->  sqlglot[rs]==27.27.0
+#   acryl-datahub >= 1.4.0.4   ->  sqlglot 29.x, then 30.x
+#
+# while EVERY dagster-dbt release pins sqlglot[rs]<28.1.0. So the
+# previous floor of >=1.4.0.5 made dagster-dbt and the DataHub sensor
+# mutually unsatisfiable, and `pip install edgy-dag-tools[all]` failed
+# outright with a resolver error rather than installing anything.
+#
+# Capping at <1.4 puts both back in one environment: verified with
+# dagster 1.13.16 + dagster-dbt 0.29.16 + plugin 1.3.1.10 on sqlglot
+# 27.27.0, full suite green (586 passed, nothing skipped). The plugin at
+# 1.3.1.x still exposes everything the component uses -- make_datahub_
+# sensor, emit_asset(schema=), dataset_urn_from_asset,
+# convert_table_schema_to_schema_metadata, DatasetLineage(inputs,
+# outputs) -- and declares dagster>=1.10.0, so it spans the whole
+# supported range.
+#
+# A deployment that does NOT use the dbt component can safely install a
+# newer acryl-datahub over the top; the cap exists only so the default
+# install satisfies both.
+#
+# Revisit when dagster-dbt widens its sqlglot bound, at which point this
+# cap should be raised rather than worked around.
+datahub = [
+    "acryl-datahub>=1.3.1,<1.4",
+    "acryl-datahub-dagster-plugin>=1.3.1,<1.4",
+]
+
 worker = [
     "restate-sdk>=0.14.0,<0.15.0",
     "hypercorn>=0.16.0",
@@ -119,8 +151,12 @@ dev = [
     "pytest",
     "moto[s3]>=5",
 ]
+# Everything, and it installs. This used to fail with a resolver error
+# because the datahub pin and dagster-dbt disagreed about sqlglot -- see
+# the note on the `datahub` extra for why the cap there is what makes
+# this satisfiable.
 all = [
-    "edgy-dag-tools[orchestrator,worker,qual,broker,dev]",
+    "edgy-dag-tools[orchestrator,datahub,worker,qual,broker,dev]",
 ]
 
 [project.scripts]

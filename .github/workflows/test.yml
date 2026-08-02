@@ -30,11 +30,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # pyproject declares >=3.10,<3.15, but the floor and ceiling of
-        # that range are not both installable today: connectorx and
-        # restate-sdk lag on 3.13 wheels. Testing 3.11 and 3.12 keeps two
-        # versions honest without the matrix failing on packaging rather
-        # than on this code. Widen once those publish 3.13 wheels.
+        # `all` installs everything, dbt and datahub included -- the
+        # datahub extra's <1.4 cap is what makes that satisfiable. If a
+        # future bump reintroduces the sqlglot conflict, this job fails
+        # at install rather than quietly dropping one integration.
+        #
+        # Python is 3.11/3.12, not the full >=3.10,<3.15 range: connectorx
+        # and restate-sdk lag on 3.13 wheels, so a 3.13 leg would fail on
+        # packaging rather than on this code.
         python: ["3.11", "3.12"]
 
     steps:
@@ -52,16 +55,17 @@ jobs:
       - name: Create venv
         run: uv venv --python ${{ matrix.python }}
 
-      # [all] fans out to orchestrator + worker + qual + broker + dev.
-      # Installing the full set is the point: every partial install turns
-      # real coverage into silent skips.
+      # [all] fans out to orchestrator + datahub + worker + qual + broker
+      # + dev. Installing the full set is the point: every partial install
+      # turns real coverage into silent skips.
       #
-      # The override is required, not cosmetic: dagster-dbt pins
-      # sqlglot[rs]<28.1.0 while acryl-datahub pins sqlglot==30.12.0, so
-      # `[all]` is unsatisfiable as published. See ci-constraints.txt for
-      # why overriding is safe here and when to delete it.
+      # No override: `[all]` resolves on its own now that the datahub
+      # extra is capped below the sqlglot break. If that cap is ever
+      # raised past dagster-dbt's bound this step fails outright, which is
+      # the behaviour we want -- previously the conflict was papered over
+      # with a constraints file.
       - name: Install package with all extras
-        run: uv pip install --override ci-constraints.txt -e ".[all]"
+        run: uv pip install -e ".[all]"
 
       - name: Show resolved versions
         run: |
@@ -145,7 +149,7 @@ jobs:
       # dagster-aws>=0.28.18 implies dagster>=1.12.18).
       - name: Install with dagster pinned to the floor
         run: |
-          uv pip install --override ci-constraints.txt \
+          uv pip install \
             -e ".[qual,broker,worker,dev]" \
             "dagster==1.10.19" \
             "dagster-aws==0.26.19" \
@@ -153,7 +157,9 @@ jobs:
             "dagster-postgres==0.26.19" \
             "pyarrow" "polars" "pandas" "duckdb" "deltalake" \
             "s3fs>=2023.1.0" \
-            "acryl-datahub" "acryl-datahub-dagster-plugin" "connectorx"
+            "acryl-datahub>=1.3.1,<1.4" \
+            "acryl-datahub-dagster-plugin>=1.3.1,<1.4" \
+            "connectorx"
 
       # s3fs/botocore are listed because a resolve under this much version
       # pressure once reached back to s3fs 0.4.2 (2020), which fails with a
