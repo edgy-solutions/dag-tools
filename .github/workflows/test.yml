@@ -133,15 +133,26 @@ jobs:
       # version of this job left restate and the datahub plugin out, and
       # those tests skipped silently, which is the exact failure mode the
       # other job guards against.
+      # ONE resolution, not two. Installing the extras first and the
+      # pinned packages second let uv solve them independently: fsspec was
+      # already fixed by the first command, modern s3fs pins a matching
+      # fsspec calver, so the second solve backtracked to s3fs 0.4.2 --
+      # which pins nothing and is from 2020. The job then failed inside
+      # s3fs with a TypeError that named neither package.
+      #
+      # s3fs is floored explicitly because the `orchestrator` extra that
+      # normally carries that floor is unusable here (its
+      # dagster-aws>=0.28.18 implies dagster>=1.12.18).
       - name: Install with dagster pinned to the floor
         run: |
-          uv pip install --override ci-constraints.txt -e ".[qual,broker,worker,dev]"
           uv pip install --override ci-constraints.txt \
+            -e ".[qual,broker,worker,dev]" \
             "dagster==1.10.19" \
             "dagster-aws==0.26.19" \
             "dagster-dbt==0.26.19" \
             "dagster-postgres==0.26.19" \
-            "pyarrow" "polars" "pandas" "duckdb" "deltalake" "s3fs" \
+            "pyarrow" "polars" "pandas" "duckdb" "deltalake" \
+            "s3fs>=2023.1.0" \
             "acryl-datahub" "acryl-datahub-dagster-plugin" "connectorx"
 
       # s3fs/botocore are listed because a resolve under this much version
@@ -155,11 +166,19 @@ jobs:
       # Confirm the pin actually took. Without this the job could quietly
       # resolve to a newer dagster and report a pass that says nothing
       # about the floor.
-      - name: Assert dagster is at the floor
+      - name: Assert pins actually took
         run: |
           V=$(.venv/bin/python -c "import dagster; print(dagster.__version__)")
           echo "dagster == $V"
           test "$V" = "1.10.19" || { echo "::error::expected dagster 1.10.19, got $V"; exit 1; }
+          # s3fs is asserted too: it silently resolved to 0.4.2 (2020) once
+          # already, and the resulting failure named neither s3fs nor a
+          # version. Anything pre-calver is wrong.
+          S=$(.venv/bin/python -c "import s3fs; print(s3fs.__version__)")
+          echo "s3fs == $S"
+          case "$S" in
+            0.*|1.*) echo "::error::s3fs resolved to $S — pre-aiobotocore era"; exit 1 ;;
+          esac
 
       # dlt / dagster-embedded-elt / dagster-aws are not all installable
       # against 1.10.19 alongside the rest, so those modules are excluded
