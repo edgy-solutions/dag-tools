@@ -129,16 +129,20 @@ jobs:
       # NOT used: its dagster-aws>=0.28.18 floor is unsatisfiable with
       # 1.10.19, which is itself the reason production cannot adopt
       # dag-tools until it upgrades.
+      # `worker` is included so the restate tests run here too -- the first
+      # version of this job left restate and the datahub plugin out, and
+      # those tests skipped silently, which is the exact failure mode the
+      # other job guards against.
       - name: Install with dagster pinned to the floor
         run: |
-          uv pip install -e ".[qual,broker,dev]"
-          uv pip install \
+          uv pip install --override ci-constraints.txt -e ".[qual,broker,worker,dev]"
+          uv pip install --override ci-constraints.txt \
             "dagster==1.10.19" \
             "dagster-aws==0.26.19" \
             "dagster-dbt==0.26.19" \
             "dagster-postgres==0.26.19" \
             "pyarrow" "polars" "pandas" "duckdb" "deltalake" "s3fs" \
-            "acryl-datahub" "connectorx"
+            "acryl-datahub" "acryl-datahub-dagster-plugin" "connectorx"
 
       - name: Show resolved versions
         run: uv pip list | grep -Ei "^(dagster|deltalake|duckdb|polars|pyarrow)" || true

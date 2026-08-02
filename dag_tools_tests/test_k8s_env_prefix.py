@@ -116,5 +116,53 @@ def test_dbt_component_get_op_spec_injects_env_prefix(monkeypatch):
         name = "demo_dbt"
 
     spec = comp._get_op_spec(_FakeProject())
+    if spec is None:
+        pytest.skip(
+            "dagster-dbt on this version has no DbtProjectComponent._get_op_spec; "
+            "the component degrades instead of raising (see the graceful-"
+            "degradation test below)"
+        )
     res = spec.tags["dagster-k8s/config"]["container_config"]["resources"]
     assert res["requests"] == {"cpu": "3000m", "memory": "12Gi"}
+
+
+def test_dbt_component_survives_a_missing_private_hook(monkeypatch):
+    """``_get_op_spec`` is a PRIVATE hook on dagster-dbt's
+    DbtProjectComponent and is not present in every release -- notably not
+    in 0.26.19, the one that pairs with Dagster 1.10.19.
+
+    Overriding a private hook means accepting that it can move. What must
+    NOT happen is an AttributeError at definition-load time, because that
+    takes the whole code location down rather than just this component.
+    Caught by the CI job pinned to the Dagster floor, where the real
+    failure was:
+
+        AttributeError: 'super' object has no attribute '_get_op_spec'
+    """
+    pytest.importorskip("dagster_dbt")
+    import dagster_dbt
+
+    from dag_tools.components.dbt_project.component import CustomDbtProjectComponent
+
+    # Simulate the older dagster-dbt by removing the hook from the base.
+    monkeypatch.delattr(
+        dagster_dbt.DbtProjectComponent, "_get_op_spec", raising=False
+    )
+
+    comp = CustomDbtProjectComponent.__new__(CustomDbtProjectComponent)
+    comp.datahub_config = None
+    comp.k8s_resource_env_prefix = "DBT_BUILD"
+    comp.k8s_default_cpu = "500m"
+    comp.k8s_default_mem = "1Gi"
+    comp.op = None
+    comp.select = "fqn:*"
+    comp.exclude = ""
+    comp.selector = ""
+
+    class _FakeProject:
+        name = "demo_dbt"
+
+    # Degrades to None rather than raising; the caller treats "no op spec"
+    # as "use the default", which is what happened before this component
+    # existed.
+    assert comp._get_op_spec(_FakeProject()) is None

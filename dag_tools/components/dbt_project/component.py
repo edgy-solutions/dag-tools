@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import yaml
@@ -12,6 +13,9 @@ from dagster.components.resolved.model import Resolver
 from dagster_dbt import DbtCliResource, DbtProjectComponent
 
 from dag_tools.utils.translation_registry import AssetNormalizationRegistry
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class CustomDbtProjectComponent(DbtProjectComponent):
@@ -47,8 +51,31 @@ class CustomDbtProjectComponent(DbtProjectComponent):
 
     def _get_op_spec(self, project: Any) -> Any:
         """Inject env-prefix-resolved k8s resources into the @dbt_assets op
-        tags, deep-merging any explicit `op.tags` on top."""
-        op_spec = super()._get_op_spec(project)
+        tags, deep-merging any explicit `op.tags` on top.
+
+        ``_get_op_spec`` is a PRIVATE hook on ``DbtProjectComponent`` and
+        does not exist in every dagster-dbt: on 0.26.19 (the release that
+        pairs with Dagster 1.10.19) the base class has no such method, and
+        calling ``super()`` there raises ``AttributeError: 'super' object
+        has no attribute '_get_op_spec'`` at definition-load time -- so the
+        whole code location fails to load, not just this component.
+
+        Overriding a private hook means accepting that it can move. When
+        it is absent the k8s tag injection is skipped and the component
+        still builds; losing a resource hint is a far better outcome than
+        an unloadable location. Caught by the CI job that pins Dagster to
+        the 1.10.19 floor.
+        """
+        base = getattr(super(), "_get_op_spec", None)
+        if base is None:
+            logger.warning(
+                "dagster-dbt's DbtProjectComponent has no _get_op_spec on this "
+                "version; skipping k8s resource-tag injection for "
+                "env_prefix=%r. Upgrade dagster-dbt to restore it.",
+                self.k8s_resource_env_prefix,
+            )
+            return None
+        op_spec = base(project)
         if not self.k8s_resource_env_prefix:
             return op_spec
         from dag_tools.utils.k8s import resolve_op_tags_with_env_prefix
