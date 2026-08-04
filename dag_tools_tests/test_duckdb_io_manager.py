@@ -62,9 +62,9 @@ def test_writes_a_relation(tmp_path):
         [orders], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()}
     )
     assert result.success
-    written = list((tmp_path / "orders.parquet").rglob("*.parquet"))
+    written = list((tmp_path / "orders").rglob("*.parquet"))
     assert written, "relation produced no parquet output"
-    assert pl.scan_parquet(tmp_path / "orders.parquet").select(pl.len()).collect().item() == 50
+    assert pl.scan_parquet(tmp_path / "orders").select(pl.len()).collect().item() == 50
 
 
 def test_reports_row_count_and_uri_metadata(tmp_path):
@@ -80,7 +80,7 @@ def test_reports_row_count_and_uri_metadata(tmp_path):
     md = result.get_asset_materialization_events()[0] \
         .step_materialization_data.materialization.metadata
     assert md["dagster/row_count"].value == 42
-    assert "counted.parquet" in md["uri"].value
+    assert "counted" in md["uri"].value
 
 
 def test_publishes_column_schema(tmp_path):
@@ -116,7 +116,7 @@ def test_output_is_a_directory_of_parts(tmp_path):
         return duck.connect().sql("SELECT i FROM range(10) t(i)")
 
     materialize([wide], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()})
-    out = tmp_path / "wide.parquet"
+    out = tmp_path / "wide"
     assert out.is_dir(), "expected a directory of parts, got a single file"
     assert [p.name for p in out.iterdir()] == ["data_0.parquet"]
 
@@ -132,9 +132,9 @@ def test_large_output_splits_across_parts(tmp_path):
         [big],
         resources={"iom": _iom(tmp_path, file_size_bytes="400KB"), "duck": DuckDBResource()},
     )
-    parts = list((tmp_path / "big.parquet").iterdir())
+    parts = list((tmp_path / "big").iterdir())
     assert len(parts) > 1, f"expected a split, got {[p.name for p in parts]}"
-    assert pl.scan_parquet(tmp_path / "big.parquet").select(pl.len()).collect().item() == 400000
+    assert pl.scan_parquet(tmp_path / "big").select(pl.len()).collect().item() == 400000
 
 
 def test_single_file_when_file_size_bytes_disabled(tmp_path):
@@ -146,7 +146,7 @@ def test_single_file_when_file_size_bytes_disabled(tmp_path):
         [one],
         resources={"iom": _iom(tmp_path, file_size_bytes=None), "duck": DuckDBResource()},
     )
-    assert (tmp_path / "one.parquet").is_file()
+    assert (tmp_path / "one").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ def test_writes_in_memory_frames(tmp_path, kind):
         return payloads[kind]()
 
     assert materialize([frame], resources={"iom": _iom(tmp_path)}).success
-    assert pl.scan_parquet(tmp_path / "frame.parquet").select(pl.len()).collect().item() == 3
+    assert pl.scan_parquet(tmp_path / "frame").select(pl.len()).collect().item() == 3
 
 
 def test_unsupported_type_names_the_alternatives(tmp_path):
@@ -192,7 +192,7 @@ def test_none_output_is_skipped(tmp_path):
         return None
 
     assert materialize([selfwriting], resources={"iom": _iom(tmp_path)}).success
-    assert not (tmp_path / "selfwriting.parquet").exists()
+    assert not (tmp_path / "selfwriting").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +262,7 @@ def test_file_scheme_uri_base(tmp_path):
     assert materialize(
         [orders], resources={"iom": iom, "duck": DuckDBResource()}
     ).success
-    assert (tmp_path / "lake" / "publog" / "orders.parquet").is_dir()
+    assert (tmp_path / "lake" / "publog" / "orders").is_dir()
 
 
 def test_nested_asset_key_path(tmp_path):
@@ -271,7 +271,7 @@ def test_nested_asset_key_path(tmp_path):
         return duck.connect().sql("SELECT 1 AS id")
 
     materialize([orders], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()})
-    assert (tmp_path / "sales" / "orders.parquet").is_dir()
+    assert (tmp_path / "sales" / "orders").is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +287,7 @@ def test_advertised_uri_matches_actual_write_path(tmp_path):
         return duck.connect().sql("SELECT 1 AS id")
 
     materialize([mesh_customers], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()})
-    actual_rel = (tmp_path / "mesh_customers.parquet").relative_to(tmp_path).as_posix()
+    actual_rel = (tmp_path / "mesh_customers").relative_to(tmp_path).as_posix()
 
     ticket = _s3_iom().physical_coordinates(["mesh_customers"])
     assert ticket["physical_uri"] == f"s3://dag-lake/pub/{actual_rel}/"
@@ -317,14 +317,14 @@ def test_advertised_uri_marks_the_directory_with_a_trailing_slash():
     polars globs the same path fine locally — so a local test passes while
     every real mesh read fails. Verified against MinIO."""
     for key in (["mesh_customers"], ["sales", "orders"]):
-        assert _s3_iom().physical_coordinates(key)["physical_uri"].endswith(".parquet/")
+        assert _s3_iom().physical_coordinates(key)["physical_uri"].endswith("/")
 
 
 def test_single_file_config_advertises_an_object_not_a_directory():
     """With file_size_bytes unset the output really is one object, so the
     trailing slash would point at a prefix that does not exist."""
     ticket = _s3_iom(file_size_bytes=None).physical_coordinates(["orders"])
-    assert ticket["physical_uri"] == "s3://dag-lake/pub/orders.parquet"
+    assert ticket["physical_uri"] == "s3://dag-lake/pub/orders"
 
 
 def test_advertised_ticket_shape_is_client_readable():
@@ -338,7 +338,7 @@ def test_advertised_ticket_shape_is_client_readable():
 
 def test_advertises_nested_asset_key():
     ticket = _s3_iom().physical_coordinates(["sales", "orders"])
-    assert ticket["physical_uri"] == "s3://dag-lake/pub/sales/orders.parquet/"
+    assert ticket["physical_uri"] == "s3://dag-lake/pub/sales/orders/"
 
 
 def test_local_path_is_not_advertised(tmp_path):

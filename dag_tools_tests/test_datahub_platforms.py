@@ -294,3 +294,66 @@ def test_declared_platform_resolves_to_a_real_platform(label, declared, advertis
     platform = resolve_platform(declared)
     assert platform != UNKNOWN_PLATFORM, f"{label} resolved to unknown"
     assert platform in KNOWN_DATAHUB_PLATFORMS, f"{label} -> {platform!r}"
+
+
+# ---------------------------------------------------------------------------
+# Key / URN / path must be three views of one fact
+# ---------------------------------------------------------------------------
+
+
+def test_key_urn_and_path_agree_for_a_location_encoding_key():
+    """The whole point of prefixing an asset key with
+    <platform_instance>/<bucket>: what Dagster calls the asset, what
+    DataHub calls the dataset, and where the bytes live all derive from
+    one string.
+
+    A DataHub s3 recipe with `platform_instance: minio-svc` over
+    `s3://publog-lake/publog/{table}/*` discovers exactly the URN below,
+    so the crawled entity and the emitted one converge instead of
+    becoming two disconnected halves of one table."""
+    from dag_tools.components.datahub_lineage.component import (
+        asset_keys_to_dataset_urn_converter as to_urn,
+    )
+    from dag_tools.io_managers.duckdb import asset_uri, split_endpoint_instance
+
+    endpoint = "http://minio-svc.namespace.svc.cluster.local:9000"
+    instance = split_endpoint_instance(endpoint)
+    assert instance == "minio-svc"
+
+    key = [instance, "publog-lake", "publog", "p_cage"]
+
+    assert to_urn(key, platform="s3").urn() == (
+        "urn:li:dataset:(urn:li:dataPlatform:s3,"
+        "minio-svc.publog-lake/publog/p_cage,PROD)"
+    )
+    assert asset_uri("s3://publog-lake", key, key_encodes_location=True) == (
+        "s3://publog-lake/publog/p_cage/"
+    )
+
+
+def test_the_original_dlt_convention_is_unchanged():
+    """Regression guard for the shape that already works in production:
+    dlt/<instance>/<bucket>/<path> -> <instance>.<bucket>/<path>."""
+    from dag_tools.components.datahub_lineage.component import (
+        asset_keys_to_dataset_urn_converter as to_urn,
+    )
+
+    key = ["dlt", "minio-svc", "staging", "vdspc_axi", "dbo", "board_mapping"]
+    assert to_urn(key, platform="s3").urn() == (
+        "urn:li:dataset:(urn:li:dataPlatform:s3,"
+        "minio-svc.staging/vdspc_axi/dbo/board_mapping,PROD)"
+    )
+
+
+def test_bucket_mismatch_between_key_and_uri_base_is_refused():
+    """Silently writing to the wrong bucket is the worst failure here."""
+    import pytest as _pytest
+
+    from dag_tools.io_managers.duckdb import asset_uri
+
+    with _pytest.raises(ValueError, match="refusing to guess"):
+        asset_uri(
+            "s3://some-other-bucket",
+            ["minio-svc", "publog-lake", "publog", "p_cage"],
+            key_encodes_location=True,
+        )

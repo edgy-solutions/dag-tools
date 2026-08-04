@@ -273,11 +273,15 @@ class ArrowIOManager(UPathIOManager):
         return format, self._uri_for_path(path, key)
 
     def _uri_for_path(self, path: UPath, key=None) -> str:
+        # No format suffix appended. This used to force `.parquet` onto the
+        # leaf, so a dataset DIRECTORY was named like a file
+        # (`.../customers.parquet/part-0.parquet`) and that name leaked
+        # into the DataHub URN and the Dagster key. An explicit suffix on
+        # the key is still honoured -- that is how a CSV asset selects its
+        # format -- it is only the implicit one that is gone.
         if key:
             path = path.joinpath(key)
-        if not path.suffix:
-            path = path.with_suffix(f'.{default_format}')
-        return str(path).replace('s3://', '') 
+        return str(path).replace('s3://', '')
 
 
 class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
@@ -344,11 +348,11 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
         if fmt != "parquet":
             return None
 
-        leaf = path[-1] if suffix else f"{path[-1]}.{default_format}"
+        # Leaf verbatim -- no implicit `.parquet`, matching _uri_for_path.
         # Trailing slash: marks this as a directory of part files so the
         # consumer's scan_parquet lists it instead of HEAD-ing a key that
         # does not exist.
-        physical_uri = "/".join([self.uri_base.rstrip("/"), *path[:-1], leaf]) + "/"
+        physical_uri = "/".join([self.uri_base.rstrip("/"), *path]) + "/"
 
         common = self.fs.common
         credentials: Dict[str, Any] = {

@@ -72,8 +72,30 @@ def _is_relation(obj: Any) -> bool:
     return type(obj).__name__ == "DuckDBPyRelation"
 
 
+def split_endpoint_instance(endpoint_url: Optional[str]) -> Optional[str]:
+    """The platform-instance name implied by an S3 endpoint.
+
+    ``http://minio-svc.namespace.svc.cluster.local:9000`` -> ``minio-svc``.
+
+    DataHub's s3 recipes set ``platform_instance`` to distinguish one
+    object store from another, and the resulting dataset name is
+    ``<platform_instance>.<bucket>/<key>``. Deriving the instance from the
+    endpoint the IO manager is already configured with means the emitted
+    identity and the crawled identity agree without a second place to
+    configure it -- and a mismatch there produces two disconnected
+    entities for one table, which is exactly the failure this avoids.
+    """
+    if not endpoint_url:
+        return None
+    host = endpoint_url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    return host.split(".", 1)[0] or None
+
+
 def asset_uri(
-    uri_base: str, asset_key_path: Sequence[str], directory: bool = True
+    uri_base: str,
+    asset_key_path: Sequence[str],
+    directory: bool = True,
+    key_encodes_location: bool = False,
 ) -> str:
     """Where this IO manager stores a given asset key.
 
@@ -84,19 +106,48 @@ def asset_uri(
     were computed separately, they drifted, and a routing ticket that
     points where the data isn't is worse than no ticket at all.
 
+    No format suffix on the directory. It used to append ``.parquet`` to
+    the leaf, giving ``.../p_cage.parquet/data_0.parquet`` -- which then
+    leaked into the DataHub name and the Dagster key. The directory is a
+    table, not a file, so it is named like one.
+
+    ``key_encodes_location=True`` means the asset key is
+    ``<platform_instance>/<bucket>/<path...>`` -- the convention that
+    makes a Dagster key, a DataHub URN and an S3 path three views of one
+    fact. The location then comes from the KEY, and ``uri_base``
+    contributes only scheme/credentials; taking the path from both would
+    double-encode the bucket.
+
     ``directory=True`` appends the trailing slash that marks a dataset
     directory of part files -- required, because a consumer's
     ``scan_parquet`` treats a slash-less S3 path as an object key.
-
-    Layout matches ``ArrowIOManager`` so the two are interchangeable:
-    ``<uri_base>/<asset key path>.parquet``.
     """
     path = list(asset_key_path)
-    leaf = path[-1]
-    if not leaf.endswith(f".{DEFAULT_FORMAT}"):
-        leaf = f"{leaf}.{DEFAULT_FORMAT}"
-    uri = "/".join([uri_base.rstrip("/"), *path[:-1], leaf])
+    if key_encodes_location:
+        if len(path) < 3:
+            raise ValueError(
+                f"key_encodes_location expects <instance>/<bucket>/<path...>, "
+                f"got {'/'.join(path)!r}"
+            )
+        scheme = uri_base.split("://", 1)[0] if "://" in uri_base else "s3"
+        bucket, rest = path[1], path[2:]
+        base_bucket = _bucket_of(uri_base)
+        if base_bucket and base_bucket != bucket:
+            # Loud, because the silent version writes to the wrong bucket.
+            raise ValueError(
+                f"asset key names bucket {bucket!r} but uri_base points at "
+                f"{base_bucket!r} ({uri_base}); refusing to guess"
+            )
+        uri = "/".join([f"{scheme}://{bucket}", *rest])
+    else:
+        uri = "/".join([uri_base.rstrip("/"), *path])
     return uri + "/" if directory else uri
+
+
+def _bucket_of(uri_base: str) -> Optional[str]:
+    if "://" not in uri_base:
+        return None
+    return uri_base.split("://", 1)[1].split("/", 1)[0] or None
 
 
 class DuckDBIOManager(IOManager):
@@ -109,12 +160,14 @@ class DuckDBIOManager(IOManager):
         file_size_bytes: Optional[str] = "128MB",
         compression: Optional[str] = None,
         partition_by: Optional[Sequence[str]] = None,
+        key_encodes_location: bool = False,
     ):
         self.resource = resource
         self.uri_base = uri_base.rstrip("/")
         self.file_size_bytes = file_size_bytes
         self.compression = compression
         self.partition_by = list(partition_by) if partition_by else None
+        self.key_encodes_location = key_encodes_location
         # Reads hand back lazy relations, so the connection behind them has
         # to outlive load_input. Held on the manager, which Dagster scopes
         # to the run.
@@ -132,7 +185,10 @@ class DuckDBIOManager(IOManager):
             path = list(context.asset_key.path)
         else:
             path = list(context.get_identifier())
-        return asset_uri(self.uri_base, path, directory=False)
+        return asset_uri(
+            self.uri_base, path, directory=False,
+            key_encodes_location=self.key_encodes_location,
+        )
 
     def _connection(self) -> Any:
         if self._con is None:
@@ -343,6 +399,16 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
     compression: Optional[str] = Field(
         default=None, description="Parquet codec (snappy, zstd, gzip). DuckDB's default if unset."
     )
+    key_encodes_location: bool = Field(
+        default=False,
+        description=(
+            "The asset key is <platform_instance>/<bucket>/<path...>, so the "
+            "physical location comes from the KEY and uri_base supplies only "
+            "scheme and credentials. Makes the Dagster key, the DataHub URN "
+            "and the S3 path three views of one fact, matching what a DataHub "
+            "s3 recipe with the same platform_instance discovers."
+        ),
+    )
     # List, not Sequence: Dagster's config system rejects typing.Sequence.
     partition_by: Optional[List[str]] = Field(
         default=None,
@@ -356,6 +422,7 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
             file_size_bytes=self.file_size_bytes,
             compression=self.compression,
             partition_by=self.partition_by,
+            key_encodes_location=self.key_encodes_location,
         )
 
     def physical_coordinates(self, asset_key_path: Sequence[str]) -> Optional[Dict[str, Any]]:
@@ -387,7 +454,11 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
 
         # file_size_bytes off means a single object, so no trailing slash.
         return self._ticket(
-            asset_uri(self.uri_base, path, directory=bool(self.file_size_bytes))
+            asset_uri(
+                self.uri_base, path,
+                directory=bool(self.file_size_bytes),
+                key_encodes_location=self.key_encodes_location,
+            )
         )
 
     def _ticket(self, physical_uri: str) -> Dict[str, Any]:

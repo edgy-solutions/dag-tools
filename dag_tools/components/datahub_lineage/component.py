@@ -147,6 +147,123 @@ def _extract_table_schema(metadata: Any) -> Any:
     return None
 
 
+def _emit_physical_only(
+    *, graph, generator, urn, description, properties, upstreams, table_schema, log
+) -> None:
+    """Register the physical dataset as the single entity for an asset.
+
+    Mirrors what ``emit_asset`` puts on its dagster-platform dataset --
+    properties, description, subtype, status, schema, upstream lineage --
+    but onto the URN a DataHub source crawler will independently discover,
+    so the two converge on one entity instead of racing to create two.
+    """
+    from datahub.emitter.mcp import MetadataChangeProposalWrapper
+    from datahub.metadata.schema_classes import (
+        DatasetLineageTypeClass,
+        DatasetPropertiesClass,
+        StatusClass,
+        SubTypesClass,
+        UpstreamClass,
+        UpstreamLineageClass,
+    )
+
+    urn_str = urn.urn()
+    mcps = [
+        MetadataChangeProposalWrapper(
+            entityUrn=urn_str,
+            aspect=DatasetPropertiesClass(
+                description=description,
+                customProperties={k: str(v) for k, v in (properties or {}).items()},
+            ),
+        ),
+        MetadataChangeProposalWrapper(entityUrn=urn_str, aspect=StatusClass(removed=False)),
+        MetadataChangeProposalWrapper(
+            entityUrn=urn_str, aspect=SubTypesClass(typeNames=["Table"])
+        ),
+    ]
+    if upstreams:
+        mcps.append(
+            MetadataChangeProposalWrapper(
+                entityUrn=urn_str,
+                aspect=UpstreamLineageClass(
+                    upstreams=[
+                        UpstreamClass(dataset=u, type=DatasetLineageTypeClass.TRANSFORMED)
+                        for u in upstreams
+                    ]
+                ),
+            )
+        )
+    if table_schema is not None:
+        try:
+            mcps.append(
+                generator.convert_table_schema_to_schema_metadata(
+                    table_schema=table_schema, parent_urn=urn
+                )
+            )
+        except Exception as e:
+            log.warning("could not attach schema to %s: %s", urn_str, e)
+
+    for mcp in mcps:
+        try:
+            graph.emit_mcp(mcp)
+        except Exception as e:
+            log.warning("emit failed for %s: %s", urn_str, e)
+
+
+def _record_lineage(lineage_map, step_key, asset_key_path, upstreams, downstream_urn):
+    """Same per-step lineage the plugin merges, keyed by step_key."""
+    inputs = _to_dataset_urns(upstreams)
+    outputs = {downstream_urn} if downstream_urn is not None else set()
+    key = step_key or (
+        downstream_urn.urn() if downstream_urn is not None else ".".join(asset_key_path)
+    )
+    if key in lineage_map:
+        prior = lineage_map[key]
+        lineage_map[key] = DatasetLineage(
+            inputs=prior.inputs | inputs, outputs=prior.outputs | outputs
+        )
+    else:
+        lineage_map[key] = DatasetLineage(inputs=inputs, outputs=outputs)
+
+
+def _physical_urn_for_asset(
+    sensor_context: Any, asset_key: Any, converter: Any, platform_of: Any
+) -> Optional[Any]:
+    """The PHYSICAL dataset URN for an asset, or None if it has no location.
+
+    An asset that materializes an S3 table and the S3 table are the same
+    real-world object, so they get ONE catalog entity -- the physical one,
+    named exactly as a DataHub source crawler would discover it. Assets
+    with no physical location (a staging step, a source stub) keep a
+    dagster-platform entity, because there is no table to point at.
+
+    Resolution uses the asset's own last materialization: the platform it
+    declared via ``destination_name``, run through the same converter that
+    built its URN when it was written. That keeps a parent's identity
+    stable across runs rather than re-deriving it from whatever this run
+    happens to know.
+    """
+    try:
+        instance = sensor_context.instance
+        rec = instance.get_latest_materialization_event(asset_key)
+        mat = rec.asset_materialization if rec else None
+        if mat is None:
+            return None
+        declared = mat.metadata.get("destination_name")
+        declared = str(declared.value) if declared is not None else None
+        if not declared:
+            return None
+        platform = platform_of(declared)
+        if platform == UNKNOWN_PLATFORM:
+            return None
+        return converter(list(asset_key.path), platform)
+    except Exception as e:
+        sensor_context.log.warning(
+            "could not resolve a physical URN for %s: %s", asset_key, e
+        )
+        return None
+
+
 def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) -> List[str]:
     """Upstream URNs taken from the Dagster asset graph itself.
 
@@ -184,7 +301,15 @@ def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) ->
     urns: List[str] = []
     for parent in parents or []:
         try:
-            urns.append(generator.dataset_urn_from_asset(parent.path).urn())
+            # Prefer the parent's PHYSICAL urn so lineage links table to
+            # table. Falls back to the dagster-platform urn for parents
+            # that have no physical location -- a staging step, say --
+            # which is the only case where a dagster entity is the real
+            # identity rather than a duplicate of one.
+            physical = getattr(sensor_context, "_dagtools_physical_resolver", None)
+            urn = physical(parent) if physical else None
+            urns.append(urn.urn() if urn is not None
+                        else generator.dataset_urn_from_asset(parent.path).urn())
         except Exception:
             continue
     return urns
@@ -257,6 +382,18 @@ class DatahubLineageComponent(Component, Resolvable, Model):
         Dict[str, str],
         Resolver.default(description="Mapping of log metadata keys to DataHub platform names.")
     ] = field(default_factory=lambda: {"Databricks Job Run ID": "databricks"})
+
+    emit_dagster_assets: Annotated[
+        bool,
+        Resolver.default(description=(
+            "Emit a dataPlatform:dagster dataset ALONGSIDE the physical one. "
+            "Off by default: an asset and the table it writes are one object, "
+            "and a second entity never reconciles with what a DataHub source "
+            "crawler discovers. Assets with no physical location still get a "
+            "dagster entity regardless -- there is no table to point at. Turn "
+            "on only to restore the previous two-node behaviour."
+        ))
+    ] = False
 
     platform_mappings: Annotated[
         Dict[str, str],
@@ -417,6 +554,36 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                 # which is what the catalog looked like after the cortex IO
                 # manager's direct emit was removed and nothing replaced it.
                 table_schema = _extract_table_schema(mat.metadata)
+
+                # ONE entity per real table. emit_asset always creates a
+                # dataPlatform:dagster dataset and hangs the physical one
+                # off it as a downstream, so every asset showed up twice --
+                # a rich "Asset" node and a near-empty file node, with the
+                # graph reading source -> asset -> file for what is one
+                # object. The physical URN is the identity a DataHub source
+                # crawler will independently discover, so it is the one
+                # that must exist; emitting a second entity guarantees the
+                # two never reconcile.
+                #
+                # Assets with no physical location keep the dagster entity:
+                # there is no table to point at, and the node is then the
+                # real identity rather than a duplicate.
+                if asset_downstream_urn is not None and not self.emit_dagster_assets:
+                    _emit_physical_only(
+                        graph=graph,
+                        generator=dagster_generator,
+                        urn=asset_downstream_urn,
+                        description=mat.description or None,
+                        properties=properties,
+                        upstreams=upstreams_uris,
+                        table_schema=table_schema,
+                        log=sensor_context.log,
+                    )
+                    _record_lineage(
+                        lineage_map, log.step_key, asset_key_path,
+                        upstreams_uris, asset_downstream_urn,
+                    )
+                    continue
 
                 sensor_context.log.info(f"Emitting asset {asset_key_path} to DataHub graph.")
                 dagster_generator.emit_asset(
