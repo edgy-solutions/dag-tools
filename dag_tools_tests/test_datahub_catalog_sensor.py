@@ -349,3 +349,27 @@ def test_catalog_failure_does_not_break_the_code_location(monkeypatch):
     monkeypatch.setattr(comp, "DatahubLineageComponent", _Boom)
     # Returns empty Definitions rather than propagating.
     assert not ud._build_datahub_defs().sensors
+
+
+def test_upstream_url_becomes_a_clickable_external_url():
+    """Provenance a crawler can never discover for itself.
+
+    An ingest asset knows the URL it downloaded from; nothing scanning the
+    bucket afterwards does. DataHub renders externalUrl as a link, so it
+    belongs there rather than buried in custom properties."""
+    from dag_tools.components.datahub_lineage.component import _first_url
+
+    dla = ("https://www.dla.mil/Portals/104/Documents/InformationOperations/"
+           "LogisticsInformationServices/FOIA/PUBLOG/CAGE.zip")
+    assert _first_url({"url": dla}) == dla
+    assert _first_url({"source_url": dla, "url": "other"}) == dla
+
+
+def test_non_http_locations_are_not_offered_as_links():
+    """A bucket path in externalUrl is a dead link, and the physical
+    location is already the dataset's identity."""
+    from dag_tools.components.datahub_lineage.component import _first_url
+
+    assert _first_url({"url": "s3://publog-lake/_raw/cage"}) is None
+    assert _first_url({"uri": "/mnt/data/x"}) is None
+    assert _first_url({}) is None

@@ -147,6 +147,26 @@ def _extract_table_schema(metadata: Any) -> Any:
     return None
 
 
+EXTERNAL_URL_KEYS = ("externalUrl", "external_url", "source_url", "url")
+"""Metadata keys carrying the upstream an asset was ingested from, most
+specific first. ``url`` is last because it is the vaguest -- an asset may
+use it for something other than provenance."""
+
+
+def _first_url(properties: Dict[str, str]) -> Optional[str]:
+    """The upstream URL an asset advertised, if any.
+
+    Only http(s) is accepted: DataHub renders externalUrl as a link, and a
+    bucket path or a local file there is a dead link rather than
+    provenance -- the physical location is already the dataset's identity.
+    """
+    for key in EXTERNAL_URL_KEYS:
+        value = (properties or {}).get(key)
+        if value and str(value).startswith(("http://", "https://")):
+            return str(value)
+    return None
+
+
 def _emit_physical_only(
     *, graph, generator, urn, description, properties, upstreams, table_schema, log
 ) -> None:
@@ -168,12 +188,19 @@ def _emit_physical_only(
     )
 
     urn_str = urn.urn()
+    props = {k: str(v) for k, v in (properties or {}).items()}
+    # Where the data came from, as a clickable link in the catalog rather
+    # than a custom property nobody scrolls to. For an ingest asset that is
+    # the upstream it downloaded -- the DLA zip for PUB LOG -- which is the
+    # one piece of provenance a crawler can never discover for itself.
+    external_url = _first_url(props)
     mcps = [
         MetadataChangeProposalWrapper(
             entityUrn=urn_str,
             aspect=DatasetPropertiesClass(
                 description=description,
-                customProperties={k: str(v) for k, v in (properties or {}).items()},
+                externalUrl=external_url,
+                customProperties=props,
             ),
         ),
         MetadataChangeProposalWrapper(entityUrn=urn_str, aspect=StatusClass(removed=False)),
