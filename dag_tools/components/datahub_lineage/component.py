@@ -291,7 +291,9 @@ def _physical_urn_for_asset(
         return None
 
 
-def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) -> List[str]:
+def _graph_upstream_urns(
+    sensor_context: Any, asset_key: Any, generator: Any, physical_resolver: Any = None
+) -> List[str]:
     """Upstream URNs taken from the Dagster asset graph itself.
 
     ``datahub.inputs`` metadata only exists on assets that opted in by
@@ -333,8 +335,7 @@ def _graph_upstream_urns(sensor_context: Any, asset_key: Any, generator: Any) ->
             # that have no physical location -- a staging step, say --
             # which is the only case where a dagster entity is the real
             # identity rather than a duplicate of one.
-            physical = getattr(sensor_context, "_dagtools_physical_resolver", None)
-            urn = physical(parent) if physical else None
+            urn = physical_resolver(parent) if physical_resolver else None
             urns.append(urn.urn() if urn is not None
                         else generator.dataset_urn_from_asset(parent.path).urn())
         except Exception:
@@ -480,6 +481,21 @@ class DatahubLineageComponent(Component, Resolvable, Model):
             
             lineage_map: Dict[str, DatasetLineage] = {}
 
+            def _resolve_parent_physical(parent_key):
+                """A parent's PHYSICAL urn, so lineage links table to table.
+
+                Without this the fallback names parents on the dagster
+                platform, and merely REFERENCING such a urn makes DataHub
+                materialize it as a stub -- which is how a second,
+                near-empty entity appeared for an asset that already had a
+                real s3 one, with the downstream lineage pointing at the
+                stub rather than the table.
+                """
+                return _physical_urn_for_asset(
+                    sensor_context, parent_key, _bound_converter,
+                    lambda declared: resolve_platform(declared, self.platform_mappings),
+                )
+
             # NOTE: an earlier version fetched the run's asset_selection here
             # via ``get_run_records(...)[0].run.asset_selection``. That was
             # dead code — the value was never read — and it crashed the whole
@@ -571,7 +587,8 @@ class DatahubLineageComponent(Component, Resolvable, Model):
                 # this the catalog records the asset but none of its lineage.
                 # Deduplicated because an asset may declare both.
                 for urn in _graph_upstream_urns(
-                    sensor_context, mat.asset_key, dagster_generator
+                    sensor_context, mat.asset_key, dagster_generator,
+                    physical_resolver=_resolve_parent_physical,
                 ):
                     if urn not in upstreams_uris:
                         upstreams_uris.append(urn)
