@@ -45,7 +45,7 @@ from ..graphql import (
 )
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry
-from .launcher import build_run_record, launch_representative
+from .launcher import build_run_record, is_launchable, launch_representative
 from .records import RunRecord
 from .state import (
     QualRunState,
@@ -312,6 +312,20 @@ def _drive_state(
                 rep_state, status=RepStatus.SKIPPED,
                 error="representative not present in current class matrix",
             )
+            state.reps[rep_state.rep_id] = rep_state
+            _save_state(state, registry, qual_id, side, local_state_path)
+            continue
+
+        # The deployment is the authority on whether a key can be launched
+        # at all. Checked here rather than only in Q1 so an inventory
+        # published before `is_executable` existed still skips its external
+        # assets instead of accruing one launch failure per source table.
+        launchable, why = is_launchable(list(rep.asset_key), launch_info)
+        if not launchable:
+            logger.info(
+                "skipping %s: %s", "/".join(rep.asset_key), why,
+            )
+            rep_state = transition(rep_state, status=RepStatus.SKIPPED, error=why)
             state.reps[rep_state.rep_id] = rep_state
             _save_state(state, registry, qual_id, side, local_state_path)
             continue

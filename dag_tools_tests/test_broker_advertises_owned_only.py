@@ -51,16 +51,24 @@ def test_materializable_split_excludes_foreign_stub():
     assert ("foreign_from_other_deployment",) not in keys
 
 
-def test_inventory_alone_cannot_tell_them_apart():
-    """Why the filter is necessary at all: the inventory extractor sees
-    both populations identically, so filtering has to come from Dagster's
-    asset graph, not from the record shape."""
+def test_inventory_lists_both_and_flags_which_is_foreign():
+    """The extractor deliberately does NOT drop the foreign stub -- the
+    inventory is a description of the Definitions, and qualification needs
+    to see external assets in order to classify them OBSERVE_ONLY.
+
+    It marks them instead: ``is_executable`` carries Dagster's own
+    materializable/external split into the record. The broker still
+    filters via the asset graph rather than reading this field, because it
+    must hold for records written by a survey older than schema_version 2
+    (where the field is None), and advertising a phantom route is worse
+    than the extra call."""
     from dag_tools.inventory import extract_records
 
-    records = extract_records(_defs_with_local_and_foreign())
-    keys = {tuple(r.asset_key) for r in records}
-    assert ("local_produced",) in keys
-    assert ("foreign_from_other_deployment",) in keys  # indistinguishable here
+    records = {tuple(r.asset_key): r for r in extract_records(
+        _defs_with_local_and_foreign()
+    )}
+    assert records[("local_produced",)].is_executable is True
+    assert records[("foreign_from_other_deployment",)].is_executable is False
 
 
 def test_filter_is_skipped_safely_when_split_unavailable():

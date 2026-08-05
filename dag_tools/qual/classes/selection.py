@@ -22,11 +22,26 @@ Runnability rules — three buckets per recipe item 5:
     ``synthetic_required: "true"``. We don't try to infer this from FQN
     families (e.g. "snowflake means SYNTHETIC_REQUIRED") because it's
     deployment-specific: some orgs have staging Snowflake, others don't.
-  * ``OBSERVE_ONLY`` — opt-in via the asset tag ``observe_only: "true"``.
+  * ``OBSERVE_ONLY`` — opt-in via the asset tag ``observe_only: "true"``,
+    OR forced by ``is_executable=False``.
 
-This is a deliberate "tags are the contract" choice: it's honest about
-operator intent. Inference from FQN families can be layered on later
-without breaking the contract.
+"Tags are the contract" is a deliberate choice for the first two: it's
+honest about operator intent, and inference from FQN families can be
+layered on later without breaking it. Executability is the one thing that
+is NOT a matter of intent. An external/source asset — a bare ``AssetSpec``,
+or the stub Dagster auto-creates for a ``deps=[AssetKey(...)]`` naming a
+key it doesn't define — has no compute to run, and selecting one is
+rejected before the run starts::
+
+    DagsterInvalidDefinitionError: Selected keys must be a subset of
+    existing executable asset keys. Invalid selected keys:
+    {AssetKey(['<source>', '<schema>', '<table>'])}
+
+Every dlt/Sling-style ingest produces these for the tables it reads from,
+and nothing about their tags, group, or key shape distinguishes them from
+real assets. Defaulting them to RUNNABLE turned each one into a launch
+failure the operator had to triage by hand, so executability is checked
+first and outranks the tags.
 """
 from __future__ import annotations
 
@@ -96,6 +111,15 @@ def classify_runnability(member: ClassMember) -> Tuple[Runnability, str]:
     alongside the bucket so operators (and tests) can see *why* a class
     landed where it did.
     """
+    # Executability outranks every tag: an external asset cannot be launched
+    # no matter what an operator asked for, so honoring a tag here would only
+    # produce a guaranteed launch failure.
+    if member.is_executable is False:
+        return (
+            Runnability.OBSERVE_ONLY,
+            "not executable (external/source asset — Dagster cannot materialize it)",
+        )
+
     tags = member.tags or {}
     if _truthy(tags.get("synthetic_required")):
         return Runnability.SYNTHETIC_REQUIRED, "tag synthetic_required=true"

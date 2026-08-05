@@ -157,6 +157,7 @@ def _extract_one(
     return AssetRecord(
         asset_key=asset_key_path,
         location=location,
+        is_executable=_is_executable(assets_def),
         group=_safe_attr(spec, "group_name"),
         compute_kind=_compute_kind(spec),
         code_version=_safe_attr(spec, "code_version"),
@@ -176,6 +177,28 @@ def _extract_one(
         job_names=[],  # job->asset mapping is hard without internals; left blank for now
         urn=_derive_urn(asset_key_path),
     )
+
+
+def _is_executable(assets_def: Any) -> Optional[bool]:
+    """Whether Dagster can actually materialize this asset.
+
+    ``AssetsDefinition.is_executable`` is the public discriminator, and it
+    covers both shapes that matter: an explicit ``AssetSpec`` passed to
+    ``Definitions``, and the stub Dagster auto-creates when an asset
+    declares ``deps=[AssetKey(...)]`` for a key defined nowhere in the
+    Definitions. The second is the common one — every dlt/Sling-style
+    ingest names its upstream source table that way, and the resulting
+    stub is indistinguishable from a real asset by tags, group, or key
+    shape. Only this flag separates them.
+
+    Returns None (not False) when the lookup is unavailable, so a reader
+    can tell "external" from "we couldn't tell" and doesn't skip real
+    assets on a Dagster version whose API moved.
+    """
+    if assets_def is None:
+        return None
+    value = _safe_attr(assets_def, "is_executable", default=None)
+    return bool(value) if isinstance(value, bool) else None
 
 
 def _get_assets_def(defs: Any, asset_key: Any) -> Optional[Any]:

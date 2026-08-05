@@ -116,6 +116,45 @@ def launch_representative(
     )
 
 
+def is_launchable(
+    asset_key: List[str],
+    launch_info: Dict[str, Dict[str, Any]],
+) -> tuple[bool, str]:
+    """Whether the DEPLOYMENT will accept a launch for this asset key.
+
+    Returns ``(ok, reason)``; ``reason`` is empty when ok.
+
+    Only one thing is checked, and only when the deployment answered
+    positively: ``isExecutable == False``. External/source assets — a bare
+    ``AssetSpec``, or the stub Dagster auto-creates for a
+    ``deps=[AssetKey(...)]`` naming a key defined nowhere in the
+    Definitions — have no compute, and selecting one is rejected before
+    the run starts::
+
+        DagsterInvalidDefinitionError: Selected keys must be a subset of
+        existing executable asset keys.
+
+    A dlt or Sling ingest declares its upstream source tables exactly that
+    way, so a fleet with one such pipeline gets one unlaunchable
+    representative per source table.
+
+    Deliberately silent when the key is absent from ``launch_info`` or the
+    deployment didn't report ``isExecutable``: a missing answer means we
+    don't know, and refusing to launch on "don't know" would turn one
+    failed introspection query into a whole side skipped as green.
+    """
+    info = launch_info.get("/".join(asset_key))
+    if info and info.get("is_executable") is False:
+        return False, (
+            "not executable on the deployment (external/source asset — "
+            "Dagster has no compute for it). Assets a dlt/Sling-style "
+            "pipeline names via `deps=[AssetKey(...)]` appear this way. "
+            "Re-run `dagtools survey` to record is_executable in the "
+            "inventory so Q1 classifies it OBSERVE_ONLY up front."
+        )
+    return True, ""
+
+
 PARTITION_NAME_TAG = "dagster/partition"
 """Dagster reads the run's partition from this tag. Hardcoded rather than
 imported from ``dagster`` because the qualification CLI is installed
@@ -166,6 +205,12 @@ def plan_asset_selection(
     if op_names:
         for other_key, other in launch_info.items():
             if other_key == key_str:
+                continue
+            # An external asset never shares a real op, but it can carry an
+            # empty/synthetic opNames that set-intersects with nothing --
+            # skip it explicitly so a sibling sweep can never drag one into
+            # the selection and fail the launch for the whole op.
+            if other.get("is_executable") is False:
                 continue
             if op_names & set(other.get("op_names") or []):
                 selection.append(list(other["asset_key"]))

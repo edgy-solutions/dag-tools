@@ -569,6 +569,7 @@ query DagtoolsLocationAssets {
 query DagtoolsAssetLaunchInfo {
   assetNodes {
     assetKey { path }
+    isExecutable
     isPartitioned
     partitionKeys
     opNames
@@ -576,11 +577,31 @@ query DagtoolsAssetLaunchInfo {
 }
 """.strip()
 
+    ASSET_LAUNCH_INFO_QUERY_NO_EXEC = """
+query DagtoolsAssetLaunchInfo {
+  assetNodes {
+    assetKey { path }
+    isPartitioned
+    partitionKeys
+    opNames
+  }
+}
+""".strip()
+    """Fallback for a deployment whose ``AssetNode`` has no ``isExecutable``.
+
+    GraphQL rejects an unknown field by failing the WHOLE query, not by
+    omitting it from the response — the same trap that silently broke every
+    launch when ``message`` was selected on ``InvalidStepError``. Without
+    this fallback, adding ``isExecutable`` would take the partition and
+    ``opNames`` facts down with it on any version that lacks the field.
+    (It is present and non-null in 1.10.19 and 1.13.16, the range currently
+    qualified; the fallback is for the versions this tool hasn't met yet.)"""
+
     def get_asset_launch_info(self) -> Dict[str, Dict[str, Any]]:
         """Per-asset facts needed to launch it correctly, keyed by
         ``"/".join(asset_key)``.
 
-        The DEPLOYMENT is the authority here, not the survey. Two launch
+        The DEPLOYMENT is the authority here, not the survey. Three launch
         failures depend on facts the survey does not carry through to a
         Representative:
 
@@ -591,28 +612,50 @@ query DagtoolsAssetLaunchInfo {
           * one output of a non-subsettable ``multi_asset`` selected on
             its own is rejected outright with
             ``DagsterInvalidSubsetError`` — the whole op has to be
-            selected.
+            selected;
+
+          * an external/source asset cannot be launched at all —
+            ``Selected keys must be a subset of existing executable asset
+            keys``. ``isExecutable`` is how the deployment says so.
 
         ``opNames`` is what makes the second solvable: assets produced by
         the same op share an op name, so the siblings of a multi_asset
         fall straight out of this response.
 
+        Asking the deployment rather than trusting the survey matters for
+        the third: it fixes inventories published BEFORE ``is_executable``
+        existed, without re-surveying every repo in the fleet.
+
         Soft-failing: returns ``{}`` if the deployment cannot answer, so
         callers degrade to the previous single-key behaviour rather than
-        refusing to launch anything.
+        refusing to launch anything. ``is_executable`` is None when the
+        deployment didn't report it — never False, so an unanswered query
+        can't silently skip every representative.
         """
+        data = None
         try:
             data = self.post(self.ASSET_LAUNCH_INFO_QUERY)
         except Exception as e:
-            logger.warning("get_asset_launch_info: query failed: %s", e)
-            return {}
+            logger.debug(
+                "get_asset_launch_info: query with isExecutable failed (%s); "
+                "retrying without it", e,
+            )
+            try:
+                data = self.post(self.ASSET_LAUNCH_INFO_QUERY_NO_EXEC)
+            except Exception as e2:
+                logger.warning("get_asset_launch_info: query failed: %s", e2)
+                return {}
         out: Dict[str, Dict[str, Any]] = {}
         for node in data.get("assetNodes") or []:
             ak = (node.get("assetKey") or {}).get("path")
             if not isinstance(ak, list) or not ak:
                 continue
+            raw_exec = node.get("isExecutable")
             out["/".join(str(p) for p in ak)] = {
                 "asset_key": [str(p) for p in ak],
+                "is_executable": (
+                    bool(raw_exec) if isinstance(raw_exec, bool) else None
+                ),
                 "is_partitioned": bool(node.get("isPartitioned")),
                 "partition_keys": list(node.get("partitionKeys") or []),
                 "op_names": list(node.get("opNames") or []),

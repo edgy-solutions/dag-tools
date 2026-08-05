@@ -30,12 +30,14 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """Monotonic schema version for AssetRecord. Bump on every additive change.
 
 History:
   1 — initial schema (asset identity, IO manager, partitioning, resources,
       automation, freshness/backfill, tags, checks, jobs, URN sidecar).
+  2 — is_executable, so qualification can tell an asset Dagster runs from
+      an external/source asset it only observes.
 """
 
 
@@ -75,6 +77,21 @@ class AssetRecord(BaseModel):
     )
 
     # --- compute -------------------------------------------------------------
+    is_executable: Optional[bool] = Field(
+        default=None,
+        description=(
+            "False for assets Dagster cannot materialize: explicit AssetSpecs "
+            "(external/source assets) and the stub assets Dagster auto-creates "
+            "for a `deps=[AssetKey(...)]` pointing outside the Definitions — "
+            "e.g. the source tables a dlt or Sling pipeline reads from. "
+            "Selecting one in a run is rejected outright with "
+            "`Selected keys must be a subset of existing executable asset "
+            "keys`, so qualification classifies these OBSERVE_ONLY rather "
+            "than launching them. None means the survey predates this field "
+            "(schema_version < 2) or the lookup failed; readers MUST treat "
+            "None as 'unknown', never as False."
+        ),
+    )
     compute_kind: Optional[str] = Field(
         default=None,
         description="Compute kind tag (e.g. 'python', 'dbt', 'sql').",

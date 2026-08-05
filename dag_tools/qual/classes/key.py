@@ -104,6 +104,11 @@ class ClassMember(BaseModel):
     asset_key: List[str]
     location: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
+    is_executable: Optional[bool] = None
+    """From ``AssetRecord.is_executable``. False means Dagster cannot
+    materialize this asset at all, which forces OBSERVE_ONLY regardless of
+    tags. None means the survey predates the field — treated as unknown,
+    so old inventories classify exactly as they did before."""
 
 
 class Representative(BaseModel):
