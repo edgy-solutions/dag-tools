@@ -225,9 +225,8 @@ advertise a path this deployment never wrote and compete with the real
 owner for the same routing key. To *publish*, use an IO manager that
 implements `physical_coordinates` truthfully — `ConfigurableArrowIOManager`,
 `ConfigurableSQLIOManager`, `ConfigurableDeltaIOManager`, or
-`ConfigurableDuckDBIOManager` (the last is not re-exported from
-`dag_tools.io_managers`; import it from
-`dag_tools.io_managers.duckdb`).
+`ConfigurableDuckDBIOManager`, all importable from
+`dag_tools.io_managers`.
 
 One caveat on the IO-manager path: it resolves the upstream URN from the
 upstream's `datahub/urn` materialization metadata, and when that is absent

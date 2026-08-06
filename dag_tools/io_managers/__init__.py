@@ -9,6 +9,7 @@ by every consumer:
                                 + driver-of-the-day for each backend)
   * ``sql.py``       -> connectorx + SQLAlchemy
   * ``delta.py``     -> deltalake-rs
+  * ``duckdb.py``    -> duckdb
 
 To avoid pulling every heavy dep into a consumer that only wants one
 IO manager, this package uses PEP 562 lazy attribute loading. The
@@ -43,6 +44,8 @@ _LAZY_EXPORTS = {
     "set_source_fn_for_asset_class": ("sql", "set_source_fn_for_asset_class"),
     "DeltaIOManager": ("delta", "DeltaIOManager"),
     "ConfigurableDeltaIOManager": ("delta", "ConfigurableDeltaIOManager"),
+    "DuckDBIOManager": ("duckdb", "DuckDBIOManager"),
+    "ConfigurableDuckDBIOManager": ("duckdb", "ConfigurableDuckDBIOManager"),
 }
 
 __all__ = sorted(_LAZY_EXPORTS.keys())
