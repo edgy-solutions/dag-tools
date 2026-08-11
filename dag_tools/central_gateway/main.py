@@ -11,6 +11,11 @@ from pydantic import BaseModel
 import redis.asyncio as redis
 import jwt  # For basic decoding of the Keycloak JWT
 
+# The subject-source gauge. MEASURES ONLY — nothing it returns may change a request's outcome.
+# See dag_tools/central_gateway/subject_gauge.py and
+# invincible-agent docs/plans/dag-tools-gateway-unverified-subject.md
+from . import subject_gauge
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -45,6 +50,10 @@ class RegisterPayload(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis_client
+    # Announce the subject-source gauge FIRST, before anything can fail. The announcement
+    # establishes its own log visibility before making the claim — announcing a posture whose
+    # evidence channel is dark is the defect the pairing exists to prevent.
+    subject_gauge.announce()
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to Redis.")
     yield
@@ -257,6 +266,25 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     # data client as X-Originator-Email. `token` is a service-account M2M
     # JWT (DA's transport identity); the authz SUBJECT is this end user.
     originator_email = (request.headers.get("X-Originator-Email") or "").strip() or None
+
+    # ---- SUBJECT-SOURCE GAUGE — observe only, refuse nothing -------------------------------
+    # Sited HERE, on the same two inputs the gate below actually uses, so it reports the subject
+    # the gate WOULD choose rather than one of its own devising.
+    #
+    # The blanket except is deliberate and is the rule for any instrument on a live path:
+    # MEASURING MUST NEVER BE ABLE TO BREAK THE THING BEING MEASURED. A defect in the gauge
+    # degrades to a warning and the request proceeds exactly as it does today.
+    #
+    # Nothing below may branch on the reading. The moment a request outcome depends on it, it
+    # stops being a gauge and becomes an unreviewed enforcement path.
+    try:
+        subject_gauge.observe(
+            urn=urn,
+            token=token,
+            header_subject=originator_email,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("subject-source gauge failed (%s) — request unaffected", type(exc).__name__)
 
     # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
     # Checked before Topaz so a known-denied user cannot slip through if
