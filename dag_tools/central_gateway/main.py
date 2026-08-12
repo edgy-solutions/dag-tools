@@ -14,7 +14,19 @@ import jwt  # For basic decoding of the Keycloak JWT
 # The subject-source gauge. MEASURES ONLY — nothing it returns may change a request's outcome.
 # See dag_tools/central_gateway/subject_gauge.py and
 # invincible-agent docs/plans/dag-tools-gateway-unverified-subject.md
-from . import subject_gauge
+#
+# TWO LAYOUTS, and the deployed one is NOT the one the tests use. The image builds with
+# `context: ./dag_tools/central_gateway` and `COPY . .`, so main.py and subject_gauge.py land
+# FLAT in /app and hypercorn imports `main:app` as a TOP-LEVEL module — __package__ is empty
+# and a relative import is a startup CrashLoop, not a test failure. The tests import
+# `dag_tools.central_gateway.subject_gauge` (a PEP-420 namespace package), where the relative
+# form is the correct one. Both are real; support both. The build workflow's note that
+# central_gateway "has no cross-package imports" is what made the flat context safe — this is
+# the first INTRA-directory import, and it is the case that note did not cover.
+try:
+    from . import subject_gauge  # package layout — the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import subject_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

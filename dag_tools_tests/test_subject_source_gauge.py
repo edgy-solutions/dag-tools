@@ -313,3 +313,65 @@ def test_the_gateway_still_REFUSES_NOTHING_on_the_gauges_account():
         assert "raise HTTPException" not in chunk, (
             "a refusal appeared next to the gauge — this instrument observes only"
         )
+
+
+def test_the_gateway_IMPORTS_under_the_layout_the_CONTAINER_actually_uses():
+    """THE PIN THIS SUITE WAS MISSING, paid for in a CrashLoopBackOff.
+
+    Every pin above passed while the deployed gateway could not START. The gauge shipped with
+    `from . import subject_gauge`, which is correct for how the TESTS import it — as
+    `dag_tools.central_gateway`, a PEP-420 namespace package — and fatal for how the IMAGE runs
+    it. The build context is `./dag_tools/central_gateway` and the Dockerfile does `COPY . .`,
+    so the two files land FLAT in /app and hypercorn imports `main:app` as a top-level module
+    with an empty `__package__`. `ImportError: attempted relative import with no known parent
+    package`, at import time, before any route or lifespan exists.
+
+    A green suite over a container that cannot boot is the same shape as a silent gauge: the
+    signal reads clean because the thing was never running. So the LAYOUT is pinned, not just
+    the behavior. Guarded relative imports (relative first, absolute fallback) satisfy both
+    layouts and are allowed; a bare relative import is not.
+
+    Deliberately AST over source text, matching `_gateway_src`'s reasoning — importing the
+    gateway drags in redis/fastapi and would fail for reasons unrelated to the claim.
+    """
+    import ast
+
+    tree = ast.parse(_gateway_src())
+
+    guarded: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        catches_import_error = any(
+            h.type is not None
+            and (
+                (isinstance(h.type, ast.Name) and h.type.id in {"ImportError", "ModuleNotFoundError"})
+                or (
+                    isinstance(h.type, ast.Tuple)
+                    and any(
+                        isinstance(e, ast.Name) and e.id in {"ImportError", "ModuleNotFoundError"}
+                        for e in h.type.elts
+                    )
+                )
+            )
+            for h in node.handlers
+        )
+        if not catches_import_error:
+            continue
+        for stmt in node.body:
+            for sub in ast.walk(stmt):
+                if isinstance(sub, ast.ImportFrom) and (sub.level or 0) > 0:
+                    guarded.add(id(sub))
+
+    bare = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and (n.level or 0) > 0 and id(n) not in guarded
+    ]
+
+    assert not bare, (
+        "unguarded relative import(s) at main.py line(s) "
+        f"{sorted(n.lineno for n in bare)} — the container runs this file as a TOP-LEVEL "
+        "module (`hypercorn main:app` over a flattened /app), where a relative import is a "
+        "startup CrashLoop. Use `try: from . import X / except ImportError: import X`."
+    )
