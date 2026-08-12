@@ -51,6 +51,26 @@ recorded. A token that cannot be verified is reported UNVERIFIED with the reason
 silently trusted and never refused. `verified=False` is legal to LOG and illegal to authorize on;
 nothing in this module authorizes on anything.
 
+## USAGE RULE — two axes, independently valid, and one can be dark while the other is honest
+
+**Read `verification_line()` from the startup log BEFORE interpreting any reading.**
+
+This gauge reports on two axes that must not be collapsed into one "healthy" number:
+
+1. **subject-source** — token-claim / header-only / header-override(+agree|diverge). Always
+   readable. Requires no key, no verification, no configuration.
+2. **token-verified** — whether the bearer's signature was actually proven.
+
+If startup announced ``verification: NONE CONFIGURED``, then **axis 2 carries no information for
+that run**: every request will read ``token_verified=False token_reason=no-verification-key``, and
+that says something about the deployment, not about the callers. Axis 1 is still fully honest and
+is the axis the migration decision rests on.
+
+**Collapsing them would be the error this design exists to avoid.** "Unverified everywhere because
+no key is set" and "unverified everywhere because every caller is forging tokens" are the same
+observation for opposite reasons; a single health number cannot distinguish them, and the startup
+line is what does. They are reported separately for exactly that reason.
+
 Same posture vocabulary as the fleet's `iagent_mesh.transport_auth`, deliberately, so the two
 gauges read the same way. dag-tools does not depend on the SDK, so the pattern is mirrored rather
 than imported.
