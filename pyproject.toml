@@ -32,6 +32,14 @@ dependencies = [
     "oracledb>=3.4.2",
     "polars>=0.20.10",
     "PyYAML>=6.0.1",
+    # dag_tools.otel_api_sync renders mapping YAML into API payloads. The
+    # environment combines SandboxedEnvironment (mapping files are
+    # executable config, so attribute escapes must be blocked) with
+    # NativeEnvironment (a single-expression template must return a real
+    # int/bool/list, or every numeric and array payload field ships as a
+    # string). Both classes are required; >=3.1 is where the current
+    # sandbox semantics and jinja2.nativetypes both settled.
+    "jinja2>=3.1",
     # CortexDataClient uses pl.read_database_uri() for postgres;
     # Polars dispatches to connectorx for URI-based reads. connectorx
     # returns Arrow tables which Polars converts via pyarrow.

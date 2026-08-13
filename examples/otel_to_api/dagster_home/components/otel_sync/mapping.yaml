@@ -1,0 +1,121 @@
+# Mapping: ClickHouse OpenTelemetry spans -> four ordered API calls.
+#
+# Nothing in the engine knows these four endpoints exist. Adding a fifth
+# is an entry in `steps:` — no Python, no worker redeploy.
+#
+# The telemetry this assumes: one span per event record, carrying
+# attributes that identify its execution group, its primary entity, its
+# process item, and its metrics.
+
+api:
+  base_url_env: TARGET_API_BASE_URL
+  header_env:
+    # Expanded from the Restate worker's environment at call time. The
+    # rendered plan carries this string verbatim, never the token.
+    Authorization: "Bearer ${TARGET_API_TOKEN}"
+  timeout_seconds: 30
+  # Restate's journal is exactly-once, but a side effect inside ctx.run is
+  # at-least-once at the crash boundary: a worker killed after a request
+  # lands but before its result is journaled re-sends it on replay. A live
+  # kill test produced 1 extra call out of 802. Stamping a stable per-call
+  # key lets the server recognise the retry — set this whenever the target
+  # API supports it.
+  idempotency_header: Idempotency-Key
+
+# Rows sharing this value form one execution group.
+group_by: "{{ attr(row, 'execution.group_id') }}"
+
+readiness:
+  # Spans for one group arrive over time. Dispatch only once the group
+  # has been quiet — otherwise the derived collections below are built
+  # from a half-arrived group and sent as authoritative upserts.
+  quiet_period_seconds: 300
+  timestamp_column: Timestamp
+  # A terminal marker short-circuits the wait when the producer emits one.
+  complete_when: "{{ filter_rows(rows, attr('execution.terminal'), 'true') | length > 0 }}"
+  # Never strand a group whose terminal marker was lost.
+  max_age_seconds: 86400
+
+# Evaluated once per group, in order; each is visible to the next.
+derive:
+  entities: "{{ distinct(rows, attr('entity.id')) }}"
+  items: "{{ distinct(rows, attr('item.name')) }}"
+  # Per-entity artifact lists. `distinct` inside the lookup matters:
+  # the same artifact appears on every span that touched it.
+  artifacts_by_entity: "{{ group_map(rows, attr('entity.id'), attr('artifact.path')) }}"
+  # Per-item entity lists — this is what makes step 3 map each item to
+  # *its own* entities rather than to every entity in the group.
+  entities_by_item: "{{ group_map(rows, attr('item.name'), attr('entity.id')) }}"
+
+steps:
+  # 1. Associate artifacts with each primary entity.
+  #    PATCH per entity; a 404 means the entity does not exist yet.
+  - id: entity_artifacts
+    for_each: "{{ entities }}"
+    method: PATCH
+    path: "/api/EntityMaintenance/{{ item }}"
+    payload:
+      artifacts: "{{ join(unique(artifacts_by_entity[item]), ',') }}"
+    on_status:
+      404:
+        # Aggregate mode: one bulk create AFTER the fan-out, carrying only
+        # the entities that actually 404'd.
+        #
+        # This endpoint has replace semantics. Sending every entity in the
+        # group would overwrite server-side state for entities whose PATCH
+        # just succeeded — state that was never in the telemetry and cannot
+        # be reconstructed. `collect_into` is what keeps the blast radius
+        # equal to the set that failed.
+        mode: aggregate
+        method: POST
+        path: /api/EntityMaintenance
+        collect_into: entities
+        payload:
+          deleteMissingEntities: false
+          entities: []
+        fragment:
+          entityIdentifier: "{{ item }}"
+          artifacts: "{{ join(unique(artifacts_by_entity[item]), ',') }}"
+
+  # 2. Bulk upsert the process items seen in this group. Once per group.
+  - id: upsert_items
+    method: POST
+    path: /api/ProcessItemDetails/BulkUpdate
+    payload:
+      deleteMissingEntries: false
+      items:
+        _for_each: "{{ items }}"
+        _as: name
+        _template:
+          itemName: "{{ name }}"
+
+  # 3. Map each process item to the entities it actually covers.
+  - id: item_entity_map
+    for_each: "{{ items }}"
+    method: POST
+    path: "/api/ProcessItemDetails/{{ item }}/EntityMapping"
+    payload:
+      # Scoped per item, NOT the group-wide `entities` list.
+      entityIdentifiers: "{{ unique(entities_by_item[item]) }}"
+
+  # 4. Record the result of each individual event.
+  - id: record_execution
+    for_each: "{{ rows }}"
+    # Spans are the unit here, so name the durable step by span id.
+    item_key: "{{ attr(item, 'SpanId') }}"
+    method: POST
+    path: /api/RecordExecution
+    payload:
+      itemName: "{{ attr(item, 'item.name') }}"
+      outcome: "{{ attr(item, 'execution.outcome') }}"
+      # ClickHouse hands back a datetime; the API wants ISO 8601 with a Z.
+      eventDateTime: "{{ to_iso(attr(item, 'Timestamp')) }}"
+      config:
+        branch: "{{ attr(item, 'ci.branch') }}"
+        commitId: "{{ attr(item, 'ci.commit') }}"
+      # Attribute maps are Map(String, String), so every metric arrives as
+      # text. metrics_from_prefix coerces to real numbers and drops
+      # anything non-numeric rather than shipping a string.
+      metrics: "{{ metrics_from_prefix(item, 'metric.') }}"
+      # A comma-joined attribute becomes a real JSON array.
+      relatedEntities: "{{ split(attr(item, 'entity.ids')) }}"

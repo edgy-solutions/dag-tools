@@ -304,8 +304,91 @@ attributes:
       api_path: "/v1/orders"
       sources:
         - "PURCHASE_ORDERS"
+```
 
-### 7. SAP Induction Orchestrator ("The Holy Trinity")
+### 7. OpenTelemetry → API Sync Component
+Push **any** OpenTelemetry publication in ClickHouse to **any** ordered set of API endpoints, defined entirely in YAML. Where the two components above dispatch one payload per row, this one groups telemetry into *execution groups* and renders a whole ordered **call plan** per group — mixed batched and per-record calls, with fallbacks.
+
+The mapping file is the domain model; the engine has no idea how many endpoints there are. Adding one is another entry under `steps:`.
+
+```yaml
+type: dag_tools.OtelApiSyncComponent
+
+attributes:
+  restate_endpoint: "{{ env.RESTATE_INGRESS_URL }}"
+  source_config:
+    drivername: clickhouse
+    host: "{{ env.CLICKHOUSE_HOST }}"
+    database: otel
+  dest_config:
+    drivername: postgresql
+    credentials: "{{ env.POSTGRES_DSN }}"
+    schema: otel_staging
+  pipelines:
+    ci_results:
+      staged: true                 # dlt → warehouse → dispatch (false = read ClickHouse directly)
+      mapping_file: mapping.yaml
+      sources:
+        - name: execution_spans
+          query: "SELECT * FROM otel.otel_traces WHERE SpanName = 'execution.event'"
+          cursor_column: Timestamp
+          lookback_seconds: 600    # re-read window for late-arriving spans
+          primary_key: [TraceId, SpanId]
+```
+
+`mapping.yaml` — grouping, derived collections, then ordered steps:
+
+```yaml
+api:
+  base_url_env: TARGET_API_BASE_URL
+  header_env:
+    Authorization: "Bearer ${TARGET_API_TOKEN}"   # expanded on the WORKER, never in the plan
+
+group_by: "{{ attr(row, 'execution.group_id') }}"
+
+readiness:
+  quiet_period_seconds: 300                        # don't dispatch a group that is still filling
+  complete_when: "{{ filter_rows(rows, attr('execution.terminal'), 'true') | length > 0 }}"
+  max_age_seconds: 86400
+
+derive:
+  entities: "{{ distinct(rows, attr('entity.id')) }}"
+  entities_by_item: "{{ group_map(rows, attr('item.name'), attr('entity.id')) }}"
+
+steps:
+  - id: entity_artifacts                           # once per entity
+    for_each: "{{ entities }}"
+    method: PATCH
+    path: "/api/EntityMaintenance/{{ item }}"
+    payload: {artifacts: "{{ join(unique(artifacts_by_entity[item]), ',') }}"}
+    on_status:
+      404:
+        mode: aggregate                            # ONE bulk POST after the fan-out,
+        path: /api/EntityMaintenance               # carrying only the items that 404'd
+        collect_into: entities
+        payload: {deleteMissingEntities: false, entities: []}
+        fragment: {entityIdentifier: "{{ item }}"}
+  - id: record_execution                           # once per event record
+    for_each: "{{ rows }}"
+    item_key: "{{ attr(item, 'SpanId') }}"
+    path: /api/RecordExecution
+    payload:
+      eventDateTime: "{{ to_iso(attr(item, 'Timestamp')) }}"
+      metrics: "{{ metrics_from_prefix(item, 'metric.') }}"
+```
+
+Four design points worth knowing before you write a mapping:
+
+- **Plans render in Dagster, execute in Restate.** Materialize the dispatch asset with `dry_run: true` (a `dagster.Config` knob, alongside `limit`, `only_group`, `max_groups`, `ignore_readiness`, `ignore_ledger`) to see the exact URLs and bodies in asset metadata without sending anything. Mapping edits never require a worker redeploy.
+- **Fallbacks are scoped to what actually failed.** `mode: item` retries one item elsewhere; `mode: aggregate` banks a pre-rendered fragment per failed call and issues one bulk request afterwards. Against replace-semantics bulk endpoints, a group-wide fallback would overwrite state for items whose call had just succeeded.
+- **Status is data, not an exception.** The handler returns the HTTP status from inside `ctx.run` and classifies outside it: 2xx done, a status with a fallback runs the fallback, 5xx/429 raise so Restate retries, other 4xx is terminal. Raising on every non-2xx would retry a 404 forever and never reach the fallback.
+- **Types survive.** Mapping expressions render through a combined native + sandboxed Jinja environment, so a single-expression template returns a real `int`/`bool`/`list`. OTel attributes are `Map(String, String)`; use `as_int`/`as_float`/`as_bool`/`split`/`metrics_from_prefix` for non-string fields.
+
+Duplicate dispatch is suppressed twice: a Dagster-side ledger of `(group, plan hash)` pairs, and the group-keyed Restate `VirtualObject`, which refuses a plan hash it has already completed. The handler ships in the shared worker image as `RESTATE_SERVICES=api_call_plan`.
+
+A complete runnable stack — ClickHouse + Postgres + Restate + a mock API that reproduces the 404-then-bulk-create behaviour — is in [examples/otel_to_api](./examples/otel_to_api).
+
+### 8. SAP Induction Orchestrator ("The Holy Trinity")
 The professional standard for complex SAP integrations. This example demonstrates the full orchestration lifecycle:
 - **`dlt`**: Extracting from read-only SQL Server views.
 - **`dbt`**: Transforming into a stateful Postgres outbox.
@@ -313,7 +396,7 @@ The professional standard for complex SAP integrations. This example demonstrate
 
 See the full implementation and Docker demo in [examples/sap_induction_orchestrator](./examples/sap_induction_orchestrator).
 
-### 8. SAP OData Induction Service
+### 9. SAP OData Induction Service
 Deploy a durable SAP OData 2.0 induction workflow. This service handles material resolution, quotation lookups, and serial number fan-out with a built-in state machine (NEW -> PENDING -> SUCCESS/ERROR) and callback webhook support.
 
 ```yaml
@@ -323,7 +406,7 @@ restate_endpoint: "http://restate-server:8080/SapInductionService/execute_induct
 
 The induction service is fully configuration-driven via `SapInductionSettings`, mapping generic field names to technical SAP OData properties.
 
-### 9. Federated Zero-Trust Data Mesh
+### 10. Federated Zero-Trust Data Mesh
 The Data Mesh architecture perfectly decouples the Control Plane from the Data Plane, enabling seamless, zero-trust data access across Dagster jobs, AI Agents, and Jupyter users using DataHub URNs.
 
 - **Domain Broker (`dag_tools.domain_broker`)**: A Dagster sidecar that maps DataHub URNs to physical storage paths and mints temporary AWS STS credentials or database tickets.
@@ -331,7 +414,7 @@ The Data Mesh architecture perfectly decouples the Control Plane from the Data P
 - **Cortex Data Client (`dag_tools.cortex_data`)**: The Universal Data Plane client. It fetches routing tickets from the Central Gateway and uses Polars to lazily load data (`pl.scan_parquet`, `pl.read_database`) directly from S3 or Databases. → **[Usage guide: docs/cortex-data-client.md](docs/cortex-data-client.md)** — construction, the URN contract, all five source types, reading on behalf of a user, and where laziness and row/column security are *not* uniform.
 - **Cortex Polars IO Manager (`dag_tools.io_managers.CortexPolarsIOManager`)**: Forces Dagster to use the `CortexDataClient` with M2M OAuth2 authentication for `load_input`, ensuring 100% uniformity. Data Engineers can copy-paste Polars code from Jupyter directly into production `@asset` definitions! **Read-only by design** — `handle_output` raises. Dagster loads an input using the IO manager of the asset that *produced* it, so this manager is bound to assets you consume (including external stubs for data another deployment owns); it must never announce ownership. To **publish** an asset to the mesh, use a producer IO manager that implements `physical_coordinates` truthfully: `ConfigurableArrowIOManager` (parquet on S3), `ConfigurableSQLIOManager` (postgres/clickhouse), or the Delta IO manager. Catalog registration is handled globally by `DatahubLineageComponent`, not per-IO-manager.
 
-### 10. Utilities
+### 11. Utilities
 The `dag_tools.utils` namespace provides foundational helpers used across the fleet.
 
 - **Dynamic K8s Resource Tags (`dag_tools.utils.k8s.resolve_k8s_resource_tags`)**: A resilient utility to resolve Kubernetes pod resource requests and limits from environment variables. It enforces a 1:1 request/limit ratio by default to ensure predictable scheduling and provides whitespace cleaning for K8s API safety.

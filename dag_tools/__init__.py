@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from dag_tools.components.dlt_pipeline import DltPipelineComponent
     from dag_tools.components.dbt_project import CustomDbtProjectComponent
     from dag_tools.components.datahub_lineage import DatahubLineageComponent
+    from dag_tools.components.otel_api_sync import OtelApiSyncComponent
     from dag_tools.components.restate_api_sync import RestateApiSyncComponent
     from dag_tools.components.restate_dlt_sync import RestateDltSyncComponent
     from dag_tools.components.s3_sensor import S3ToArrowComponent, S3SensorComponent, S3ToFileComponent
@@ -13,6 +14,7 @@ _module_lookup = {
     "DltPipelineComponent": "dag_tools.components.dlt_pipeline.component",
     "CustomDbtProjectComponent": "dag_tools.components.dbt_project.component",
     "DatahubLineageComponent": "dag_tools.components.datahub_lineage.component",
+    "OtelApiSyncComponent": "dag_tools.components.otel_api_sync.component",
     "RestateApiSyncComponent": "dag_tools.components.restate_api_sync.component",
     "RestateDltSyncComponent": "dag_tools.components.restate_dlt_sync.component",
     "S3ToArrowComponent": "dag_tools.components.s3_sensor.arrow_component",

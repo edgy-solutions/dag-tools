@@ -1,0 +1,61 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: otel
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./init_clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: telemetry
+
+  restate:
+    # Must be new enough for restate-sdk 0.14.x's discovery protocol.
+    # An older server (1.1) rejects the SDK's discovery request with
+    # 415 and the worker never registers -- see the README.
+    image: docker.io/restatedev/restate:latest
+    ports:
+      - "8080:8080"   # ingress
+      - "9070:9070"   # admin
+    environment:
+      RESTATE_LOG_FILTER: restate=info
+
+  restate-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.restate-worker
+    depends_on: [restate]
+    environment:
+      # The shared worker image hosts only the handler this example needs.
+      RESTATE_SERVICES: api_call_plan
+      RESTATE_ADMIN_URL: http://restate:9070
+      RESTATE_ADVERTISED_URI: http://restate-worker:9080
+      RESTATE_BIND: 0.0.0.0:9080
+      # Credentials are resolved HERE, never shipped inside a call plan.
+      TARGET_API_BASE_URL: http://mock-api:9100
+      TARGET_API_TOKEN: dev-token
+
+  mock-api:
+    image: python:3.12-slim
+    ports:
+      - "9100:9100"
+    volumes:
+      - ./mock_api.py:/app/mock_api.py
+    working_dir: /app
+    command: >
+      sh -c "pip install --quiet fastapi uvicorn &&
+             uvicorn mock_api:app --host 0.0.0.0 --port 9100"

@@ -35,6 +35,7 @@ logger = logging.getLogger("restate.serve")
 SERVICE_REGISTRY = {
     "oracle_ack": "dag_tools.restate_handlers.oracle_ack",
     "api_sync": "dag_tools.restate_handlers.api_sync",
+    "api_call_plan": "dag_tools.restate_handlers.api_call_plan",
     "sap_induction": "dag_tools.restate_handlers.sap_induction",
 }
 
