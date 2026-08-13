@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import dlt
@@ -263,10 +264,67 @@ def config_to_credentials(
     return creds
 
 
-def select_columns_f(doc: Dict[str, Any], select_columns: Optional[List[str]] = None) -> Dict[str, Any]:
+_pa: Any = None  # the pyarrow module, or False once we know it is unavailable
+
+
+def _arrow_item(item: Any) -> bool:
+    """True for the chunk types the arrow-shaped backends yield.
+
+    `add_map` fires once per item a resource yields, and the item's shape
+    depends on the backend: `sqlalchemy` yields dicts (one row), `pyarrow` /
+    `connectorx` and the filesystem + `read_parquet` path yield a whole chunk
+    as a table or a record batch. Import lazily and remember the answer —
+    this is on the per-item path of every extract.
+    """
+    global _pa
+    if _pa is None:
+        try:
+            import pyarrow  # noqa: PLC0415
+
+            _pa = pyarrow
+        except ImportError:
+            _pa = False
+    return _pa is not False and isinstance(item, (_pa.Table, _pa.RecordBatch))
+
+
+def select_columns_f(doc: Any, select_columns: Optional[List[str]] = None) -> Any:
     if not select_columns:
         return doc
+    if _arrow_item(doc):
+        return doc.select([c for c in select_columns if c in doc.schema.names])
+    if isinstance(doc, list):
+        return [select_columns_f(row, select_columns) for row in doc]
     return {k: doc[k] for k in select_columns if k in doc}
+
+
+def add_timestamp_f(item: Any, column: str = "_updated_at") -> Any:
+    """Stamp a load timestamp onto a dlt item, whatever shape the backend yields.
+
+    Always UTC-aware and, on the arrow path, explicitly typed — a naive
+    datetime infers a different destination column type than an aware one, so
+    loading one table through two backends would otherwise drift the schema.
+    Note the arrow branch stamps one timestamp per chunk rather than per row.
+    """
+    ts = datetime.now(timezone.utc)
+
+    if _arrow_item(item):
+        stamp = _pa.array([ts] * item.num_rows, type=_pa.timestamp("us", tz="UTC"))
+        existing = item.schema.get_field_index(column)
+        if existing >= 0:
+            # Overwrite, matching the dict path — append_column would leave the
+            # chunk with two same-named columns and fail in normalization.
+            return item.set_column(existing, column, stamp)
+        return item.append_column(column, stamp)
+
+    if isinstance(item, dict):
+        return {**item, column: ts}
+    if isinstance(item, list):
+        return [{**row, column: ts} for row in item]
+
+    raise TypeError(
+        f"add_timestamp cannot stamp a {type(item).__name__} item; "
+        "supported shapes are dict, list of dicts, pyarrow.Table and pyarrow.RecordBatch"
+    )
 
 
 def db_supports_schema(platform: str) -> bool:

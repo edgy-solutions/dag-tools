@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import dlt
@@ -24,6 +23,7 @@ from dag_tools.asset_wrappers.dlt_assets_factory import (
     CustomDagsterDltTranslator,
     DltAssetGroupConfig,
     ENV_VARS,
+    add_timestamp_f,
     config_to_credentials,
     select_columns_f,
     using_dagster_dev,
@@ -233,7 +233,7 @@ def instantiate_assets(
 
     if config.add_timestamp:
         for table in source.resources:
-            source.resources[table].add_map(lambda row: {**row, "_updated_at": datetime.now()})
+            source.resources[table].add_map(add_timestamp_f)
 
     for table, hint in config.hints.items():
         if table in source.resources:
