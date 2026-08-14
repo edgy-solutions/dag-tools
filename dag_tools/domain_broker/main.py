@@ -3,7 +3,7 @@ import json
 import logging
 import httpx
 import boto3
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -91,6 +91,85 @@ def _build_asset_info_from_record(record, io_manager=None) -> Dict[str, Any]:
         info["bucket"] = "my-data-lake"
         info["prefix"] = "/".join(target_path)
     return info
+
+
+def physical_urn_for(record, io_manager=None) -> Optional[str]:
+    """The URN the CATALOG uses for this asset, derived the way the catalog derives it.
+
+    THE BUG THIS EXISTS TO CLOSE. The broker previously took its routing key from
+    ``record.urn``, whose derivation forces ``platform="dagster"``
+    (``inventory/extractors.py``). That argument does not merely mislabel the platform:
+    the converter selects the NAME LAYOUT from it, so ``dagster`` — absent from
+    ``FILESYSTEM_PLATFORMS`` — takes the ``".".join(asset_key)`` branch. A key of
+    ``minio-svc/publog-lake/publog/p_cage`` therefore became
+
+        registered   ...(dagster, minio-svc.publog-lake.publog.p_cage, PROD)
+        catalogued   ...(s3,      minio-svc.publog-lake/publog/p_cage, PROD)
+
+    Not a spelling difference: the dotted form destroys the boundary between platform
+    instance, bucket and key prefix that the key convention exists to encode, and the
+    instance segment is load-bearing — one S3 path on two servers is two tables. Nothing
+    a resolver produced could ever match a route registered that way, so every read 404'd
+    at the gateway with a routing table that looked fully populated.
+
+    THE RULE, quoted from the sensor that owns it (``datahub_lineage/component.py``):
+    "An asset that materializes an S3 table and the S3 table are the same real-world
+    object, so they get ONE catalog entity -- the physical one, named exactly as a
+    DataHub source crawler would discover it. Assets with no physical location (a staging
+    step, a source stub) keep a dagster-platform entity, because there is no table to
+    point at."
+
+    So this mirrors that resolution rather than inventing a third one. The sensor reads
+    the platform the asset DECLARED via ``destination_name``; we read the ``source_type``
+    off the routing ticket — deliberately the same string, per the SOURCE_TYPE comment in
+    every IO manager ("used for BOTH the mesh routing ticket and the ``destination_name``
+    the catalog sensor reads, so the two cannot drift"). Same vocabulary, same
+    ``resolve_platform`` table, same ``FILESYSTEM_PLATFORMS`` layout list.
+
+    Returns ``None`` when the asset has no physical location to name — no IO manager, no
+    ticket, or a platform nobody declared. The caller then falls through to the existing
+    dagster-form derivation, which is the correct identity for exactly that case.
+
+    NOTE ON OVERRIDES: the sensor resolves through its component's ``platform_mappings``;
+    the broker has no component config, so it resolves without them. A deployment that
+    remaps a platform in YAML would drift again here. Wiring that config through is the
+    remaining gap, and the reconciliation guard is what would catch it.
+    """
+    if io_manager is None or not hasattr(io_manager, "physical_coordinates"):
+        return None
+    try:
+        from dag_tools.components.datahub_lineage.component import (
+            asset_keys_to_dataset_urn_converter,
+        )
+        from dag_tools.components.datahub_lineage.platforms import (
+            FILESYSTEM_PLATFORMS,
+            UNKNOWN_PLATFORM,
+            resolve_platform,
+        )
+    except Exception:  # datahub plugin absent — same posture as _derive_urn
+        return None
+
+    asset_key = list(record.asset_key or [])
+    if not asset_key:
+        return None
+    try:
+        ticket = io_manager.physical_coordinates(asset_key)
+        platform = resolve_platform((ticket or {}).get("source_type"))
+        if platform == UNKNOWN_PLATFORM:
+            return None
+        urn = asset_keys_to_dataset_urn_converter(
+            asset_key,
+            platform=platform,
+            filesystem_platforms=list(FILESYSTEM_PLATFORMS),
+        )
+        if urn is None:
+            return None
+        return urn.urn() if hasattr(urn, "urn") else str(urn)
+    except Exception as exc:  # noqa: BLE001 — never block asset load on identity derivation
+        logger.warning(
+            "physical URN derivation failed for %s: %s — falling back", asset_key, exc,
+        )
+        return None
 
 
 def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[str, Any]:
@@ -219,14 +298,26 @@ def load_dagster_definitions():
         resources = getattr(defs, "resources", {}) or {}
 
         for record in records:
+            # Resolve the IO manager FIRST: it is the only party that knows what this
+            # asset physically is, and identity now depends on it. It used to be fetched
+            # after the URN was already decided, so the one object holding the answer sat
+            # in scope, unused, while the key was derived from a hardcoded platform.
+            io_manager = resources.get(record.io_manager_key) if record.io_manager_key else None
+
+            # Identity precedence, most authoritative first.
+            #   1. An explicit datahub/urn tag — someone stated it; nothing overrides that.
+            #   2. The PHYSICAL urn, derived as the catalog derives it (see physical_urn_for).
+            #   3. record.urn / the dagster fallback — correct only for assets with no
+            #      physical location, which is exactly when 2 declines to answer.
             urn = record.tags.get("datahub/urn") if record.tags else None
+            if not urn:
+                urn = physical_urn_for(record, io_manager)
             if not urn:
                 urn = record.urn
             if not urn:
                 # Fallback deterministic URN generation.
                 key_str = ".".join(record.asset_key)
                 urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str},PROD)"
-            io_manager = resources.get(record.io_manager_key) if record.io_manager_key else None
             LOCAL_ASSETS[urn] = _build_asset_info_from_record(record, io_manager=io_manager)
 
         logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
