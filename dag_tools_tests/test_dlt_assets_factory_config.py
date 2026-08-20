@@ -12,6 +12,11 @@ passthrough is pre-existing Dagster behavior.
 """
 import pytest
 
+# `dag_tools.asset_wrappers.__init__` eagerly imports dlt_assets_factory,
+# which imports dlt -- so without this the module errors at COLLECTION
+# time and aborts the whole run rather than skipping one file.
+pytest.importorskip("dlt")
+
 from dag_tools.asset_wrappers.dlt_assets_factory import DltAssetGroupConfig
 from dag_tools.utils.k8s import resolve_k8s_resource_tags
 

@@ -1,7 +1,15 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import sqlalchemy as sa
+import pytest
+
+# `dag_tools.asset_wrappers.__init__` eagerly imports dlt_assets_factory,
+# which imports dlt -- so without this the module errors at COLLECTION
+# time and aborts the whole run rather than skipping one file.
+pytest.importorskip("dlt")
+
 from dag_tools.asset_wrappers.sources.sql_ct_database import _make_ct_generator
+
 
 class TestCtLogicMocked(unittest.TestCase):
     def setUp(self):

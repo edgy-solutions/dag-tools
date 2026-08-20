@@ -187,16 +187,17 @@ jobs:
             0.*|1.*) echo "::error::s3fs resolved to $S — pre-aiobotocore era"; exit 1 ;;
           esac
 
-      # dlt / dagster-embedded-elt / dagster-aws are not all installable
-      # against 1.10.19 alongside the rest, so those modules are excluded
-      # explicitly rather than letting a collection error mask the result.
+      # Only test_s3_sensor stays excluded: it fails here for a dagster-
+      # version reason, not a missing package. The other three used to be
+      # listed too, because they import dlt transitively (via
+      # `dag_tools.asset_wrappers.__init__`) and blew up at COLLECTION time,
+      # which aborts the entire run. They now carry `pytest.importorskip`
+      # like every other optional-dependency module, so they skip cleanly
+      # and the ignore list no longer has to be maintained by hand.
       - name: Run tests
         run: |
           .venv/bin/python -m pytest dag_tools_tests -q --no-header -rs \
-            --ignore=dag_tools_tests/test_ct_logic_mocked.py \
-            --ignore=dag_tools_tests/test_dlt_assets_factory_config.py \
-            --ignore=dag_tools_tests/test_s3_sensor.py \
-            --ignore=dag_tools_tests/test_sql_ct_database_config.py
+            --ignore=dag_tools_tests/test_s3_sensor.py
 
   # The dbt -> DataHub publishing path, run for real.
   #

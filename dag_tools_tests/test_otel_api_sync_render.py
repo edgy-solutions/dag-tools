@@ -723,6 +723,12 @@ def test_metrics_resolve_from_a_renamed_attribute_column():
 
 def test_clickhouse_source_pins_attribute_maps_to_json_by_default():
     """Without this hint dlt flattens the maps and loses attribute casing."""
+    # Function-level import, so a module-level guard would not cover it:
+    # `dag_tools.asset_wrappers.__init__` eagerly imports dlt_assets_factory,
+    # which imports dlt. The rest of this module has no dlt dependency, which
+    # is why the guard belongs here rather than at the top.
+    pytest.importorskip("dlt")
+
     from dag_tools.asset_wrappers.sources.clickhouse_query import (
         DEFAULT_MAP_COLUMNS,
         clickhouse_query,
