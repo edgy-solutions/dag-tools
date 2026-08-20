@@ -44,6 +44,45 @@ def _executable_asset_keys(items: List[Any]) -> List[AssetKey]:
     return keys
 
 
+def dlt_key_by_source_table(
+    dlt_assets_group: List[Any], sources: List[str]
+) -> Dict[str, AssetKey]:
+    """Map each source table to the ONE dlt asset key that carries it.
+
+    ``create_dlt_assets`` returns a single ``@multi_asset`` covering every
+    table in the pipeline, so its ``.keys`` is the whole set. Handing that
+    set to each table's ack dispatch made every dispatch depend on every
+    table: with a dozen tables the graph is a complete bipartite mess, and
+    the lineage claims PDM_ROUTING's acknowledgment is derived from
+    PDM_BOM's data.
+
+    The translator gives each output spec exactly one dep -- the external
+    stub for the table it came from -- so the tail of that dep is the
+    source table name. Matched case-insensitively because the dlt side
+    lowercases table names while the config names them as Oracle does.
+
+    Tables with no unique match are simply absent; the caller keeps the
+    old all-keys behaviour for those, since a dispatch with NO upstream
+    would run before the extraction rather than after it.
+    """
+    by_tail: Dict[str, List[AssetKey]] = {}
+    for item in dlt_assets_group:
+        if not hasattr(item, "keys"):
+            continue  # external AssetSpec placeholder, not the multi_asset
+        for spec in getattr(item, "specs", []) or []:
+            for dep in spec.deps:
+                path = dep.asset_key.path
+                if path:
+                    by_tail.setdefault(path[-1].lower(), []).append(spec.key)
+
+    resolved: Dict[str, AssetKey] = {}
+    for table in sources:
+        hits = by_tail.get(str(table).lower(), [])
+        if len(hits) == 1:
+            resolved[table] = hits[0]
+    return resolved
+
+
 def load_mei_list(source_file: Optional[str], inline: List[str]) -> List[str]:
     """Read the MEI list from the overlay file, falling back to inline.
 
@@ -296,9 +335,10 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             )
             generated_assets.extend(dlt_assets_group)
 
-            # Real dlt asset keys — used both as the dispatch asset's upstream
-            # dependency and as part of the cycle job selection.
+            # Real dlt asset keys — the cycle job selects all of them; each
+            # ack dispatch depends on only its OWN table (see below).
             dlt_keys = _executable_asset_keys(dlt_assets_group)
+            dlt_key_for = dlt_key_by_source_table(dlt_assets_group, sources)
             dispatch_keys: List[AssetKey] = []
 
             for source_table in sources:
@@ -368,8 +408,14 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
 
                     return dispatch_asset
 
+                # Only this table's dlt output. Falling back to the whole
+                # set when unmatched keeps the dispatch downstream of the
+                # extraction, which matters more than a tidy graph.
+                own_key = dlt_key_for.get(source_table)
+                dispatch_deps = [own_key] if own_key else dlt_keys
+
                 dispatch = _make_dispatch_asset(
-                    fanout_name, dlt_keys, source_table, table_pk,
+                    fanout_name, dispatch_deps, source_table, table_pk,
                     pydantic_config, stats_table,
                 )
                 generated_assets.append(dispatch)

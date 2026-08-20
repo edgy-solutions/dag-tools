@@ -98,6 +98,42 @@ def test_the_completion_asset_exists(defs):
     assert "pdm_load_complete" in _keys(defs)
 
 
+def _deps_of(defs, key_name):
+    holder = next(
+        a for a in defs.assets if AssetKey([key_name]) in getattr(a, "keys", [])
+    )
+    spec = next(s for s in holder.specs if s.key == AssetKey([key_name]))
+    return {"/".join(d.asset_key.path) for d in spec.deps}
+
+
+def test_each_ack_dispatch_depends_only_on_its_own_table(defs):
+    """create_dlt_assets returns ONE multi_asset covering every table, so
+    its .keys is the whole set. Handing that set to each dispatch made
+    every dispatch depend on every table -- a complete bipartite graph at
+    a dozen tables, and lineage claiming PDM_ROUTING's acknowledgment is
+    derived from PDM_BOM's data.
+
+    Each output spec carries exactly one dep (the external stub for the
+    table it came from), which is what makes the per-table mapping
+    recoverable.
+    """
+    expected = {
+        "PDM_PART": "dlt/db/pdm_raw/pdm_part",
+        "PDM_BOM": "dlt/db/pdm_raw/pdm_bom",
+        "PDM_ROUTING": "dlt/db/pdm_raw/pdm_routing",
+    }
+    for table, dlt_key in expected.items():
+        deps = _deps_of(defs, f"pdm_{table}_ack_dispatch")
+        assert deps == {dlt_key}, f"{table} dispatch depends on {deps}"
+
+
+def test_completion_still_waits_for_every_table(defs):
+    """Narrowing the dispatch deps must not narrow this one: the
+    completion row means "all twelve tables landed"."""
+    deps = _deps_of(defs, "pdm_load_complete")
+    assert deps == {f"pdm_{t}_ack_dispatch" for t in TABLES}, deps
+
+
 def test_completion_depends_on_every_ack(defs):
     """It must mean "all twelve tables landed", not "the first one did".
     A completion row written early tells PDM we are done with data we
