@@ -50,7 +50,9 @@ services:
       dockerfile: ./Dockerfile.restate-worker
     environment:
       # Pick which service(s) this worker hosts.
-      - RESTATE_SERVICES=oracle_ack
+      # Both directions of the conversation: oracle_ack flips processed_flag,
+      # oracle_control writes the MEI request and our completion row.
+      - RESTATE_SERVICES=oracle_ack,oracle_control
       # Self-register with Restate on startup — no manual curl needed.
       - RESTATE_ADMIN_URL=http://restate:9070
       - RESTATE_ADVERTISED_URI=http://restate-handlers:9080

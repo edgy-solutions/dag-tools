@@ -12,26 +12,83 @@ attributes:
     credentials: "{{ env.POSTGRES_DSN }}"
     database: pdm_local
     schema: pdm_raw
+
+  # Three Restate ingresses, one per direction of the conversation.
   restate_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleAckService/mark_as_processed/send"
+  mei_request_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleControlService/write_mei_request/send"
+  load_complete_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleControlService/signal_load_complete/send"
+
   pipelines:
     pdm_extraction:
       name: oracle_pdm_to_postgres
       dest_schema: pdm_raw
-      primary_key: PART_ID
-      sources:
-        - PDM_STAGING
-      # The Restate handler writes one summary row here per ack batch.
-      stats_table: pdm_stats
       pipeline_kwargs:
         write_disposition: merge
-      hints:
+
+      # Every table PDM fills for us. A real deployment has around a
+      # dozen; three is enough to show that they are heterogeneous.
+      sources:
+        - PDM_STAGING
+        - PDM_BOM
+        - PDM_ROUTING
+
+      # Index + cursor PER TABLE. The index is the merge key; the cursor
+      # is what advances between loads. PDM does one full load and then
+      # only deltas, so a table missing its cursor silently reverts to a
+      # full extract every cycle.
+      table_config:
         PDM_STAGING:
-          incremental:
-            cursor_path: LAST_MODIFIED
           primary_key: PART_ID
-      # Emits a cycle job (dlt + ack dispatch) and a sensor that polls Oracle
-      # for unprocessed rows and re-runs the job — driving the loop hands-off.
+          cursor: LAST_MODIFIED
+        PDM_BOM:
+          primary_key: BOM_ID
+          cursor: LAST_MODIFIED
+        PDM_ROUTING:
+          primary_key: ROUTE_ID
+          cursor: LAST_MODIFIED
+
+      # The top-level Major End Items we want. Writing this table is what
+      # STARTS the transaction: PDM reads it, explodes the MEIs, and fills
+      # the tables above.
+      #
+      # Only some tables are MEI-scoped, but nothing here distinguishes
+      # them -- an unscoped table populates regardless, and a scoped one
+      # stays empty until this list is written. Treating them uniformly
+      # costs nothing and avoids encoding a distinction we would have to
+      # keep in sync with PDM.
+      mei_table:
+        name: PDM_MEI_REQUEST
+        mei_column: MEI_NUMBER
+        # Supplied as a git-repo overlay mounted into the pod. Read at
+        # materialization time, so re-pointing the overlay takes effect
+        # on the next run rather than the next redeploy. A sensor watches
+        # it and re-requests when the SET of MEIs changes.
+        source_file: "{{ env.PDM_MEI_OVERLAY_PATH }}"
+
+      # The control table both sides write to. PDM appends STARTED, then
+      # COMPLETED tagged FULL or DELTA; we append CONSUMED once the data
+      # is on our side.
+      #
+      # This is also the completion handshake, and it is why the cycle no
+      # longer polls for a row count: a count cannot tell "PDM finished"
+      # from "PDM is a third of the way through committing", so a
+      # count-driven cycle extracts a partial load and acks it as whole.
+      control_table:
+        name: PDM_CONTROL
+        status_column: LOAD_STATUS
+        started_value: STARTED
+        completed_value: COMPLETED
+        consumer_done_value: CONSUMED
+        load_type_column: LOAD_TYPE
+        full_value: FULL
+        delta_value: DELTA
+        timestamp_column: LOAD_TS
+
+      # The Restate handler writes one summary row here per ack batch.
+      stats_table: pdm_stats
+
+      # With control_table set the sensor waits for COMPLETED. Drop the
+      # control_table block and it falls back to a backlog_query.
       cycle_sensor:
         enabled: true
         interval_seconds: 60
-        backlog_query: "SELECT COUNT(*) FROM pdm_staging WHERE processed_flag = 'N'"

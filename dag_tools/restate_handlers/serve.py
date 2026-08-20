@@ -34,6 +34,7 @@ logger = logging.getLogger("restate.serve")
 # Logical key -> importable module that exposes a module-level `service`.
 SERVICE_REGISTRY = {
     "oracle_ack": "dag_tools.restate_handlers.oracle_ack",
+    "oracle_control": "dag_tools.restate_handlers.oracle_control",
     "api_sync": "dag_tools.restate_handlers.api_sync",
     "api_call_plan": "dag_tools.restate_handlers.api_call_plan",
     "sap_induction": "dag_tools.restate_handlers.sap_induction",

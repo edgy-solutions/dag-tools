@@ -1,0 +1,12 @@
+# Top-level Major End Items to request from PDM.
+#
+# In a real deployment this file comes from its own git repo and is
+# mounted into the pod as an overlay -- changing it here (or re-pointing
+# the mount) is how the MEI list changes, with no redeploy of dag-tools.
+#
+# A sensor hashes the resolved SET of MEIs, so reformatting this file or
+# reordering the list does not re-trigger a request. Only a genuinely
+# different set does.
+meis:
+  - MEI-A320-WING
+  - MEI-A320-FUSELAGE
