@@ -155,6 +155,7 @@ jobs:
             "dagster-aws==0.26.19" \
             "dagster-dbt==0.26.19" \
             "dagster-postgres==0.26.19" \
+            "dbt-postgres>=1.8.0" \
             "pyarrow" "polars" "pandas" "duckdb" "deltalake" \
             "s3fs>=2023.1.0" \
             "acryl-datahub>=1.3.1,<1.4" \

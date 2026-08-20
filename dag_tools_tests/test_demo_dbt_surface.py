@@ -19,6 +19,12 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("dagster_dbt")
+# `dbt parse` resolves the demo profile, which needs the postgres
+# adapter. Without it build_demo_dbt_defs degrades to empty Definitions
+# BY DESIGN, so the assertions below would be testing the environment
+# rather than the code. The skip text matches the CI guard that fails on
+# dependency-driven skips, so this cannot go quiet where it should run.
+pytest.importorskip("dbt.adapters.postgres")
 
 from dag_tools.user_deployment import demo_dbt_assets  # noqa: E402
 
