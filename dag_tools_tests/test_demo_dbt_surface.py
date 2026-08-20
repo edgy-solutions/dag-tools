@@ -29,6 +29,33 @@ pytest.importorskip("dbt.adapters.postgres")
 from dag_tools.user_deployment import demo_dbt_assets  # noqa: E402
 
 
+def _has_modern_dbt_component() -> bool:
+    """Does this dagster-dbt declare the component API the surface needs?
+
+    The base component's field set moves between releases: `cli_args` is
+    absent on 0.26.19, the version paired with the Dagster 1.10.19 floor.
+    The surface degrades to empty Definitions there by design (see the
+    failure-tolerance tests below), so asserting that it BUILDS is only
+    meaningful on a release that can support it. Same shape as the
+    `_get_op_spec` skip in test_k8s_env_prefix.py.
+    """
+    import dataclasses
+
+    from dagster_dbt import DbtProjectComponent
+
+    return "cli_args" in {f.name for f in dataclasses.fields(DbtProjectComponent)}
+
+
+needs_modern_dbt = pytest.mark.skipif(
+    not _has_modern_dbt_component(),
+    reason=(
+        "dagster-dbt on this version has no DbtProjectComponent.cli_args; "
+        "the demo surface degrades instead of building (see the "
+        "failure-tolerance tests below)"
+    ),
+)
+
+
 @pytest.fixture
 def dbt_on_path(monkeypatch):
     """Ensure the interpreter's own bin/Scripts dir is on PATH.
@@ -72,6 +99,7 @@ def test_no_dbt_assets_when_demo_mode_is_off(monkeypatch):
     )
 
 
+@needs_modern_dbt
 def test_demo_mode_registers_the_dbt_surface(monkeypatch, tmp_path, dbt_on_path):
     from dag_tools.user_deployment import definitions
 
@@ -90,6 +118,7 @@ def test_demo_mode_registers_the_dbt_surface(monkeypatch, tmp_path, dbt_on_path)
     assert any(k.endswith("demo_regional_totals") for k in dbt_keys), dbt_keys
 
 
+@needs_modern_dbt
 def test_demo_asset_keys_go_through_the_normalization_registry(
     monkeypatch, tmp_path, dbt_on_path
 ):
@@ -165,3 +194,23 @@ def test_the_demo_project_declares_no_sources():
             f"{path.name} declares dbt sources; freshness runs before build, "
             f"so the demo would fail on a database where they do not exist"
         )
+
+
+def test_unsupported_component_fields_are_dropped_not_raised():
+    """`_supported_kwargs` is what keeps the surface buildable across
+    dagster-dbt releases. Passing a field the installed version does not
+    declare raises `TypeError: __init__() got an unexpected keyword
+    argument` -- which is exactly how this surface broke on the 1.10.19
+    floor, where `cli_args` does not exist.
+    """
+    import dataclasses
+
+    @dataclasses.dataclass
+    class _Old:
+        project: str = ""
+
+    kwargs = demo_dbt_assets._supported_kwargs(
+        _Old, project="p", cli_args=["build"], datahub_config=None
+    )
+    assert kwargs == {"project": "p"}
+    _Old(**kwargs)  # constructs rather than raising TypeError

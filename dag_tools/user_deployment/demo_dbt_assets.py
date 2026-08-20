@@ -34,6 +34,7 @@ Everything here is failure-tolerant for the same reason: any problem
 building the surface is logged and yields empty ``Definitions``.
 """
 
+import dataclasses
 import logging
 import os
 from pathlib import Path
@@ -51,6 +52,9 @@ DEMO_DBT_PROJECT_DIR = Path(__file__).parent / "demo_dbt"
 # usually read-only in a container, so both are redirected somewhere
 # writable. DAGSTER_HOME is the natural home; /tmp is the last resort.
 _TARGET_ROOT_ENV = "DAG_TOOLS_DEMO_DBT_TARGET_DIR"
+
+# What the YAML loader would resolve `cli_args` to by default.
+_DEFAULT_CLI_ARGS = ("build",)
 
 
 def _writable_target_root() -> Path:
@@ -98,12 +102,42 @@ def _demo_component_cls():
 
     class _DemoDbtComponent(CustomDbtProjectComponent):
         def get_cli_args(self, context):
+            # `get_cli_args` is not on every dagster-dbt either -- same
+            # moving-surface problem as `_get_op_spec`, which already took
+            # this code location down once.
+            base = getattr(super(), "get_cli_args", None)
+            if base is None:
+                return list(_DEFAULT_CLI_ARGS)
             try:
-                return super().get_cli_args(context)
+                return base(context)
             except LookupError:
-                return [arg for arg in self.cli_args if isinstance(arg, str)]
+                literal = [
+                    arg
+                    for arg in getattr(self, "cli_args", None) or ()
+                    if isinstance(arg, str)
+                ]
+                return literal or list(_DEFAULT_CLI_ARGS)
 
     return _DemoDbtComponent
+
+
+def _supported_kwargs(cls, **candidates):
+    """Drop kwargs this dagster-dbt's component does not declare.
+
+    The base class's field set moves between releases -- `cli_args` does
+    not exist on 0.26.19, the version that pairs with the Dagster 1.10.19
+    floor, and passing it raises `TypeError: __init__() got an unexpected
+    keyword argument`. Losing a field means losing a default, which is far
+    better than a surface that will not build at all.
+    """
+    declared = {f.name for f in dataclasses.fields(cls)}
+    dropped = sorted(set(candidates) - declared)
+    if dropped:
+        logger.warning(
+            "dagster-dbt's component does not declare %s on this version; "
+            "building the demo dbt surface without them.", dropped,
+        )
+    return {k: v for k, v in candidates.items() if k in declared}
 
 
 def build_demo_dbt_defs() -> Definitions:
@@ -155,12 +189,17 @@ def build_demo_dbt_defs() -> Definitions:
         # to super().execute(), which touches `include_metadata` and dies
         # with AttributeError mid-materialization.
         component = _DemoDbtComponent(
-            project=project,
-            cli_args=["build"],
-            datahub_config=(
-                {"server": datahub_server} if datahub_server else None
-            ),
-            k8s_resource_env_prefix=os.getenv("DAG_TOOLS_DEMO_DBT_K8S_PREFIX"),
+            **_supported_kwargs(
+                _DemoDbtComponent,
+                project=project,
+                cli_args=list(_DEFAULT_CLI_ARGS),
+                datahub_config=(
+                    {"server": datahub_server} if datahub_server else None
+                ),
+                k8s_resource_env_prefix=os.getenv(
+                    "DAG_TOOLS_DEMO_DBT_K8S_PREFIX"
+                ),
+            )
         )
 
         @dbt_assets(
