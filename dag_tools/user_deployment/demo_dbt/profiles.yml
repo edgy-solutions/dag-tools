@@ -1,0 +1,18 @@
+# Every value comes from the environment so the same image runs anywhere.
+# The DAG_TOOLS_DEMO_DBT_* vars win; otherwise this falls back to the
+# DAGSTER_POSTGRES_* connection the deployment already has, since a demo
+# cluster invariably has one and guessing a second database would just
+# fail. The schema is always its own, so demo tables never mingle with
+# Dagster's run storage.
+dag_tools_demo:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DAG_TOOLS_DEMO_DBT_HOST', env_var('DAGSTER_POSTGRES_HOST', 'localhost')) }}"
+      port: "{{ env_var('DAG_TOOLS_DEMO_DBT_PORT', env_var('DAGSTER_POSTGRES_PORT', '5432')) | int }}"
+      user: "{{ env_var('DAG_TOOLS_DEMO_DBT_USER', env_var('DAGSTER_POSTGRES_USER', 'postgres')) }}"
+      password: "{{ env_var('DAG_TOOLS_DEMO_DBT_PASSWORD', env_var('DAGSTER_POSTGRES_PASSWORD', '')) }}"
+      dbname: "{{ env_var('DAG_TOOLS_DEMO_DBT_DATABASE', env_var('DAGSTER_POSTGRES_DB', 'postgres')) }}"
+      schema: "{{ env_var('DAG_TOOLS_DEMO_DBT_SCHEMA', 'dag_tools_demo') }}"
+      threads: 4

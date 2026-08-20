@@ -28,6 +28,9 @@ import pytest
 pytest.importorskip("restate")
 pytest.importorskip("oracledb")
 
+# restate_dlt_sync.component imports DagsterDltResource at module scope.
+pytest.importorskip("dagster_dlt")
+
 from dag_tools.restate_handlers import oracle_control
 from dag_tools.components.restate_dlt_sync.component import (
     build_table_hints,

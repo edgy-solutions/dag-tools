@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: demo_customer_orders
+    description: "Per-customer order rollup for the dag-tools demo surface."
+    columns:
+      - name: customer_id
+        description: "Customer identifier."
+      - name: region
+        description: "Sales region the customer belongs to."
+      - name: order_count
+        description: "Number of orders the customer placed."
+      - name: total_amount
+        description: "Sum of the customer's order amounts."
+      - name: last_order_at
+        description: "Timestamp of the customer's most recent order."
+
+  - name: demo_regional_totals
+    description: "Regional rollup built on demo_customer_orders."
+    columns:
+      - name: region
+        description: "Sales region."
+      - name: customer_count
+        description: "Distinct customers with orders in the region."
+      - name: order_count
+        description: "Total orders in the region."
+      - name: total_amount
+        description: "Total order value in the region."
+
+seeds:
+  - name: demo_orders
+    description: "Synthetic raw orders shipped with the image so the demo builds on a clean database."

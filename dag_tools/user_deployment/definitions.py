@@ -235,8 +235,19 @@ def _build_combined_defs() -> Definitions:
         # this module accidentally happens with the env var unset.
         from dag_tools.user_deployment.mesh_demo_assets import build_demo_defs
 
+        # The demo dbt surface rides the same switch. It is the only place
+        # in this deployment that exercises CustomDbtProjectComponent ->
+        # DataHub; without it that path has no deployed coverage at all,
+        # which is how two bugs in it shipped unnoticed. Same lazy import
+        # and same failure tolerance as the rest — it returns empty
+        # Definitions rather than raising if dagster-dbt is absent or the
+        # project will not parse.
+        from dag_tools.user_deployment.demo_dbt_assets import build_demo_dbt_defs
+
         demo = build_demo_defs()
-        base = Definitions.merge(demo, _build_singleton_defs())
+        base = Definitions.merge(
+            demo, build_demo_dbt_defs(), _build_singleton_defs()
+        )
     else:
         base = _build_singleton_defs()
 

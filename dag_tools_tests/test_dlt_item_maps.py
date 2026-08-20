@@ -15,6 +15,12 @@ pytest.importorskip("pyarrow")
 
 import pyarrow as pa
 
+# dlt_assets_factory imports dlt at module scope, so without this the
+# module raises ModuleNotFoundError at COLLECTION time, which aborts the
+# whole pytest run rather than skipping one file. That is what took the
+# dagster-floor CI job to zero tests.
+pytest.importorskip("dlt")
+
 from dag_tools.asset_wrappers.dlt_assets_factory import (
     add_timestamp_f,
     select_columns_f,

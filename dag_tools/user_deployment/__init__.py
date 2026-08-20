@@ -13,7 +13,15 @@ Two modes, switched by ``DAG_TOOLS_DEMO_MODE``:
   bar-chart demo path has somewhere to live. The mock data lands in
   MinIO via ``CortexPolarsIOManager`` at the same path it always
   used; only the deployment that owns the asset has moved (pub-tools
-  → dag-tools).
+  → dag-tools). It also registers the **demo dbt surface**
+  (``demo_dbt_assets``): a small seed→model→model project that runs
+  ``CustomDbtProjectComponent`` and publishes to DataHub when
+  ``DATAHUB_SERVER`` is set. That surface is the only deployed
+  exercise of the dbt→DataHub path — it had none, which is how two
+  bugs in it shipped unnoticed. It writes to its own
+  ``dag_tools_demo`` schema on the ``DAG_TOOLS_DEMO_DBT_*`` connection
+  (falling back to ``DAGSTER_POSTGRES_*``), so it never touches
+  Dagster's run storage tables.
 * **demo mode off** (production) — only the ``components/singletons/``
   surface registers. That directory is currently empty; future code
   (provided by the owner) populates it with basic singleton source

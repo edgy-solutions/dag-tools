@@ -145,7 +145,17 @@ class CustomDbtProjectComponent(DbtProjectComponent):
             target_path.joinpath("run_results_build.json")
         )
 
-        yield from dbt.cli(["docs", "generate"], context=context, target_path=target_path).stream()
+        # Deliberately NO `context=` here. dagster-dbt appends the context's
+        # selection (`--select fqn:*`) to any invocation it is given a
+        # context for, and that selection does not match sources -- so the
+        # catalog came out with models only and DataHub warned "Node missing
+        # from catalog: source.<project>.<table>", losing source column
+        # schema. A catalog is not a run: it should describe the whole
+        # project regardless of which assets this run materialized. Without
+        # a context there is also no chance of re-emitting materialization
+        # events the build already yielded, so `.wait()` replaces `.stream()`
+        # (docs generate produces no node results to stream anyway).
+        dbt.cli(["docs", "generate"], target_path=target_path).wait()
 
         # 4. Publish to datahub
         self._publish_to_datahub(target_path, context, target_platform)

@@ -41,15 +41,25 @@ class _FakeInvocation:
         self.target_path = target_path
         self._args = args
 
-    def stream(self):
-        # dbt writes its artifacts into the target dir, then we yield nothing:
-        # the real stream yields Output/AssetMaterialization events, and this
-        # test is about files, not events.
+    def _run(self):
+        """Write the artifacts the real dbt subcommand would write."""
         self.target_path.mkdir(parents=True, exist_ok=True)
         for name in _ARTIFACTS_BY_COMMAND[self._args[0]]:
             payload = _MANIFEST if name == "manifest.json" else {"command": self._args}
             self.target_path.joinpath(name).write_text(json.dumps(payload))
+
+    def stream(self):
+        # We yield nothing: the real stream yields Output/AssetMaterialization
+        # events, and these tests are about files, not events.
+        self._run()
         return iter(())
+
+    def wait(self):
+        # `docs generate` is invoked with .wait() rather than .stream() -- it
+        # produces no node results, and streaming it under a context would
+        # risk re-emitting materializations the build already yielded.
+        self._run()
+        return self
 
     @property
     def manifest(self):
@@ -72,6 +82,7 @@ class _FakeDbt:
                 self, context=None
             )
         invocation = _FakeInvocation(Path(target_path), list(args))
+        invocation.context = context
         self.invocations.append(invocation)
         return invocation
 
@@ -248,3 +259,41 @@ def test_recipe_omits_the_token_when_there_is_none(tmp_path, monkeypatch):
     # credential and sends an Authorization header that every GMS rejects.
     assert "token" not in recipe["sink"]["config"]
     assert recipe["sink"]["config"]["server"] == "http://gms:8080"
+
+
+def test_docs_generate_is_not_given_a_context(tmp_path, monkeypatch):
+    """dagster-dbt appends the context's selection (`--select fqn:*`) to any
+    invocation it gets a context for, and that selection does not match
+    sources. Passing a context here produced a models-only catalog, and
+    DataHub warned "Node missing from catalog: source.<project>.<table>" --
+    losing source column schema. A catalog describes the project, not the
+    run, so this one invocation deliberately goes contextless.
+    """
+    from dag_tools.components.dbt_project import component as component_module
+
+    class _FakePopen:
+        def __init__(self, cmd, cwd=None, **kwargs):
+            self.returncode = 0
+
+        def communicate(self):
+            return (b"", None)
+
+    monkeypatch.setattr(component_module, "Popen", _FakePopen)
+
+    dbt = _FakeDbt(tmp_path)
+    comp = _component()
+    list(comp.execute(dg.build_asset_context(), dbt))
+
+    docs = [inv for inv in dbt.invocations if inv._args[0] == "docs"]
+    assert len(docs) == 1, "expected exactly one `dbt docs generate`"
+    assert docs[0].context is None, (
+        "`docs generate` was handed a context, so dagster-dbt will narrow it "
+        "with --select and the catalog will omit sources"
+    )
+
+    # The other two DO need the context: build carries the asset selection
+    # and streams materialization events back to Dagster.
+    build = [inv for inv in dbt.invocations if inv._args[0] == "build"]
+    assert build and build[0].context is not None, (
+        "the build invocation must keep its context or subsetted runs break"
+    )

@@ -12,6 +12,11 @@ import pytest
 import yaml
 from dagster import DagsterInstance, materialize
 
+# The component imports DagsterDltResource at module scope; see the note
+# in test_dlt_item_maps.py for why a collection-time error is worse than
+# a skip.
+pytest.importorskip("dagster_dlt")
+
 from dag_tools.components.otel_api_sync import component as component_module
 from dag_tools.components.otel_api_sync import OtelApiSyncComponent
 

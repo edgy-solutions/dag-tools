@@ -1,0 +1,16 @@
+# Demo dbt project shipped inside the dag-tools user-deployment image.
+#
+# Seeds, not sources: this has to build against a database nobody has
+# prepared. A `source` would require a raw table to already exist, and
+# `dbt source snapshot-freshness` runs BEFORE `dbt build` in
+# CustomDbtProjectComponent.execute -- so a missing raw table would fail
+# the run before the build could create it. Seeds ship their own data and
+# build first, which makes this project self-contained on a clean cluster.
+name: dag_tools_demo
+version: "1.0.0"
+config-version: 2
+profile: dag_tools_demo
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
