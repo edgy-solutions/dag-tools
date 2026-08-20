@@ -33,6 +33,7 @@ pytest.importorskip("dagster_dlt")
 
 from dag_tools.restate_handlers import oracle_control
 from dag_tools.components.restate_dlt_sync.component import (
+    ack_query,
     build_table_hints,
     latest_completed_query,
     latest_done_query,
@@ -361,6 +362,48 @@ def test_explicit_hints_win_over_generated_ones():
     assert hints["T"]["primary_key"] == "OVERRIDE"
     assert hints["T"]["write_disposition"] == "replace"
     assert hints["T"]["incremental"] == {"cursor_path": "TS"}
+
+
+# ---------------------------------------------------------------------------
+# Scoping the acknowledgment read-back
+# ---------------------------------------------------------------------------
+
+
+def test_first_ack_reads_the_whole_table():
+    """No high-water mark yet means nothing has been acked, so everything
+    present is fair game. This is the original behaviour, kept for the
+    first cycle and for recovery after a failed one."""
+    sql = ack_query("pdm_raw", "pdm_part", "PART_ID", None)
+    assert "WHERE" not in sql
+    assert "_dlt_load_id" in sql, "the mark still has to be readable"
+
+
+def test_later_acks_are_scoped_to_new_loads():
+    """Unscoped, this read returned the ENTIRE destination table every
+    cycle. Under merge the destination accumulates, so the ack payload
+    grew without bound and the stats row counted all-time rather than the
+    batch."""
+    sql = ack_query("pdm_raw", "pdm_part", "PART_ID", "1787253108.25")
+    assert "WHERE _dlt_load_id > :since" in sql
+
+
+def test_load_ids_sort_lexically_the_way_they_sort_numerically():
+    """The scoping compares load ids as text. dlt writes them as
+    str(time.time()), so this only holds while the integer part is a fixed
+    width -- true until the year 2286, and both sides of the comparison
+    come from that same column."""
+    ids = ["1787253108.2521412", "1787253109.9780922", "1787253110.1"]
+    assert sorted(ids) == ids
+    assert max(ids) == "1787253110.1"
+
+
+def test_a_real_dlt_load_id_column_is_what_we_scope_on():
+    """Pins the column name against dlt renaming it: the scoping silently
+    degrades to a full-table ack if this is wrong, which looks like
+    working software."""
+    from dag_tools.components.restate_dlt_sync.component import DLT_LOAD_ID_COLUMN
+
+    assert DLT_LOAD_ID_COLUMN == "_dlt_load_id"
 
 
 # ---------------------------------------------------------------------------

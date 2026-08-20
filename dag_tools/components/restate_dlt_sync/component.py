@@ -8,6 +8,7 @@ import httpx
 import sqlalchemy as sa
 import yaml
 from dagster import (
+    MaterializeResult,
     AssetKey,
     DagsterRunStatus,
     Definitions,
@@ -194,6 +195,58 @@ def latest_done_query(control: ControlTableSpec) -> str:
     )
 
 
+DLT_LOAD_ID_COLUMN = "_dlt_load_id"
+"""dlt stamps every row with the id of the load that wrote it, and leaves
+rows an incremental load did not touch on their old id. That makes it
+exactly the right key for "what landed since last time"."""
+
+LAST_ACKED_LOAD_ID = "dagtools/last_acked_load_id"
+"""High-water mark, carried on the dispatch asset's own materialization
+metadata. Kept there rather than in a sensor cursor or a side table so it
+travels with the asset and survives a redeploy."""
+
+
+def _previous_load_id(context) -> Optional[str]:
+    """The load id this asset last successfully acknowledged.
+
+    None means "never acked" -- first run, or every prior attempt failed.
+    The caller then falls back to acking the whole table, which is correct
+    for a first cycle and merely wasteful for a recovery.
+    """
+    try:
+        event = context.instance.get_latest_materialization_event(context.asset_key)
+    except Exception:
+        return None
+    materialization = getattr(event, "asset_materialization", None) if event else None
+    if materialization is None:
+        return None
+    entry = (materialization.metadata or {}).get(LAST_ACKED_LOAD_ID)
+    if entry is None:
+        return None
+    value = getattr(entry, "value", entry)
+    return str(value) or None if value else None
+
+
+def ack_query(schema: str, table: str, pk: str, since_load_id: Optional[str]) -> str:
+    """SELECT the primary keys to acknowledge, scoped to what is new.
+
+    Unscoped, this read returned the ENTIRE destination table on every
+    cycle. Under `write_disposition: merge` the destination accumulates,
+    so the ack payload grew without bound -- every cycle re-sent every
+    primary key ever ingested, and the stats row recorded an all-time
+    count rather than the batch. Harmless for correctness, since the
+    Oracle UPDATE is idempotent, but it is the one part of this flow whose
+    cost grows with the data rather than with the work.
+
+    Load ids are compared as text. dlt writes them as `str(time.time())`,
+    whose integer part is a fixed ten digits for the next couple of
+    centuries, so lexical and numeric order agree -- and both sides of the
+    comparison come from this same column, never from a clock we keep.
+    """
+    where = f" WHERE {DLT_LOAD_ID_COLUMN} > :since" if since_load_id else ""
+    return f"SELECT {pk}, {DLT_LOAD_ID_COLUMN} FROM {schema}.{table}{where}"
+
+
 def _post_restate(endpoint: str, payload: Dict[str, Any], log) -> None:
     """POST one payload to a Restate ingress.
 
@@ -378,18 +431,44 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                         engine = sa.create_engine(pg_url)
 
                         dest_schema_name = getattr(_pydantic_config, "dest_schema", None) or self.source_config.get("schema", "public")
-                        query = f"SELECT {_pk} FROM {dest_schema_name}.{_table}"
 
-                        record_ids = []
+                        # Only what landed since the last successful ack.
+                        since = _previous_load_id(context)
+                        rows = []
                         with engine.connect() as conn:
-                            result = conn.execute(sa.text(query))
-                            record_ids = [row[0] for row in result]
+                            try:
+                                rows = conn.execute(
+                                    sa.text(ack_query(dest_schema_name, _table, _pk, since)),
+                                    {"since": since} if since else {},
+                                ).fetchall()
+                            except Exception as e:
+                                # A destination configured without dlt's load-id
+                                # column cannot be scoped. Fall back to the whole
+                                # table rather than acking nothing -- unacked rows
+                                # would be re-extracted forever.
+                                context.log.warning(
+                                    f"Could not scope the ack by {DLT_LOAD_ID_COLUMN} "
+                                    f"({e}); falling back to the full table."
+                                )
+                                since = None
+                                rows = conn.execute(sa.text(
+                                    f"SELECT {_pk}, NULL FROM {dest_schema_name}.{_table}"
+                                )).fetchall()
 
-                        context.log.info(f"Retrieved {len(record_ids)} records from destination table {dest_schema_name}.{_table}.")
+                        record_ids = [row[0] for row in rows]
+                        seen_load_ids = [str(row[1]) for row in rows if row[1] is not None]
+                        high_water = max(seen_load_ids) if seen_load_ids else since
+
+                        context.log.info(
+                            f"Retrieved {len(record_ids)} records from "
+                            f"{dest_schema_name}.{_table} "
+                            + (f"newer than load {since}." if since else "(all rows).")
+                        )
 
                         chunk_size = 10000
                         chunks = [record_ids[i:i + chunk_size] for i in range(0, len(record_ids), chunk_size)]
 
+                        failed = 0
                         async with httpx.AsyncClient() as client:
                             for chunk in chunks:
                                 payload = {
@@ -404,7 +483,26 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                                 try:
                                     await client.post(self.restate_endpoint, json=payload)
                                 except Exception as e:
+                                    failed += 1
                                     context.log.warning(f"Failed to dispatch chunk to Restate: {e}")
+
+                        # Advance the mark ONLY on a clean sweep. A dropped
+                        # chunk with the mark moved would strand those rows
+                        # unacked forever; leaving it put means the next cycle
+                        # re-sends them, and the Oracle UPDATE is idempotent.
+                        if failed:
+                            context.log.warning(
+                                f"{failed} chunk(s) failed; holding the ack mark at "
+                                f"{since} so the next cycle retries them."
+                            )
+                            high_water = since
+
+                        return MaterializeResult(metadata={
+                            LAST_ACKED_LOAD_ID: high_water or "",
+                            "records_acked": len(record_ids),
+                            "chunks_failed": failed,
+                            "scoped_since_load_id": since or "<none: acked all rows>",
+                        })
 
                     return dispatch_asset
 
