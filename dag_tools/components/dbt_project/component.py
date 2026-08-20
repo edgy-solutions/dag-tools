@@ -107,10 +107,24 @@ class CustomDbtProjectComponent(DbtProjectComponent):
             yield from super().execute(context, dbt)
             return
 
-        # 1. dbt source snapshot-freshness
+        # 1. dbt source snapshot-freshness -> sources.json
+        #
+        # DataHub ingests a *directory* of dbt artifacts: the recipe built in
+        # _publish_to_datahub names manifest.json / catalog.json /
+        # sources.json / run_results relative to a single cwd. But
+        # `DbtCliResource.cli()` mints a FRESH `target/<op>-<run>-<uuid>`
+        # directory for every invocation unless handed an explicit
+        # `target_path` (dagster_dbt's `_get_unique_target_path`). Left alone,
+        # the three dbt calls below scatter their artifacts across three
+        # directories and `datahub ingest` dies on the first file it cannot
+        # find -- in practice sources.json, which only `source
+        # snapshot-freshness` writes. So pin the first invocation's directory
+        # and thread it through the rest; then every artifact lands together.
         freshness_invocation = dbt.cli(["source", "snapshot-freshness"], context=context)
         yield from freshness_invocation.stream()
-            
+
+        target_path = Path(freshness_invocation.target_path)
+
         # extract platform
         target_platform = "postgres" # fallback
         try:
@@ -119,28 +133,48 @@ class CustomDbtProjectComponent(DbtProjectComponent):
             pass
 
         # 2. dbt build (applies partition/cli-args resolution from base class)
-        build_invocation = dbt.cli(self.get_cli_args(context), context=context)
+        build_invocation = dbt.cli(
+            self.get_cli_args(context), context=context, target_path=target_path
+        )
         yield from build_invocation.stream()
-        
-        target_path = Path(build_invocation.target_path)
-            
-        # 3. Handle datahub docs 
+
+        # 3. Handle datahub docs
         # copy run results since documentation build will clobber them
         shutil.copyfile(
-            target_path.joinpath("run_results.json"), 
+            target_path.joinpath("run_results.json"),
             target_path.joinpath("run_results_build.json")
         )
-            
+
         yield from dbt.cli(["docs", "generate"], context=context, target_path=target_path).stream()
-            
+
         # 4. Publish to datahub
         self._publish_to_datahub(target_path, context, target_platform)
 
     def _publish_to_datahub(self, run_dir: Path, context: AssetExecutionContext, target_platform: str) -> None:
         """Constructs a transient yaml recipe and executes the external DataHub cli tool."""
         try:
-            url = self.datahub_config.get("server", "http://localhost:8080")
-            datahub_url = url.get_value() if isinstance(url, EnvVar) else url
+            def _resolve(value: Any) -> Any:
+                return value.get_value() if isinstance(value, EnvVar) else value
+
+            datahub_url = _resolve(
+                self.datahub_config.get("server", "http://localhost:8080")
+            )
+
+            # A PAT is required when the metadata service runs with
+            # METADATA_SERVICE_AUTH_ENABLED=true (the correct posture, and
+            # what the sandbox cluster runs). Same resolution order as
+            # DatahubLineageComponent: explicit config, else the standard
+            # DATAHUB_TOKEN env var. Without it every request 401s -- and
+            # because `infer_dbt_schemas` reads schemaMetadata back out of
+            # GMS *before* emitting, the failure surfaces as a source-side
+            # HTTPError with zero events produced, not as a sink error.
+            token = _resolve(self.datahub_config.get("token")) or os.environ.get(
+                "DATAHUB_TOKEN"
+            )
+
+            sink_config: Dict[str, Any] = {'server': datahub_url}
+            if token:
+                sink_config['token'] = token
 
             recipe = {
                 'source': {
@@ -157,9 +191,7 @@ class CustomDbtProjectComponent(DbtProjectComponent):
                 },
                 'sink': {
                     'type': 'datahub-rest',
-                    'config': {
-                        'server': datahub_url
-                    }
+                    'config': sink_config
                 }
             }
             

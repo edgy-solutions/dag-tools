@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      # loaded_at_field + freshness are what make `dbt source
+      # snapshot-freshness` write sources.json. CustomDbtProjectComponent
+      # feeds that artifact to DataHub for source-level lineage, so a
+      # source without freshness configured contributes nothing there.
+      - name: campaigns
+        loaded_at_field: loaded_at
+        freshness:
+          warn_after: {count: 24, period: hour}

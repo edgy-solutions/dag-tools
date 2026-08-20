@@ -1,0 +1,7 @@
+name: project_two
+version: "1.0.0"
+config-version: 2
+profile: project_two
+model-paths: ["models"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]

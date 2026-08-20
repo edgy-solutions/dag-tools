@@ -1,0 +1,12 @@
+dagtools_e2e:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DAGTOOLS_E2E_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('DAGTOOLS_E2E_PG_PORT', '55433') | int }}"
+      user: dagtools
+      password: dagtools
+      dbname: dagtools
+      schema: analytics
+      threads: 4

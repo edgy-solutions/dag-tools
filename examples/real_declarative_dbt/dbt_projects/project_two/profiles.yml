@@ -1,0 +1,15 @@
+# Env-var driven so the same project runs locally and in a deployment
+# without edits. Nothing here is dag-tools specific -- it is a stock dbt
+# profile; the Dagster wiring lives entirely in the component.yaml.
+project_two:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PG_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_PG_USER', 'dagtools') }}"
+      password: "{{ env_var('DBT_PG_PASSWORD', 'dagtools') }}"
+      dbname: "{{ env_var('DBT_PG_DATABASE', 'dagtools') }}"
+      schema: marketing
+      threads: 4

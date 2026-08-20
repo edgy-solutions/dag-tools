@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      # loaded_at_field + freshness is what makes `dbt source
+      # snapshot-freshness` emit sources.json -- the artifact DataHub needs
+      # for source-level lineage and the one this test exists to protect.
+      - name: orders
+        loaded_at_field: loaded_at
+        freshness:
+          warn_after: {count: 240, period: hour}

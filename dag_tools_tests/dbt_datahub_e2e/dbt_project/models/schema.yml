@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: customer_orders
+    description: "Per-customer order rollup."
+    columns:
+      - name: customer_id
+        description: "Customer identifier."
+      - name: order_count
+        description: "Number of orders placed."
+      - name: total_amount
+        description: "Sum of order amounts."

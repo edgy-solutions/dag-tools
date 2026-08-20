@@ -1,0 +1,7 @@
+name: dagtools_e2e
+version: "1.0.0"
+config-version: 2
+profile: dagtools_e2e
+model-paths: ["models"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]

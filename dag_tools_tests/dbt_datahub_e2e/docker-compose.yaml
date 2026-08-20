@@ -1,0 +1,16 @@
+# Postgres for the dbt -> DataHub end-to-end test. Non-default host port so
+# it cannot collide with a developer's local postgres.
+services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "55433:5432"
+    environment:
+      - POSTGRES_USER=dagtools
+      - POSTGRES_PASSWORD=dagtools
+      - POSTGRES_DB=dagtools
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dagtools -d dagtools"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

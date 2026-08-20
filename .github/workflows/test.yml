@@ -196,3 +196,71 @@ jobs:
             --ignore=dag_tools_tests/test_dlt_assets_factory_config.py \
             --ignore=dag_tools_tests/test_s3_sensor.py \
             --ignore=dag_tools_tests/test_sql_ct_database_config.py
+
+  # The dbt -> DataHub publishing path, run for real.
+  #
+  # This job exists because the path shipped broken and no test could see
+  # it. `CustomDbtProjectComponent.execute` shells out to dbt three times
+  # and hands the artifacts to `datahub ingest`; dagster-dbt gives every
+  # invocation its OWN target directory, so the artifacts scattered and
+  # ingestion died on a missing sources.json. Every unit test passed
+  # throughout -- `_publish_to_datahub` swallows ingestion failures by
+  # design (a DataHub outage must not fail the dbt build), so nothing that
+  # mocks dbt or asserts "execute() didn't raise" can observe the break.
+  #
+  # Only a run with the real dbt CLI, real artifacts on disk and the real
+  # datahub CLI catches it, which is what this does. The GMS is an
+  # in-process HTTP recorder rather than a real DataHub (that needs Kafka +
+  # Elasticsearch + MySQL); the failure is on the ingestion SOURCE side and
+  # surfaces long before the sink.
+  dbt-datahub-e2e:
+    name: dbt to DataHub (end-to-end)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install system build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unixodbc-dev
+
+      - name: Create venv
+        run: uv venv --python 3.12
+
+      - name: Install package with all extras
+        run: uv pip install -e ".[all]"
+
+      - name: Show resolved versions
+        run: uv pip list | grep -Ei "^(dagster-dbt|dbt-core|dbt-postgres|acryl-datahub)" || true
+
+      # The test shells out to `dbt` and `datahub` BY NAME, so the venv's
+      # bin dir has to be on PATH -- `.venv/bin/python -m pytest` alone does
+      # not put it there, and the failure is an opaque pydantic error,
+      # "The dbt executable 'dbt' does not exist".
+      #
+      # A skip here would mean the job proved nothing: the test skips itself
+      # when DAGTOOLS_E2E_DBT is unset or docker is missing, and both are
+      # supposed to hold on this runner. So a skip is treated as a failure,
+      # on the same principle as the dependency-skip guard in the job above.
+      - name: Run the end-to-end test
+        env:
+          DAGTOOLS_E2E_DBT: "1"
+        run: |
+          set -o pipefail
+          export PATH="$PWD/.venv/bin:$PATH"
+          .venv/bin/python -m pytest dag_tools_tests/test_dbt_datahub_e2e.py \
+            -q --no-header -rs 2>&1 | tee e2e-output.txt
+          if grep -qE "[0-9]+ skipped" e2e-output.txt; then
+            echo "::error::The end-to-end test SKIPPED, so this job proved nothing."
+            echo "::error::Expected DAGTOOLS_E2E_DBT=1 and a working docker on the runner."
+            exit 1
+          fi
+
+      - name: Show docker state on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          docker compose -f dag_tools_tests/dbt_datahub_e2e/docker-compose.yaml logs || true
