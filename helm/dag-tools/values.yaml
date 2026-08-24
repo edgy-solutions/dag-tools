@@ -64,8 +64,21 @@ restateWorker:
     tag: ""           # defaults to .Chart.AppVersion
     pullPolicy: IfNotPresent
   port: 9080
-  # Comma-separated handler keys: any subset of oracle_ack, api_sync,
-  # sap_induction. Empty = all registered services.
+  # Comma-separated handler keys. Empty = all registered services.
+  # Valid keys (source of truth: SERVICE_REGISTRY in
+  # dag_tools/restate_handlers/serve.py -- an unknown key fails startup
+  # loudly rather than being ignored):
+  #
+  #   oracle_ack      flip processed_flag / append a stats row in Oracle
+  #   oracle_control  write the MEI request + our completion row in Oracle
+  #   api_sync        ack back to MSSQL after an API sync
+  #   api_call_plan   ordered multi-endpoint API dispatch
+  #   sap_induction   SAP OData induction
+  #
+  # The PDM request/response cycle needs BOTH oracle handlers: the ack
+  # alone leaves the MEI request and the completion row with nowhere to
+  # go, and those POSTs fail the run rather than degrading quietly.
+  #   services: "oracle_ack,oracle_control"
   services: "oracle_ack"
   # If empty, RESTATE_ADVERTISED_URI is auto-derived from the in-chart
   # Service name. Override to publish under a different hostname (e.g. if
