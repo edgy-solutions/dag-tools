@@ -6,6 +6,7 @@ import boto3
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Optional Dagster imports — the broker can boot without dagster
@@ -34,6 +35,22 @@ DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
 
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
+
+DEFINITIONS_ERROR: Optional[str] = None
+"""Why the Definitions import failed, or None if it did not.
+
+An empty ``LOCAL_ASSETS`` is ambiguous on its own: a deployment with no
+mesh assets and a deployment whose import blew up look identical, and the
+second used to report ``{"status": "ok", "assets": 0}`` and register an
+empty URN list. The gateway then answered every lookup with
+``404 No active domain broker found`` -- which reads as "that asset does
+not exist" rather than "this broker never loaded". Recording the reason
+is what lets /health and the registration path tell them apart."""
+
+DEFINITIONS_LOADED: bool = False
+"""True once the load has finished, successfully or not. Distinguishes
+"still importing" (a real user deployment takes 90-180s cold) from
+"finished with nothing"."""
 
 class ResolveRequest(BaseModel):
     urn: str
@@ -322,6 +339,8 @@ def load_dagster_definitions():
 
         logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
     except Exception as e:
+        global DEFINITIONS_ERROR
+        DEFINITIONS_ERROR = f"{type(e).__name__}: {e}"
         logger.error(f"Failed to load Dagster definitions: {e}")
 
 async def _register_once(client: httpx.AsyncClient) -> None:
@@ -390,6 +409,7 @@ async def _startup_load_and_register() -> None:
     Consumers should be tolerant of a 404 → succeed retry pattern.
     """
     import asyncio
+    global DEFINITIONS_ERROR, DEFINITIONS_LOADED
     try:
         # load_dagster_definitions is synchronous-blocking — keep it
         # off the event loop by running it in a worker thread so the
@@ -400,7 +420,28 @@ async def _startup_load_and_register() -> None:
             "Loaded %d assets from Dagster definitions", len(LOCAL_ASSETS),
         )
     except Exception as exc:
+        DEFINITIONS_ERROR = f"{type(exc).__name__}: {exc}"
         logger.error("load_dagster_definitions failed: %s", exc)
+    finally:
+        DEFINITIONS_LOADED = True
+
+    if DEFINITIONS_ERROR:
+        # Registering now would push an EMPTY urn list, which the gateway
+        # stores as this broker's authoritative claim: "I own nothing."
+        # Every lookup then 404s as "no active domain broker", i.e. the
+        # asset appears not to exist. Staying silent lets the previous
+        # registration age out on its TTL and keeps a healthy replica
+        # authoritative, so a broken rollout degrades instead of erasing
+        # the routing table.
+        logger.error(
+            "NOT registering with the gateway: the Dagster definitions "
+            "failed to load (%s). This broker would otherwise advertise an "
+            "empty asset list and every lookup for its assets would 404. "
+            "Fix the import and restart; the re-register loop will not "
+            "recover on its own.",
+            DEFINITIONS_ERROR,
+        )
+        return
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -439,12 +480,51 @@ app = FastAPI(lifespan=lifespan, title="Domain Broker")
 async def health():
     """Liveness / readiness probe.
 
-    Returns 200 with the count of registered assets once
-    ``load_dagster_definitions`` has populated ``LOCAL_ASSETS``.
-    Kubernetes probes hit this endpoint to know when to start
-    routing traffic — without it they fall back to a 404 and the
-    pod never becomes Ready.
+    Always 200, deliberately: this is the LIVENESS probe, and a failed
+    import is not something a restart fixes -- returning non-200 would
+    put the pod in a crash loop that hides the actual error. The state
+    is reported in the body, and ``/ready`` is the one that fails.
+
+    ``status`` is one of:
+      * ``loading``  — the import is still running (90-180s is normal for
+        a real user deployment carrying Dagster + dlt + datahub);
+      * ``error``    — the import raised; ``definitions_error`` says how,
+        and this broker has NOT registered with the gateway;
+      * ``ok``       — loaded. ``assets: 0`` here genuinely means this
+        deployment advertises nothing, rather than "something broke".
     """
+    if not DEFINITIONS_LOADED:
+        return {"status": "loading", "assets": len(LOCAL_ASSETS)}
+    if DEFINITIONS_ERROR:
+        return {
+            "status": "error",
+            "assets": len(LOCAL_ASSETS),
+            "definitions_error": DEFINITIONS_ERROR,
+            "registered": False,
+        }
+    return {"status": "ok", "assets": len(LOCAL_ASSETS)}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe — 503 until the definitions are loaded cleanly.
+
+    Separate from ``/health`` because the two answer different questions.
+    Liveness asks "should this pod be restarted" (no: a bad import
+    restarts into the same bad import). Readiness asks "should this pod
+    be receiving traffic", and a broker that could not load its
+    definitions should not: it has nothing truthful to resolve.
+    """
+    if not DEFINITIONS_LOADED:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "loading", "assets": len(LOCAL_ASSETS)},
+        )
+    if DEFINITIONS_ERROR:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "definitions_error": DEFINITIONS_ERROR},
+        )
     return {"status": "ok", "assets": len(LOCAL_ASSETS)}
 
 
