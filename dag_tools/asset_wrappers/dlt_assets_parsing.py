@@ -25,6 +25,8 @@ from dag_tools.asset_wrappers.dlt_assets_factory import (
     ENV_VARS,
     add_timestamp_f,
     config_to_credentials,
+    make_add_timestamp,
+    make_select_columns,
     select_columns_f,
     using_dagster_dev,
     write_env_vars,
@@ -229,11 +231,11 @@ def instantiate_assets(
 
     for table, columns in config.select_columns.items():
         if table in source.resources:
-            source.resources[table].add_map(lambda doc, cols=columns: select_columns_f(doc, cols))
+            source.resources[table].add_map(make_select_columns(columns))
 
     if config.add_timestamp:
         for table in source.resources:
-            source.resources[table].add_map(add_timestamp_f)
+            source.resources[table].add_map(make_add_timestamp())
 
     for table, hint in config.hints.items():
         if table in source.resources:

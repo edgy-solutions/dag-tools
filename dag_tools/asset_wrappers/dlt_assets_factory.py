@@ -327,6 +327,53 @@ def add_timestamp_f(item: Any, column: str = "_updated_at") -> Any:
     )
 
 
+def make_add_timestamp(column: str = "_updated_at") -> Callable[[Any], Any]:
+    """A ONE-ARGUMENT stamper, which is what ``add_map`` requires.
+
+    dlt decides how to invoke a map function by COUNTING its parameters,
+    not by reading their names::
+
+        # dlt/extract/items_transform.py
+        if len(sig.parameters) == 1:
+            self._f = transform_f
+        else:                       # TODO: do better check
+            self._f_meta = transform_f
+
+    Anything with two or more parameters is called as ``f(item, meta)``.
+    So passing ``add_timestamp_f`` -- whose second parameter is ``column``
+    -- straight to ``add_map`` binds ``column = meta``, and meta is
+    normally None. Three different failures came out of that one line:
+
+      * arrow items died on ``get_field_index(None)`` with
+        ``TypeError: expected bytes, NoneType found``;
+      * dict items silently grew a column literally named ``None``;
+      * the same trap on ``select_columns`` made it a quiet no-op.
+
+    The error dlt raises claims the second argument must be *named*
+    ``meta``. It does not check that -- only the count -- so a
+    plausible-looking signature passes inspection and misbehaves.
+    """
+    def _add_timestamp(item: Any) -> Any:
+        return add_timestamp_f(item, column)
+
+    return _add_timestamp
+
+
+def make_select_columns(columns: Optional[List[str]]) -> Callable[[Any], Any]:
+    """A ONE-ARGUMENT column filter. See :func:`make_add_timestamp`.
+
+    The previous call site used ``lambda doc, cols=columns: ...``, whose
+    default argument reads as safe binding but is a second parameter, so
+    dlt overwrote it with meta. ``cols`` became None, ``select_columns_f``
+    hit its ``if not select_columns: return doc`` guard, and every
+    configured column selection silently did nothing.
+    """
+    def _select_columns(item: Any) -> Any:
+        return select_columns_f(item, columns)
+
+    return _select_columns
+
+
 def db_supports_schema(platform: str) -> bool:
     return platform != "clickhouse"
 
