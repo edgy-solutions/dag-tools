@@ -240,15 +240,61 @@ def _materializable_asset_keys(defs):
 
 
 def _split_defs_module(spec: str) -> tuple:
-    """Split ``package.module:attribute``, and say so when it is malformed."""
-    if ":" not in spec:
-        raise ValueError(
-            f"DAGSTER_DEFS_MODULE={spec!r} must be '<module>:<attribute>', "
-            f"e.g. 'mfg.definitions:defs'. Without the attribute there is "
-            f"nothing to look up."
-        )
+    """Split ``module[:attribute]`` into ``(module, attribute or None)``.
+
+    The attribute is OPTIONAL so the broker accepts the same thing the
+    deployment is already configured with. A user deployment started as::
+
+        dagster api grpc --package-name mfg
+
+    has no ``mfg.definitions`` module at all -- Dagster imports the
+    package and discovers the ``Definitions`` as an attribute on it. Making
+    the broker demand ``mfg.definitions:defs`` meant hunting for a name
+    Dagster never asks anyone to know, and produced
+    "No module named 'mfg.definitions'" for a package that is perfectly
+    fine.
+
+    So ``DAGSTER_DEFS_MODULE=mfg`` now works, and matches
+    ``--package-name mfg``. An explicit ``mfg:defs`` still wins when a
+    module exposes more than one.
+    """
+    spec = spec.strip()
+    if not spec:
+        raise ValueError("DAGSTER_DEFS_MODULE is empty")
     module_name, _, attr_name = spec.partition(":")
-    return module_name, attr_name
+    if not module_name:
+        raise ValueError(
+            f"DAGSTER_DEFS_MODULE={spec!r} has no module part; expected "
+            f"'<module>' or '<module>:<attribute>'."
+        )
+    return module_name, (attr_name.strip() or None)
+
+
+def _discover_definitions(module, module_name: str):
+    """Find the single Definitions on a module, the way --package-name does.
+
+    Exactly one is the ordinary case and needs no configuration. Zero and
+    several both need the operator to act, so both say what was found
+    rather than falling back to a guess -- picking one of several at
+    random would advertise half a deployment and look like it worked.
+    """
+    found = _definitions_attrs(module)
+    if len(found) == 1:
+        logger.info(
+            "Discovered Definitions %r on %r (no attribute given)",
+            found[0], module_name,
+        )
+        return getattr(module, found[0])
+    if not found:
+        raise AttributeError(
+            f"no dagster Definitions found on {module_name!r}. If the "
+            f"Definitions lives in a submodule, name it explicitly: "
+            f"DAGSTER_DEFS_MODULE={module_name}.<submodule>:<attribute>"
+        )
+    raise AttributeError(
+        f"{module_name!r} exposes more than one Definitions ({found}); "
+        f"say which: DAGSTER_DEFS_MODULE={module_name}:{found[0]}"
+    )
 
 
 def _import_defs_module(module_name: str):
@@ -325,14 +371,17 @@ def load_dagster_definitions():
         module_name, attr_name = _split_defs_module(DAGSTER_DEFS_MODULE)
         module = _import_defs_module(module_name)
 
-        try:
-            defs = getattr(module, attr_name)
-        except AttributeError:
-            raise AttributeError(
-                f"module {module_name!r} has no attribute {attr_name!r}. "
-                f"Definitions-valued attributes found: "
-                f"{_definitions_attrs(module) or '<none>'}"
-            ) from None
+        if attr_name is None:
+            defs = _discover_definitions(module, module_name)
+        else:
+            try:
+                defs = getattr(module, attr_name)
+            except AttributeError:
+                raise AttributeError(
+                    f"module {module_name!r} has no attribute {attr_name!r}. "
+                    f"Definitions-valued attributes found: "
+                    f"{_definitions_attrs(module) or '<none>'}"
+                ) from None
 
         if not isinstance(defs, Definitions):
             # Previously a bare `return`, which produced zero assets and

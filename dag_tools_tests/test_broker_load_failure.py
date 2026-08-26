@@ -181,9 +181,12 @@ from dag_tools.domain_broker.main import (
 )
 
 
-def test_a_spec_without_an_attribute_says_so():
-    with pytest.raises(ValueError, match="<module>:<attribute>"):
-        _split_defs_module("mfg.definitions")
+def test_a_spec_without_an_attribute_means_discover_it():
+    """Deliberately NOT an error. See the package-name section below: a
+    deployment started with `--package-name mfg` has no attribute name to
+    quote, and requiring one sent operators hunting for a name Dagster
+    never asks them to know."""
+    assert _split_defs_module("mfg.definitions") == ("mfg.definitions", None)
 
 
 def test_a_well_formed_spec_splits():
@@ -221,3 +224,73 @@ def test_definitions_attrs_lists_candidates():
     module._private = Definitions(assets=[])
 
     assert _definitions_attrs(module) == ["definitions"]
+
+
+# ---------------------------------------------------------------------------
+# Matching how the deployment is actually started
+# ---------------------------------------------------------------------------
+#
+# A user deployment runs as `dagster api grpc --package-name mfg`. There is
+# no mfg.definitions module in that world -- Dagster imports the PACKAGE and
+# finds the Definitions as an attribute on it. Demanding
+# "mfg.definitions:defs" from the broker meant hunting for a name Dagster
+# never asks anyone to know, and reported a perfectly healthy package as
+# "No module named 'mfg.definitions'".
+
+from dag_tools.domain_broker.main import _discover_definitions
+
+
+def test_a_bare_package_name_is_accepted():
+    """`DAGSTER_DEFS_MODULE=mfg`, matching `--package-name mfg`."""
+    assert _split_defs_module("mfg") == ("mfg", None)
+
+
+def test_an_explicit_attribute_still_wins():
+    assert _split_defs_module("mfg:defs") == ("mfg", "defs")
+
+
+def test_whitespace_and_empty_attribute_are_tolerated():
+    assert _split_defs_module("  mfg:  ") == ("mfg", None)
+
+
+def test_an_empty_spec_is_refused():
+    with pytest.raises(ValueError):
+        _split_defs_module("")
+
+
+def test_discovery_finds_the_single_definitions():
+    pytest.importorskip("dagster")
+    import types
+
+    from dagster import Definitions
+
+    module = types.ModuleType("mfg")
+    module.defs = Definitions(assets=[])
+    module.unrelated = 42
+
+    assert _discover_definitions(module, "mfg") is module.defs
+
+
+def test_discovery_refuses_to_guess_between_several():
+    """Picking one at random would advertise half a deployment and look
+    like it worked."""
+    pytest.importorskip("dagster")
+    import types
+
+    from dagster import Definitions
+
+    module = types.ModuleType("mfg")
+    module.defs = Definitions(assets=[])
+    module.other_defs = Definitions(assets=[])
+
+    with pytest.raises(AttributeError, match="more than one"):
+        _discover_definitions(module, "mfg")
+
+
+def test_discovery_on_a_module_with_none_points_at_submodules():
+    pytest.importorskip("dagster")
+    import types
+
+    module = types.ModuleType("mfg")
+    with pytest.raises(AttributeError, match="<submodule>"):
+        _discover_definitions(module, "mfg")
