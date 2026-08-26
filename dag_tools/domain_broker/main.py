@@ -341,7 +341,14 @@ def load_dagster_definitions():
     except Exception as e:
         global DEFINITIONS_ERROR
         DEFINITIONS_ERROR = f"{type(e).__name__}: {e}"
-        logger.error(f"Failed to load Dagster definitions: {e}")
+        # exc_info, not just the message. This import pulls the whole user
+        # deployment -- Dagster, dbt, dlt, datahub and their transitive
+        # dependencies -- and the failure is usually an ImportError several
+        # layers down. "No module named X" alone does not say WHICH package
+        # asked for X, which is the only fact that identifies the culprit.
+        logger.error(
+            "Failed to load Dagster definitions: %s", e, exc_info=True,
+        )
 
 async def _register_once(client: httpx.AsyncClient) -> None:
     """Push this broker's URN list to the Central Gateway.
@@ -421,7 +428,7 @@ async def _startup_load_and_register() -> None:
         )
     except Exception as exc:
         DEFINITIONS_ERROR = f"{type(exc).__name__}: {exc}"
-        logger.error("load_dagster_definitions failed: %s", exc)
+        logger.error("load_dagster_definitions failed: %s", exc, exc_info=True)
     finally:
         DEFINITIONS_LOADED = True
 
