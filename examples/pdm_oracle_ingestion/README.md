@@ -28,11 +28,11 @@ its staging tables; we extract, acknowledge, and tell PDM we are done.
                                               dlt incremental extract
                                                        │
                                                        ▼
-                                              ack dispatch ──► processed_flag='Y'
-                                                       │        + PDM_STATS row
-                                                       ▼
                            PDM_CONTROL  ◄────── CONSUMED
 ```
+
+The `CONSUMED` row is the **only** acknowledgment sent. There is no
+per-row receipt — see "Row-level acknowledgment" below.
 
 **COMPLETED is the handshake, and it is the reason this cycle no longer
 polls for a row count.** A count cannot distinguish "PDM finished" from
@@ -50,7 +50,7 @@ believe a cycle finished that did not.
 
 | File | Purpose |
 | --- | --- |
-| [init_oracle.sql](init_oracle.sql) | Request, control, three data tables, stats; seeds a completed full load |
+| [init_oracle.sql](init_oracle.sql) | Request, control, three data tables; seeds a completed full load |
 | [mei_overlay/meis.yaml](mei_overlay/meis.yaml) | The MEI list, stood in for the git overlay |
 | [docker-compose.yaml](docker-compose.yaml) | Oracle Free 23c + Restate + worker |
 | [component.yaml](dagster_home/components/extraction/component.yaml) | The whole pipeline, declaratively |
@@ -112,6 +112,31 @@ re-pointing the overlay takes effect on the next run rather than the next
 redeploy. A YAML list, a JSON list, or one MEI per line all work. A
 sensor watches it and re-requests when the *set* of MEIs changes —
 hashed, so reformatting or reordering does not re-trigger.
+
+### Row-level acknowledgment
+
+`row_ack` defaults to **true** and this example sets it **false**.
+
+When on, each table gets an ack asset that reads every ingested primary
+key back out of the destination and POSTs them to Restate, which flips
+`processed_flag` on the *source* table — one UPDATE per 1000 keys, back
+into the system we read from. On a million-row table that is a million
+keys marshalled through JSON and ~1000 UPDATEs against PDM's Oracle, per
+cycle, plus UPDATE grants on their tables.
+
+Nothing on this side reads that flag. dlt's cursor decides what to pull
+next, the control table carries the cycle handshake PDM dequeues on, and
+the audit trail lives in dlt's own load history. So the flag would be
+written by us and read by nobody.
+
+Turn it on only when the source genuinely consumes it — to purge staged
+rows, or as a transfer audit. `stats_table` is written by this ack, so
+the config refuses to load with both `row_ack: false` and a
+`stats_table`.
+
+With it off, `load_complete` depends on the extraction assets directly
+rather than on the acks, so the completion row still cannot be written
+before every table has landed.
 
 ### MEI-scoped vs unscoped tables
 

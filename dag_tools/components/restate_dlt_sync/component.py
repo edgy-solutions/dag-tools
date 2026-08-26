@@ -273,6 +273,21 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
         transaction
       * (optional) a `<pipeline>_load_complete` asset that appends our
         completion row to the control table once every table has landed
+
+    ``row_ack`` (default True) controls the per-row acknowledgment. It
+    reads every ingested primary key back out of the destination and POSTs
+    them to Restate, which flips ``processed_flag`` on the SOURCE table --
+    an UPDATE per 1000 keys, back into the system we read from.
+
+    Turn it off when the source tracks consumption some other way. With a
+    ``control_table`` it usually does: the cycle-level completion row is
+    the dequeue marker, and dlt's own cursor is what decides what to pull
+    next, so the flag ends up written by us and read by nobody. On a
+    million-row table that is a million keys marshalled through JSON and
+    ~1000 UPDATEs against the source, per cycle, for bookkeeping.
+
+    Keep it on when the source genuinely reads the flag -- to purge staged
+    rows, or as a transfer audit trail.
       * (optional) a cycle **job** + **sensor**. Given a `control_table:`
         the sensor waits for PDM's COMPLETED row, which is the only signal
         that a load is whole; given only a `backlog_query:` it falls back
@@ -326,6 +341,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             stats_table = pipeline_attrs.pop("stats_table", None)
             cycle_sensor_cfg = pipeline_attrs.pop("cycle_sensor", None)
             raw_table_config = pipeline_attrs.pop("table_config", None) or {}
+            row_ack = pipeline_attrs.pop("row_ack", True)
             raw_control = pipeline_attrs.pop("control_table", None)
             raw_mei = pipeline_attrs.pop("mei_table", None)
 
@@ -340,6 +356,14 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                     f"are not in sources: {unknown_tables}. Either add them to "
                     f"sources or drop the config -- a silently-unused index and "
                     f"cursor reads as configured when it is not."
+                )
+
+            if not row_ack and stats_table:
+                raise ValueError(
+                    f"pipeline '{pipeline_key}' sets row_ack: false but also "
+                    f"stats_table: {stats_table!r}. The stats row is written by "
+                    f"the per-row acknowledgment, so with the ack off it would "
+                    f"never appear. Drop one."
                 )
 
             control = (
@@ -394,7 +418,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             dlt_key_for = dlt_key_by_source_table(dlt_assets_group, sources)
             dispatch_keys: List[AssetKey] = []
 
-            for source_table in sources:
+            for source_table in sources if row_ack else []:
                 fanout_name = f"{pipeline_key}_{source_table}_ack_dispatch"
                 spec = table_config.get(source_table)
                 table_pk = spec.primary_key if spec else default_primary_key
@@ -538,8 +562,13 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             # ---- load_complete: our row in the control table -------------------
             complete_keys: List[AssetKey] = []
             if control:
+                # Without the per-row ack there are no dispatch assets, so the
+                # completion row hangs off the extraction itself. It must keep
+                # SOME upstream: with none it would run first and tell PDM we
+                # had consumed data we had not read.
                 complete = self._make_complete_asset(
-                    f"{pipeline_key}_load_complete", control, dispatch_keys,
+                    f"{pipeline_key}_load_complete", control,
+                    dispatch_keys or dlt_keys,
                 )
                 generated_assets.append(complete)
                 complete_keys.extend(complete.keys)

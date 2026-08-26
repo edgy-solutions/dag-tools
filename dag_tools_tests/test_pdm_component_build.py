@@ -252,3 +252,108 @@ def test_a_pipeline_level_primary_key_still_works():
     }).build_defs(None)
     for table in TABLES:
         assert f"pdm_{table}_ack_dispatch" in _keys(d)
+
+
+# ---------------------------------------------------------------------------
+# row_ack: the per-row acknowledgment is optional
+# ---------------------------------------------------------------------------
+#
+# The ack reads every ingested primary key back and POSTs it to Restate,
+# which flips processed_flag on the SOURCE table. Nothing on our side reads
+# that flag -- dlt's cursor decides what to pull, and the control table
+# carries the cycle handshake -- so unless the source consumes it, it is a
+# million keys and ~1000 UPDATEs per cycle against someone else's database
+# for bookkeeping nobody reads.
+
+
+def _defs_without_row_ack(**pipeline):
+    base = {"row_ack": False, "stats_table": None}
+    base.update(pipeline)
+    return _component(pipeline=base).build_defs(None)
+
+
+def test_row_ack_false_generates_no_dispatch_assets():
+    names = _keys(_defs_without_row_ack())
+    assert not [n for n in names if "ack_dispatch" in n], names
+
+
+def test_row_ack_false_keeps_the_control_table_completion():
+    """The GLOBAL ack still has to happen -- it is the dequeue marker."""
+    assert "pdm_load_complete" in _keys(_defs_without_row_ack())
+
+
+def test_completion_falls_back_to_the_extraction_for_its_ordering():
+    """With no dispatch assets it must depend on the dlt assets instead.
+    An unparented completion row would run first and tell PDM we had
+    consumed data we had not read."""
+    d = _defs_without_row_ack()
+    deps = _deps_of(d, "pdm_load_complete")
+    assert deps, "load_complete lost its upstream entirely"
+    assert all("dlt/" in x for x in deps), deps
+
+
+def test_the_cycle_job_still_ends_with_the_completion_step():
+    d = _defs_without_row_ack()
+    job = next(j for j in d.jobs if j.name == "pdm_cycle_job")
+    selection = str(job.selection)
+    assert 'key:"pdm_load_complete"' in selection, selection
+    assert "ack_dispatch" not in selection, selection
+
+
+def test_row_ack_defaults_to_on(defs):
+    """Back-compat: pipelines that never heard of this keep acking."""
+    assert [n for n in _keys(defs) if "ack_dispatch" in n]
+
+
+def test_stats_table_without_the_ack_is_refused():
+    """The stats row is written BY the ack, so with the ack off it would
+    silently never appear."""
+    with pytest.raises(ValueError, match="stats_table"):
+        _component(pipeline={
+            "row_ack": False, "stats_table": "pdm_stats",
+        }).build_defs(None)
+
+
+# ---------------------------------------------------------------------------
+# Scale
+# ---------------------------------------------------------------------------
+
+
+def _many_tables(row_ack, n=20):
+    tables = [f"TBL_{i:02d}" for i in range(1, n + 1)]
+    return tables, _component(pipeline={
+        "sources": tables,
+        "table_config": {
+            t: {"primary_key": f"{t}_ID", "cursor": "CHANGED_ON"} for t in tables
+        },
+        "row_ack": row_ack,
+        "stats_table": None,
+    }).build_defs(None)
+
+
+@pytest.mark.parametrize("row_ack", [True, False])
+def test_twenty_tables_all_wire_up(row_ack):
+    """Nothing here is per-table hand-written, but the load_complete fan-in
+    and the per-table dispatch mapping both scale by table count, so the
+    place a generator breaks is at N, not at 3."""
+    tables, d = _many_tables(row_ack)
+    keys = _keys(d)
+
+    dlt_assets = {k for k in keys if k.startswith("dlt/")}
+    assert len(dlt_assets) == len(tables), dlt_assets
+
+    dispatches = {k for k in keys if "ack_dispatch" in k}
+    assert len(dispatches) == (len(tables) if row_ack else 0)
+
+    # The completion row must wait for every one of them, or it tells the
+    # source we consumed data we have not read.
+    assert len(_deps_of(d, "pdm_load_complete")) == len(tables)
+
+
+def test_twenty_dispatches_each_keep_their_own_single_upstream():
+    """The bipartite-graph bug is invisible at three tables and obvious at
+    twenty: every dispatch must still have exactly one upstream."""
+    tables, d = _many_tables(row_ack=True)
+    for table in tables:
+        deps = _deps_of(d, f"pdm_{table}_ack_dispatch")
+        assert len(deps) == 1, f"{table} dispatch has {len(deps)} upstreams"

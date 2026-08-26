@@ -84,8 +84,23 @@ attributes:
         delta_value: DELTA
         timestamp_column: LOAD_TS
 
-      # The Restate handler writes one summary row here per ack batch.
-      stats_table: pdm_stats
+      # Per-row acknowledgment: OFF.
+      #
+      # It reads every ingested primary key back out of the destination and
+      # POSTs them to Restate, which flips processed_flag on the SOURCE
+      # table -- an UPDATE per 1000 keys, back into the system we read from.
+      # On a million-row table that is a million keys marshalled through
+      # JSON and ~1000 UPDATEs against PDM's Oracle, per cycle.
+      #
+      # Nothing here reads that flag: dlt's cursor decides what to pull, and
+      # the control table below carries the cycle handshake, which is what
+      # PDM dequeues on. Audit lives in dlt's own load history. So the flag
+      # would be written by us and read by nobody.
+      #
+      # Set it true only if the source genuinely consumes the flag -- to
+      # purge staged rows, or as a transfer audit trail. `stats_table` is
+      # written by this ack, so it cannot be set while this is false.
+      row_ack: false
 
       # With control_table set the sensor waits for COMPLETED. Drop the
       # control_table block and it falls back to a backlog_query.
