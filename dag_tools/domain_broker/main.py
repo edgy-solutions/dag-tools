@@ -239,6 +239,69 @@ def _materializable_asset_keys(defs):
         return None
 
 
+def _split_defs_module(spec: str) -> tuple:
+    """Split ``package.module:attribute``, and say so when it is malformed."""
+    if ":" not in spec:
+        raise ValueError(
+            f"DAGSTER_DEFS_MODULE={spec!r} must be '<module>:<attribute>', "
+            f"e.g. 'mfg.definitions:defs'. Without the attribute there is "
+            f"nothing to look up."
+        )
+    module_name, _, attr_name = spec.partition(":")
+    return module_name, attr_name
+
+
+def _import_defs_module(module_name: str):
+    """Import the defs module, distinguishing the two ways it can fail.
+
+    "No module named 'mfg.definitions'" is ambiguous: the PACKAGE may have
+    failed to import (a broken dependency somewhere inside it), or the
+    package may be fine and simply have no submodule by that name. Those
+    need completely different fixes, and the bare ModuleNotFoundError does
+    not separate them -- especially when importing the package emits
+    hundreds of lines of its own output first, which reads as success.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as e:
+        parent = module_name.rpartition(".")[0]
+        if not parent or getattr(e, "name", None) != module_name:
+            raise
+        try:
+            importlib.import_module(parent)
+        except Exception:
+            raise  # the parent is the real problem; let its error surface
+        raise ModuleNotFoundError(
+            f"No module named {module_name!r}. The parent package {parent!r} "
+            f"imported fine, so the package is installed and its "
+            f"dependencies resolve -- there is simply no {module_name!r} "
+            f"submodule. Check DAGSTER_DEFS_MODULE against the real layout: "
+            f"`python -c \"import {parent}, pkgutil; "
+            f"print([m.name for m in pkgutil.iter_modules({parent}.__path__)])\"`",
+            name=module_name,
+        ) from e
+
+
+def _definitions_attrs(module) -> list:
+    """Public attributes on the module that ARE a Definitions.
+
+    Turns "no attribute 'defs'" into "no attribute 'defs'; did you mean
+    'definitions'?" without having to guess the convention.
+    """
+    found = []
+    for name in dir(module):
+        if name.startswith("_"):
+            continue
+        try:
+            if isinstance(getattr(module, name), Definitions):
+                found.append(name)
+        except Exception:
+            continue
+    return sorted(found)
+
+
 def load_dagster_definitions():
     """Load local Dagster definitions and populate LOCAL_ASSETS keyed by URN."""
     if not DAGSTER_DEFS_MODULE or not Definitions:
@@ -259,12 +322,26 @@ def load_dagster_definitions():
 
     import importlib
     try:
-        module_name, attr_name = DAGSTER_DEFS_MODULE.split(":")
-        module = importlib.import_module(module_name)
-        defs = getattr(module, attr_name)
+        module_name, attr_name = _split_defs_module(DAGSTER_DEFS_MODULE)
+        module = _import_defs_module(module_name)
+
+        try:
+            defs = getattr(module, attr_name)
+        except AttributeError:
+            raise AttributeError(
+                f"module {module_name!r} has no attribute {attr_name!r}. "
+                f"Definitions-valued attributes found: "
+                f"{_definitions_attrs(module) or '<none>'}"
+            ) from None
 
         if not isinstance(defs, Definitions):
-            return
+            # Previously a bare `return`, which produced zero assets and
+            # not one line of explanation.
+            raise TypeError(
+                f"{DAGSTER_DEFS_MODULE} is a {type(defs).__name__}, not a "
+                f"dagster Definitions. Definitions-valued attributes on "
+                f"{module_name!r}: {_definitions_attrs(module) or '<none>'}"
+            )
 
         try:
             from dag_tools.inventory import extract_records

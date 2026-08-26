@@ -161,3 +161,63 @@ def test_a_successful_load_registers_its_assets(monkeypatch):
 
     assert len(registered) == 1 and len(registered[0]) == 1
     assert broker.DEFINITIONS_ERROR is None
+
+
+# ---------------------------------------------------------------------------
+# Telling the operator WHICH thing about DAGSTER_DEFS_MODULE is wrong
+# ---------------------------------------------------------------------------
+#
+# "No module named 'mfg.definitions'" is ambiguous, and expensively so: the
+# package may have failed to import, or the package may be fine and simply
+# have no submodule by that name. Those have completely different fixes.
+# It is worst when importing the package emits hundreds of lines of its own
+# output first -- that reads as success, so the error looks like it came
+# from somewhere else entirely.
+
+from dag_tools.domain_broker.main import (
+    _definitions_attrs,
+    _import_defs_module,
+    _split_defs_module,
+)
+
+
+def test_a_spec_without_an_attribute_says_so():
+    with pytest.raises(ValueError, match="<module>:<attribute>"):
+        _split_defs_module("mfg.definitions")
+
+
+def test_a_well_formed_spec_splits():
+    assert _split_defs_module("mfg.definitions:defs") == ("mfg.definitions", "defs")
+
+
+def test_a_missing_submodule_says_the_parent_was_fine():
+    """The reported case: `import mfg` succeeds and builds the world, then
+    mfg.definitions turns out not to exist."""
+    with pytest.raises(ModuleNotFoundError) as exc:
+        _import_defs_module("json.definitions")
+    message = str(exc.value)
+    assert "imported fine" in message
+    assert "pkgutil" in message, "the message should say how to list the real submodules"
+
+
+def test_a_broken_parent_package_surfaces_its_own_error():
+    """When the PACKAGE is what fails, its error is the actionable one and
+    must not be replaced by a tidier message about submodules."""
+    with pytest.raises(ModuleNotFoundError) as exc:
+        _import_defs_module("no_such_package_anywhere.definitions")
+    assert "imported fine" not in str(exc.value)
+
+
+def test_definitions_attrs_lists_candidates():
+    """So "no attribute 'defs'" can say what IS there."""
+    pytest.importorskip("dagster")
+    import types
+
+    from dagster import Definitions
+
+    module = types.ModuleType("fake")
+    module.definitions = Definitions(assets=[])
+    module.not_defs = 42
+    module._private = Definitions(assets=[])
+
+    assert _definitions_attrs(module) == ["definitions"]
