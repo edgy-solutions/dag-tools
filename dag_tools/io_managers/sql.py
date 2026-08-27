@@ -369,9 +369,31 @@ class SQLIOManager(IOManager):
         physical_uri = (
             f"{source_type}://{host_port}/{schema or 'public'}/{table}"
         )
+        # ADR-0044 — STILL ECHOING, DELIBERATELY, AND THIS IS THE EXCEPTION.
+        #
+        # Every S3-backed IO manager now advertises coordinates only, because
+        # the broker can mint an STS credential scoped to the asset. There is
+        # no minter for PostgreSQL or ClickHouse yet, so stripping this would
+        # advertise an asset nothing can read — breaking every SQL-backed read
+        # in the mesh to fix an exposure the broker cannot yet close.
+        #
+        # So this remains the producer's credential: the one this IO manager
+        # WRITES with, handed to any authorized reader, unexpiring and
+        # write-capable. The broker reports it as
+        # ``unprotected_source_types`` on /health rather than passing it over
+        # silently — live exposure, counted.
+        #
+        # WHAT REMOVES THIS: ADR-0044's `mint-role` row for these backends —
+        # `SET LOCAL ROLE` on a broker-held connection plus RLS for Postgres
+        # (NOT gated on PG18: libpq's OAUTHBEARER has no Python API for
+        # injecting a pre-existing JWT), and a role with `CREATE ROW POLICY`
+        # plus a pinned settings profile for ClickHouse. Both enforce the
+        # row/column narrowing SERVER-side, which is strictly better than the
+        # client-side convention this ticket relies on today.
         return {
             "source_type": source_type,
             "physical_uri": physical_uri,
+            "mode": "producer-credential-unprotected",
             "credentials": {
                 "username": self._config.username,
                 "password": self._config.password,

@@ -286,7 +286,11 @@ def test_s3_backend_advertises_a_delta_ticket():
     )
     ticket = iom.physical_coordinates(["sales", "orders"])
     assert ticket["source_type"] == "s3_delta"
-    assert ticket["credentials"]["aws_access_key_id"] == "key"
+    # ADR-0044: coordinates, not the credential this manager writes with.
+    # Previously asserted `credentials["aws_access_key_id"] == "key"`.
+    assert "credentials" not in ticket
+    assert ticket["mode"] == "mint-sts"
+    assert ticket["scope"] == {"bucket": "lake", "prefix": "delta/sales/orders"}
 
 
 def test_local_backend_is_not_advertised(tmp_path):

@@ -145,7 +145,30 @@ def test_factory_returns_a_client_readable_ticket(label, factory):
         "clickhouse",
     }, f"{label}: source_type {ticket['source_type']!r} has no client read path"
     assert ticket["physical_uri"], f"{label}: empty physical_uri"
-    assert ticket["credentials"], f"{label}: no credentials — unreadable by a consumer"
+
+    # ADR-0044. This assertion used to read:
+    #
+    #     assert ticket["credentials"], "no credentials — unreadable by a consumer"
+    #
+    # which encoded the defect as the requirement. "Unreadable by a consumer"
+    # was true only because the consumer was expected to read with the
+    # PRODUCER'S WRITING KEY. A ticket is readable when the BROKER mints
+    # against its coordinates — so the correct assertion is the opposite one.
+    #
+    # It is also why the defect survived a green suite: every ticket test
+    # asserted on what a producer PRODUCED, never on what a consumer RECEIVED.
+    # See test_broker_mints_ticket_credentials.py for the other side of the seam.
+    if ticket.get("mode") == "producer-credential-unprotected":
+        # Backends with no minter yet (postgres, clickhouse) still echo, and
+        # the broker reports them as live exposure. Explicitly declared, so it
+        # cannot be mistaken for an oversight.
+        assert ticket["credentials"], f"{label}: unprotected backend must still be readable"
+    else:
+        assert "credentials" not in ticket, (
+            f"{label}: advertised a producer credential. The broker mints per "
+            f"request (ADR-0044); a producer cannot know the caller or window."
+        )
+        assert ticket.get("scope"), f"{label}: no scope for the broker to mint against"
 
 
 @pytest.mark.parametrize("label,factory", FACTORIES, ids=[f[0] for f in _factories()])

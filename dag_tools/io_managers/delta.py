@@ -225,20 +225,24 @@ def _s3_storage_options(config) -> Dict[str, str]:
     }
 
 
-def _s3_credentials_for_ticket(config) -> Dict[str, str]:
-    """Build the credentials dict the cortex data client expects.
+def _s3_coordinates_for_ticket(config) -> Dict[str, str]:
+    """The NON-SECRET connection coordinates a ticket carries.
 
-    The client's ``s3_delta`` dispatcher reads this dict to assemble
-    Polars' ``storage_options`` for ``scan_delta``. Keys are the
-    lowercase Polars-side names (``aws_access_key_id`` etc.) — distinct
-    from the uppercase env-style names ``_s3_storage_options`` returns.
+    ADR-0044: this used to be ``_s3_credentials_for_ticket`` and returned
+    ``config.common.access_key_id`` / ``secret_access_key`` — the credential
+    this IO manager WRITES Delta tables with, advertised to every authorized
+    reader with no scope and no expiry. The broker now mints a read-only,
+    prefix-scoped, expiring credential per request in ``resolve_asset``.
+
+    Renamed rather than emptied so no caller can keep asking for credentials
+    from a function that silently stopped returning any.
     """
-    return {
-        "aws_access_key_id": config.common.access_key_id,
-        "aws_secret_access_key": config.common.secret_access_key,
-        "aws_endpoint_url": config.common.end_point,
-        "aws_region": config.common.region or "us-east-1",
-    }
+    coordinates = {"region": config.common.region or "us-east-1"}
+    if config.common.end_point:
+        # A coordinate, not a secret — and it must resolve from wherever the
+        # consumer runs, not merely from the producer's namespace.
+        coordinates["endpoint_url"] = config.common.end_point
+    return coordinates
 
 
 def _delta_ticket(
@@ -264,10 +268,15 @@ def _delta_ticket(
     # ``/storage/`` ticket pointed at a prefix that holds nothing --
     # consumers got "No files in log segment" from a route the gateway
     # served with full confidence.
+    physical_uri = f"{uri_base.rstrip('/')}/{path}"
+    bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
     return {
         "source_type": _DELTA_SOURCE_TYPE,
-        "physical_uri": f"{uri_base.rstrip('/')}/{path}",
-        "credentials": _s3_credentials_for_ticket(config),
+        "physical_uri": physical_uri,
+        # ADR-0044: the broker mints per request against this scope.
+        "mode": "mint-sts",
+        "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
+        **_s3_coordinates_for_ticket(config),
     }
 
 

@@ -354,17 +354,37 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
         # does not exist.
         physical_uri = "/".join([self.uri_base.rstrip("/"), *path]) + "/"
 
+        # ADR-0044 — COORDINATES ONLY. NO CREDENTIALS.
+        #
+        # This used to return ``common.access_key_id`` / ``secret_access_key``
+        # verbatim: the key this IO manager WRITES with, handed to every
+        # authorized reader, long-lived and write-capable. The broker now mints
+        # a scoped, expiring, read-only credential per request in
+        # ``resolve_asset``.
+        #
+        # An IO manager must not produce one even if it could: it runs in a
+        # pipeline pod and knows neither the caller nor the access window, and
+        # giving every user deployment minting authority would spread
+        # assume-role privilege across the fleet to replace one credential
+        # with dozens. Advertising and authorizing are different jobs.
+        #
+        # ``scope`` is declared explicitly rather than left for the broker to
+        # derive from the URI — this object knows the bucket/prefix split for
+        # certain, and a derivation is a second implementation waiting to
+        # disagree with this one.
         common = self.fs.common
-        credentials: Dict[str, Any] = {
-            "aws_access_key_id": common.access_key_id,
-            "aws_secret_access_key": common.secret_access_key,
-            "aws_region": common.region or "us-east-1",
-        }
-        if common.end_point:
-            credentials["aws_endpoint_url"] = common.end_point
+        bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
 
-        return {
+        coordinates: Dict[str, Any] = {
             "source_type": SOURCE_TYPE,
             "physical_uri": physical_uri,
-            "credentials": credentials,
+            "mode": "mint-sts",
+            "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
+            "region": common.region or "us-east-1",
         }
+        if common.end_point:
+            # An endpoint is a coordinate, not a secret. It MUST be reachable
+            # from wherever the consumer runs — a bare service name resolves
+            # only in this deployment's namespace (ADR-0044's sibling finding).
+            coordinates["endpoint_url"] = common.end_point
+        return coordinates

@@ -462,16 +462,21 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
         )
 
     def _ticket(self, physical_uri: str) -> Dict[str, Any]:
-        credentials: Dict[str, Any] = {
-            "aws_access_key_id": self.duckdb.aws_access_key_id,
-            "aws_secret_access_key": self.duckdb.aws_secret_access_key,
-            "aws_region": self.duckdb.aws_region or "us-east-1",
-        }
-        if self.duckdb.endpoint_url:
-            credentials["aws_endpoint_url"] = self.duckdb.endpoint_url
+        """ADR-0044 — coordinates only; the broker mints the credential.
 
-        return {
+        This previously advertised ``self.duckdb.aws_access_key_id`` and its
+        secret: the credential this IO manager WRITES with, handed to any
+        authorized reader with no expiry and no scope. ``resolve_asset`` now
+        mints a read-only, prefix-scoped, expiring credential per request.
+        """
+        bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
+        coordinates: Dict[str, Any] = {
             "source_type": SOURCE_TYPE,
             "physical_uri": physical_uri,
-            "credentials": credentials,
+            "mode": "mint-sts",
+            "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
+            "region": self.duckdb.aws_region or "us-east-1",
         }
+        if self.duckdb.endpoint_url:
+            coordinates["endpoint_url"] = self.duckdb.endpoint_url
+        return coordinates

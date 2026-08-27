@@ -188,13 +188,26 @@ def test_advertised_uri_marks_the_directory_with_a_trailing_slash():
 
 
 def test_advertised_ticket_shape_is_client_readable():
+    """ADR-0044 — coordinates the BROKER can mint against, not credentials.
+
+    This test used to assert `creds["aws_access_key_id"] == "key"` — that the
+    IO manager advertised the very key it writes with. It passed for as long
+    as that was true, which is exactly how the defect stayed invisible: the
+    suite asserted the producer's output, never the consumer's credential.
+    """
     ticket = _s3_iom().physical_coordinates(["mesh_demo_customers"])
     # source_type must be one the cortex data client can dispatch on.
     assert ticket["source_type"] == "s3_parquet"
-    creds = ticket["credentials"]
-    assert creds["aws_access_key_id"] == "key"
-    assert creds["aws_secret_access_key"] == "secret"
-    assert creds["aws_endpoint_url"] == "http://minio:9000"
+
+    assert "credentials" not in ticket, (
+        "the writing credential was advertised to readers; the broker mints "
+        "a scoped, expiring, read-only one per request instead"
+    )
+    assert ticket["mode"] == "mint-sts"
+    assert ticket["scope"] == {"bucket": "dag-lake", "prefix": "mesh_demo/mesh_demo_customers"}
+    # Coordinates survive — an endpoint is not a secret, and without it a
+    # consumer has nothing to point the minted credential at.
+    assert ticket["endpoint_url"] == "http://minio:9000"
 
 
 def test_advertises_nested_asset_key():
