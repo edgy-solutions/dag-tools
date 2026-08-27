@@ -36,6 +36,247 @@ DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
 
+# ── ADR-0044 — the broker mints; producers advertise coordinates ────────────
+#
+# A routing ticket may carry only credentials THIS BROKER minted for THIS
+# request, scoped to the asset, expiring with the access window, unable to
+# write. Producers keep their configured write credentials and go on using
+# them to materialize assets — nothing about pipeline authoring changes. What
+# changed is that a producer's credential must never reach a consumer.
+#
+# WHY THE BROKER AND NOT THE IO MANAGER. The broker already holds the
+# authorization decision, so it is the right place to hold the power to mint
+# against it. An IO manager runs in a pipeline pod; teaching it to mint would
+# put assume-role privilege in every user deployment in the fleet — dozens of
+# powerful credentials replacing one.
+#
+# ROLLOUT IS PER BACKEND (ADR-0044's capability matrix), so enforcement is
+# keyed on source_type via _MINTERS below. A backend with a minter gets its
+# echoed credential DROPPED and a fresh one minted per request. A backend
+# without one is still on the old path — counted and reported as UNPROTECTED
+# rather than quietly passed over, so "which columns are still red" is a
+# number instead of a memory.
+
+ECHOED_CREDENTIALS_DROPPED: Dict[str, int] = {}
+"""producer io_manager_class -> count of tickets whose echoed credentials we
+discarded. This is the ENUMERATION that decides when the transitional period
+ends: the hard break (refusing tickets that carry credentials at all) lands
+when this reads zero across a full materialization cycle, against a measured
+population rather than a remembered list of IO managers."""
+
+UNPROTECTED_SOURCE_TYPES: Dict[str, int] = {}
+"""source_type -> asset count still advertising a producer credential because
+no minter exists for that backend yet. Not a warning to be grepped for: it is
+surfaced on /health so the remaining exposure is a reported number."""
+
+NON_FQDN_HOSTS: Dict[str, int] = {}
+"""advertised host -> count. A ticket is consumed somewhere else, so a
+namespace-local hostname is a coordinate that means different things
+depending on where the reader stands (ADR-0044). Reported, not refused —
+refusing would take out cross-namespace reads that work today for consumers
+that happen to share the producer's namespace."""
+
+
+def _is_fqdn(host: str) -> bool:
+    """A hostname a consumer in another namespace can resolve.
+
+    Deliberately permissive: dotted names, localhost and bare IPs pass. The
+    target is the specific failure we hit — a bare Kubernetes service name
+    like ``minio-svc``, which resolves only inside the producer's namespace.
+    """
+    if not host:
+        return False
+    bare = host.split(":", 1)[0]
+    if bare in ("localhost",) or bare.replace(".", "").isdigit():
+        return True
+    return "." in bare
+
+
+def _s3_scope_from_uri(physical_uri: str) -> Optional[Dict[str, str]]:
+    """Bucket and key prefix a minted credential must be confined to.
+
+    Derived from the advertised URI rather than requiring producers to declare
+    a ``scope`` first. That is what lets the broker protect assets published by
+    IO managers that have NOT yet been upgraded: an old ticket still carries a
+    usable ``physical_uri``, so the broker can mint correctly against it while
+    discarding the credential the producer sent. Protection does not wait on
+    the fleet.
+
+    A producer that declares ``scope`` explicitly wins over this derivation —
+    it knows things the URI does not (a dataset spanning prefixes, say).
+    """
+    if not physical_uri or not physical_uri.startswith("s3://"):
+        return None
+    remainder = physical_uri[len("s3://"):]
+    bucket, _, prefix = remainder.partition("/")
+    if not bucket:
+        return None
+    return {"bucket": bucket, "prefix": prefix.strip("/")}
+
+
+def _mint_s3(scope: Dict[str, str], urn: str, coordinates: Dict[str, Any]) -> Dict[str, Any]:
+    """`mint-sts` — a read-only, prefix-scoped, expiring credential.
+
+    This is the construction the fallback path has always used; ADR-0044's fix
+    is that the protocol path now reaches it instead of short-circuiting past
+    it. The policy is built from the TICKET'S OWN SCOPE rather than a broad
+    default, and the duration from the access window rather than a fixed hour.
+
+    Raises on failure. There is deliberately no fallback to the producer's
+    credential: a minting failure must fail the ticket, not silently reinstate
+    the vulnerability under load. Fail closed.
+    """
+    bucket = scope["bucket"]
+    prefix = scope.get("prefix", "")
+    resource = f"arn:aws:s3:::{bucket}/{prefix}/*" if prefix else f"arn:aws:s3:::{bucket}/*"
+    listable = [f"{prefix}/*", prefix] if prefix else ["*"]
+
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            # GetObject ONLY. No PutObject, no DeleteObject, no multipart.
+            # The asset's own bytes, nothing else, nothing written.
+            {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": [resource]},
+            {
+                "Effect": "Allow",
+                "Action": ["s3:ListBucket"],
+                "Resource": [f"arn:aws:s3:::{bucket}"],
+                "Condition": {"StringLike": {"s3:prefix": listable}},
+            },
+        ],
+    }
+
+    duration = int(os.getenv("BROKER_CREDENTIAL_TTL_SEC", "900"))
+    role_arn = os.getenv("AWS_ASSUME_ROLE_ARN", "arn:aws:iam::123456789012:role/DataAccessRole")
+
+    sts = boto3.client(
+        "sts",
+        endpoint_url=coordinates.get("endpoint_url") or None,
+        region_name=coordinates.get("region") or "us-east-1",
+    )
+    response = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName=f"session-{urn.replace(':', '_').replace(',', '_')[:40]}",
+        Policy=json.dumps(policy),
+        DurationSeconds=duration,
+    )
+    c = response["Credentials"]
+    minted: Dict[str, Any] = {
+        "aws_access_key_id": c["AccessKeyId"],
+        "aws_secret_access_key": c["SecretAccessKey"],
+        "aws_session_token": c["SessionToken"],
+    }
+    if coordinates.get("endpoint_url"):
+        minted["aws_endpoint_url"] = coordinates["endpoint_url"]
+    if coordinates.get("region"):
+        minted["aws_region"] = coordinates["region"]
+    return minted
+
+
+# source_type -> (minter, scope-deriver). A backend ABSENT from this table has
+# no minting implementation yet and stays on the producer-credential path,
+# counted in UNPROTECTED_SOURCE_TYPES. Adding a row here is what turns a column
+# of ADR-0044's capability matrix green — and turning it green is what makes
+# per-user notebook access safe for that backend.
+_MINTERS = {
+    "s3_parquet": (_mint_s3, _s3_scope_from_uri),
+    "s3_delta": (_mint_s3, _s3_scope_from_uri),
+    "s3_iceberg": (_mint_s3, _s3_scope_from_uri),
+}
+
+# Keys inside a legacy ticket's ``credentials`` that are COORDINATES, not
+# secrets. They must survive the strip: dropping the whole dict would take the
+# endpoint with it and leave a ticket nothing can read.
+_COORDINATE_KEYS = {
+    "aws_endpoint_url": "endpoint_url",
+    "aws_region": "region",
+    "catalog_uri": "catalog_uri",
+    "catalog_type": "catalog_type",
+    "warehouse_uri": "warehouse_uri",
+    "table_identifier": "table_identifier",
+    "database": "database",
+}
+
+
+def _sanitize_ticket(ticket: Dict[str, Any], producer: Optional[str]) -> Dict[str, Any]:
+    """Strip a producer credential out of an advertised ticket at LOAD time.
+
+    Runs once per asset, at startup — which is exactly why it may not mint
+    here. ``physical_coordinates()`` is a load-time call and its result is
+    cached in ``LOCAL_ASSETS`` for the process lifetime, so a credential
+    created at this point would be one credential shared by every caller,
+    expiring an hour into a broker that goes on reporting healthy. Minting
+    belongs in ``/resolve``; this function's job is to make sure there is
+    nothing secret left in the cache for it to fall back on.
+
+    Coordinates are preserved and promoted out of ``credentials`` — an
+    endpoint URL is not a secret, and dropping it wholesale would leave a
+    ticket no consumer could read.
+    """
+    clean = {k: v for k, v in ticket.items() if k != "credentials"}
+    source_type = clean.get("source_type") or ""
+    echoed = ticket.get("credentials") or {}
+
+    # Promote non-secret coordinates the producer nested inside credentials.
+    for src, dest in _COORDINATE_KEYS.items():
+        if src in echoed and dest not in clean:
+            clean[dest] = echoed[src]
+
+    if source_type in _MINTERS:
+        clean["mode"] = clean.get("mode") or "mint-sts"
+        secrets_present = [k for k in echoed if k not in _COORDINATE_KEYS]
+        if secrets_present:
+            key = producer or "unknown"
+            ECHOED_CREDENTIALS_DROPPED[key] = ECHOED_CREDENTIALS_DROPPED.get(key, 0) + 1
+            logger.warning(
+                "ADR-0044: dropped echoed credential(s) %s advertised by %s for %s. "
+                "The broker mints per request; producers should stop returning "
+                "'credentials' from physical_coordinates(). Counted in "
+                "/health.echoed_credentials_dropped — the hard break lands when "
+                "that reads zero.",
+                sorted(secrets_present), key, clean.get("physical_uri"),
+            )
+    else:
+        # No minter for this backend yet. The producer credential is still the
+        # only way to read it, so it passes through — but it is REPORTED, not
+        # silently tolerated, because it is live exposure.
+        clean["mode"] = clean.get("mode") or "producer-credential-unprotected"
+        clean["credentials"] = echoed
+        if echoed:
+            UNPROTECTED_SOURCE_TYPES[source_type] = (
+                UNPROTECTED_SOURCE_TYPES.get(source_type, 0) + 1
+            )
+
+    # A ticket is consumed somewhere else — the hostname has to mean the same
+    # thing there. Reported rather than refused; see NON_FQDN_HOSTS.
+    #
+    # ONLY hostname-bearing coordinates are checked. The authority component of
+    # an ``s3://bucket/key`` URI is a BUCKET, not a host: reading `publog-lake`
+    # as a namespace-local hostname would flag every S3 asset in the fleet and
+    # bury the real finding under false positives. Database URIs
+    # (``postgres://host:port/...``) do carry a host, so they are checked.
+    candidates = [clean.get("endpoint_url")]
+    physical_uri = str(clean.get("physical_uri") or "")
+    if physical_uri and not physical_uri.startswith("s3://"):
+        candidates.append(physical_uri)
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        authority = str(candidate).split("://")[-1].split("/")[0]
+        host = authority.split(":", 1)[0]
+        if host and not _is_fqdn(authority):
+            NON_FQDN_HOSTS[host] = NON_FQDN_HOSTS.get(host, 0) + 1
+            logger.warning(
+                "ADR-0044: advertised host %r is not an FQDN. It resolves in this "
+                "deployment's namespace and nowhere else, so any consumer in "
+                "another namespace cannot read %s. Set the producer's endpoint to "
+                "the .svc.cluster.local form.",
+                host, clean.get("physical_uri"),
+            )
+
+    return clean
+
 DEFINITIONS_ERROR: Optional[str] = None
 """Why the Definitions import failed, or None if it did not.
 
@@ -89,7 +330,14 @@ def _build_asset_info_from_record(record, io_manager=None) -> Dict[str, Any]:
         try:
             ticket = io_manager.physical_coordinates(list(record.asset_key or []))
             if ticket:
-                info["_routing_ticket"] = ticket
+                # ADR-0044: whatever the producer advertised, no producer
+                # credential is cached. What lands in LOCAL_ASSETS is
+                # coordinates; the credential is minted per request in
+                # /resolve. See _sanitize_ticket for why it cannot be minted
+                # here.
+                info["_routing_ticket"] = _sanitize_ticket(
+                    ticket, producer=info.get("io_manager_class"),
+                )
                 return info
         except Exception as exc:
             logger.warning(
@@ -635,7 +883,21 @@ async def health():
             "definitions_error": DEFINITIONS_ERROR,
             "registered": False,
         }
-    return {"status": "ok", "assets": len(LOCAL_ASSETS)}
+    return {
+        "status": "ok",
+        "assets": len(LOCAL_ASSETS),
+        # ADR-0044 posture, REPORTED AS NUMBERS rather than left in a log
+        # nobody greps. `unprotected_source_types` is live exposure: assets
+        # still advertising a producer credential because their backend has no
+        # minter yet. `echoed_credentials_dropped` is the retirement counter —
+        # the transitional period ends, and the hard break lands, when it reads
+        # zero across a full materialization cycle.
+        "adr0044": {
+            "echoed_credentials_dropped": dict(ECHOED_CREDENTIALS_DROPPED),
+            "unprotected_source_types": dict(UNPROTECTED_SOURCE_TYPES),
+            "non_fqdn_hosts": dict(NON_FQDN_HOSTS),
+        },
+    }
 
 
 @app.get("/ready")
@@ -673,13 +935,57 @@ async def resolve_asset(request: ResolveRequest):
 
     asset_info = LOCAL_ASSETS[urn]
 
-    # Mesh-publishing protocol short-circuit: when the IO manager
-    # supplied its own routing ticket at load time, return it verbatim.
-    # No STS minting, no placeholder fallback — the IO manager already
-    # knows the real physical coordinates and credentials.
+    # Mesh-publishing protocol: the IO manager advertised COORDINATES at load
+    # time (credentials already stripped by _sanitize_ticket). This is where
+    # the credential is created — per request, scoped to this asset, expiring
+    # with this access window.
+    #
+    # This used to `return ticket` verbatim, which is the defect ADR-0044
+    # exists to close: a newer, faster path short-circuiting past the minting
+    # the fallback below has always performed. The minting code was never
+    # missing; this return statement was in front of it.
     ticket = asset_info.get("_routing_ticket")
     if ticket:
-        return ticket
+        source_type = ticket.get("source_type") or ""
+        minter_entry = _MINTERS.get(source_type)
+
+        if not minter_entry:
+            # No minting implementation for this backend yet — it is still on
+            # the producer's credential. Advertised as such rather than
+            # dressed up as protected.
+            return ticket
+
+        minter, scope_from = minter_entry
+        scope = ticket.get("scope") or scope_from(ticket.get("physical_uri", ""))
+        if not scope:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Cannot mint a scoped credential for {urn}: no 'scope' declared "
+                    f"and none derivable from physical_uri "
+                    f"{ticket.get('physical_uri')!r}."
+                ),
+            )
+
+        try:
+            credentials = minter(scope, urn, ticket)
+        except Exception as exc:
+            # FAIL CLOSED. Never fall back to a producer credential — that
+            # would reinstate the vulnerability at exactly the moment the
+            # system is under stress, which is when it is least likely to be
+            # noticed.
+            logger.error(
+                "ADR-0044: minting failed for %s (%s: %s) — refusing the ticket "
+                "rather than falling back to a producer credential.",
+                urn, type(exc).__name__, exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Could not mint a scoped credential for this asset.",
+            )
+
+        return {**{k: v for k, v in ticket.items() if k != "scope"},
+                "credentials": credentials}
 
     io_type = asset_info.get("io_manager_type", "s3_parquet")
 
