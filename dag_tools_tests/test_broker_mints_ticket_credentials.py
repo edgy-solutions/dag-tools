@@ -213,3 +213,67 @@ def test_minting_failure_fails_closed():
         _FakeSTS.assume_role = original
 
     assert "PRODUCER_WRITE_KEY" not in str(excinfo.value)
+
+
+# ── the broker's own minting identity ──────────────────────────────────────
+#
+# ADR-0044 gave the broker minting authority and did not say where its
+# credentials come from. The first implementation left boto3 to its default
+# chain, which a domain-broker pod does not populate — it carries S3_ACCESS_KEY
+# / S3_SECRET_KEY, names boto3 has never heard of. Every mint raised
+# NoCredentialsError and every read 503'd: a configuration problem reported in
+# the vocabulary of an outage. These pin the resolution so it cannot regress to
+# ambient.
+
+def test_sts_identity_prefers_the_purpose_named_pair(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        broker.boto3, "client",
+        lambda *a, **kw: captured.update(kw) or _FakeSTS(),
+    )
+    monkeypatch.setenv("BROKER_STS_ACCESS_KEY_ID", "broker-key")
+    monkeypatch.setenv("BROKER_STS_SECRET_ACCESS_KEY", "broker-secret")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "ambient-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
+
+    broker._sts_client({"endpoint_url": "http://minio:9000", "region": "us-east-1"})
+
+    assert captured["aws_access_key_id"] == "broker-key"
+
+
+def test_sts_identity_accepts_the_pods_existing_s3_vars(monkeypatch):
+    """An already-deployed broker must work after upgrading, with no helm change."""
+    captured = {}
+    monkeypatch.setattr(
+        broker.boto3, "client",
+        lambda *a, **kw: captured.update(kw) or _FakeSTS(),
+    )
+    for var in ("BROKER_STS_ACCESS_KEY_ID", "BROKER_STS_SECRET_ACCESS_KEY",
+                "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("S3_ACCESS_KEY", "minio-sandbox")
+    monkeypatch.setenv("S3_SECRET_KEY", "minio-sandbox-secret")
+
+    broker._sts_client({"endpoint_url": "http://minio:9000", "region": "us-east-1"})
+
+    assert captured["aws_access_key_id"] == "minio-sandbox", (
+        "a broker configured the way every domain-broker pod is configured "
+        "would have found no identity and 503'd every read"
+    )
+
+
+def test_no_identity_configured_falls_through_to_ambient(monkeypatch):
+    """Last rung: IRSA / instance profiles must still work — pass nothing."""
+    captured = {}
+    monkeypatch.setattr(
+        broker.boto3, "client",
+        lambda *a, **kw: captured.update(kw) or _FakeSTS(),
+    )
+    for var in ("BROKER_STS_ACCESS_KEY_ID", "BROKER_STS_SECRET_ACCESS_KEY",
+                "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                "S3_ACCESS_KEY", "S3_SECRET_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+    broker._sts_client({"region": "us-east-1"})
+
+    assert "aws_access_key_id" not in captured

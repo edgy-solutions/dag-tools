@@ -114,6 +114,79 @@ def _s3_scope_from_uri(physical_uri: str) -> Optional[Dict[str, str]]:
     return {"bucket": bucket, "prefix": prefix.strip("/")}
 
 
+def _sts_client(coordinates: Dict[str, Any]):
+    """The broker's OWN minting identity — resolved explicitly, never ambiently.
+
+    ADR-0044 put minting authority in the broker. It did not say where the
+    broker's credentials come from, and the first implementation left
+    ``boto3.client("sts")`` to the default credential chain — env
+    ``AWS_ACCESS_KEY_ID``, ``~/.aws/credentials``, IMDS.
+
+    THAT SILENTLY DOES NOT WORK IN THE DEPLOYMENT THIS SHIPS INTO. A domain-
+    broker pod is configured with ``S3_ACCESS_KEY`` / ``S3_SECRET_KEY`` (the
+    names the Dagster definitions module consumes), which boto3 has never heard
+    of. The chain finds nothing, ``assume_role`` raises ``NoCredentialsError``,
+    and every object-store read 503s — correct fail-closed behaviour reporting a
+    CONFIGURATION problem in the vocabulary of an outage.
+
+    It passed verification because the operator running the script had
+    ``AWS_ACCESS_KEY_ID`` exported in their shell. The script's own docstring
+    called that "the same chain the broker pod uses" — an assertion nobody had
+    checked against a pod.
+
+    So the identity is now NAMED, in precedence order, and its absence is a
+    configuration error that says which variables to set:
+
+      1. ``BROKER_STS_ACCESS_KEY_ID`` / ``BROKER_STS_SECRET_ACCESS_KEY`` — the
+         purpose-named pair. Explicit wins, so a deployment can give the broker
+         a minting identity distinct from whatever else the pod holds. That
+         separation is the point of ADR-0044: the credential that writes assets
+         and the one used to mint read tickets need not be the same.
+      2. ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` — **dag-tools' own
+         convention**, and the reason this rung matters most: it is what the IO
+         managers themselves read (``user_deployment/mesh_demo_assets.py``,
+         ``resources/duckdb.py``, and what ``delta.py`` writes into
+         storage_options). THE BROKER RUNS THE SAME IMAGE AS THE DAGSTER USER
+         DEPLOYMENT with a different command, so a deployment that already sets
+         these for its IO managers has already configured the broker — no new
+         wiring, which is the whole reason the same-image pattern is worth
+         keeping.
+      3. ``S3_ACCESS_KEY``/``S3_SECRET_KEY``, then
+         ``MINIO_ACCESS_KEY``/``MINIO_SECRET_KEY`` — NEITHER is a dag-tools
+         name. Both are the invincible-agent chart's, and it uses BOTH: the
+         domain-broker deployment sets ``S3_*`` in an explicit env list while
+         ``iagent-config`` (which the dagster-user-code deployment consumes via
+         envFrom) sets ``MINIO_*``. Three names for one credential across one
+         stack, and which one a broker sees depends on how its pod was wired.
+         Accepted as COMPATIBILITY rungs so an already-deployed broker keeps
+         working after upgrading — and so a broker moved onto the same envFrom
+         as the deployment it mirrors keeps working too — rather than 503-ing
+         until someone edits a chart.
+
+         **Normalise on rung 2.** These rungs exist to absorb a naming mess
+         that already shipped, not to bless it.
+      4. the ambient chain — IRSA, instance profiles, mounted config. Last,
+         because it is the rung that cannot be verified from inside this
+         function, and trusting it unverified is what produced this bug.
+    """
+    kwargs: Dict[str, Any] = {
+        "endpoint_url": coordinates.get("endpoint_url") or None,
+        "region_name": coordinates.get("region") or "us-east-1",
+    }
+    for key_var, secret_var in (
+        ("BROKER_STS_ACCESS_KEY_ID", "BROKER_STS_SECRET_ACCESS_KEY"),
+        ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"),
+        ("S3_ACCESS_KEY", "S3_SECRET_KEY"),
+        ("MINIO_ACCESS_KEY", "MINIO_SECRET_KEY"),
+    ):
+        key, secret = os.getenv(key_var), os.getenv(secret_var)
+        if key and secret:
+            kwargs["aws_access_key_id"] = key
+            kwargs["aws_secret_access_key"] = secret
+            break
+    return boto3.client("sts", **kwargs)
+
+
 def _mint_s3(scope: Dict[str, str], urn: str, coordinates: Dict[str, Any]) -> Dict[str, Any]:
     """`mint-sts` — a read-only, prefix-scoped, expiring credential.
 
@@ -149,11 +222,7 @@ def _mint_s3(scope: Dict[str, str], urn: str, coordinates: Dict[str, Any]) -> Di
     duration = int(os.getenv("BROKER_CREDENTIAL_TTL_SEC", "900"))
     role_arn = os.getenv("AWS_ASSUME_ROLE_ARN", "arn:aws:iam::123456789012:role/DataAccessRole")
 
-    sts = boto3.client(
-        "sts",
-        endpoint_url=coordinates.get("endpoint_url") or None,
-        region_name=coordinates.get("region") or "us-east-1",
-    )
+    sts = _sts_client(coordinates)
     response = sts.assume_role(
         RoleArn=role_arn,
         RoleSessionName=f"session-{urn.replace(':', '_').replace(',', '_')[:40]}",
@@ -974,14 +1043,26 @@ async def resolve_asset(request: ResolveRequest):
             # would reinstate the vulnerability at exactly the moment the
             # system is under stress, which is when it is least likely to be
             # noticed.
+            # NAME THE CONFIGURATION CASE. A broker with no minting identity
+            # raises NoCredentialsError, which fail-closed reports as "could
+            # not mint" — an outage sentence for what is actually one missing
+            # env var. Diagnosing that from a 503 costs an afternoon.
+            hint = ""
+            if "credential" in f"{type(exc).__name__}{exc}".lower():
+                hint = (
+                    " The broker has NO MINTING IDENTITY: set "
+                    "BROKER_STS_ACCESS_KEY_ID/BROKER_STS_SECRET_ACCESS_KEY (or "
+                    "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, or "
+                    "S3_ACCESS_KEY/S3_SECRET_KEY) on the broker deployment."
+                )
             logger.error(
                 "ADR-0044: minting failed for %s (%s: %s) — refusing the ticket "
-                "rather than falling back to a producer credential.",
-                urn, type(exc).__name__, exc,
+                "rather than falling back to a producer credential.%s",
+                urn, type(exc).__name__, exc, hint,
             )
             raise HTTPException(
                 status_code=503,
-                detail="Could not mint a scoped credential for this asset.",
+                detail="Could not mint a scoped credential for this asset." + hint,
             )
 
         return {**{k: v for k, v in ticket.items() if k != "scope"},
