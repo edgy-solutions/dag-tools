@@ -139,11 +139,25 @@ async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str
         # originator email; fall back to the token email only for legacy
         # user-JWT callers. Consistent with the content gates, which key
         # on authz_id — so this gate flips with them at work-deploy.
-        subject_key = (originator_email or "").strip() or unverified_claims.get("email")
+        # THE CLAIM IS CONFIGURABLE, AND THE GATE MUST READ THE SAME ONE THE
+        # GAUGE DOES. This was hardcoded `"email"` while subject_gauge read
+        # USER_ENTITLEMENT_CLAIM — dormant only because both happened to say
+        # "email". Point the env var at `preferred_username` (which work-deploy
+        # does) and the two diverge: the gauge resolves a subject and reports a
+        # healthy request while the gate looks for a claim the token does not
+        # carry and fail-closed denies every read. A gauge reading green
+        # through a total outage is worse than no gauge.
+        #
+        # Sharing the helper makes the agreement STRUCTURAL rather than a
+        # comment asking two call sites to stay in step. subject_gauge's own
+        # docstring already promised to mirror this precedence; now it cannot
+        # drift from it.
+        claim = subject_gauge.entitlement_claim()
+        subject_key = (originator_email or "").strip() or unverified_claims.get(claim)
         if not subject_key:
             logger.error(
                 "DA-read subject unresolvable — no X-Originator-Email and no "
-                "token 'email' claim; fail-CLOSED deny (token_sub=%s)", user_id,
+                "token %r claim; fail-CLOSED deny (token_sub=%s)", claim, user_id,
             )
             return False, None, None
 
