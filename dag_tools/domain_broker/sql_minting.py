@@ -15,10 +15,16 @@ That is what ADR-0025 always implied and an object store cannot deliver.
 WHY THERE IS NO REAPER, AND WHY THAT IS NOT AN OVERSIGHT. Both engines support
 `VALID UNTIL`, so **the database enforces expiry**. A leaked credential stops
 working whether or not anything cleaned it up, and a broker that dies
-mid-request leaves a role that is already harmless. `sweep_expired()` exists to
-stop the catalog accumulating dead entries — it is hygiene, not the security
-boundary. Designing it the other way round would put correctness in a
-background task that has to keep running.
+mid-request leaves a role that is already harmless. Correctness is therefore not
+in a background task that has to keep running — which is the design mistake the
+alternative would have been.
+
+**No sweeper is implemented, and that is a stated gap rather than a silent one.**
+Expired roles accumulate in `pg_roles` / `system.users` as inert clutter. At the
+observed rate that is nothing; at high volume it becomes a catalog someone has
+to prune. When it is written it is HYGIENE, not the security boundary, and this
+sentence should be updated rather than left describing a function that does not
+exist — the failure mode this module was written the same week as.
 
 THE TRAP THIS MODULE IS WRITTEN AROUND (ADR-0044 named it before we hit it):
 for ClickHouse, read-only is a SETTINGS PROFILE property, separate from table
@@ -49,6 +55,37 @@ _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
 class MintingError(RuntimeError):
     """Minting failed, with the cause named. Never returns a partial credential."""
+
+
+def _privilege_hint(engine: str, admin_user: Optional[str], exc: Exception) -> str:
+    """Turn "permission denied" into the grant that fixes it.
+
+    THE MINTING IDENTITY NEEDS MORE PRIVILEGE THAN A READER, and the deployment
+    identity a broker already has is usually a reader. Verified on the sandbox:
+    ``PG_USER=iagent`` has ``rolcreaterole = false``, so every Postgres mint
+    would fail — correct fail-closed behaviour reporting a PRIVILEGE problem in
+    the vocabulary of an outage, which is a whole afternoon if the message does
+    not say so.
+
+    Same class as the broker's missing STS identity in 0.3.0: the code was
+    right, the identity could not do the job, and nothing said which.
+    """
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if not any(w in text for w in ("permission denied", "insufficient", "not allowed",
+                                   "access_denied", "accessdenied")):
+        return ""
+    if engine == "postgres":
+        return (
+            f" THE MINTING IDENTITY LACKS CREATE ROLE. {admin_user!r} needs it:"
+            f" ALTER ROLE {admin_user} CREATEROLE;  — or point"
+            f" BROKER_PG_ADMIN_USER/BROKER_PG_ADMIN_PASSWORD at an identity that"
+            f" has it. A read-only application user cannot mint."
+        )
+    return (
+        f" THE MINTING IDENTITY LACKS ACCESS MANAGEMENT. {admin_user!r} needs it:"
+        f" GRANT ACCESS MANAGEMENT ON *.* TO {admin_user};  — or point"
+        f" BROKER_CH_ADMIN_USER/BROKER_CH_ADMIN_PASSWORD at an identity that has it."
+    )
 
 
 def _ident(value: str, what: str) -> str:
@@ -182,7 +219,7 @@ def mint_clickhouse(
                 f"USING {row_filter} TO {user}"
             )
             logger.info("minted CH row policy for %s: %s", urn, row_filter)
-    except Exception:
+    except Exception as exc:
         # Never leave a usable half-configured user behind: one that exists
         # with no row policy is broader than intended, which is the failure
         # this whole module exists to prevent.
@@ -190,6 +227,9 @@ def mint_clickhouse(
             client.command(f"DROP USER IF EXISTS {user}")
         except Exception:  # noqa: BLE001
             logger.error("could not drop partially created CH user %s", user)
+        hint = _privilege_hint("clickhouse", admin_user, exc)
+        if hint:
+            raise MintingError(f"ClickHouse mint failed for {urn}: {exc}.{hint}") from exc
         raise
 
     return {
@@ -302,12 +342,15 @@ def mint_postgres(
                     f"FOR SELECT TO {role} USING ({row_filter})"
                 )
                 logger.info("minted PG row policy for %s: %s", urn, row_filter)
-    except Exception:
+    except Exception as exc:
         try:
             with conn.cursor() as cur:
                 cur.execute(f"DROP ROLE IF EXISTS {role}")
         except Exception:  # noqa: BLE001
             logger.error("could not drop partially created PG role %s", role)
+        hint = _privilege_hint("postgres", admin_user, exc)
+        if hint:
+            raise MintingError(f"PostgreSQL mint failed for {urn}: {exc}.{hint}") from exc
         raise
     finally:
         conn.close()

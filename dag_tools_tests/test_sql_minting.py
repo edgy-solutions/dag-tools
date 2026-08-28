@@ -232,3 +232,47 @@ def test_passwords_are_unique_per_mint(monkeypatch):
     _, b = _ch(monkeypatch)
     assert a["password"] != b["password"] and a["username"] != b["username"]
     assert len(a["password"]) >= 32
+
+
+# ── the privilege the deployment identity usually lacks ────────────────────
+#
+# Verified on the sandbox: the broker's configured PG_USER (`iagent`) has
+# rolcreaterole = false, so every Postgres mint fails there. The code is right
+# and the identity cannot do the job — the same shape as the broker's missing
+# STS identity in 0.3.0, and the same cost if the message does not say so.
+
+def test_pg_permission_denied_names_the_grant(monkeypatch):
+    class _DeniedCursor(_FakeCursor):
+        def execute(self, sql, params=None):
+            self.owner.statements.append(sql)
+            if sql.startswith("CREATE ROLE"):
+                raise RuntimeError("permission denied to create role")
+
+    class _DeniedPG(_FakePG):
+        def cursor(self):
+            return _DeniedCursor(self)
+
+    import psycopg2
+    monkeypatch.setattr(psycopg2, "connect", lambda **kw: _DeniedPG())
+
+    with pytest.raises(sm.MintingError) as exc:
+        sm.mint_postgres(PG_SCOPE, "urn:x", {"database": "iagent"})
+
+    msg = str(exc.value)
+    assert "CREATEROLE" in msg, "the error must name the grant that fixes it"
+    assert "BROKER_PG_ADMIN_USER" in msg, "and the alternative to granting it"
+
+
+def test_ch_access_management_denial_names_the_grant(monkeypatch):
+    class _Denied(_FakeCHClient):
+        def command(self, sql):
+            self.commands.append(sql)
+            if sql.startswith("CREATE USER"):
+                raise RuntimeError("Not enough privileges. ACCESS_DENIED")
+
+    import clickhouse_connect
+    monkeypatch.setattr(clickhouse_connect, "get_client", lambda **kw: _Denied())
+
+    with pytest.raises(sm.MintingError) as exc:
+        sm.mint_clickhouse(CH_SCOPE, "urn:x", {})
+    assert "ACCESS MANAGEMENT" in str(exc.value)
