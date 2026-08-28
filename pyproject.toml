@@ -161,6 +161,11 @@ broker = [
     # while adding the subject-source gauge, which leans on PyJWT harder.
     "redis>=5.0",
     "PyJWT>=2.8",
+    # ADR-0044 mint-role: the broker issues short-lived DATABASE roles for
+    # postgres/clickhouse, which needs a driver that can execute DDL.
+    # clickhouse-connect is already a base dependency; psycopg2 is not, and
+    # connectorx (the client's read path) cannot run CREATE ROLE.
+    "psycopg2-binary>=2.9",
 ]
 dev = [
     "dagster-webserver",

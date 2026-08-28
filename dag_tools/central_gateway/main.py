@@ -357,7 +357,25 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     try:
         async with httpx.AsyncClient() as client:
             resolve_url = f"{broker_url.rstrip('/')}/api/v1/internal/resolve"
-            payload = {"urn": urn}
+            # THE AUTHORIZATION DECISION TRAVELS WITH THE RESOLVE, and this is
+            # what makes server-side enforcement possible at all.
+            #
+            # These used to be grafted onto the ticket AFTER the broker
+            # answered, so the broker minted a credential without ever knowing
+            # what the caller was entitled to. Row and column narrowing could
+            # then only ever be applied by a cooperating client — advisory
+            # against anyone holding the credential.
+            #
+            # Sent, a `mint-role` backend encodes them into the role's GRANTs
+            # and ROW POLICY and the DATABASE enforces them. An older broker
+            # ignores the extra fields (pydantic), so this is safe to deploy
+            # ahead of one.
+            payload = {
+                "urn": urn,
+                "allowed_columns": allowed_columns,
+                "row_filters": row_filters,
+                "subject": originator_email,
+            }
             response = await client.post(resolve_url, json=payload, timeout=10.0)
             
             if response.status_code == 404:

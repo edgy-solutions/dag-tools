@@ -3,6 +3,12 @@ import json
 import logging
 import httpx
 import boto3
+
+from dag_tools.domain_broker.sql_minting import (
+    mint_clickhouse as _mint_clickhouse,
+    mint_postgres as _mint_postgres,
+    sql_scope_from_uri,
+)
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -205,7 +211,12 @@ def _sts_client(coordinates: Dict[str, Any]):
     return boto3.client("sts", **kwargs)
 
 
-def _mint_s3(scope: Dict[str, str], urn: str, coordinates: Dict[str, Any]) -> Dict[str, Any]:
+def _mint_s3(
+    scope: Dict[str, str],
+    urn: str,
+    coordinates: Dict[str, Any],
+    authz: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """`mint-sts` — a read-only, prefix-scoped, expiring credential.
 
     This is the construction the fallback path has always used; ADR-0044's fix
@@ -216,6 +227,13 @@ def _mint_s3(scope: Dict[str, str], urn: str, coordinates: Dict[str, Any]) -> Di
     Raises on failure. There is deliberately no fallback to the producer's
     credential: a minting failure must fail the ticket, not silently reinstate
     the vulnerability under load. Fail closed.
+
+    ``authz`` IS ACCEPTED AND IGNORED, and the asymmetry is the honest part.
+    The `mint-role` backends encode Topaz's ``allowed_columns`` / ``row_filters``
+    into GRANTs and ROW POLICIES the database enforces. An object store cannot:
+    S3 narrows by PREFIX, so row and column filtering stays client-side and
+    advisory for these source types. Taking the parameter keeps one minter
+    signature; discarding it here is a statement about S3, not an oversight.
     """
     bucket = scope["bucket"]
     prefix = scope.get("prefix", "")
@@ -269,6 +287,11 @@ _MINTERS = {
     "s3_parquet": (_mint_s3, _s3_scope_from_uri),
     "s3_delta": (_mint_s3, _s3_scope_from_uri),
     "s3_iceberg": (_mint_s3, _s3_scope_from_uri),
+    # mint-role. These do something the S3 minter cannot: they push the row and
+    # column narrowing INTO the database, so it survives a client that declines
+    # to apply it. See domain_broker/sql_minting.py.
+    "clickhouse": (_mint_clickhouse, sql_scope_from_uri),
+    "postgres": (_mint_postgres, sql_scope_from_uri),
 }
 
 # Keys inside a legacy ticket's ``credentials`` that are COORDINATES, not
@@ -381,7 +404,30 @@ DEFINITIONS_LOADED: bool = False
 "finished with nothing"."""
 
 class ResolveRequest(BaseModel):
+    """What the gateway asks the broker to resolve.
+
+    ``allowed_columns`` / ``row_filters`` CARRY THE AUTHORIZATION DECISION, and
+    they were added because without them server-side enforcement is impossible.
+    The gateway used to call Topaz, resolve the ticket, and graft the filters on
+    AFTERWARDS — so the broker minted a credential without ever knowing what the
+    caller was entitled to, and the narrowing could only ever be applied by a
+    cooperating client.
+
+    For `mint-role` backends the broker encodes them into the role's GRANTs and
+    ROW POLICY, where the database enforces them and a hostile client cannot
+    skip them. That is ADR-0044's promise that "for stores that can enforce, the
+    ticket's filters stop being advisory" — a promise the old contract could not
+    keep.
+
+    Both are OPTIONAL so an older gateway keeps working: absent, the broker
+    still mints a read-only, single-table, expiring credential — narrower than
+    the producer's writing credential, just not row/column narrow.
+    """
+
     urn: str
+    allowed_columns: Optional[List[str]] = None
+    row_filters: Optional[str] = None
+    subject: Optional[str] = None
 
 def _build_asset_info_from_record(record, io_manager=None) -> Dict[str, Any]:
     """Build the LOCAL_ASSETS value shape from a shared inventory ``AssetRecord``.
@@ -1146,7 +1192,11 @@ async def resolve_asset(request: ResolveRequest):
             )
 
         try:
-            credentials = minter(scope, urn, ticket)
+            credentials = minter(scope, urn, ticket, {
+                "allowed_columns": request.allowed_columns,
+                "row_filters": request.row_filters,
+                "subject": request.subject,
+            })
         except Exception as exc:
             # FAIL CLOSED. Never fall back to a producer credential — that
             # would reinstate the vulnerability at exactly the moment the
