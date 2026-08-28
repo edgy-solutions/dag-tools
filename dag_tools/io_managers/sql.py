@@ -60,6 +60,7 @@ from dagster import (
 from pydantic import Field
 
 from dag_tools.io_managers.column_schema import add_column_schema
+from dag_tools.io_managers.mesh_publishing import MeshPublishable
 from dag_tools.utils.helper import ConfigureFromDict
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class SQLConfig(Config):
     write_style: str = "replace"
 
 
-class SQLIOManager(IOManager):
+class SQLIOManager(MeshPublishable, IOManager):
     """Dagster ``IOManager`` that materializes assets as rows in SQL tables.
 
     Each asset's key path maps to a (schema, table) pair through the
@@ -330,25 +331,18 @@ class SQLIOManager(IOManager):
             query=f"SELECT {select} FROM {source} {where}", conn=self._con
         )
 
-    def physical_coordinates(
-        self, asset_key_path: Sequence[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — return the routing ticket for an asset.
+    def mesh_source_type(self, asset_key_path: Sequence[str]) -> str:
+        """postgres or clickhouse, by dialect.
 
-        A remote broker registering this IO manager's assets with the
-        central gateway calls this method to learn how to read each
-        asset's data. The returned dictionary matches the ticket shape
-        the cortex data client consumes from the gateway's authorize
-        response: ``source_type`` discriminates the read path,
-        ``physical_uri`` is parsed for host / schema / table, and
-        ``credentials`` is forwarded into the client's database driver.
-
-        Returns ``None`` when this IO manager's protocol isn't one the
-        client knows how to read. The broker treats ``None`` as "skip
-        this URN" rather than guessing a default backend — if a new
-        protocol is meaningful to advertise through the mesh, add it to
-        ``_DIALECT_TO_SOURCE_TYPE`` first.
+        A protocol absent from ``_DIALECT_TO_SOURCE_TYPE`` yields a value
+        ``MeshPublishable`` does not recognise, so the asset is not advertised
+        — the broker skips the URN rather than guessing a default backend. To
+        publish a new protocol, add it to that table first.
         """
+        return _DIALECT_TO_SOURCE_TYPE.get(self._config.protocol) or "unpublishable"
+
+    def mesh_uri(self, asset_key_path: Sequence[str]) -> Optional[str]:
+        """Mesh-publishing protocol (ADR-0001) — where this table lives."""
         source_type = _DIALECT_TO_SOURCE_TYPE.get(self._config.protocol)
         if not source_type:
             return None
@@ -366,9 +360,21 @@ class SQLIOManager(IOManager):
         # The physical_uri layout below is what the cortex data client's
         # PostgreSQL / ClickHouse dispatchers parse — keep this format
         # in sync with those dispatchers if either side changes.
-        physical_uri = (
-            f"{source_type}://{host_port}/{schema or 'public'}/{table}"
-        )
+        return f"{source_type}://{host_port}/{schema or 'public'}/{table}"
+
+    def physical_coordinates(
+        self, asset_key_path: Sequence[str]
+    ) -> Optional[Dict[str, Any]]:
+        """OVERRIDDEN TO ADD CREDENTIALS — the one manager that still does.
+
+        ``MeshPublishable`` deliberately offers no credentials hook, so this
+        override is the ONLY way to attach one, and its existence is the
+        exception announcing itself. When the mint-role work lands this method
+        is deleted and the mixin's version takes over unchanged.
+        """
+        ticket = super().physical_coordinates(asset_key_path)
+        if ticket is None:
+            return None
         # ADR-0044 — STILL ECHOING, DELIBERATELY, AND THIS IS THE EXCEPTION.
         #
         # Every S3-backed IO manager now advertises coordinates only, because
@@ -390,16 +396,12 @@ class SQLIOManager(IOManager):
         # plus a pinned settings profile for ClickHouse. Both enforce the
         # row/column narrowing SERVER-side, which is strictly better than the
         # client-side convention this ticket relies on today.
-        return {
-            "source_type": source_type,
-            "physical_uri": physical_uri,
-            "mode": "producer-credential-unprotected",
-            "credentials": {
-                "username": self._config.username,
-                "password": self._config.password,
-                "database": self._config.database,
-            },
+        ticket["credentials"] = {
+            "username": self._config.username,
+            "password": self._config.password,
+            "database": self._config.database,
         }
+        return ticket
 
 
 def set_source_fn_for_asset_class(

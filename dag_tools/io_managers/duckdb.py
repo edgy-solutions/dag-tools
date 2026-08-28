@@ -53,6 +53,7 @@ from dagster import (
 from pydantic import Field
 
 from dag_tools.io_managers.column_schema import add_column_schema
+from dag_tools.io_managers.mesh_publishing import MeshPublishable
 from dag_tools.resources.duckdb import DuckDBResource, duckdb_path
 
 DEFAULT_FORMAT = "parquet"
@@ -381,7 +382,7 @@ class DuckDBIOManager(IOManager):
         return metadata
 
 
-class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
+class ConfigurableDuckDBIOManager(MeshPublishable, ConfigurableIOManagerFactory):
     """Config surface for :class:`DuckDBIOManager`."""
 
     duckdb: DuckDBResource
@@ -425,12 +426,11 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
             key_encodes_location=self.key_encodes_location,
         )
 
-    def physical_coordinates(self, asset_key_path: Sequence[str]) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — the routing ticket for an asset.
+    def mesh_uri(self, asset_key_path: Sequence[str]) -> Optional[str]:
+        """Mesh-publishing protocol (ADR-0001) — where this asset's bytes are.
 
-        The domain broker calls this on the object registered in
-        ``Definitions(resources=...)`` to learn how a consumer can reach
-        each asset, then advertises it through the gateway.
+        ``physical_coordinates`` comes from ``MeshPublishable``; this supplies
+        the one part only this manager knows.
 
         Returns ``None`` — "don't advertise" — unless the output is
         genuinely readable by the cortex data client. An advertised but
@@ -453,30 +453,24 @@ class ConfigurableDuckDBIOManager(ConfigurableIOManagerFactory):
             return None
 
         # file_size_bytes off means a single object, so no trailing slash.
-        return self._ticket(
-            asset_uri(
-                self.uri_base, path,
-                directory=bool(self.file_size_bytes),
-                key_encodes_location=self.key_encodes_location,
-            )
+        return asset_uri(
+            self.uri_base, path,
+            directory=bool(self.file_size_bytes),
+            key_encodes_location=self.key_encodes_location,
         )
 
-    def _ticket(self, physical_uri: str) -> Dict[str, Any]:
-        """ADR-0044 — coordinates only; the broker mints the credential.
+    # Ticket assembly comes from MeshPublishable (ADR-0001). It previously
+    # lived in a private ``_ticket`` here and in three near-identical forms in
+    # arrow/sql/delta — a contract documented only by its implementations,
+    # which is how a copy of one came to omit a property none of them recorded.
+    #
+    # There is no credentials hook, structurally. This used to advertise
+    # ``self.duckdb.aws_access_key_id`` and its secret: the credential this IO
+    # manager WRITES with, handed to any authorized reader with no expiry and
+    # no scope. The broker mints per request instead (ADR-0044).
 
-        This previously advertised ``self.duckdb.aws_access_key_id`` and its
-        secret: the credential this IO manager WRITES with, handed to any
-        authorized reader with no expiry and no scope. ``resolve_asset`` now
-        mints a read-only, prefix-scoped, expiring credential per request.
-        """
-        bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
-        coordinates: Dict[str, Any] = {
-            "source_type": SOURCE_TYPE,
-            "physical_uri": physical_uri,
-            "mode": "mint-sts",
-            "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
-            "region": self.duckdb.aws_region or "us-east-1",
-        }
-        if self.duckdb.endpoint_url:
-            coordinates["endpoint_url"] = self.duckdb.endpoint_url
-        return coordinates
+    def mesh_endpoint(self) -> Optional[str]:
+        return self.duckdb.endpoint_url or None
+
+    def mesh_region(self) -> Optional[str]:
+        return self.duckdb.aws_region or "us-east-1"

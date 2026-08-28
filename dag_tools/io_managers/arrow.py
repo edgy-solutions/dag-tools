@@ -21,6 +21,7 @@ from dagster import (
 )
 
 from dag_tools.io_managers.column_schema import add_column_schema
+from dag_tools.io_managers.mesh_publishing import MeshPublishable
 
 
 formats = ['parquet', 'csv']
@@ -284,7 +285,7 @@ class ArrowIOManager(UPathIOManager):
         return str(path).replace('s3://', '')
 
 
-class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
+class ConfigurableArrowIOManager(MeshPublishable, ConfigurableIOManagerFactory):
     fs: Union[S3FSConfig, LocalFSConfig, FsspecS3FSConfig] = Field(discriminator="type_")
     uri_base: str
     load_csv_columns_as_strings: Optional[bool] = False
@@ -298,13 +299,14 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
             load_csv_skip_rows=self.load_csv_skip_rows
         )
 
-    def physical_coordinates(self, asset_key_path: Sequence[str]) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — the routing ticket for an asset.
+    def mesh_uri(self, asset_key_path: Sequence[str]) -> Optional[str]:
+        """Mesh-publishing protocol (ADR-0001) — where this asset's bytes are.
 
-        The domain broker calls this (it reads the object registered in
-        ``Definitions(resources=...)``, i.e. this factory) to learn how a
-        consumer can read each asset, then advertises the URN through the
-        central gateway.
+        ``physical_coordinates`` comes from ``MeshPublishable``; this supplies
+        the one thing only this manager knows. The ticket assembly used to live
+        here too, in four independent copies across arrow/duckdb/sql/delta —
+        which is how the protocol came to be a contract documented solely by
+        example. See ``io_managers/mesh_publishing.py``.
 
         Returns ``None`` — meaning "don't advertise this asset" — unless
         the output is genuinely readable by the cortex data client:
@@ -352,39 +354,24 @@ class ConfigurableArrowIOManager(ConfigurableIOManagerFactory):
         # Trailing slash: marks this as a directory of part files so the
         # consumer's scan_parquet lists it instead of HEAD-ing a key that
         # does not exist.
-        physical_uri = "/".join([self.uri_base.rstrip("/"), *path]) + "/"
+        return "/".join([self.uri_base.rstrip("/"), *path]) + "/"
 
-        # ADR-0044 — COORDINATES ONLY. NO CREDENTIALS.
-        #
-        # This used to return ``common.access_key_id`` / ``secret_access_key``
-        # verbatim: the key this IO manager WRITES with, handed to every
-        # authorized reader, long-lived and write-capable. The broker now mints
-        # a scoped, expiring, read-only credential per request in
-        # ``resolve_asset``.
-        #
-        # An IO manager must not produce one even if it could: it runs in a
-        # pipeline pod and knows neither the caller nor the access window, and
-        # giving every user deployment minting authority would spread
-        # assume-role privilege across the fleet to replace one credential
-        # with dozens. Advertising and authorizing are different jobs.
-        #
-        # ``scope`` is declared explicitly rather than left for the broker to
-        # derive from the URI — this object knows the bucket/prefix split for
-        # certain, and a derivation is a second implementation waiting to
-        # disagree with this one.
-        common = self.fs.common
-        bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
+    # NO CREDENTIALS HOOK EXISTS, and that is the point (ADR-0044). This used
+    # to return ``common.access_key_id`` / ``secret_access_key`` verbatim: the
+    # key this IO manager WRITES with, handed to every authorized reader,
+    # long-lived and write-capable. The broker mints a scoped, expiring,
+    # read-only credential per request instead.
+    #
+    # An IO manager must not produce one even if it could: it runs in a
+    # pipeline pod and knows neither the caller nor the access window.
+    # ``MeshPublishable`` offers no place to put one, so the rule is enforced
+    # by the shape of the base class rather than by remembering it here.
 
-        coordinates: Dict[str, Any] = {
-            "source_type": SOURCE_TYPE,
-            "physical_uri": physical_uri,
-            "mode": "mint-sts",
-            "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
-            "region": common.region or "us-east-1",
-        }
-        if common.end_point:
-            # An endpoint is a coordinate, not a secret. It MUST be reachable
-            # from wherever the consumer runs — a bare service name resolves
-            # only in this deployment's namespace (ADR-0044's sibling finding).
-            coordinates["endpoint_url"] = common.end_point
-        return coordinates
+    def mesh_endpoint(self) -> Optional[str]:
+        # An endpoint is a coordinate, not a secret. It MUST be reachable from
+        # wherever the consumer runs — a bare service name resolves only in
+        # this deployment's namespace (ADR-0044's sibling finding).
+        return self.fs.common.end_point or None
+
+    def mesh_region(self) -> Optional[str]:
+        return self.fs.common.region or "us-east-1"

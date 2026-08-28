@@ -89,6 +89,7 @@ from pydantic import Field
 from upath import UPath
 
 from dag_tools.io_managers.column_schema import add_column_schema
+from dag_tools.io_managers.mesh_publishing import MeshPublishable
 from dag_tools.utils.helper import ConfigureFromDict
 
 
@@ -245,17 +246,21 @@ def _s3_coordinates_for_ticket(config) -> Dict[str, str]:
     return coordinates
 
 
-def _delta_ticket(
+def _delta_uri(
     config, uri_base: str, asset_key_path: Sequence[str]
-) -> Optional[Dict[str, Any]]:
-    """The mesh routing ticket for one asset.
+) -> Optional[str]:
+    """Where this asset's Delta table lives, or None to not advertise it.
 
-    Module-level so the IO manager and its Configurable factory return
-    exactly the same thing. Both have to expose ``physical_coordinates``
-    — the broker reads whichever object sits in
-    ``Definitions(resources=...)``, which is the factory — and computing
-    the ticket in two places is how an advertised location drifts from
+    Module-level so the IO manager and its Configurable factory answer
+    identically. Both expose the mesh protocol — the broker reads whichever
+    object sits in ``Definitions(resources=...)``, which is the factory — and
+    computing the LOCATION in two places is how an advertised path drifts from
     the real one.
+
+    ADR-0001 note: this used to be ``_delta_ticket`` and assembled the whole
+    ticket. Assembly now comes from ``MeshPublishable``, so the sharing this
+    function exists for is narrowed to the only part that is delta-specific.
+    The anti-drift property is unchanged; there is simply less to keep in sync.
     """
     if isinstance(config, LocalFSConfig):
         # Local disk exists on one pod; the broker is a different pod.
@@ -268,19 +273,36 @@ def _delta_ticket(
     # ``/storage/`` ticket pointed at a prefix that holds nothing --
     # consumers got "No files in log segment" from a route the gateway
     # served with full confidence.
-    physical_uri = f"{uri_base.rstrip('/')}/{path}"
-    bucket, _, prefix = physical_uri[len("s3://"):].partition("/")
-    return {
-        "source_type": _DELTA_SOURCE_TYPE,
-        "physical_uri": physical_uri,
-        # ADR-0044: the broker mints per request against this scope.
-        "mode": "mint-sts",
-        "scope": {"bucket": bucket, "prefix": prefix.strip("/")},
-        **_s3_coordinates_for_ticket(config),
-    }
+    return f"{uri_base.rstrip('/')}/{path}"
 
 
-class DeltaIOManager(UPathIOManager):
+class _DeltaMeshPublishable(MeshPublishable):
+    """Shared mesh hooks for both Delta classes.
+
+    Each supplies ``_mesh_config`` / ``_mesh_uri_base``; everything else is
+    identical between them and must stay that way.
+    """
+
+    def _mesh_config(self):
+        raise NotImplementedError
+
+    def _mesh_uri_base(self) -> str:
+        raise NotImplementedError
+
+    def mesh_source_type(self, asset_key_path: Sequence[str]) -> str:
+        return _DELTA_SOURCE_TYPE
+
+    def mesh_uri(self, asset_key_path: Sequence[str]) -> Optional[str]:
+        return _delta_uri(self._mesh_config(), self._mesh_uri_base(), asset_key_path)
+
+    def mesh_endpoint(self) -> Optional[str]:
+        return _s3_coordinates_for_ticket(self._mesh_config()).get("endpoint_url")
+
+    def mesh_region(self) -> Optional[str]:
+        return _s3_coordinates_for_ticket(self._mesh_config()).get("region")
+
+
+class DeltaIOManager(_DeltaMeshPublishable, UPathIOManager):
     """Dagster ``UPathIOManager`` that materializes assets as Delta tables.
 
     Storage backend is selected at construction time by config type;
@@ -760,31 +782,18 @@ class DeltaIOManager(UPathIOManager):
         """No-op — partitioned assets don't need special transition handling here."""
         pass
 
-    def physical_coordinates(
-        self, asset_key_path: Sequence[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — return the routing ticket for an asset.
+    # Mesh-publishing protocol (ADR-0001): assembly from MeshPublishable,
+    # location from _delta_uri, which both this class and the factory share so
+    # they cannot drift. ``LocalFSConfig`` yields None — the broker is a remote
+    # pod and cannot serve a path on the Dagster pod's local disk.
+    def _mesh_config(self):
+        return self._config
 
-        A remote broker registering this IO manager's assets with the
-        central gateway calls this method to learn how to read each
-        asset's data. The returned dictionary matches the ticket shape
-        the cortex data client consumes: ``source_type`` discriminates
-        the read path (``"s3_delta"`` here), ``physical_uri`` is the
-        ``s3://`` URI of the Delta table, and ``credentials`` is the
-        Polars-side storage-options dict the client forwards into
-        ``scan_delta``.
-
-        ``LocalFSConfig`` returns ``None`` — the broker is a remote pod
-        and can't serve a path on the Dagster pod's local filesystem.
-        S3-backed configs return a ticket pointing at
-        ``{uri_base}/storage/{asset_key_path}``, mirroring the on-disk
-        layout the IO manager itself uses (see
-        ``get_op_output_relative_path``).
-        """
-        return _delta_ticket(self._config, self._uri_base, asset_key_path)
+    def _mesh_uri_base(self) -> str:
+        return self._uri_base
 
 
-class ConfigurableDeltaIOManager(ConfigurableIOManagerFactory, ConfigureFromDict):
+class ConfigurableDeltaIOManager(_DeltaMeshPublishable, ConfigurableIOManagerFactory, ConfigureFromDict):
     """Dagster-native factory that constructs ``DeltaIOManager`` from config.
 
     The ``fs`` field is a discriminated union — Dagster's config system
@@ -804,23 +813,18 @@ class ConfigurableDeltaIOManager(ConfigurableIOManagerFactory, ConfigureFromDict
     def create_io_manager(self, context) -> DeltaIOManager:
         return DeltaIOManager(self.fs, self.uri_base)
 
-    def physical_coordinates(
-        self, asset_key_path: Sequence[str]
-    ) -> Optional[Dict[str, Any]]:
-        """Mesh-publishing protocol — see :func:`_delta_ticket`.
+    # The protocol must live on the FACTORY, not only on DeltaIOManager. The
+    # broker looks up the object in ``Definitions(resources=...)`` and checks
+    # it for ``physical_coordinates``; that object is this factory, so with the
+    # method only on the inner manager the check failed and every Delta asset
+    # fell through to the broker's placeholder ticket (bucket ``my-data-lake``)
+    # — a routing entry that resolves to nothing.
+    #
+    # Answered from config rather than by building the IO manager: constructing
+    # one instantiates S3 filesystems and can create a local cache directory,
+    # far too much work for "where does this asset live".
+    def _mesh_config(self):
+        return self.fs
 
-        This has to live on the FACTORY, not only on ``DeltaIOManager``.
-        The domain broker looks up the object registered in
-        ``Definitions(resources=...)`` and checks it for
-        ``physical_coordinates``; that object is this factory, so with the
-        method only on the inner manager the check failed and every Delta
-        asset silently fell through to the broker's placeholder ticket
-        (bucket ``my-data-lake``) — a routing entry that resolves to
-        nothing.
-
-        Computed from config rather than by building the IO manager:
-        constructing one instantiates S3 filesystems and can create a
-        local cache directory, which is far too much work for answering
-        "where does this asset live".
-        """
-        return _delta_ticket(self.fs, self.uri_base, asset_key_path)
+    def _mesh_uri_base(self) -> str:
+        return self.uri_base
