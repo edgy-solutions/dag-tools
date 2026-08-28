@@ -46,6 +46,13 @@ _LAZY_EXPORTS = {
     "ConfigurableDeltaIOManager": ("delta", "ConfigurableDeltaIOManager"),
     "DuckDBIOManager": ("duckdb", "DuckDBIOManager"),
     "ConfigurableDuckDBIOManager": ("duckdb", "ConfigurableDuckDBIOManager"),
+    # The mesh-publishing protocol, for IO managers that are NOT dag-tools'.
+    # The protocol is duck-typed — the broker only checks for
+    # physical_coordinates() — but until this existed it was documented solely
+    # by four independent implementations, so a third party had to copy one and
+    # guess which parts generalised. See mesh_publishing.py.
+    "MeshPublishable": ("mesh_publishing", "MeshPublishable"),
+    "KNOWN_SOURCE_TYPES": ("mesh_publishing", "KNOWN_SOURCE_TYPES"),
 }
 
 __all__ = sorted(_LAZY_EXPORTS.keys())

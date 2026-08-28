@@ -163,7 +163,21 @@ def test_derivation_failure_never_blocks_asset_load():
 def test_an_explicit_datahub_urn_tag_still_wins():
     """Someone who STATED the identity outranks any derivation of it. Pinned at source
     because the surrounding loop requires a real Definitions object to exercise; the
-    ordering is the property, and it is visible in the text."""
+    ordering is the property, and it is visible in the text.
+
+    THE THIRD RUNG WAS REMOVED, DELIBERATELY. This used to assert
+    ``tag < physical < "urn = record.urn"`` — a fallback that forced
+    ``platform="dagster"`` and a dotted name layout whenever no physical identity
+    could be derived. That is not a spelling variant of the s3 URN: a
+    dagster-platform URN means the asset has NO PHYSICAL LOCATION, and
+    registering one advertised a route whose ticket resolved to
+    ``s3://default-bucket/warehouse/...`` — a bucket that does not exist.
+
+    A deployment could therefore report "Registered 104 assets", pass every
+    health check, and serve none of them. So the rung is gone: no physical
+    identity now means NOT ADVERTISED, with the reason counted. The precedence
+    this test guards is unchanged in its first two rungs; only the floor moved
+    from "guess" to "decline"."""
     import inspect
 
     from dag_tools.domain_broker import main as broker
@@ -171,11 +185,15 @@ def test_an_explicit_datahub_urn_tag_still_wins():
     src = inspect.getsource(broker.load_dagster_definitions)
     tag_at = src.index('record.tags.get("datahub/urn")')
     physical_at = src.index("physical_urn_for(record")
-    record_urn_at = src.index("urn = record.urn")
+    decline_at = src.index("_unadvertisable_reason(record")
 
-    assert tag_at < physical_at < record_urn_at, (
+    assert tag_at < physical_at < decline_at, (
         "identity precedence must be: explicit tag > physical (catalog-agreeing) > "
-        "record.urn/dagster fallback"
+        "decline to advertise"
+    )
+    assert "urn = record.urn" not in src, (
+        "the dagster-platform fallback is back. It advertises assets that have no "
+        "physical location, which the gateway then routes to with full confidence."
     )
 
 

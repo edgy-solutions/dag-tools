@@ -69,6 +69,24 @@ UNPROTECTED_SOURCE_TYPES: Dict[str, int] = {}
 no minter exists for that backend yet. Not a warning to be grepped for: it is
 surfaced on /health so the remaining exposure is a reported number."""
 
+UNADVERTISED_ASSETS: Dict[str, int] = {}
+"""reason -> count of assets this deployment did NOT advertise.
+
+AN ADVERTISED-BUT-UNREADABLE LOCATION IS WORSE THAN AN UNADVERTISED ASSET,
+because the gateway routes consumers to it with full confidence. The IO
+managers already act on that rule — ``arrow.py`` returns None rather than
+guess. The broker used to violate it from the other end: an asset whose IO
+manager implements no mesh-publishing protocol still got registered, with a
+synthesized ``s3://default-bucket/warehouse/<dotted-key>`` URI and a
+``dagster``-platform URN. A consumer resolving it received coordinates for a
+bucket that does not exist.
+
+That is not a naming problem to be fixed by matching the dagster URN. A
+dagster-platform URN means "this asset has no physical location" — there is
+nothing to hand a reader. So it is not advertised, and the REASON is counted
+here, because "registered 104 assets" while none of them are readable is the
+most expensive kind of green."""
+
 NON_FQDN_HOSTS: Dict[str, int] = {}
 """advertised host -> count. A ticket is consumed somewhere else, so a
 namespace-local hostname is a coordinate that means different things
@@ -506,6 +524,64 @@ def physical_urn_for(record, io_manager=None) -> Optional[str]:
         return None
 
 
+def _unadvertisable_reason(record, io_manager=None) -> str:
+    """WHY this asset has no physical identity — named, not left to inference.
+
+    ``physical_urn_for`` has four ways to decline and three of them used to
+    ``return None`` in silence. The operator then saw a URN that said
+    ``dagster`` and no explanation, and the natural (wrong) conclusion was that
+    the NAME needed fixing. It does not: the name is a symptom of the asset
+    having no readable location, and the causes want different fixes —
+    installing a dependency is not the same job as binding an IO manager.
+
+    Returned strings are stable keys for ``/health.adr0044.unadvertised``, so
+    an operator can act on a count rather than reading the whole log.
+    """
+    if io_manager is None:
+        return (
+            f"no IO manager bound (io_manager_key="
+            f"{record.io_manager_key!r}) — nothing can describe where it lives"
+        )
+    if not hasattr(io_manager, "physical_coordinates"):
+        mod = type(io_manager).__module__
+        return (
+            f"{mod}.{type(io_manager).__name__} does not implement the "
+            f"mesh-publishing protocol (no physical_coordinates). Either mix in "
+            f"dag_tools.io_managers.MeshPublishable and define mesh_uri(), or use "
+            f"one of dag-tools' own IO managers. NOTE THE MODULE in the name above "
+            f"— a vendored copy of a dag-tools class has the same class name and "
+            f"none of the protocol, which is easy to misread as the real thing"
+        )
+    try:
+        from dag_tools.components.datahub_lineage.component import (  # noqa: F401
+            asset_keys_to_dataset_urn_converter,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # THE WHOLE-DEPLOYMENT CASE. This one affects every asset uniformly and
+        # is a packaging problem, not a modelling one — worth distinguishing
+        # loudly, because "all 104 unadvertised" reads like a Dagster problem
+        # and is actually a missing extra.
+        return (
+            f"datahub lineage plugin not importable ({type(exc).__name__}) — "
+            f"install acryl-datahub + datahub-dagster-plugin in the broker image; "
+            f"this affects EVERY asset in this deployment"
+        )
+    try:
+        ticket = io_manager.physical_coordinates(list(record.asset_key or []))
+    except Exception as exc:  # noqa: BLE001
+        return f"physical_coordinates() raised {type(exc).__name__}: {exc}"
+    if not ticket:
+        return (
+            f"{type(io_manager).__name__}.physical_coordinates() declined — the "
+            f"output is not readable by a consumer (local filesystem, non-parquet "
+            f"target, or a non-s3 uri_base)"
+        )
+    return (
+        f"source_type {(ticket or {}).get('source_type')!r} maps to no known "
+        f"catalog platform"
+    )
+
+
 def extract_io_manager_info(defs: 'Definitions', asset_key: 'AssetKey') -> Dict[str, Any]:
     """Extracts IO Manager type + configuration for a specific asset.
 
@@ -772,14 +848,47 @@ def load_dagster_definitions():
             urn = record.tags.get("datahub/urn") if record.tags else None
             if not urn:
                 urn = physical_urn_for(record, io_manager)
+
             if not urn:
-                urn = record.urn
-            if not urn:
-                # Fallback deterministic URN generation.
-                key_str = ".".join(record.asset_key)
-                urn = f"urn:li:dataset:(urn:li:dataPlatform:dagster,{key_str},PROD)"
+                # NO PHYSICAL IDENTITY — SO IT IS NOT ADVERTISED.
+                #
+                # This used to fall through to record.urn, which forces
+                # platform="dagster" and the dotted ".".join(asset_key) layout.
+                # That URN is not a spelling variant of the s3 one: a
+                # dagster-platform URN means the asset HAS NO PHYSICAL LOCATION.
+                # Registering it advertised a route whose ticket resolved to
+                # s3://default-bucket/warehouse/<dotted-key> — a bucket that does
+                # not exist — and, when STS minting failed, handed the consumer
+                # MOCK CREDENTIALS that look real.
+                #
+                # A deployment could therefore report "Registered 104 assets",
+                # pass every health check, and serve nothing readable. The
+                # symptom surfaced as a URN-naming puzzle rather than "this
+                # deployment publishes nothing", which is the expensive part.
+                #
+                # Refusing costs nothing a consumer could have used, and the
+                # reason is counted so an operator sees WHY rather than a silent
+                # gap between "assets loaded" and "assets advertised".
+                reason = _unadvertisable_reason(record, io_manager)
+                UNADVERTISED_ASSETS[reason] = UNADVERTISED_ASSETS.get(reason, 0) + 1
+                logger.info(
+                    "Not advertising %s — %s. It has no physical location a "
+                    "consumer could read; a dagster-platform URN is not a "
+                    "readable coordinate.",
+                    ".".join(record.asset_key or []), reason,
+                )
+                continue
+
             LOCAL_ASSETS[urn] = _build_asset_info_from_record(record, io_manager=io_manager)
 
+        if UNADVERTISED_ASSETS:
+            logger.warning(
+                "Advertising %d of %d asset(s). NOT advertised: %s. An "
+                "advertised-but-unreadable location is worse than an "
+                "unadvertised asset, so these are withheld rather than "
+                "registered with placeholder coordinates.",
+                len(LOCAL_ASSETS), len(records), dict(UNADVERTISED_ASSETS),
+            )
         logger.info(f"Loaded {len(LOCAL_ASSETS)} assets mapped by URN.")
     except Exception as e:
         global DEFINITIONS_ERROR
@@ -1112,7 +1221,11 @@ async def resolve_asset(request: ResolveRequest):
         }
         
         try:
-            sts_client = boto3.client('sts')
+            # Same explicit identity as the protocol path. This used to be a bare
+            # boto3.client('sts'), which on a real broker pod finds no credentials
+            # at all — see _sts_client for why the ambient chain is empty there.
+            sts_client = _sts_client({"endpoint_url": asset_info.get("endpoint_url"),
+                                      "region": asset_info.get("region")})
             response = sts_client.assume_role(
                 RoleArn=role_arn,
                 RoleSessionName=f"session-{urn.replace(':', '_').replace(',', '_')[:40]}",
@@ -1131,16 +1244,24 @@ async def resolve_asset(request: ResolveRequest):
                 }
             }
         except Exception as e:
-            logger.error(f"Failed to mint STS token: {e}")
-            # Fallback for environments without AWS configured
-            return {
-                "source_type": io_type,
-                "physical_uri": f"s3://{bucket}/{prefix}",
-                "credentials": {
-                    "aws_access_key_id": "mock_access_key",
-                    "aws_secret_access_key": "mock_secret_key",
-                    "aws_session_token": "mock_session_token"
-                }
-            }
+            # NO MOCK CREDENTIALS. This used to return aws_access_key_id
+            # "mock_access_key" and friends "for environments without AWS
+            # configured" — a ticket that is structurally perfect, passes every
+            # shape check, and fails at read time with an opaque S3 error that
+            # names nothing. The consumer cannot tell a minting failure from a
+            # permissions problem from a missing object.
+            #
+            # It also contradicted the rule the protocol path already follows
+            # (ADR-0044): a minting failure fails the TICKET. Two paths, two
+            # postures, and the fail-open one was the one nobody was looking at.
+            logger.error(
+                "Failed to mint STS token for %s: %s — refusing the ticket. "
+                "(Previously this returned mock credentials, which read as "
+                "success and failed later somewhere else.)", urn, e,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not mint a scoped credential for {urn}.",
+            )
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported IO manager type: {io_type}")
