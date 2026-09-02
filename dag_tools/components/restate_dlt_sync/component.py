@@ -247,6 +247,30 @@ def ack_query(schema: str, table: str, pk: str, since_load_id: Optional[str]) ->
     return f"SELECT {pk}, {DLT_LOAD_ID_COLUMN} FROM {schema}.{table}{where}"
 
 
+def _bump_attempts(context, completed_at) -> int:
+    """Count launches for one completion marker, carried in the cursor.
+
+    Returns the attempt number this launch would be (1 for the first).
+
+    Keyed on the marker rather than accumulated globally so a NEW marker
+    starts fresh -- otherwise one bad load would poison every later cycle.
+    The cursor holds a single marker at a time for the same reason: once
+    the source moves on, the old count is meaningless.
+    """
+    marker = str(completed_at)
+    previous = 0
+    if context.cursor:
+        try:
+            state = json.loads(context.cursor)
+            if state.get("marker") == marker:
+                previous = int(state.get("attempts", 0))
+        except (ValueError, TypeError):
+            previous = 0  # unreadable cursor: treat as a fresh marker
+    attempts = previous + 1
+    context.update_cursor(json.dumps({"marker": marker, "attempts": attempts}))
+    return attempts
+
+
 def _post_restate(endpoint: str, payload: Dict[str, Any], log) -> None:
     """POST one payload to a Restate ingress.
 
@@ -591,6 +615,15 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                         f"count of unprocessed rows."
                     )
                 interval = int(cycle_sensor_cfg.get("interval_seconds", 60))
+                # Bounded so a deterministically-failing load stops hammering
+                # the source; the next completion marker resets the count.
+                max_attempts = int(cycle_sensor_cfg.get("max_attempts", 3))
+                if max_attempts < 1:
+                    raise ValueError(
+                        f"cycle_sensor for pipeline '{pipeline_key}': "
+                        f"max_attempts must be at least 1, got {max_attempts}. "
+                        f"Zero would mean the cycle never runs."
+                    )
                 job_name = f"{pipeline_key}_cycle_job"
                 sensor_name = f"{pipeline_key}_cycle_sensor"
 
@@ -604,6 +637,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                     generated_sensors.append(self._make_control_sensor(
                         name=sensor_name, job=cycle_job, job_name=job_name,
                         interval=interval, url=source_url, control=control,
+                        max_attempts=max_attempts,
                     ))
                 else:
                     generated_sensors.append(self._make_backlog_sensor(
@@ -692,7 +726,9 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             limit=1,
         ))
 
-    def _make_control_sensor(self, *, name, job, job_name, interval, url, control):
+    def _make_control_sensor(
+        self, *, name, job, job_name, interval, url, control, max_attempts,
+    ):
         component = self
 
         @sensor(name=name, job=job, minimum_interval_seconds=interval)
@@ -730,10 +766,36 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                     f"consumed at {done_at}"
                 )
 
-            tags = {"pdm/completed_at": str(completed_at)}
+            # Attempts are counted per COMPLETED marker, in the cursor.
+            #
+            # This used to pass run_key=completed_at, which Dagster dedupes
+            # on PERMANENTLY: once a run existed for that key the sensor
+            # would never fire for it again, so a FAILED cycle stalled until
+            # the source published a new marker. The operator's only recourse
+            # was deleting the failed run.
+            #
+            # The run_key was redundant anyway. "newest completion is newer
+            # than newest consumption" is already the idempotency guard, and
+            # it is the correct one: after a failed run it still reads "not
+            # consumed", which is true. Attempts are bounded so a load that
+            # fails deterministically does not re-fire against the source
+            # every interval forever.
+            attempts = _bump_attempts(context, completed_at)
+            if attempts > max_attempts:
+                return SkipReason(
+                    f"{control.completed_value!r} at {completed_at} has failed "
+                    f"{max_attempts} time(s); not retrying. Fix the cause and "
+                    f"either re-run {job_name} by hand or wait for the next "
+                    f"{control.completed_value!r} marker, which resets the count."
+                )
+
+            tags = {
+                "pdm/completed_at": str(completed_at),
+                "pdm/attempt": str(attempts),
+            }
             if load_type:
                 tags["pdm/load_type"] = str(load_type)
-            return RunRequest(run_key=str(completed_at), tags=tags)
+            return RunRequest(tags=tags)
 
         return control_sensor
 

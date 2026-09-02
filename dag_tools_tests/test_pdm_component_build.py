@@ -49,11 +49,6 @@ def _component(**overrides):
     }
     pipeline.update(overrides.pop("pipeline", {}))
     kwargs = dict(
-        mei_request_endpoint=f"{INGRESS}/GenericOracleControlService/write_mei_request/send",
-        load_complete_endpoint=f"{INGRESS}/GenericOracleControlService/signal_load_complete/send",
-    )
-    kwargs.update(overrides)
-    return RestateDltSyncComponent(
         source_config={
             "type": "sql_database",
             "drivername": "oracle+oracledb",
@@ -68,9 +63,11 @@ def _component(**overrides):
             "schema": "pdm_raw",
         },
         restate_endpoint=f"{INGRESS}/GenericOracleAckService/mark_as_processed/send",
-        pipelines={"pdm": pipeline},
-        **kwargs,
+        mei_request_endpoint=f"{INGRESS}/GenericOracleControlService/write_mei_request/send",
+        load_complete_endpoint=f"{INGRESS}/GenericOracleControlService/signal_load_complete/send",
     )
+    kwargs.update(overrides)
+    return RestateDltSyncComponent(pipelines={"pdm": pipeline}, **kwargs)
 
 
 @pytest.fixture(scope="module")
