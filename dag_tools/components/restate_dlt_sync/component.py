@@ -271,18 +271,61 @@ def _bump_attempts(context, completed_at) -> int:
     return attempts
 
 
-def _post_restate(endpoint: str, payload: Dict[str, Any], log) -> None:
-    """POST one payload to a Restate ingress.
+SEND_SUFFIX = "/send"
+"""Restate's ingress marks a ONE-WAY invocation with this suffix.
+
+``POST /<service>/<handler>/send`` returns as soon as Restate has durably
+accepted the request -- 202, an invocation id, and no indication of
+whether the handler subsequently succeeded. ``POST /<service>/<handler>``
+is the request/response form: it blocks until the handler finishes and
+reports its outcome.
+"""
+
+
+def await_endpoint(endpoint: str) -> str:
+    """Turn a configured endpoint into the request/response form.
+
+    Every endpoint in the field is configured with the ``/send`` suffix,
+    which is fire-and-forget: the POST returned 202 and the Dagster step
+    went green whether or not the Oracle write actually happened. The
+    handler could raise and nothing on this side would ever know.
+
+    That is wrong for all three of these calls, and worst for the request
+    that starts a cycle: if it fails silently the source is never asked
+    for anything, and we sit waiting for a completion marker that will
+    never come -- with a green run saying it all worked.
+
+    Stripped here rather than in config so existing deployments are
+    correct without an operator edit. Awaiting is not optional for these
+    calls, so honouring a configured ``/send`` would mean honouring a
+    setting that cannot be right.
+    """
+    trimmed = endpoint.rstrip("/")
+    if trimmed.endswith(SEND_SUFFIX):
+        return trimmed[: -len(SEND_SUFFIX)]
+    return trimmed
+
+
+def _post_restate(
+    endpoint: str, payload: Dict[str, Any], log, timeout: float = 120.0,
+) -> None:
+    """Invoke a Restate handler and WAIT for it to finish.
 
     Failures are raised, not swallowed. The ack dispatcher logs and
     continues because a missed ack self-heals on the next cycle, but
-    these two calls do not: a dropped MEI request means PDM never starts,
+    these calls do not: a dropped request means the source never starts,
     and a dropped completion row means our own sensor re-fires the cycle
-    forever.
+    forever -- or, where the control table gates the source's own loading,
+    leaves it blocked.
+
+    The timeout is generous because it now covers the handler's real work
+    (an Oracle round trip, possibly a large insert) rather than just
+    Restate accepting the message.
     """
-    response = httpx.post(endpoint, json=payload, timeout=30.0)
+    url = await_endpoint(endpoint)
+    response = httpx.post(url, json=payload, timeout=timeout)
     response.raise_for_status()
-    log.info(f"Restate accepted payload at {endpoint}")
+    log.info(f"Restate handler completed at {url}")
 
 
 class RestateDltSyncComponent(Component, Resolvable, Model):
@@ -529,7 +572,16 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
 
                                 context.log.info(f"Dispatching chunk of {len(chunk)} records to Restate ingress.")
                                 try:
-                                    await client.post(self.restate_endpoint, json=payload)
+                                    # Awaited, not fire-and-forget: with /send
+                                    # a handler failure still returns 202, so
+                                    # the mark would advance past rows whose
+                                    # ack never actually landed.
+                                    resp = await client.post(
+                                        await_endpoint(self.restate_endpoint),
+                                        json=payload,
+                                        timeout=300.0,
+                                    )
+                                    resp.raise_for_status()
                                 except Exception as e:
                                     failed += 1
                                     context.log.warning(f"Failed to dispatch chunk to Restate: {e}")

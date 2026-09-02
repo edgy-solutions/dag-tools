@@ -70,6 +70,7 @@ def dispatch(db):
 class _Posted:
     def __init__(self, fail=False):
         self.payloads = []
+        self.urls = []
         self.fail = fail
 
     def install(self):
@@ -83,9 +84,17 @@ class _Posted:
                 return False
 
             async def post(self, url, json=None, **kw):
+                # The ack is now AWAITED rather than fired and forgotten,
+                # so the caller checks the response. Under Restate's /send
+                # form a failed handler still answered 202 and the mark
+                # advanced past rows whose ack never landed.
+                outer.urls.append(str(url))
                 if outer.fail:
                     raise httpx.ConnectError("restate unreachable")
                 outer.payloads.append(json)
+                return httpx.Response(
+                    200, json={"ok": True}, request=httpx.Request("POST", url),
+                )
 
         return patch.object(httpx, "AsyncClient", _Client)
 
@@ -181,3 +190,16 @@ def test_the_next_cycle_retries_what_the_failure_stranded(db, dispatch):
 
     assert sorted(posted.acked_ids) == [3, 4], "the stranded rows were not retried"
     assert _value(md, LAST_ACKED_LOAD_ID) == LOAD_2
+
+
+def test_the_ack_is_awaited_not_fired_and_forgotten(db, dispatch):
+    """Configured with Restate's /send suffix, a handler failure still
+    answered 202 -- so the mark advanced past rows whose acknowledgment
+    never actually reached the source."""
+    _add(db, [1, 2], LOAD_1)
+    posted = _Posted()
+    _run(dispatch, DagsterInstance.ephemeral(), posted)
+
+    assert posted.urls, "no call was made"
+    for url in posted.urls:
+        assert not url.rstrip("/").endswith("/send"), url
