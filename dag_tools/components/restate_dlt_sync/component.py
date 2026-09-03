@@ -17,6 +17,7 @@ from dagster import (
     SkipReason,
     asset,
     define_asset_job,
+    run_failure_sensor,
     sensor,
 )
 from dagster.components import Component, ComponentLoadContext
@@ -382,8 +383,13 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
     Required only when a pipeline declares `mei_table:`."""
 
     load_complete_endpoint: str = ""
-    """Restate ingress for GenericOracleControlService/signal_load_complete.
-    Required only when a pipeline declares `control_table:`."""
+    """Deprecated alias for `control_status_endpoint`, kept working.
+    The same handler now writes start, done and abort rows, so the name
+    describes only one of its three uses."""
+
+    control_status_endpoint: str = ""
+    """Restate ingress for the handler that appends a control-table row.
+    Required when a pipeline declares `control_table:`."""
 
     staging_config: Dict[str, Any] = {}
     """Optional object detailing the staging bucket/filesystem."""
@@ -443,10 +449,11 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                     f"pipeline '{pipeline_key}' declares mei_table but the "
                     f"component has no mei_request_endpoint set."
                 )
-            if control and not self.load_complete_endpoint:
+            if control and not self._control_endpoint():
                 raise ValueError(
                     f"pipeline '{pipeline_key}' declares control_table but the "
-                    f"component has no load_complete_endpoint set."
+                    f"component has no control_status_endpoint set (or the "
+                    f"older load_complete_endpoint)."
                 )
 
             # A single pipeline-wide primary_key remains supported as the
@@ -477,12 +484,42 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                 config=pydantic_config,
                 staging_config=self.staging_config
             )
-            generated_assets.extend(dlt_assets_group)
-
             # Real dlt asset keys — the cycle job selects all of them; each
             # ack dispatch depends on only its OWN table (see below).
+            # Both derived BEFORE any gate dependency is injected, so the
+            # per-table mapping still sees exactly one dep per spec.
             dlt_keys = _executable_asset_keys(dlt_assets_group)
             dlt_key_for = dlt_key_by_source_table(dlt_assets_group, sources)
+
+            # ---- the gate: claim before reading a single row -------------------
+            started_keys: List[AssetKey] = []
+            if control and control.consumer_started_value:
+                started_name = f"{pipeline_key}_load_started"
+                started_key = AssetKey([started_name])
+                generated_assets.append(
+                    self._make_status_asset(
+                        started_name, control,
+                        control.consumer_started_value, deps=None,
+                    )
+                )
+                started_keys.append(started_key)
+                # Ordering here is CORRECTNESS, not tidiness. The marker
+                # tells the source to hold off updating the data, so a
+                # single row read before it lands is read unprotected.
+                # Injected as a dep of every extraction asset rather than
+                # sequenced by a separate job, because a job boundary
+                # leaves exactly that window open.
+                dlt_assets_group = [
+                    item.map_asset_specs(
+                        lambda spec: spec.replace_attributes(
+                            deps=[*spec.deps, started_key]
+                        )
+                    )
+                    if hasattr(item, "keys") else item
+                    for item in dlt_assets_group
+                ]
+
+            generated_assets.extend(dlt_assets_group)
             dispatch_keys: List[AssetKey] = []
 
             for source_table in sources if row_ack else []:
@@ -681,9 +718,18 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
 
                 cycle_job = define_asset_job(
                     name=job_name,
-                    selection=dlt_keys + dispatch_keys + complete_keys,
+                    selection=started_keys + dlt_keys + dispatch_keys + complete_keys,
                 )
                 generated_jobs.append(cycle_job)
+
+                # Releasing the gate on failure. Only a terminal row from us
+                # clears it, and the success path writes one -- this covers
+                # every other ending.
+                if control and control.consumer_aborted_value:
+                    generated_sensors.append(self._make_abort_sensor(
+                        name=f"{pipeline_key}_abort_sensor",
+                        job=cycle_job, control=control,
+                    ))
 
                 if control:
                     generated_sensors.append(self._make_control_sensor(
@@ -730,6 +776,44 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             }, context.log)
 
         return mei_request_asset
+
+    def _make_status_asset(
+        self, name: str, control: ControlTableSpec, status_value: str, deps,
+    ):
+        """An asset that appends one control row with the given status.
+
+        The handler is already generic -- it takes the status as a
+        parameter -- so start, done and abort are the same call with
+        different configured values, not three handlers.
+        """
+        endpoint = self._control_endpoint()
+
+        @asset(name=name, **({"deps": deps} if deps else {}))
+        def status_asset(context):
+            payload: Dict[str, Any] = {
+                "table_name": control.name,
+                "status_column": control.status_column,
+                "status_value": status_value,
+                "timestamp_column": control.timestamp_column,
+                "extra_columns": control.extra_columns,
+            }
+            load_type = context.run.tags.get("pdm/load_type")
+            if control.load_type_column and load_type:
+                payload["load_type_column"] = control.load_type_column
+                payload["load_type"] = load_type
+            context.log.info(f"Writing {status_value!r} to {control.name}")
+            _post_restate(endpoint, payload, context.log)
+
+        return status_asset
+
+    def _control_endpoint(self) -> str:
+        """Where control-status rows are written.
+
+        ``control_status_endpoint`` is the accurate name now that the same
+        handler serves start, done and abort. ``load_complete_endpoint``
+        stays as a fallback so existing config keeps working.
+        """
+        return self.control_status_endpoint or self.load_complete_endpoint
 
     def _make_complete_asset(self, name: str, control: ControlTableSpec, deps):
         endpoint = self.load_complete_endpoint
@@ -871,6 +955,48 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             return SkipReason("no unprocessed rows in source")
 
         return cycle_sensor
+
+    def _make_abort_sensor(self, *, name, job, control):
+        """Release the gate when a cycle ends any way but successfully.
+
+        The start marker tells the source to hold off updating the data,
+        and only a terminal row from us releases it. The success path
+        writes one; this covers every other ending -- a failed step, a
+        cancellation, an out-of-memory kill.
+
+        IMPORTANT OPERATIONAL DEPENDENCY: this fires when Dagster marks the
+        run FAILED. If a run's pod dies hard and ``run_monitoring`` is not
+        enabled on the instance, the run can sit in STARTED indefinitely,
+        no failure event is emitted, and the gate is never released from
+        this side. Enable run monitoring wherever the gate is in use, and
+        keep a staleness rule on the source as the backstop -- there is no
+        arrangement of code here that covers a process that never reports
+        anything.
+        """
+        endpoint = self._control_endpoint()
+
+        @run_failure_sensor(name=name, monitored_jobs=[job])
+        def abort_sensor(context):
+            payload: Dict[str, Any] = {
+                "table_name": control.name,
+                "status_column": control.status_column,
+                "status_value": control.consumer_aborted_value,
+                "timestamp_column": control.timestamp_column,
+                "extra_columns": control.extra_columns,
+            }
+            context.log.warning(
+                "cycle run %s failed; writing %r to %s to release the gate",
+                context.dagster_run.run_id,
+                control.consumer_aborted_value,
+                control.name,
+            )
+            # An abort row for a cycle that failed BEFORE claiming the gate
+            # is harmless: it releases a lock nobody held. Checking first
+            # would put a database read on the failure path, which is the
+            # one path that most needs to stay simple.
+            _post_restate(endpoint, payload, context.log)
+
+        return abort_sensor
 
     def _make_overlay_sensor(self, *, name, job_name, source_file):
         @sensor(name=name, job_name=job_name, minimum_interval_seconds=60)

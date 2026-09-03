@@ -88,7 +88,25 @@ class ControlTableSpec(BaseModel):
 
     started_value: Optional[str] = Field(
         default=None,
-        description="Status PDM writes when it begins. Recorded for operators.",
+        description="Status the source writes when it begins. Recorded for operators.",
+    )
+    consumer_started_value: Optional[str] = Field(
+        default=None,
+        description=(
+            "Status WE write before reading anything. Setting it turns the "
+            "control table into a GATE: the source polls for this and holds "
+            "off updating the data until we close the cycle. Leave it unset "
+            "and no start marker is written at all."
+        ),
+    )
+    consumer_aborted_value: Optional[str] = Field(
+        default=None,
+        description=(
+            "Status WE write when a cycle fails. Required whenever "
+            "consumer_started_value is set, because the start marker is a "
+            "lock and only a terminal row releases it. Without this a failed "
+            "run leaves the source blocked indefinitely."
+        ),
     )
     load_type_column: Optional[str] = Field(
         default=None,
@@ -108,9 +126,45 @@ class ControlTableSpec(BaseModel):
                 "control_table.consumer_done_value must differ from "
                 f"completed_value (both are {self.completed_value!r}); "
                 "otherwise the row we write to close a cycle is "
-                "indistinguishable from PDM announcing a new one, and the "
-                "sensor re-fires forever."
+                "indistinguishable from the source announcing a new one, and "
+                "the sensor re-fires forever."
             )
+
+        if self.consumer_started_value and not self.consumer_aborted_value:
+            raise ValueError(
+                "control_table.consumer_started_value is set without "
+                "consumer_aborted_value. The start marker is a LOCK -- the "
+                "source holds off updating the data until a terminal row from "
+                "us releases it -- and only the success path writes "
+                f"{self.consumer_done_value!r}. Without an aborted value a "
+                "failed run leaves the source blocked with nothing to clear it."
+            )
+
+        # Every status we write must be distinguishable from every other and
+        # from theirs, or one side reads the other's markers as its own.
+        seen: Dict[str, str] = {}
+        for field in (
+            "consumer_started_value",
+            "consumer_done_value",
+            "consumer_aborted_value",
+        ):
+            value = getattr(self, field)
+            if value is None:
+                continue
+            if value in seen:
+                raise ValueError(
+                    f"control_table.{field} and control_table.{seen[value]} "
+                    f"are both {value!r}. Each status we write must be "
+                    f"distinct, or a cycle cannot tell its own start from its "
+                    f"own end."
+                )
+            seen[value] = field
+            if value in (self.completed_value, self.started_value):
+                raise ValueError(
+                    f"control_table.{field} is {value!r}, which is also a "
+                    f"status the SOURCE writes. Ours must be distinguishable "
+                    f"from theirs, or the two sides read each other's markers."
+                )
         return self
 
 
