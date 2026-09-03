@@ -47,6 +47,61 @@ client = CortexDataClient(
 )
 ```
 
+### Who the read is authorized as
+
+Identity resolves in a fixed order, and **the order is the point**:
+
+```
+caller=  ->  request context  ->  CORTEX_USER_TOKEN  ->  service (provisioned)
+```
+
+Inside a mesh request, failing to resolve **raises** rather than falling through.
+
+```python
+@app.execute()
+def detect(data: In, caller: CallerIdentity) -> Out:
+    client = CortexDataClient(caller=caller)   # explicit, always correct
+    client = CortexDataClient()                # also correct: reads the request context
+```
+
+Both now read as the *user*. Previously the second line read as the **service** — every user of
+the handler getting the service's entitlements, with rows returned and nothing erroring.
+
+`caller=` takes any object exposing `authz_id`. The SDK's `CallerIdentity` satisfies it
+structurally with no adapter; so can anything else, which is why `dag-tools` declares the shape
+rather than importing the type — `iagent_mesh` is an **optional peer** (`current_caller` exported
+as of 0.4.0), and naming its type in a public signature would make an optional dependency part of
+this package's contract.
+
+**Why the order matters.** Reversed — the environment above the caller — a variable set on a pod
+would outrank the request's caller, and a config change nobody reviews as authorization becomes a
+cross-tenant read. The caller outranking it is what keeps `CORTEX_USER_TOKEN` harmless on an
+agent pod.
+
+**Inside a request, there is no fall-through.** The SDK distinguishes *no request*
+(`current_caller()` is `None`) from *a request whose caller did not resolve* (a caller with
+`authz_id=None`). The second raises. Collapsing them is what would let an agent-pod read fall
+back to a notebook-shaped environment lookup.
+
+Without the SDK installed the request rung is skipped, and the client **says so** at
+construction — a client outside the mesh should know it has no request context rather than
+silently reading as something else.
+
+### Failure modes are distinct
+
+A composing verb one level up cannot report honestly over a client that collapses these, so it
+doesn't:
+
+| Exception | Means |
+| --- | --- |
+| `CallerUnresolved` | no identity to read as — a defect in the *call* |
+| `NotEntitled` | the caller resolved and the gate refused (401/403) |
+| `MeshUnavailable` | the read could not be attempted — **including a gateway 404** |
+
+**A 404 is `MeshUnavailable`, not "absent".** Routes carry a TTL and are re-pushed on a
+heartbeat, so it reports the owning deployment's *liveness*. Reporting "no such data" when the
+truth is "the owner is down" is the dishonest report this taxonomy exists to prevent.
+
 ### Reading on behalf of a user
 
 This is the part that is easy to get wrong, and it fails **closed** — you

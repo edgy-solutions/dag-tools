@@ -3,6 +3,16 @@ import httpx
 import polars as pl
 from typing import Dict, Any, Optional
 
+from .identity import (
+    Caller,
+    CallerUnresolved,
+    CortexDataError,
+    MeshUnavailable,
+    NotEntitled,
+    classify_response,
+    resolve_authz_id,
+)
+
 class CortexDataClient:
     """
     The Universal Data Client (The Data Plane).
@@ -18,6 +28,8 @@ class CortexDataClient:
         keycloak_url: Optional[str] = None,
         originator_sub: Optional[str] = None,
         originator_email: Optional[str] = None,
+        caller: Optional[Caller] = None,
+        service_identity: bool = False,
     ):
         # 1. Resolve Broker URL (Central Gateway)
         resolved_broker = broker_url or os.getenv("CORTEX_BROKER_URL")
@@ -40,12 +52,42 @@ class CortexDataClient:
         # is email-keyed, so it MUST see the end user's email here (via
         # X-Originator-Email) — the M2M token has no user email. Without
         # this the DA-read gate denied everyone (broken-closed).
-        self.originator_email = originator_email
-
         if not self.jwt_token and self.client_id and self.client_secret:
             self._fetch_m2m_token()
         elif not self.jwt_token:
             raise ValueError("Must provide either jwt_token (MESH_DEV_TOKEN) or M2M credentials (CORTEX_CLIENT_ID/SECRET).")
+
+        # 3. Resolve WHO this client reads as.
+        #
+        #    caller= -> request context -> CORTEX_USER_TOKEN -> service
+        #
+        #    Inside a request, failing to resolve RAISES rather than
+        #    falling through: being in a handler is precisely when reading
+        #    as the service is wrong. See dag_tools.cortex_data.identity.
+        #
+        #    An explicit originator_email is treated as the top rung -- a
+        #    caller who named the subject outright has already decided.
+        #    Passing client_id/client_secret explicitly is likewise an
+        #    opt-in to the service identity: naming the service's own
+        #    credentials IS asking to read as the service.
+        #    WHAT COUNTS AS OPTING IN. Provisioning this process with a
+        #    transport credential -- by argument or by environment -- IS
+        #    the opt-in: an operator who handed it service credentials
+        #    asked it to act as the service. Demanding a further code flag
+        #    would break every existing notebook, CLI and Dagster asset
+        #    while adding no safety, because the dangerous case never
+        #    reaches this rung: INSIDE a request the rung above is
+        #    terminal and raises. The guard is rung 2's terminality, not
+        #    rung 4's flag.
+        opted_in = service_identity or bool(
+            self.jwt_token or (self.client_id and self.client_secret)
+        )
+        self.authz_id, self.identity_rung = resolve_authz_id(
+            caller=caller,
+            explicit_authz_id=originator_email,
+            allow_service_identity=opted_in,
+        )
+        self.originator_email = self.authz_id
 
     def _fetch_m2m_token(self):
         """Fetches a short-lived Service Account JWT using client_credentials grant."""
@@ -80,8 +122,21 @@ class CortexDataClient:
         url = f"{self.gateway_url}/api/v1/assets/{urn}/authorize"
         
         with httpx.Client() as client:
-            response = client.post(url, headers=headers, timeout=10.0)
-            response.raise_for_status()
+            try:
+                response = client.post(url, headers=headers, timeout=10.0)
+            except httpx.HTTPError as e:
+                # Never reached the gateway: unreachable, not refused.
+                raise MeshUnavailable(
+                    f"could not reach the gateway at {self.gateway_url}: {e}"
+                ) from e
+            detail = ""
+            try:
+                detail = str((response.json() or {}).get("detail", ""))
+            except Exception:
+                detail = response.text[:200]
+            outcome = classify_response(response.status_code, detail)
+            if outcome is not None:
+                raise outcome
             ticket = response.json()
             
         # 2. Parse the returned ticket.
