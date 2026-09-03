@@ -216,3 +216,105 @@ def test_max_attempts_below_one_is_refused():
         build._component(
             pipeline={"cycle_sensor": {"enabled": True, "max_attempts": 0}}
         ).build_defs(None)
+
+
+# ---------------------------------------------------------------------------
+# The same stall, in the request sensor
+# ---------------------------------------------------------------------------
+#
+# The overlay sensor had the identical bug in a worse form: it wrote the
+# cursor BEFORE the run's outcome was known, so a failed request marked the
+# list as handled and was skipped as "unchanged" forever. Worse because
+# nothing is ever asked for, so no completion marker arrives and the whole
+# cycle waits on a request that never landed.
+
+from dagster import DagsterRunStatus
+
+from dag_tools.components.restate_dlt_sync.component import MEI_DIGEST_TAG
+
+
+@pytest.fixture
+def overlay(tmp_path):
+    f = tmp_path / "meis.yaml"
+    f.write_text("- M-1\n- M-2\n")
+    return f
+
+
+def _overlay_sensor(overlay):
+    defs = build._component(pipeline={"mei_table": {
+        "name": "PDM_MEI_REQUEST", "mei_column": "MEI_NUMBER",
+        "source_file": str(overlay),
+    }}).build_defs(None)
+    return next(s for s in defs.sensors if s.name == "pdm_mei_overlay_sensor")
+
+
+def test_the_request_sensor_fires_for_a_new_list(overlay):
+    result, _ = _tick(_overlay_sensor(overlay), DagsterInstance.ephemeral())
+    assert _is_run(result), result
+
+
+def test_the_request_sensor_sets_no_run_key(overlay):
+    """A run_key made the skip permanent regardless of outcome."""
+    result, _ = _tick(_overlay_sensor(overlay), DagsterInstance.ephemeral())
+    req = result if isinstance(result, RunRequest) else result[0]
+    assert req.run_key is None, req.run_key
+
+
+def test_the_request_sensor_tags_the_list_it_launched_for(overlay):
+    result, _ = _tick(_overlay_sensor(overlay), DagsterInstance.ephemeral())
+    req = result if isinstance(result, RunRequest) else result[0]
+    assert MEI_DIGEST_TAG in req.tags, req.tags
+
+
+def test_a_failed_request_is_retried(overlay):
+    """No successful run exists for this list, so it must fire again."""
+    sensor = _overlay_sensor(overlay)
+    instance = DagsterInstance.ephemeral()
+
+    first, cursor = _tick(sensor, instance)
+    assert _is_run(first)
+
+    second, cursor = _tick(sensor, instance, cursor)
+    assert _is_run(second), "a failed request was never retried"
+
+
+def test_a_succeeded_request_is_not_repeated(overlay):
+    """Re-asking for an identical list is pure waste, and on a delta load
+    can make the source redo work."""
+    from dagster._core.test_utils import create_run_for_test
+
+    sensor = _overlay_sensor(overlay)
+    instance = DagsterInstance.ephemeral()
+
+    result, cursor = _tick(sensor, instance)
+    req = result if isinstance(result, RunRequest) else result[0]
+
+    create_run_for_test(
+        instance,
+        job_name="pdm_mei_request_job",
+        status=DagsterRunStatus.SUCCESS,
+        tags=dict(req.tags),
+    )
+
+    again, cursor = _tick(sensor, instance, cursor)
+    assert isinstance(again, SkipReason), again
+    assert "already succeeded" in str(again.skip_message)
+
+
+def test_a_success_for_a_DIFFERENT_list_does_not_count(overlay):
+    """The digest is what makes the check specific. Without it, any past
+    success would suppress every future request."""
+    from dagster._core.test_utils import create_run_for_test
+
+    sensor = _overlay_sensor(overlay)
+    instance = DagsterInstance.ephemeral()
+
+    create_run_for_test(
+        instance,
+        job_name="pdm_mei_request_job",
+        status=DagsterRunStatus.SUCCESS,
+        tags={MEI_DIGEST_TAG: "some-other-list"},
+    )
+
+    result, _ = _tick(sensor, instance)
+    assert _is_run(result), result

@@ -267,6 +267,28 @@ def ack_query(schema: str, table: str, pk: str, since_load_id: Optional[str]) ->
     return f"SELECT {pk}, {DLT_LOAD_ID_COLUMN} FROM {schema}.{table}{where}"
 
 
+MEI_DIGEST_TAG = "pdm/mei_digest"
+"""Identifies which request list a run was launched for.
+
+Carried as a run TAG rather than a sensor cursor because the cursor has to
+be written before the run's outcome is known, and a request that failed
+must not read as one that was handled.
+"""
+
+
+def _succeeded_for_digest(context, job_name: str, digest: str) -> bool:
+    """Whether a run of this job already succeeded for this exact list."""
+    runs = context.instance.get_runs(
+        filters=RunsFilter(
+            job_name=job_name,
+            tags={MEI_DIGEST_TAG: digest},
+            statuses=[DagsterRunStatus.SUCCESS],
+        ),
+        limit=1,
+    )
+    return bool(runs)
+
+
 def _bump_attempts(context, completed_at) -> int:
     """Count launches for one completion marker, carried in the cursor.
 
@@ -1019,6 +1041,8 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
         return abort_sensor
 
     def _make_overlay_sensor(self, *, name, job_name, source_file):
+        component = self
+
         @sensor(name=name, job_name=job_name, minimum_interval_seconds=60)
         def mei_overlay_sensor(context):
             """Re-request MEIs when the git overlay changes.
@@ -1040,10 +1064,27 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             digest = hashlib.sha256(
                 json.dumps(meis, sort_keys=True, default=str).encode("utf-8")
             ).hexdigest()[:16]
-            if context.cursor == digest:
-                return SkipReason(f"MEI list unchanged ({len(meis)} entries)")
 
-            context.update_cursor(digest)
-            return RunRequest(run_key=digest, tags={"pdm/mei_count": str(len(meis))})
+            if component._active_run(context, job_name):
+                return SkipReason(f"{job_name} already running")
+
+            # Gated on a SUCCESSFUL run for this list, not on a cursor.
+            #
+            # The cursor was written before the run's outcome was known, so
+            # a failed request marked the list as handled and the sensor
+            # skipped it as "unchanged" forever -- the same permanent stall
+            # the cycle sensor had, and worse here: nothing is ever asked
+            # for, so no completion marker arrives and the whole cycle
+            # waits on a request that never landed.
+            if _succeeded_for_digest(context, job_name, digest):
+                return SkipReason(
+                    f"the request for this list already succeeded "
+                    f"({len(meis)} entries, {digest})"
+                )
+
+            return RunRequest(tags={
+                MEI_DIGEST_TAG: digest,
+                "pdm/mei_count": str(len(meis)),
+            })
 
         return mei_overlay_sensor
