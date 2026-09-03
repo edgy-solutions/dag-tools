@@ -183,7 +183,30 @@ class MeiTableSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="MEI table name.")
-    mei_column: str = Field(description="Column the MEIs are itemized in.")
+    mei_column: Optional[str] = Field(
+        default=None,
+        description=(
+            "Column the identifiers are itemized in. Required when the "
+            "request list is a list of bare values; unnecessary when each "
+            "entry is a mapping that names its own columns."
+        ),
+    )
+    constants: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Columns identical on every row, and NOT overridable by an "
+            "entry -- so a value that must be uniform cannot be varied by "
+            "editing the request list."
+        ),
+    )
+    defaults: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Columns applied per row and overridable by an entry. For a "
+            "value that is usually one thing but occasionally stated "
+            "explicitly."
+        ),
+    )
     source_file: Optional[str] = Field(
         default=None,
         description=(
@@ -194,11 +217,12 @@ class MeiTableSpec(BaseModel):
             "list, a JSON list, or one MEI per line with # comments."
         ),
     )
-    meis: List[str] = Field(
+    meis: List[Any] = Field(
         default_factory=list,
         description=(
-            "Inline MEI list. Useful for tests and small fixed sets; "
-            "source_file wins when both are set."
+            "Inline request list. Bare values, or mappings naming their own "
+            "columns. Useful for tests and small fixed sets; source_file "
+            "wins when both are set."
         ),
     )
     replace: bool = Field(
@@ -210,5 +234,28 @@ class MeiTableSpec(BaseModel):
     )
     extra_columns: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Constant columns applied to every MEI row.",
+        description="Deprecated alias for `constants`, kept working.",
     )
+
+    @model_validator(mode="after")
+    def _addressable_columns(self) -> "MeiTableSpec":
+        """Every row has to know which column its identifier goes in.
+
+        A mapping entry names its own columns, so this only binds when the
+        list can contain bare values -- which is the common case and the
+        one where a missing column name is silently unrecoverable.
+        """
+        if self.mei_column:
+            return self
+        entries = self.meis or []
+        if entries and all(isinstance(e, dict) for e in entries):
+            return self
+        if self.source_file:
+            # The file is read at materialization time, so its shape is not
+            # knowable here; the loader raises if it turns out to be bare
+            # values with no column to put them in.
+            return self
+        raise ValueError(
+            "mei_table needs `mei_column` unless every entry is a mapping "
+            "that names its own columns."
+        )

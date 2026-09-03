@@ -64,6 +64,72 @@ def _require(payload: Dict[str, Any], *names: str) -> List[Any]:
     return [payload[n] for n in names]
 
 
+def build_request_rows(
+    values: List[Any],
+    *,
+    key_column: Optional[str] = None,
+    constants: Optional[Dict[str, Any]] = None,
+    defaults: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Turn the request list into uniform rows ready for executemany.
+
+    A request row often needs more than one column: an identifier that
+    varies per row, values that are the same on every row, and values that
+    are usually one thing but occasionally overridden. Three sources cover
+    all of it without the handler knowing what any column means:
+
+      * ``values`` -- either bare scalars (paired with ``key_column``) or
+        mappings, which are used as the row;
+      * ``defaults`` -- applied per row, and OVERRIDABLE by the row;
+      * ``constants`` -- applied per row and NOT overridable, so a value
+        that must be uniform cannot be varied by editing the input list.
+
+    Every row is normalised to the same column set, because
+    ``executemany`` binds one statement across the whole batch: a row
+    missing a column another row has would bind the wrong parameters.
+    Missing values become None rather than being dropped.
+
+    De-duplicated on the key when there is one -- a repeated identifier is
+    at best wasted work downstream.
+    """
+    constants = constants or {}
+    defaults = defaults or {}
+
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    for value in values:
+        if isinstance(value, dict):
+            row = {**defaults, **value, **constants}
+        else:
+            if not key_column:
+                raise ValueError(
+                    "a scalar entry needs key_column to say which column it "
+                    f"belongs in; got {value!r} with no key_column. Supply "
+                    "key_column, or make the entries mappings."
+                )
+            row = {**defaults, key_column: value, **constants}
+
+        if key_column:
+            key = row.get(key_column)
+            if key is None:
+                raise ValueError(
+                    f"entry {value!r} has no value for key_column "
+                    f"{key_column!r}."
+                )
+            if key in seen:
+                continue
+            seen.add(key)
+        rows.append(row)
+
+    if not rows:
+        raise ValueError("the request list resolved to zero rows")
+
+    # One column set across the batch, ordered deterministically so the
+    # generated INSERT is stable run to run.
+    all_columns = sorted({c for row in rows for c in row})
+    return [{c: row.get(c) for c in all_columns} for row in rows]
+
+
 @service.handler()
 async def write_mei_request(ctx: restate.Context, payload: dict):
     """Publish the MEI list PDM should explode, into the MEI table.
@@ -78,19 +144,17 @@ async def write_mei_request(ctx: restate.Context, payload: dict):
       extra_columns (optional) — constant columns applied to every row
                     (a request id, a requested-at stamp, a load type)
     """
-    table_name, mei_column, mei_values = _require(
-        payload, "table_name", "mei_column", "mei_values"
-    )
+    table_name, mei_values = _require(payload, "table_name", "mei_values")
+    key_column = payload.get("key_column") or payload.get("mei_column")
     replace = payload.get("replace", True)
-    extra_columns: Dict[str, Any] = payload.get("extra_columns") or {}
+    constants: Dict[str, Any] = (
+        payload.get("constants") or payload.get("extra_columns") or {}
+    )
+    defaults: Dict[str, Any] = payload.get("defaults") or {}
 
-    # De-duplicate while preserving order: PDM keys off these, and a
-    # repeated MEI is at best wasted explosion work.
-    seen = set()
-    values = [
-        v for v in mei_values
-        if not (v in seen or seen.add(v))
-    ]
+    rows = build_request_rows(
+        mei_values, key_column=key_column, constants=constants, defaults=defaults,
+    )
 
     def _write():
         with _connect() as connection:
@@ -98,27 +162,23 @@ async def write_mei_request(ctx: restate.Context, payload: dict):
                 if replace:
                     # DELETE, not TRUNCATE: TRUNCATE is DDL in Oracle and
                     # commits implicitly, which would break the atomicity
-                    # of clear-then-insert and leave PDM able to observe
-                    # an empty request table mid-write.
+                    # of clear-then-insert and leave the source able to
+                    # observe an empty request table mid-write.
                     cursor.execute(f"DELETE FROM {table_name}")
 
-                cols = [mei_column, *extra_columns.keys()]
+                cols = list(rows[0].keys())
                 placeholders = ", ".join(f":{c}" for c in cols)
                 sql = (
                     f"INSERT INTO {table_name} ({', '.join(cols)}) "
                     f"VALUES ({placeholders})"
                 )
-                for i in range(0, len(values), CHUNK_SIZE):
-                    rows = [
-                        {mei_column: v, **extra_columns}
-                        for v in values[i:i + CHUNK_SIZE]
-                    ]
-                    cursor.executemany(sql, rows)
+                for i in range(0, len(rows), CHUNK_SIZE):
+                    cursor.executemany(sql, rows[i:i + CHUNK_SIZE])
 
             connection.commit()
-        return len(values)
+        return len(rows)
 
-    return {"meis_written": await ctx.run("write_mei_request", _write)}
+    return {"rows_written": await ctx.run("write_mei_request", _write)}
 
 
 @service.handler()

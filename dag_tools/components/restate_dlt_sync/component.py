@@ -101,7 +101,7 @@ def load_mei_list(source_file: Optional[str], inline: List[str]) -> List[str]:
     that changing it changes behaviour without a redeploy.
     """
     if not source_file:
-        return [str(m).strip() for m in inline if str(m).strip()]
+        return _clean_entries(inline)
 
     path = Path(source_file)
     if not path.exists():
@@ -135,9 +135,28 @@ def load_mei_list(source_file: Optional[str], inline: List[str]) -> List[str]:
 
     if not isinstance(parsed, list):
         raise ValueError(
-            f"{source_file}: expected a list of MEIs, got {type(parsed).__name__}"
+            f"{source_file}: expected a list, got {type(parsed).__name__}"
         )
-    return [str(m).strip() for m in parsed if str(m).strip()]
+    return _clean_entries(parsed)
+
+
+def _clean_entries(entries: List[Any]) -> List[Any]:
+    """Drop blanks, keep mappings intact.
+
+    A mapping entry names its own columns and must survive untouched;
+    stringifying it -- which is what the old scalar-only cleanup did --
+    would turn a row into its own repr.
+    """
+    cleaned: List[Any] = []
+    for entry in entries or []:
+        if isinstance(entry, dict):
+            if entry:
+                cleaned.append(entry)
+            continue
+        text = str(entry).strip()
+        if text:
+            cleaned.append(text)
+    return cleaned
 
 
 def build_table_hints(
@@ -769,10 +788,11 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             context.log.info(f"Requesting {len(meis)} MEI(s) into {mei.name}")
             _post_restate(endpoint, {
                 "table_name": mei.name,
-                "mei_column": mei.mei_column,
+                "key_column": mei.mei_column,
                 "mei_values": meis,
                 "replace": mei.replace,
-                "extra_columns": mei.extra_columns,
+                "constants": {**mei.extra_columns, **mei.constants},
+                "defaults": mei.defaults,
             }, context.log)
 
         return mei_request_asset
@@ -1018,7 +1038,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                 )
 
             digest = hashlib.sha256(
-                "\n".join(sorted(meis)).encode("utf-8")
+                json.dumps(meis, sort_keys=True, default=str).encode("utf-8")
             ).hexdigest()[:16]
             if context.cursor == digest:
                 return SkipReason(f"MEI list unchanged ({len(meis)} entries)")

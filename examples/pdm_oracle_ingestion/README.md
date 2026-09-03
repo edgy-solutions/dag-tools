@@ -24,11 +24,14 @@ its staging tables; we extract, acknowledge, and tell PDM we are done.
                                  │
                                  └──────────►  cycle sensor sees COMPLETED
                                                        │
+                           PDM_CONTROL  ◄────── EXTRACT_STARTED   (the gate)
+                                                       │
                                                        ▼
                                               dlt incremental extract
                                                        │
                                                        ▼
                            PDM_CONTROL  ◄────── CONSUMED
+                                    or ◄────── EXTRACT_ABORTED    (on failure)
 ```
 
 The `CONSUMED` row is the **only** acknowledgment sent. There is no
@@ -137,6 +140,57 @@ the config refuses to load with both `row_ack: false` and a
 With it off, `load_complete` depends on the extraction assets directly
 rather than on the acks, so the completion row still cannot be written
 before every table has landed.
+
+### The gate
+
+Setting `consumer_started_value` turns the control table into a lock: the
+source polls for our start marker and holds off updating the data until a
+terminal row from us releases it. Two consequences, both correctness:
+
+* the marker is injected as a **dependency of every extraction asset**, so
+  it lands before a single row is read. A separate job would leave exactly
+  the window the gate exists to close.
+* `consumer_aborted_value` is **required** alongside it. Only the success
+  path writes `consumer_done_value`, and the source clears nothing, so a
+  failed run would leave them blocked forever. A run-failure sensor writes
+  the aborted status for every other ending. Half a lock is a deadlock,
+  and the config refuses to load with only one of the two.
+
+> **Enable `run_monitoring` on the Dagster instance wherever the gate is
+> used.** The abort sensor fires when Dagster marks a run FAILED. If a run
+> pod dies hard and run monitoring is off, the run can sit in `STARTED`
+> indefinitely, no failure event is emitted, and the gate is never
+> released from this side. Keep a staleness rule on the source as the
+> backstop — no arrangement of code here covers a process that never
+> reports anything.
+
+Leave `consumer_started_value` unset and no marker is written at all.
+
+### Request rows with more than one column
+
+A request row often needs several columns. Three sources cover it without
+the handler knowing what any column means:
+
+```yaml
+mei_table:
+  name: <table>
+  mei_column: <column a bare list entry lands in>
+  constants: {<column>: <value>}   # every row, NOT overridable
+  defaults:  {<column>: <value>}   # every row, overridable by an entry
+```
+
+The overlay stays a flat list for the simple case, or becomes a list of
+mappings when a row needs its own values:
+
+```yaml
+- <identifier>                     # uses mei_column + constants + defaults
+- {<column>: <value>, <column>: <value>}
+```
+
+Every row is normalised to the same column set before insert, because
+`executemany` binds one statement across the batch — a row missing a
+column another row has would bind the wrong parameters. Missing values
+become NULL rather than being dropped.
 
 ### MEI-scoped vs unscoped tables
 

@@ -138,7 +138,7 @@ def test_mei_request_writes_the_list(db):
         "mei_values": ["MEI-1", "MEI-2", "MEI-3"],
     }, db)
 
-    assert result == {"meis_written": 3}
+    assert result == {"rows_written": 3}
     rows = [r[0] for r in db.execute("SELECT MEI_NUMBER FROM PDM_MEI_REQUEST")]
     assert sorted(rows) == ["MEI-1", "MEI-2", "MEI-3"]
 
@@ -179,7 +179,7 @@ def test_mei_request_dedupes(db):
         "table_name": "PDM_MEI_REQUEST", "mei_column": "MEI_NUMBER",
         "mei_values": ["MEI-1", "MEI-2", "MEI-1"],
     }, db)
-    assert result == {"meis_written": 2}
+    assert result == {"rows_written": 2}
 
 
 def test_mei_request_carries_extra_columns(db):
@@ -478,3 +478,108 @@ def test_unknown_config_keys_are_rejected():
         TableSpec(primary_key="ID", curser="TS")
     with pytest.raises(ValueError):
         MeiTableSpec(name="M", mei_column="C", sourcefile="/x")
+
+
+# ---------------------------------------------------------------------------
+# A request row is more than one column
+# ---------------------------------------------------------------------------
+#
+# The request table often needs several columns per row: an identifier that
+# varies, values identical on every row, and values that are usually one
+# thing but occasionally stated. Only the first was expressible -- the rest
+# had to be constants applied uniformly, which is not what "usually this,
+# sometimes that" means.
+
+from dag_tools.restate_handlers.oracle_control import build_request_rows
+
+
+def test_bare_values_go_in_the_key_column():
+    rows = build_request_rows(["A", "B"], key_column="K")
+    assert rows == [{"K": "A"}, {"K": "B"}]
+
+
+def test_a_mapping_entry_names_its_own_columns():
+    rows = build_request_rows([{"K": "A", "R": "1"}], key_column="K")
+    assert rows == [{"K": "A", "R": "1"}]
+
+
+def test_defaults_fill_in_and_the_entry_wins():
+    """'Usually this, occasionally stated explicitly.'"""
+    rows = build_request_rows(
+        [{"K": "A", "R": "9"}, {"K": "B"}], key_column="K", defaults={"R": "0"},
+    )
+    assert rows == [{"K": "A", "R": "9"}, {"K": "B", "R": "0"}]
+
+
+def test_constants_cannot_be_overridden_by_an_entry():
+    """A value that must be uniform must not be variable by editing the
+    request list."""
+    rows = build_request_rows(
+        [{"K": "A", "C": "sneaky"}], key_column="K", constants={"C": "fixed"},
+    )
+    assert rows == [{"C": "fixed", "K": "A"}]
+
+
+def test_every_row_carries_the_same_columns():
+    """executemany binds ONE statement across the batch: a row missing a
+    column another row has would bind the wrong parameters."""
+    rows = build_request_rows(
+        [{"K": "A", "R": "1"}, {"K": "B", "V": "2"}], key_column="K",
+    )
+    assert all(set(r) == {"K", "R", "V"} for r in rows), rows
+    assert rows[0]["V"] is None and rows[1]["R"] is None
+
+
+def test_mixed_scalars_and_mappings_are_accepted():
+    rows = build_request_rows(["A", {"K": "B", "R": "1"}], key_column="K")
+    assert [r["K"] for r in rows] == ["A", "B"]
+
+
+def test_duplicate_keys_collapse():
+    rows = build_request_rows([{"K": "A"}, {"K": "A"}, {"K": "B"}], key_column="K")
+    assert len(rows) == 2
+
+
+def test_a_bare_value_with_no_key_column_is_refused():
+    with pytest.raises(ValueError, match="key_column"):
+        build_request_rows(["A"])
+
+
+def test_a_mapping_missing_the_key_is_refused():
+    with pytest.raises(ValueError, match="no value for key_column"):
+        build_request_rows([{"R": "1"}], key_column="K")
+
+
+def test_an_empty_request_is_refused():
+    with pytest.raises(ValueError, match="zero rows"):
+        build_request_rows([], key_column="K")
+
+
+def test_the_handler_writes_every_column(db):
+    """End to end through the real handler: several columns per row, from
+    all three sources at once."""
+    _run(oracle_control.write_mei_request, {
+        "table_name": "PDM_MEI_REQUEST",
+        "key_column": "MEI_NUMBER",
+        "mei_values": [{"MEI_NUMBER": "M-1"}, {"MEI_NUMBER": "M-2"}],
+        "constants": {"REQUESTED_BY": "dagster"},
+    }, db)
+
+    rows = db.execute(
+        "SELECT MEI_NUMBER, REQUESTED_BY FROM PDM_MEI_REQUEST ORDER BY MEI_NUMBER"
+    ).fetchall()
+    assert rows == [("M-1", "dagster"), ("M-2", "dagster")]
+
+
+def test_the_legacy_payload_shape_still_works(db):
+    """Older callers send mei_column/extra_columns."""
+    result = _run(oracle_control.write_mei_request, {
+        "table_name": "PDM_MEI_REQUEST",
+        "mei_column": "MEI_NUMBER",
+        "mei_values": ["M-1"],
+        "extra_columns": {"REQUESTED_BY": "legacy"},
+    }, db)
+    assert result == {"rows_written": 1}
+    assert db.execute(
+        "SELECT MEI_NUMBER, REQUESTED_BY FROM PDM_MEI_REQUEST"
+    ).fetchone() == ("M-1", "legacy")

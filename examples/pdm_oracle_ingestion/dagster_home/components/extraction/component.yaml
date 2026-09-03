@@ -16,7 +16,10 @@ attributes:
   # Three Restate ingresses, one per direction of the conversation.
   restate_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleAckService/mark_as_processed/send"
   mei_request_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleControlService/write_mei_request/send"
-  load_complete_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleControlService/signal_load_complete/send"
+  # One handler writes every control row; the status is a parameter.
+  # The /send suffix is stripped in code -- these calls are awaited, so
+  # a handler failure fails the run rather than returning a silent 202.
+  control_status_endpoint: "{{ env.RESTATE_INGRESS_URL }}/GenericOracleControlService/signal_load_complete"
 
   pipelines:
     pdm_extraction:
@@ -58,7 +61,16 @@ attributes:
       # keep in sync with PDM.
       mei_table:
         name: PDM_MEI_REQUEST
+        # Column a bare list entry lands in. Unnecessary if every entry in
+        # the overlay is a mapping naming its own columns.
         mei_column: MEI_NUMBER
+        # Identical on every row and NOT overridable by an entry, so a
+        # value that must be uniform cannot be varied by editing the list.
+        constants:
+          REQUESTED_BY: dagster
+        # Applied per row and overridable by an entry -- for a value that
+        # is usually one thing but occasionally stated explicitly.
+        defaults: {}
         # Supplied as a git-repo overlay mounted into the pod. Read at
         # materialization time, so re-pointing the overlay takes effect
         # on the next run rather than the next redeploy. A sensor watches
@@ -78,7 +90,15 @@ attributes:
         status_column: LOAD_STATUS
         started_value: STARTED
         completed_value: COMPLETED
+        # What WE write. Setting consumer_started_value turns the table
+        # into a GATE: the source polls for it and holds off updating the
+        # data until a terminal row from us releases it. The aborted value
+        # is required alongside it -- only the success path writes
+        # consumer_done_value, so without it a failed run leaves the source
+        # blocked with nothing to clear it.
+        consumer_started_value: EXTRACT_STARTED
         consumer_done_value: CONSUMED
+        consumer_aborted_value: EXTRACT_ABORTED
         load_type_column: LOAD_TYPE
         full_value: FULL
         delta_value: DELTA
