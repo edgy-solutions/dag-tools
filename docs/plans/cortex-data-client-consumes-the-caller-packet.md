@@ -1,12 +1,21 @@
 ---
 id:         cortex-client-consumes-caller
-status:     open
+status:     closed
 owner:      agent
-blocked-on: nothing — the SDK half landed; this is the consuming half. Ready to implement.
-closed-by:
+blocked-on:
+closed-by:  a34c77d — four rungs landed; rung 2 terminal inside a request; acceptance 3 replaced by a bite-check verified failing on reversal; raise_for_status no longer the interpreter. CI dispatched explicitly (workflow_dispatch), headSha matched local HEAD, four jobs green. LANDED ON master, NOT RELEASED — see below.
 repo:       dag-tools
-summary:    CortexDataClient does not consume the verified caller the SDK now hands a handler. Four rungs, ordered; rung 4 opt-in and loud. Acceptance 3 on the SDK packet currently passes for the wrong reason.
+summary:    CortexDataClient consumes the verified caller the SDK hands a handler. caller= -> request context -> CORTEX_USER_TOKEN -> service; inside a request, failing to resolve raises. Rung 4's opt-in refined in place: provisioning a transport credential IS the opt-in, because rung 2's terminality is the guard.
 ---
+
+> ## LANDED, NOT RELEASED
+>
+> The code is on `master` at `a34c77d`. **No version was cut.** The fleet consumes `dag-tools`
+> by pin, so `pip install edgy-dag-tools` still gets a build WITHOUT this — a bare
+> `CortexDataClient()` inside a handler there still reads as the service.
+>
+> The next consumer bump is the moment to cut one. Until then, a consumer wanting this must pin
+> the commit, and the defect this packet closed is closed **in the repo, not in the fleet**.
 
 # `CortexDataClient` consumes the caller — the SDK identity fix's other half
 
