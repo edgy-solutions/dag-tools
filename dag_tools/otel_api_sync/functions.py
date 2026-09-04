@@ -22,6 +22,7 @@ booleans and arrays. Nothing here guesses: use ``as_int`` / ``as_float``
 from __future__ import annotations
 
 import datetime as dt
+import json
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
 
 Row = Dict[str, Any]
@@ -298,6 +299,10 @@ def build_functions(attribute_columns: Sequence[str] = DEFAULT_ATTRIBUTE_COLUMNS
         "count": count,
         "sort": sort_values,
         "unique": unique,
+        # Structured attribute values -- a JSON object serialized into a
+        # single Map(String, String) value, and re-keying it.
+        "from_json": from_json,
+        "invert_multimap": invert_multimap,
         # Time.
         "to_iso": to_iso,
         "epoch_seconds": epoch_seconds,
@@ -305,6 +310,105 @@ def build_functions(attribute_columns: Sequence[str] = DEFAULT_ATTRIBUTE_COLUMNS
 
 
 # --- standalone helpers (no attribute-column binding needed) ----------------
+
+
+def from_json(value: Any, default: Any = None) -> Any:
+    """Parse an attribute value that is itself JSON, tolerantly.
+
+    Real telemetry carries structured planning data as a JSON-encoded
+    STRING inside a ``Map(String, String)`` attribute -- a lookup table of
+    ``{key: [values...]}`` serialized into a single value and emitted once
+    per execution group. The map column can only hold strings, so the
+    structure has nowhere else to go.
+
+    ABSENCE IS ORDINARY, NOT EXCEPTIONAL. A group that never emitted the
+    attribute is a normal group, so this returns ``default`` rather than
+    raising -- on ``None``, on a blank string, and on malformed JSON
+    alike. Raising would take out the whole plan render for a group whose
+    only sin was not carrying an optional attribute.
+
+    Malformed and absent deliberately collapse to the same result. The
+    caller cannot act differently on them (both mean "no table here"), and
+    a helper that raised on one would make an upstream producer's bug
+    surface as a render failure in an unrelated pipeline.
+
+    Already-decoded values pass through untouched, so the helper is safe
+    to apply to an attribute whose encoding varies between emitters:
+
+        from_json({"a": ["x"]})   -> {"a": ["x"]}
+        from_json('{"a": ["x"]}') -> {"a": ["x"]}
+        from_json(None)           -> default
+        from_json("{not json")    -> default
+    """
+    if isinstance(value, (dict, list)):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            return default
+    if not isinstance(value, str):
+        return default
+    if not value.strip():
+        return default
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def invert_multimap(mapping: Any) -> Dict[Any, List[Any]]:
+    """``{k: [v, ...]}`` -> ``{v: [k, ...]}``, insertion-ordered.
+
+    A serialized lookup table arrives keyed the way its PRODUCER thought
+    about it, which is not always the way a target endpoint's fan-out
+    needs it. Inverting in the mapping avoids either asking the emitter to
+    change or hand-writing the flip in a template.
+
+    ORDERING IS PART OF THE CONTRACT, not an implementation detail. The
+    result feeds fan-out collections, fan-out items become step labels,
+    and labels go into ``call_key`` -- so a non-deterministic order would
+    change durable step identities between two renders of identical
+    telemetry, and Restate would treat replays as new work. Outer keys
+    appear in first-seen order of the values; each inner list in
+    first-seen order of the original keys.
+
+    Tolerances, each because the shape genuinely varies in the wild:
+
+    * a scalar value is treated as a one-element list, so
+      ``{"a": "x"}`` and ``{"a": ["x"]}`` invert identically;
+    * ``None``, an empty mapping, or a non-mapping yields ``{}`` -- which
+      renders dependent fan-out steps as empty no-ops rather than
+      exploding a plan;
+    * empty values are skipped, matching ``distinct`` and ``group_map``;
+    * unhashable values (a nested list or object where a scalar was
+      expected) are skipped rather than raising, since they cannot be a
+      key and one malformed entry should not lose the rest of the table;
+    * a repeated pair contributes its key once -- the inversion of a
+      lookup table, not a bag.
+    """
+    out: Dict[Any, List[Any]] = {}
+    if not isinstance(mapping, dict):
+        return out
+    for key, values in mapping.items():
+        if _is_empty(key):
+            continue
+        if values is None:
+            continue
+        if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
+            values = [values]
+        for value in values:
+            if _is_empty(value):
+                continue
+            try:
+                bucket = out.setdefault(value, [])
+            except TypeError:
+                continue  # unhashable: cannot be a key
+            if key not in bucket:
+                bucket.append(key)
+    return out
 
 
 def as_int(value: Any, default: Optional[int] = None) -> Optional[int]:

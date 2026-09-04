@@ -1,0 +1,59 @@
+type: dag_tools.OtelApiSyncComponent
+
+attributes:
+  # Restate ingress base; the component appends
+  # /ApiCallPlanService/<TraceId>/execute_plan/send per run.
+  restate_endpoint: "{{ env.RESTATE_INGRESS_URL }}"
+
+  # CLUE's OTel exporter database.
+  source_config:
+    drivername: clickhouse
+    host: "{{ env.CLICKHOUSE_HOST }}"
+    port: 8123
+    username: "{{ env.CLICKHOUSE_USER }}"
+    password: "{{ env.CLICKHOUSE_PASSWORD }}"
+    database: otel_clue
+    secure: false          # TODO: true if the production endpoint is TLS
+
+  # Staging destination: replay, incremental cursor, dispatch ledger.
+  dest_config:
+    drivername: postgresql
+    credentials: "{{ env.POSTGRES_DSN }}"
+    database: telemetry
+    schema: clue_staging
+
+  pipelines:
+    testforward:
+      name: clue_testforward_sync
+      staged: true
+      dest_schema: clue_staging
+      mapping_file: mapping.yaml
+      group_name: otel_api_sync
+      sources:
+        - name: clue_spans
+          # Only the spans the mapping consumes: test executions plus the
+          # once-per-run planning blobs. Everything else in otel_traces
+          # (CMD_METRICS, PHYS_*, SLOC_*) is irrelevant here and would
+          # bloat groups and plans.
+          query: >
+            SELECT Timestamp, TraceId, SpanId, SpanName, ServiceName,
+                   ResourceAttributes, SpanAttributes
+            FROM otel_clue.otel_traces
+            WHERE SpanName = 'SIMIT_DATA'
+               OR mapContains(SpanAttributes, 'REQ_TEST_TRACE')
+               OR mapContains(SpanAttributes, 'REQ_FILE_TRACE')
+          cursor_column: Timestamp
+          # Spans for one run arrive over minutes and out of order; re-read a
+          # trailing window and let the primary key dedupe.
+          lookback_seconds: 900
+          primary_key:
+            - TraceId
+            - SpanId
+          write_disposition: merge
+          map_columns:
+            - ResourceAttributes
+            - SpanAttributes
+      ledger:
+        enabled: true
+        backend: sql
+        table: testforward_dispatch_ledger

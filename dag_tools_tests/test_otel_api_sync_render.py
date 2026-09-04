@@ -845,3 +845,200 @@ def test_per_event_steps_fan_out_in_chronological_order():
     ]
     keys = [c["item_key"] for c in build_plan("g1", rows, spec)["steps"][0]["calls"]]
     assert keys == ["s1", "s2", "s3"]
+
+
+# --- structured attribute values -------------------------------------------
+#
+# Real telemetry carries planning data as a JSON-encoded STRING inside a
+# Map(String, String) attribute: a lookup table of {key: [values...]}
+# serialized into one value, emitted once per execution group. The map
+# column can only hold strings, so the structure has nowhere else to go.
+#
+# The chain below is the one mappings actually write, and each helper in it
+# is load-bearing:
+#
+#   default(invert_multimap(from_json(first(distinct(rows, attr('X'))))), {})
+#
+# distinct+first because the table is emitted once per group but appears on
+# every row of it; from_json to decode; invert_multimap because the table
+# arrives keyed the way its producer thought about it, not the way the
+# target endpoint's fan-out needs it; default to make absence a no-op.
+
+_TABLE_CHAIN = (
+    "{{ default(invert_multimap(from_json(first(distinct(rows, attr('table'))))), {}) }}"
+)
+
+_TABLE_SPEC = {
+    **BASE_SPEC,
+    "derive": {**BASE_SPEC["derive"], "by_value": _TABLE_CHAIN},
+    "steps": [
+        {
+            "id": "fanout",
+            "for_each": "{{ by_value }}",
+            "item_key": "{{ item }}",
+            "method": "POST",
+            "path": "/api/Value",
+            "payload": {"value": "{{ item }}", "keys": "{{ by_value[item] }}"},
+        }
+    ],
+}
+
+
+def _table_plan(rows):
+    plans, _deferred = render_plans(rows, load_spec(_TABLE_SPEC))
+    return plans
+
+
+def test_a_serialized_lookup_table_decodes_and_inverts():
+    """Present once, on every row of the group."""
+    table = '{"a": ["x", "y"], "b": ["x"]}'
+    rows = [
+        _row(group="g", entity="e1", item="i1", table=table),
+        _row(group="g", entity="e2", item="i2", table=table),
+    ]
+    plan = _table_plan(rows)[0]
+    step = next(s for s in plan["steps"] if s["id"] == "fanout")
+
+    assert [c["body"]["value"] for c in step["calls"]] == ["x", "y"]
+    assert step["calls"][0]["body"]["keys"] == ["a", "b"]
+    assert step["calls"][1]["body"]["keys"] == ["a"]
+
+
+def test_an_absent_attribute_renders_the_fan_out_as_an_empty_no_op():
+    """A group that never emitted the attribute is NORMAL, not an error.
+
+    It must yield {} and drop the dependent step entirely, rather than
+    raising and taking the whole group's plan with it."""
+    rows = [_row(group="g", entity="e1", item="i1")]
+    plan = _table_plan(rows)[0]
+    assert not [s for s in plan["steps"] if s["id"] == "fanout"]
+
+
+def test_a_malformed_attribute_is_also_a_no_op_not_a_render_failure():
+    """Collapsing malformed into absent is deliberate: the caller cannot
+    act differently on them, and raising would surface an upstream
+    producer's bug as a render failure in an unrelated pipeline."""
+    rows = [_row(group="g", entity="e1", item="i1", table="{not json")]
+    plan = _table_plan(rows)[0]
+    assert not [s for s in plan["steps"] if s["id"] == "fanout"]
+
+
+def test_the_inversion_order_is_deterministic_and_reaches_call_keys():
+    """Ordering is part of the contract. Fan-out items become step labels
+    and labels go into call_key, so a non-deterministic order would change
+    durable step identities between two renders of identical telemetry and
+    Restate would treat a replay as new work."""
+    table = '{"b": ["y", "x"], "a": ["x"]}'
+    rows = [_row(group="g", entity="e1", item="i1", table=table)]
+
+    first_render = _table_plan(rows)[0]
+    second_render = _table_plan(rows)[0]
+
+    step = next(s for s in first_render["steps"] if s["id"] == "fanout")
+    assert [c["body"]["value"] for c in step["calls"]] == ["y", "x"]
+
+    assert [c["call_key"] for c in step["calls"]] == [
+        c["call_key"]
+        for c in next(s for s in second_render["steps"] if s["id"] == "fanout")["calls"]
+    ]
+
+
+def test_a_scalar_value_inverts_the_same_as_a_one_element_list():
+    """Emitters differ on whether a single value is wrapped."""
+    rows = [_row(group="g", entity="e1", item="i1", table='{"a": "x"}')]
+    step = next(s for s in _table_plan(rows)[0]["steps"] if s["id"] == "fanout")
+    assert step["calls"][0]["body"] == {"value": "x", "keys": ["a"]}
+
+
+def test_an_already_decoded_value_passes_through():
+    """Safe to apply where the encoding varies between emitters."""
+    env = build_environment()
+    assert render_value(
+        "{{ from_json(v) }}", {"v": {"a": ["x"]}}, env
+    ) == {"a": ["x"]}
+
+
+def test_from_json_returns_the_default_rather_than_raising():
+    env = build_environment()
+    for bad in (None, "", "   ", "{not json", "[unclosed"):
+        assert render_value(
+            "{{ from_json(v, {}) }}", {"v": bad}, env
+        ) == {}, bad
+
+
+def test_invert_multimap_tolerates_shapes_that_cannot_be_keys():
+    """One malformed entry must not lose the rest of the table."""
+    env = build_environment()
+    assert render_value(
+        "{{ invert_multimap(m) }}", {"m": {"a": [["nested"], "x"]}}, env
+    ) == {"x": ["a"]}
+    assert render_value("{{ invert_multimap(None) }}", {}, env) == {}
+    assert render_value("{{ invert_multimap('nope') }}", {}, env) == {}
+
+
+def test_a_repeated_pair_contributes_its_key_once():
+    """The inversion of a lookup table, not a bag -- and a duplicate would
+    otherwise perturb a payload that feeds call_key."""
+    env = build_environment()
+    assert render_value(
+        "{{ invert_multimap(m) }}", {"m": {"a": ["x", "x"]}}, env
+    ) == {"x": ["a"]}
+
+
+# --- bare-array payloads ---------------------------------------------------
+
+
+def test_a_payload_that_is_ITSELF_an_array_renders_as_one():
+    """Some endpoints take a bare JSON array as the whole request body,
+    not an object with an array field. `_for_each` at the TOP of a payload
+    produces that; the existing coverage only had it nested under a key,
+    so the shape worked but was unverified."""
+    env = build_environment()
+    node = {
+        "_for_each": "{{ names }}",
+        "_as": "name",
+        "_template": {"itemName": "{{ name }}"},
+    }
+    assert render_structure(node, {"names": ["a", "b"]}, env) == [
+        {"itemName": "a"},
+        {"itemName": "b"},
+    ]
+
+
+def test_a_bare_array_body_survives_into_the_call_and_its_key():
+    """call_key hashes the body, so a list body has to serialize as one."""
+    spec = load_spec({
+        **BASE_SPEC,
+        "steps": [
+            {
+                "id": "bulk",
+                "method": "POST",
+                "path": "/api/Bulk",
+                "payload": {
+                    "_for_each": "{{ items }}",
+                    "_as": "name",
+                    "_template": {"itemName": "{{ name }}"},
+                },
+            }
+        ],
+    })
+    rows = [
+        _row(group="g", entity="e1", item="i1"),
+        _row(group="g", entity="e2", item="i2"),
+    ]
+    plans, _deferred = render_plans(rows, spec)
+    step = next(s for s in plans[0]["steps"] if s["id"] == "bulk")
+
+    body = step["calls"][0]["body"]
+    assert isinstance(body, list), body
+    assert body == [{"itemName": "i1"}, {"itemName": "i2"}]
+    assert step["calls"][0]["call_key"]
+
+
+def test_an_empty_bare_array_payload_stays_an_array():
+    """Not None, and not an object -- an endpoint expecting a list should
+    receive [] rather than a shape it cannot parse."""
+    env = build_environment()
+    node = {"_for_each": "{{ names }}", "_as": "n", "_template": {"x": "{{ n }}"}}
+    assert render_structure(node, {"names": []}, env) == []
+    assert render_structure(node, {"names": None}, env) == []

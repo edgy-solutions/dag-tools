@@ -1,0 +1,138 @@
+# Mapping: CLUE OpenTelemetry spans (otel_clue.otel_traces) -> TestForward API.
+#
+# Data model, from the live probe (2026-09-04):
+#   * One CLUE run  = one trace (CMD_Execution root span, data spans as children)
+#     -> the execution group is the TraceId.
+#   * One test execution = one SIMIT_DATA span, carrying TEST_CASE, PASS,
+#     NUM_ERROR / NUM_FAIL / NUM_WARNING, TB_TYPE plus run context.
+#   * Planning data arrives ONCE per run as JSON-encoded attributes:
+#       REQ_TEST_TRACE : {"<test case>": ["<req>", ...], ...}
+#       REQ_FILE_TRACE : {"<file>": ["<req>", ...], ...}        # TODO(1) confirm direction
+#
+# REQUIRES two helpers the engine must provide (dispatched to the build agent):
+#   from_json(value)        - tolerant parse of a JSON-encoded attribute
+#   invert_multimap(m)      - {k: [v,...]} -> {v: [k,...]}
+#
+# TODOs are marked inline; the config is written so a group with no
+# planning data (metrics-only run) renders steps 1-3 as empty no-ops.
+
+api:
+  base_url_env: TESTFORWARD_BASE_URL
+  header_env:
+    # TODO(2): confirm TestForward's auth scheme; the token never leaves the
+    # Restate worker's environment.
+    Authorization: "Bearer ${TESTFORWARD_API_TOKEN}"
+  timeout_seconds: 30
+  # TODO(3): enable if/when TestForward supports an idempotency key —
+  # /api/RecordTest is append-style, so without it a worker crash mid-plan
+  # can produce one duplicate execution record (rare, documented residual).
+  # idempotency_header: Idempotency-Key
+
+# One CLUE run = one trace.
+group_by: "{{ attr(row, 'TraceId') }}"
+
+readiness:
+  # Spans for one run land over ~minutes (root CMD_Execution closes last).
+  # 10 quiet minutes, force-dispatch after a day so nothing is stranded.
+  quiet_period_seconds: 600
+  timestamp_column: Timestamp
+  max_age_seconds: 86400
+
+derive:
+  # --- planning data: emitted once per run as JSON attribute blobs --------
+  # {"<test case>": ["req", ...]}
+  reqs_by_test: "{{ default(from_json(first(distinct(rows, attr('REQ_TEST_TRACE')))), {}) }}"
+  # TODO(1): REQ_FILE_TRACE direction. Written here as {"<file>": ["req",...]},
+  # inverted to requirement -> files. If it is already requirement -> files,
+  # drop the invert_multimap() wrapper.
+  files_by_req: "{{ default(invert_multimap(from_json(first(distinct(rows, attr('REQ_FILE_TRACE'))))), {}) }}"
+  requirements: "{{ files_by_req | list }}"
+
+  # --- execution data -----------------------------------------------------
+  test_rows: "{{ filter_rows(rows, attr('SpanName'), 'SIMIT_DATA') }}"
+  # Test cases to upsert: every test that ran, plus every test the planning
+  # data mentions (a mapped test that did not run this cycle still exists).
+  testcases: "{{ distinct(pluck(test_rows, attr('TEST_CASE')) + (reqs_by_test | list)) }}"
+
+steps:
+  # 1. Requirement -> file list. PATCH per requirement; 404 means TestForward
+  #    has no requirement info for this program yet.
+  - id: req_artifacts
+    for_each: "{{ requirements }}"
+    method: PATCH
+    path: "/api/RequirementsMaintenance/{{ item }}"
+    payload:
+      artifacts: "{{ join(unique(files_by_req[item]), ',') }}"
+    on_status:
+      404:
+        # One bulk create AFTER the fan-out, carrying ONLY the requirements
+        # that 404'd. POST replaces existing requirement data (text, safety
+        # flags), so the blast radius must stay equal to the set that failed.
+        mode: aggregate
+        method: POST
+        path: /api/RequirementsMaintenance
+        collect_into: requirements
+        payload:
+          deleteMissingRequirements: false
+          requirements: []
+        fragment:
+          requirementIdentifier: "{{ item }}"
+          artifacts: "{{ join(unique(files_by_req[item]), ',') }}"
+
+  # 2. Create/update test cases. Once per run.
+  - id: upsert_testcases
+    method: POST
+    path: /api/GherkinScenarioDetails/BulkUpdate
+    payload:
+      deleteMissingEntries: false
+      items:
+        _for_each: "{{ testcases }}"
+        _as: t
+        _template:
+          gherkinScenario: "{{ t }}"
+
+  # 3. Requirement <-> test case mapping. NEW endpoint shape (Sep 2026):
+  #    static byName segment + BARE JSON ARRAY body.
+  #    Scoped per test via reqs_by_test — never the group-wide list.
+  - id: req_test_map
+    for_each: "{{ reqs_by_test | list }}"
+    method: POST
+    path: "/api/GherkinScenarioDetails/byName/{{ item }}/Requirements"
+    payload: "{{ unique(reqs_by_test[item]) }}"
+
+  # 4. Record each test execution. Once per SIMIT_DATA span.
+  - id: record_test
+    for_each: "{{ test_rows }}"
+    item_key: "{{ attr(item, 'SpanId') }}"
+    method: POST
+    path: /api/RecordTest
+    payload:
+      gherkinScenario: "{{ attr(item, 'TEST_CASE') }}"
+      # PASS arrives as "1"/"0".
+      # TODO(4): confirm semantics — should NUM_FAIL > 0 also mean FAIL?
+      result: "{{ 'PASS' if as_bool(attr(item, 'PASS')) else 'FAIL' }}"
+      runType: "{{ attr(item, 'TB_TYPE') }}"
+      userName: "{{ attr(item, 'login') }}"
+      testDateTime: "{{ to_iso(default(attr(item, 'starttime'), attr(item, 'Timestamp'))) }}"
+      executionDuration: "{{ as_str(attr(item, 'runseconds')) }}"
+      config:
+        # TODO(5): probe couldn't confirm which git attrs ride on SIMIT_DATA
+        # spans — dry-run one plan and check these render non-null.
+        branch: "{{ default(attr(item, 'git_branch'), attr(item, 'BRANCH_NAME')) }}"
+        commitId: "{{ default(attr(item, 'git_sha'), attr(item, 'SHA1')) }}"
+        configName: "{{ attr(item, 'PROJECT_NAME') }}"
+        notes: "program={{ attr(item, 'PROGRAM_NAME') }};bu={{ attr(item, 'BU_NAME') }}"
+      # Per-requirement verdicts for the requirements this test covers.
+      requirementResults:
+        _for_each: "{{ default(reqs_by_test[attr(item, 'TEST_CASE')], []) }}"
+        _as: r
+        _template:
+          requirementIdentifier: "{{ r }}"
+          result: "{{ 'PASS' if as_bool(attr(item, 'PASS')) else 'FAIL' }}"
+      # CLUE metrics are UPPERCASE attributes, no shared prefix — sweep the
+      # families explicitly, numeric-coerced, full names kept.
+      # TODO(6): extend the prefix list as more metric families appear
+      # (probe window showed NUM_*; TOTAL_* known from the flat view).
+      metrics: >-
+        {{ metrics_from_prefix(item, 'NUM_', strip_prefix=False)
+           + metrics_from_prefix(item, 'TOTAL_', strip_prefix=False) }}
