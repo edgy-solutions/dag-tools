@@ -8,14 +8,26 @@ repo:       dag-tools
 summary:    CortexDataClient consumes the verified caller the SDK hands a handler. caller= -> request context -> CORTEX_USER_TOKEN -> service; inside a request, failing to resolve raises. Rung 4's opt-in refined in place: provisioning a transport credential IS the opt-in, because rung 2's terminality is the guard.
 ---
 
-> ## LANDED, NOT RELEASED
+> ## RELEASED IN 0.6.0
 >
-> The code is on `master` at `a34c77d`. **No version was cut.** The fleet consumes `dag-tools`
-> by pin, so `pip install edgy-dag-tools` still gets a build WITHOUT this — a bare
-> `CortexDataClient()` inside a handler there still reads as the service.
+> Landed on `master` at `a34c77d`; shipped in **`edgy-dag-tools==0.6.0`**, cut alongside the
+> otel_api_sync helpers.
 >
-> The next consumer bump is the moment to cut one. Until then, a consumer wanting this must pin
-> the commit, and the defect this packet closed is closed **in the repo, not in the fleet**.
+> **Consumers do not get this by upgrading alone.** The fleet pins `dag-tools`, so a deployment
+> reads as the service until its pin moves to 0.6.0 or later. The defect is closed in the repo
+> and in the index; it is closed **in a given deployment only when that deployment's pin moves.**
+>
+> Two things a consumer bump brings with it, neither of which is a break in normal use:
+>
+> * a bare `CortexDataClient()` **inside a mesh request** now reads as the request's caller
+>   rather than as the service — which is the fix, and changes what rows come back;
+> * inside a request whose caller did not resolve, construction now **raises**
+>   `CallerUnresolved` rather than returning a client that reads as the service. Under the
+>   OBSERVE posture an unauthenticated caller yields exactly that, so this is the ordinary
+>   case, not an exotic one.
+>
+> Outside a request nothing changes: provisioning a transport credential is the opt-in, and
+> every notebook, CLI and Dagster asset behaves as before.
 
 # `CortexDataClient` consumes the caller — the SDK identity fix's other half
 
