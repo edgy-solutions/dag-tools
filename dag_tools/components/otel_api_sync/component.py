@@ -30,7 +30,8 @@ from dagster import (
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
 from dagster.components.resolved.model import Model
-from dagster_dlt import DagsterDltResource
+from dagster_dlt import DagsterDltResource  # noqa: F401  (re-exported by consumers)
+from ..dlt_resource import dlt_resources
 
 from dag_tools.components.otel_api_sync.ledger import (
     LEDGER_METADATA_KEY,
@@ -243,7 +244,7 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
                 )
             )
 
-        return Definitions(assets=generated_assets, resources={"dlt": DagsterDltResource()})
+        return Definitions(assets=generated_assets, resources=dlt_resources())
 
     def _build_extraction_assets(
         self,

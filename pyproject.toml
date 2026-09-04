@@ -4,7 +4,7 @@
 # dag-tools/dag_tools (collapses to "dagtools", which is taken). The
 # import name is unchanged: `pip install edgy-dag-tools` -> `import dag_tools`.
 name = "edgy-dag-tools"
-version = "0.6.0"
+version = "0.6.1"
 description = "Central library of common Dagster utilities, resources, IO managers, sensors, declarative components, and asset patterns for data tooling projects."
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
