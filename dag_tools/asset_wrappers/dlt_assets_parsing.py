@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import dlt
@@ -165,22 +166,29 @@ def dlt_assets_with_io_managers(
     )
 
 
-def instantiate_assets(
+def build_dlt_source(
     base: Dict[str, Any],
     database: str,
     schema: str,
     query_callback: Optional[Callable],
-    dlt_pipeline: Pipeline,
-    dest_database: str,
-    dest_schema: str,
-    dest_driver: str,
-    kinds: List[str],
     config: DltAssetGroupConfig,
-    default_pipeline_kwargs: Dict[str, Any],
+    dest_driver: str,
     defer_table_reflect: bool = True,
-) -> AssetsDefinition:
-    """Dynamically builds DLT generator source and returns a mapped Dagster `@multi_asset` using GroupConfig."""
-    
+):
+    """Build the dlt source for one (database, schema), WITHOUT Dagster.
+
+    Lifted verbatim out of ``instantiate_assets``, which used to construct
+    the source and wrap it in a ``@multi_asset`` in one breath. Nothing
+    outside Dagster could therefore build a source, which is why iterating
+    on hints, cursors or column selection meant a full definitions load --
+    90-180 seconds for a location carrying Dagster, dbt, dlt and datahub --
+    and required every OTHER component in that location to import cleanly
+    first.
+
+    Everything here is pure dlt: reflection, hints, maps, limits and the
+    write-disposition normalisation. The Dagster translator and decorator
+    stay in ``instantiate_assets``, which now calls this.
+    """
     if base["creds"].drivername == "filesystem":
         @dlt.source
         def filesystem_source():
@@ -242,7 +250,17 @@ def instantiate_assets(
             source.resources[table].apply_hints(**hint)
 
     if config.limit:
-        source = source.add_limit(config.limit)
+        # count_rows=True, because the field is documented as a ROW limit
+        # and dlt's default is not one. From dlt's own docstring: "dlt
+        # counts number of 'yields/batches/pages' not the number of rows
+        # inside" and "Empty pages/yields are also counted."
+        #
+        # With the sqlalchemy backend a resource yields PAGES, and the
+        # first yield is not data, so the default made `limit: 1` extract
+        # NOTHING -- no rows, no table -- while `limit: 2` extracted an
+        # entire ten-row table. A knob whose "1" means zero and whose "2"
+        # means everything is worse than no knob: it reads as working.
+        source = source.add_limit(config.limit, count_rows=True)
 
     if dest_driver == "snowflake":
         db_encoded = "__" in schema
@@ -261,6 +279,30 @@ def instantiate_assets(
 
             if not has_pk and not is_inc and disp == "append":
                 resource.apply_hints(write_disposition="replace")
+
+    return source
+
+
+def instantiate_assets(
+    base: Dict[str, Any],
+    database: str,
+    schema: str,
+    query_callback: Optional[Callable],
+    dlt_pipeline: Pipeline,
+    dest_database: str,
+    dest_schema: str,
+    dest_driver: str,
+    kinds: List[str],
+    config: DltAssetGroupConfig,
+    default_pipeline_kwargs: Dict[str, Any],
+    defer_table_reflect: bool = True,
+) -> AssetsDefinition:
+    """Dynamically builds DLT generator source and returns a mapped Dagster `@multi_asset` using GroupConfig."""
+    
+    source = build_dlt_source(
+        base, database, schema, query_callback, config, dest_driver,
+        defer_table_reflect,
+    )
 
     source_keys = base.get("source", {})
 
@@ -293,63 +335,124 @@ def instantiate_assets(
     return dlt_asset
 
 
-def create_dlt_assets(
-    sources: List[Union[AssetKey, str]],
+@dataclass
+class DltRunnable:
+    """One (source, pipeline) pair, ready to run outside Dagster.
+
+    The dbt asymmetry this closes: a dbt project directory IS the artifact
+    and dbt ships its own runner, so Dagster only ever wraps something
+    already runnable. A dlt pipeline here is YAML that only this factory
+    knows how to interpret, so nothing outside Dagster could construct one
+    -- and iterating on a cursor or a hint meant a full definitions load.
+    """
+
+    source: Any
+    pipeline: Any
+    database: str
+    schema: str
+    tables: List[str]
+    dest_schema: str
+
+    def run(self, **kwargs):
+        """Extract, normalize and load. Same call the Dagster asset makes."""
+        return self.pipeline.run(self.source.parallelize(), **kwargs)
+
+    def extract(self, **kwargs):
+        """Extract ONLY -- no normalize, no load.
+
+        Validates reflection, hints, cursors and the query adapter against
+        the real source without writing anywhere, which is most of what a
+        mapping change needs to prove.
+        """
+        return self.pipeline.extract(self.source.parallelize(), **kwargs)
+
+
+def _prepare_units(
+    sources,
     source_config: Dict[str, Any],
     dest_config: Dict[str, Any],
     config: DltAssetGroupConfig,
-    query_callback: Optional[Callable] = None,
     staging: Optional[Any] = None,
     staging_config: Optional[Dict[str, Any]] = None,
-) -> List[Union[AssetsDefinition, AssetSpec]]:
-    """Builds Dagster DLT multi-assets cleanly utilizing the Pydantic DltAssetGroupConfig component pattern.
-    
-    Args:
-        sources: A list of AssetKeys or strings indicating tables to extract.
-        source_config: The resource dictionary detailing the source DB properties.
-        dest_config: The resource dictionary detailing the destination system properties.
-        config: The unified `DltAssetGroupConfig` containing hints, names, limit, etc.
-        query_callback: Optional callback to intercept raw db queries.
-        staging: Optional staging object mapping mapping.
-        staging_config: Config for intermediate staging areas.
+    destination_override: Optional[Any] = None,
+):
+    """Resolve config into everything needed to build a source or an asset.
+
+    Shared by ``create_dlt_assets`` and ``build_dlt_runnables`` so the two
+    cannot drift: a local run that resolved credentials or named the
+    pipeline differently from the deployed asset would be a dev loop that
+    tests something other than what ships.
+
+    ``destination_override`` replaces the configured destination -- the
+    lever for pointing a real source at a local DuckDB file. It changes
+    only where data LANDS; reflection, hints and cursors stay exactly as
+    configured, which is what makes the local run meaningful.
     """
-    
     dest_config = update_from_env(dest_config, True)
     source_config = update_from_env(source_config, True)
-    staging_config = update_from_env(staging_config, True)
-    
-    mapping: Dict[str, Any] = {}
-    _assets: List[Union[AssetsDefinition, AssetSpec]] = []
-    staging_config = staging_config or {}
+    staging_config = update_from_env(staging_config, True) or {}
 
-    default_pipeline_kwargs = {"loader_file_format": "parquet"} if dest_config.get("drivername") in ["filesystem", "databricks"] else {}
+    mapping: Dict[str, Any] = {}
+    specs: List[Any] = []
+
+    default_pipeline_kwargs = (
+        {"loader_file_format": "parquet"}
+        if dest_config.get("drivername") in ["filesystem", "databricks"]
+        else {}
+    )
     default_pipeline_kwargs.update(config.pipeline_kwargs)
 
     if sources and isinstance(sources[0], AssetKey):
         process_sources(sources, mapping, source_config)
     else:
-        kinds: List[str] = []
-        creds = config_to_credentials(source_config, kinds)
+        src_kinds: List[str] = []
+        creds = config_to_credentials(source_config, src_kinds)
         for table in sources:
-            _assets.append(AssetSpec(key=AssetKey([source_config["database"].replace(".", "_"), source_config["schema"].replace(".", "_"), table]), kinds=kinds))
+            specs.append(AssetSpec(
+                key=AssetKey([
+                    source_config["database"].replace(".", "_"),
+                    source_config["schema"].replace(".", "_"),
+                    table,
+                ]),
+                kinds=src_kinds,
+            ))
         mapping[source_config["database"]] = {
-            source_config["schema"]: {"tables": sources, "creds": creds, "source_config": source_config}
+            source_config["schema"]: {
+                "tables": sources, "creds": creds, "source_config": source_config,
+            }
         }
 
-    kinds = []
+    kinds: List[str] = []
     credentials = config_to_credentials(dest_config, kinds)
-    
-    if staging and staging_config:
-        staging = get_destination(config_to_credentials(staging_config), staging_config.get("destination", {}), vars=ENV_VARS)
 
+    if staging and staging_config:
+        staging = get_destination(
+            config_to_credentials(staging_config),
+            staging_config.get("destination", {}), vars=ENV_VARS,
+        )
+
+    units = []
     for database, schema_tables in mapping.items():
         for schema, base in schema_tables.items():
-            if hasattr(credentials, "database") and (not credentials.database or credentials.database == "default"):
+            if hasattr(credentials, "database") and (
+                not credentials.database or credentials.database == "default"
+            ):
                 credentials.database = getattr(base["creds"], "database", database)
-            
-            destination = get_destination(credentials, dest_config.get("destination", {}), vars=ENV_VARS, database=database)
-            effective_dest_schema = config.dest_schema or getattr(credentials, "schema", None) or getattr(base["creds"], "schema", None) or schema
-            effective_name = config.name or (f"{credentials.database.replace('.', '_')}_{effective_dest_schema}" if getattr(credentials, "database", None) else database)
+
+            destination = destination_override or get_destination(
+                credentials, dest_config.get("destination", {}),
+                vars=ENV_VARS, database=database,
+            )
+            effective_dest_schema = (
+                config.dest_schema
+                or getattr(credentials, "schema", None)
+                or getattr(base["creds"], "schema", None)
+                or schema
+            )
+            effective_name = config.name or (
+                f"{credentials.database.replace('.', '_')}_{effective_dest_schema}"
+                if getattr(credentials, "database", None) else database
+            )
 
             dlt_pipeline = dlt.pipeline(
                 pipeline_name=f"{effective_name}_pipeline",
@@ -359,16 +462,97 @@ def create_dlt_assets(
                 progress="log",
                 export_schema_path="schemas/export",
             )
-            
-            try:
-                asset = instantiate_assets(
-                    base, database, schema, query_callback, dlt_pipeline, 
-                    getattr(credentials, "database", database), effective_dest_schema,
-                    credentials.drivername, kinds, config, default_pipeline_kwargs
-                )
-                _assets.append(asset)
-            except Exception as e:
-                print(f"DLT {effective_name} assets could not be instantiated for {database}.{schema}: {e}")
-                
+
+            units.append({
+                "base": base,
+                "database": database,
+                "schema": schema,
+                "pipeline": dlt_pipeline,
+                "dest_database": getattr(credentials, "database", database),
+                "dest_schema": effective_dest_schema,
+                "dest_driver": credentials.drivername,
+                "kinds": kinds,
+                "default_pipeline_kwargs": default_pipeline_kwargs,
+            })
+
+    return specs, units
+
+
+def build_dlt_runnables(
+    sources,
+    source_config: Dict[str, Any],
+    dest_config: Dict[str, Any],
+    config: DltAssetGroupConfig,
+    query_callback: Optional[Callable] = None,
+    staging: Optional[Any] = None,
+    staging_config: Optional[Dict[str, Any]] = None,
+    destination_override: Optional[Any] = None,
+    defer_table_reflect: bool = True,
+) -> List[DltRunnable]:
+    """The same pipelines the Dagster assets wrap, without Dagster.
+
+    Built from the SAME resolution the asset path uses, so a local run
+    exercises the configuration that ships rather than a parallel reading
+    of it.
+    """
+    _specs, units = _prepare_units(
+        sources, source_config, dest_config, config,
+        staging=staging, staging_config=staging_config,
+        destination_override=destination_override,
+    )
+    runnables = []
+    for unit in units:
+        source = build_dlt_source(
+            unit["base"], unit["database"], unit["schema"], query_callback,
+            config, unit["dest_driver"], defer_table_reflect,
+        )
+        runnables.append(DltRunnable(
+            source=source,
+            pipeline=unit["pipeline"],
+            database=unit["database"],
+            schema=unit["schema"],
+            tables=list(unit["base"]["tables"]),
+            dest_schema=unit["dest_schema"],
+        ))
+    write_env_vars()
+    return runnables
+
+
+def create_dlt_assets(
+    sources: List[Union[AssetKey, str]],
+    source_config: Dict[str, Any],
+    dest_config: Dict[str, Any],
+    config: DltAssetGroupConfig,
+    query_callback: Optional[Callable] = None,
+    staging: Optional[Any] = None,
+    staging_config: Optional[Dict[str, Any]] = None,
+) -> List[Union[AssetsDefinition, AssetSpec]]:
+    """Builds Dagster DLT multi-assets from the unified DltAssetGroupConfig.
+
+    Shares its config resolution with ``build_dlt_runnables`` via
+    ``_prepare_units``, so the local dev loop and the deployed asset
+    cannot resolve credentials, pipeline names or destinations differently.
+    """
+    specs, units = _prepare_units(
+        sources, source_config, dest_config, config,
+        staging=staging, staging_config=staging_config,
+    )
+    _assets: List[Union[AssetsDefinition, AssetSpec]] = list(specs)
+
+    for unit in units:
+        try:
+            asset = instantiate_assets(
+                unit["base"], unit["database"], unit["schema"], query_callback,
+                unit["pipeline"], unit["dest_database"], unit["dest_schema"],
+                unit["dest_driver"], unit["kinds"], config,
+                unit["default_pipeline_kwargs"],
+            )
+            _assets.append(asset)
+        except Exception as e:
+            print(
+                f"DLT {config.name} assets could not be instantiated for "
+                f"{unit['database']}.{unit['schema']}: {e}"
+            )
+
     write_env_vars()
     return _assets
