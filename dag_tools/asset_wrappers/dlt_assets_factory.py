@@ -486,11 +486,53 @@ class CustomDagsterDltTranslator(DagsterDltTranslator):
 def using_dagster_dev() -> bool:
     return bool(os.getenv("DAGSTER_IS_DEV_CLI"))
 
+DLT_ENV_DUMP = ".env.dlt"
+DLT_ENV_FILE_VAR = "DAGTOOLS_DLT_ENV_FILE"
+
+
 def write_env_vars() -> None:
-    if using_dagster_dev():
-        with open(".env.dlt", "w") as f:
+    """Record the dlt destination variables this build derived, REDACTED.
+
+    ``ENV_VARS`` holds resolved destination credentials -- entries like
+    ``DESTINATION__SNOWFLAKE__CREDENTIALS__PASSWORD`` -- because that is
+    dlt's own configuration convention. This used to write their VALUES
+    to ``.env.dlt`` in the working directory on every local
+    ``dagster dev``.
+
+    That directory is the consumer's repository root. ``.dockerignore``
+    carried ``**/.env.dlt`` -- someone knew the file was sensitive enough
+    to keep out of an image -- but ``.gitignore`` did not, and ``.env``
+    does not match ``.env.dlt``. So the file sat untracked and unignored,
+    one ``git add -A`` from being committed.
+
+    Names only by default. The file stays useful for "which destination
+    variables did this config actually produce", which is what anyone
+    reading it wanted, without the values being the answer.
+
+    Real values require naming a destination path outright via
+    ``DAGTOOLS_DLT_ENV_FILE`` -- deliberately a path and not a boolean,
+    so opting in cannot put the secrets back in the repository root by
+    accident.
+    """
+    if not using_dagster_dev():
+        return
+
+    target = os.getenv(DLT_ENV_FILE_VAR)
+    if target:
+        with open(target, "w") as f:
             for key, item in ENV_VARS.items():
                 f.write(f"{key}={item}\n")
+        return
+
+    with open(DLT_ENV_DUMP, "w") as f:
+        f.write(
+            "# Destination variables derived from this pipeline's config.\n"
+            "# VALUES REDACTED -- these are credentials.\n"
+            f"# Set {DLT_ENV_FILE_VAR}=<path outside the repo> to write\n"
+            "# real values, if you genuinely need them.\n"
+        )
+        for key in sorted(ENV_VARS):
+            f.write(f"{key}=<redacted>\n")
 
 
 class DltAssetConfig(Config):

@@ -5,6 +5,11 @@ __pycache__/
 
 # Environment files
 .env
+# NOT matched by `.env` above -- a different filename, which is exactly how
+# it went unignored. Written by dag_tools' dlt factory under `dagster dev`;
+# redacted by default, ignored regardless so an explicit opt-in cannot be
+# committed either.
+.env.dlt
 
 # Machine-local MCP server configuration
 .mcp.json
