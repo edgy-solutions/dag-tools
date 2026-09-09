@@ -80,3 +80,7 @@ target/
 dbt_packages/
 logs/
 dbt_modules/
+
+# dlt writes its exported schemas here (export_schema_path) on every run,
+# including test runs. A build artifact, not source.
+schemas/export/
