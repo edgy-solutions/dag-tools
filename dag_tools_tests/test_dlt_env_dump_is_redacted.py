@@ -15,6 +15,11 @@ import os
 
 import pytest
 
+# The factory imports dlt at module scope, so without this the whole
+# COLLECTION fails on an install without it -- and a collection error
+# aborts the entire session, not just this file.
+pytest.importorskip("dlt")
+
 from dag_tools.asset_wrappers.dlt_assets_factory import (
     DLT_ENV_DUMP,
     DLT_ENV_FILE_VAR,

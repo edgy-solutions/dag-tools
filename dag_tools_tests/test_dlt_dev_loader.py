@@ -13,6 +13,9 @@ dev loop than none.
 import pytest
 
 pytest.importorskip("yaml")
+# build_runnables_from_defs imports the dlt factory lazily; several tests
+# below reach it.
+pytest.importorskip("dlt")
 
 from dag_tools.dlt_dev import (
     DefsError,
