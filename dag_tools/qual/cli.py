@@ -103,8 +103,8 @@ class CliSettings:
 @app.callback()
 def main(
     ctx: typer.Context,
-    registry: str = typer.Option(
-        ...,
+    registry: Optional[str] = typer.Option(
+        None,
         "--registry",
         envvar="DAGTOOLS_REGISTRY",
         help="Registry URI, e.g. 's3://dag-tools' (or just the bucket name).",
@@ -116,13 +116,35 @@ def main(
         help="S3 endpoint URL for MinIO. Leave unset for real AWS S3.",
     ),
 ) -> None:
-    """Parse registry config and stash it on ctx.obj for sub-commands."""
+    """Parse registry config and stash it on ctx.obj for sub-commands.
+
+    The registry is optional HERE and demanded by the sub-commands that
+    actually read or write it. Requiring it at the root made
+    `dagtools dlt run` -- a local loop against a local file that touches no
+    registry at all -- fail asking for a MinIO bucket, which is a worse
+    first experience than the thing it was guarding.
+    """
+    if registry is None:
+        ctx.obj = None
+        return
     try:
         bucket = layout.parse_registry_uri(registry)
     except ValueError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     ctx.obj = CliSettings(bucket=bucket, endpoint_url=endpoint_url)
+
+
+def require_registry(ctx: typer.Context) -> "CliSettings":
+    """The registry config, or a refusal naming how to supply it."""
+    if ctx.obj is None:
+        typer.secho(
+            "this command needs the registry: pass --registry "
+            "(or set DAGTOOLS_REGISTRY), e.g. --registry s3://dag-tools",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    return ctx.obj
 
 
 # --- registry sub-app -------------------------------------------------------
@@ -1081,6 +1103,142 @@ def _print_synthetic_table(bundle, *, written_path: Optional[Path], published: b
         )
     for ch in m.skipped_class_hashes:
         typer.echo(f"  SKIPPED: {ch}")
+
+
+# ---------------------------------------------------------------------------
+# dlt — the local dev loop
+# ---------------------------------------------------------------------------
+
+dlt_app = typer.Typer(
+    name="dlt",
+    help=(
+        "Run a dlt pipeline from its defs.yaml WITHOUT loading a Dagster "
+        "code location. The expensive thing is not Dagster itself -- it is "
+        "loading your definitions module, which pulls every component in "
+        "the location, takes 90-180s, and fails entirely if any one of "
+        "them fails to import. This reads the YAML for one pipeline and "
+        "builds that pipeline."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(dlt_app)
+
+
+def _require_dlt_extra():
+    """dlt and its drivers live in the orchestrator extra, not [qual].
+
+    `[qual]` deliberately installs no dagster so it can drive any version
+    over GraphQL, so a bare `pip install edgy-dag-tools[qual]` has neither
+    dlt nor a source driver. Saying which extra is missing beats an
+    ImportError from three layers down.
+    """
+    try:
+        import dlt  # noqa: F401
+        from dag_tools.dlt_dev import build_runnables_from_defs  # noqa: F401
+    except ImportError as e:
+        typer.secho(
+            f"`dagtools dlt` needs the orchestrator extra (dlt and a source "
+            f"driver), which `[qual]` does not install: {e}\n"
+            f"    pip install 'edgy-dag-tools[orchestrator]'",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+
+@dlt_app.command("env")
+def dlt_env(
+    defs: str = typer.Option(..., "--defs", help="Path to the component's defs.yaml."),
+):
+    """List the environment variables this defs file needs, and which are unset.
+
+    Derived from the file itself -- both `{{ env.NAME }}` and `{env: NAME}`
+    -- so it cannot drift the way a hand-written .env.example does.
+    """
+    from dag_tools.dlt_dev import DefsError, missing_env_vars, referenced_env_vars
+    from pathlib import Path as _Path
+
+    try:
+        raw = _Path(defs).read_text(encoding="utf-8")
+    except OSError as e:
+        typer.secho(f"cannot read {defs}: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    names = referenced_env_vars(raw)
+    if not names:
+        typer.echo(f"{defs} references no environment variables.")
+        return
+
+    missing = set(missing_env_vars(names))
+    for name in names:
+        state = "MISSING" if name in missing else "set"
+        colour = typer.colors.RED if name in missing else typer.colors.GREEN
+        typer.secho(f"  {state:8s} {name}", fg=colour)
+
+    if missing:
+        typer.secho(
+            f"\n{len(missing)} of {len(names)} unset. For a local loop you "
+            f"usually want --destination <file>.duckdb, which needs no "
+            f"warehouse credential -- only the SOURCE variables.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=1)
+
+
+@dlt_app.command("run")
+def dlt_run(
+    defs: str = typer.Option(..., "--defs", help="Path to the component's defs.yaml."),
+    pipeline: Optional[str] = typer.Option(
+        None, "--pipeline", help="Which pipeline; required only if the file declares several.",
+    ),
+    destination: Optional[str] = typer.Option(
+        None, "--destination",
+        help=(
+            "Land the data in a local DuckDB file instead of the configured "
+            "destination (./dev.duckdb, duckdb:///tmp/dev.duckdb, :memory:). "
+            "Reflection, hints and cursors stay exactly as configured, so "
+            "the run still exercises what ships."
+        ),
+    ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", help="Row cap per table. Rows, not pages.",
+    ),
+    tables: Optional[str] = typer.Option(
+        None, "--tables", help="Comma-separated subset of the declared sources.",
+    ),
+    extract_only: bool = typer.Option(
+        False, "--extract-only",
+        help=(
+            "Extract without normalize or load: validates reflection, hints, "
+            "cursors and the query adapter against the real source without "
+            "writing anywhere."
+        ),
+    ),
+):
+    """Build and run one pipeline from its defs.yaml."""
+    _require_dlt_extra()
+    from dag_tools.dlt_dev import DefsError, build_runnables_from_defs
+
+    try:
+        runnables = build_runnables_from_defs(
+            defs,
+            pipeline=pipeline,
+            destination=destination,
+            limit=limit,
+            tables=[t.strip() for t in tables.split(",") if t.strip()] if tables else None,
+        )
+    except DefsError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(code=2)
+
+    verb = "extract" if extract_only else "run"
+    for unit in runnables:
+        typer.secho(
+            f"{verb}: {unit.database}.{unit.schema} -> {unit.dest_schema} "
+            f"({len(unit.tables)} table(s))",
+            fg=typer.colors.BLUE,
+        )
+        info = unit.extract() if extract_only else unit.run()
+        typer.echo(str(info))
 
 
 if __name__ == "__main__":
