@@ -147,9 +147,13 @@ Setting `consumer_started_value` turns the control table into a lock: the
 source polls for our start marker and holds off updating the data until a
 terminal row from us releases it. Two consequences, both correctness:
 
-* the marker is injected as a **dependency of every extraction asset**, so
-  it lands before a single row is read. A separate job would leave exactly
-  the window the gate exists to close.
+* the marker is a **dependency of every extraction asset, declared before
+  the multi_asset is built**, so it lands before a single row is read. A
+  separate job would leave exactly the window the gate exists to close --
+  and so, less obviously, does adding the dep afterwards: rewriting a
+  built asset's declared deps shows the edge in the graph while wiring no
+  op input, so Dagster has nothing to order on and the extraction starts
+  immediately.
 * `consumer_aborted_value` is **required** alongside it. Only the success
   path writes `consumer_done_value`, and the source clears nothing, so a
   failed run would leave them blocked forever. A run-failure sensor writes

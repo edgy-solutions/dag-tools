@@ -138,6 +138,7 @@ def dlt_assets_with_io_managers(
     op_tags: Optional[Mapping[str, Any]] = None,
     pool: Optional[str] = None,
     ins: Optional[Mapping[str, AssetIn]] = None,
+    extra_deps: Optional[List[AssetKey]] = None,
 ) -> Callable[[Callable[..., Any]], AssetsDefinition]:
     dagster_dlt_translator = inst_param(
         dagster_dlt_translator or CustomDagsterDltTranslator({}, "", "", "", ""),
@@ -152,6 +153,21 @@ def dlt_assets_with_io_managers(
         dlt_pipeline=dlt_pipeline,
         dagster_dlt_translator=dagster_dlt_translator,
     )
+
+    # Extra deps are applied HERE, before multi_asset builds the op.
+    #
+    # Adding them afterwards with AssetsDefinition.map_asset_specs looks
+    # equivalent and is not: it rewrites the declared deps -- so the asset
+    # graph and the UI show the edge -- while leaving keys_by_input_name
+    # EMPTY, so Dagster has nothing to order on and the op starts
+    # immediately. Measured: a gate asset sleeping 0.4s, and the dependent
+    # op starting 0.41s BEFORE it finished, with lineage looking correct
+    # the whole time.
+    if extra_deps:
+        specs = [
+            spec.replace_attributes(deps=[*spec.deps, *extra_deps])
+            for spec in specs
+        ]
 
     return multi_asset(
         name=name,
@@ -296,6 +312,7 @@ def instantiate_assets(
     config: DltAssetGroupConfig,
     default_pipeline_kwargs: Dict[str, Any],
     defer_table_reflect: bool = True,
+    extra_deps: Optional[List[AssetKey]] = None,
 ) -> AssetsDefinition:
     """Dynamically builds DLT generator source and returns a mapped Dagster `@multi_asset` using GroupConfig."""
     
@@ -328,6 +345,7 @@ def instantiate_assets(
         dagster_dlt_translator=translator,
         op_tags=config.effective_op_tags() or None,
         pool=config.pool,
+        extra_deps=extra_deps,
     )
     def dlt_asset(context: AssetExecutionContext, dlt: DagsterDltResource, config: DltAssetConfig):
         yield from dlt.run(context=context, **default_pipeline_kwargs, **config.pipeline_kwargs)
@@ -526,6 +544,7 @@ def create_dlt_assets(
     query_callback: Optional[Callable] = None,
     staging: Optional[Any] = None,
     staging_config: Optional[Dict[str, Any]] = None,
+    extra_deps: Optional[List[AssetKey]] = None,
 ) -> List[Union[AssetsDefinition, AssetSpec]]:
     """Builds Dagster DLT multi-assets from the unified DltAssetGroupConfig.
 
@@ -545,7 +564,7 @@ def create_dlt_assets(
                 unit["base"], unit["database"], unit["schema"], query_callback,
                 unit["pipeline"], unit["dest_database"], unit["dest_schema"],
                 unit["dest_driver"], unit["kinds"], config,
-                unit["default_pipeline_kwargs"],
+                unit["default_pipeline_kwargs"], extra_deps=extra_deps,
             )
             _assets.append(asset)
         except Exception as e:

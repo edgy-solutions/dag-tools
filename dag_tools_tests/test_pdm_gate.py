@@ -14,6 +14,8 @@ tidiness:
 The second is why the aborted status is required rather than optional:
 half a lock is a deadlock.
 """
+import pathlib
+
 import pytest
 
 pytest.importorskip("dagster_dlt")
@@ -179,25 +181,124 @@ def test_our_own_statuses_cannot_collide_with_each_other():
 # ---------------------------------------------------------------------------
 
 
-def test_the_older_endpoint_name_still_works():
-    """Existing config must keep loading -- the same handler now serves
-    three statuses, so only its NAME went stale."""
-    assert build._keys(_gated())  # built above with load_complete_endpoint
+def test_one_endpoint_serves_every_control_status():
+    """start, done and abort are the same handler with different
+    configured values, so there is one endpoint field and every asset that
+    writes a control row reads it from the same place.
 
-
-def test_the_neutral_endpoint_name_is_accepted():
+    It was two fields briefly, and the deprecated one shipped a live bug:
+    the completion asset read the OLD attribute directly instead of the
+    accessor, so a config setting only the new name left that asset with
+    an empty URL. One field cannot drift from itself."""
     defs = build._component(
         pipeline={"control_table": GATED},
-        load_complete_endpoint="",
         control_status_endpoint="http://restate:8080/Svc/write_status",
     ).build_defs(None)
     assert STARTED in build._keys(defs)
 
 
-def test_a_control_table_with_neither_endpoint_is_refused():
+def test_a_control_table_with_no_endpoint_is_refused():
     with pytest.raises(ValueError, match="control_status_endpoint"):
         build._component(
-            pipeline={"control_table": GATED},
-            load_complete_endpoint="",
-            control_status_endpoint="",
+            pipeline={"control_table": GATED}, control_status_endpoint="",
         ).build_defs(None)
+
+
+# ---------------------------------------------------------------------------
+# The gate must ORDER, not merely appear to
+# ---------------------------------------------------------------------------
+#
+# Reported from a live run: the marker asset and the extraction op started
+# at the SAME TIME, and the tables showed "unsynced" because the marker had
+# a newer materialization -- in the same run that materialized them all.
+#
+# The cause: the dep was added after the fact with
+# AssetsDefinition.map_asset_specs, which rewrites the DECLARED deps -- so
+# the asset graph and the UI show the edge, which is why the dependencies
+# "looked good" -- while leaving keys_by_input_name EMPTY. With no input
+# mapped to the asset key, Dagster has no edge to order on and the
+# extraction op starts immediately.
+#
+# Measured before the fix: the dependent op started 0.41s BEFORE a gate
+# that slept 0.4s. The marker is a LOCK; rows read before it lands are read
+# unprotected, so this was the gate not gating.
+
+
+def _extraction_assets(defs):
+    return [
+        a for a in defs.assets
+        if any(k.path[0] == "dlt" for k in getattr(a, "keys", []))
+    ]
+
+
+def test_the_gate_is_wired_as_a_real_op_input():
+    """keys_by_input_name is what Dagster orders on. A declared dep with no
+    input mapping is lineage without execution, which is exactly the shape
+    that shipped."""
+    defs = _gated()
+    extraction = _extraction_assets(defs)
+    assert extraction, "no extraction assets found"
+
+    for assets_def in extraction:
+        mapped = {
+            "/".join(key.path) for key in assets_def.keys_by_input_name.values()
+        }
+        assert STARTED in mapped, (
+            f"the gate is not among this op's mapped inputs {mapped or '{}'} "
+            f"-- it will not order execution"
+        )
+
+
+def test_every_extraction_op_input_resolves_to_an_asset_key():
+    """The failing shape had an input NAMED for the gate and mapped to
+    nothing. An input without a key is inert."""
+    for assets_def in _extraction_assets(_gated()):
+        input_names = {i.name for i in assets_def.node_def.input_defs}
+        mapped_names = set(assets_def.keys_by_input_name)
+        assert input_names <= mapped_names, (
+            f"inputs {input_names - mapped_names} are declared but mapped to "
+            f"no asset key, so nothing orders on them"
+        )
+
+
+def test_no_gate_means_no_phantom_input():
+    """Without the gate configured the extraction must not acquire an
+    input for an asset that does not exist."""
+    plain = {k: v for k, v in GATED.items()
+             if k not in ("consumer_started_value", "consumer_aborted_value")}
+    defs = build._component(pipeline={"control_table": plain}).build_defs(None)
+    for assets_def in _extraction_assets(defs):
+        mapped = {"/".join(k.path) for k in assets_def.keys_by_input_name.values()}
+        assert STARTED not in mapped, mapped
+
+
+# ---------------------------------------------------------------------------
+# Every control-row asset reads the SAME configured endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_no_control_asset_holds_an_empty_endpoint():
+    """The shipped bug: the completion asset read a deprecated attribute
+    directly instead of the accessor, so config setting only the current
+    name left that one asset with an empty URL -- and it failed at
+    materialization, not at load."""
+    import re
+
+    source = pathlib.Path(
+        "dag_tools/components/restate_dlt_sync/component.py"
+    ).read_text(encoding="utf-8")
+
+    stale = re.findall(r"self\.load_complete_endpoint", source)
+    assert not stale, (
+        "load_complete_endpoint is referenced again; it was removed so that "
+        "one field cannot drift from itself"
+    )
+
+    endpoints = set(re.findall(r"endpoint = (self\.[a-z_]+)", source))
+    assert endpoints, "no endpoint assignments found -- has the shape changed?"
+    # mei_request_endpoint is a genuinely different handler; everything
+    # else that writes a control row must read the one control field.
+    assert endpoints <= {
+        "self.control_status_endpoint", "self.mei_request_endpoint",
+    }, endpoints
+    assert "self.control_status_endpoint" in endpoints

@@ -64,7 +64,7 @@ def _component(**overrides):
         },
         restate_endpoint=f"{INGRESS}/GenericOracleAckService/mark_as_processed/send",
         mei_request_endpoint=f"{INGRESS}/GenericOracleControlService/write_mei_request/send",
-        load_complete_endpoint=f"{INGRESS}/GenericOracleControlService/signal_load_complete/send",
+        control_status_endpoint=f"{INGRESS}/GenericOracleControlService/signal_load_complete/send",
     )
     kwargs.update(overrides)
     return RestateDltSyncComponent(pipelines={"pdm": pipeline}, **kwargs)
@@ -208,8 +208,8 @@ def test_mei_table_without_an_endpoint_is_refused():
 
 
 def test_control_table_without_an_endpoint_is_refused():
-    with pytest.raises(ValueError, match="load_complete_endpoint"):
-        _component(load_complete_endpoint="").build_defs(None)
+    with pytest.raises(ValueError, match="control_status_endpoint"):
+        _component(control_status_endpoint="").build_defs(None)
 
 
 def test_table_config_for_an_unlisted_table_is_refused():

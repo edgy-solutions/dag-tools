@@ -424,11 +424,6 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
     """Restate ingress for GenericOracleControlService/write_mei_request.
     Required only when a pipeline declares `mei_table:`."""
 
-    load_complete_endpoint: str = ""
-    """Deprecated alias for `control_status_endpoint`, kept working.
-    The same handler now writes start, done and abort rows, so the name
-    describes only one of its three uses."""
-
     control_status_endpoint: str = ""
     """Restate ingress for the handler that appends a control-table row.
     Required when a pipeline declares `control_table:`."""
@@ -491,11 +486,10 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                     f"pipeline '{pipeline_key}' declares mei_table but the "
                     f"component has no mei_request_endpoint set."
                 )
-            if control and not self._control_endpoint():
+            if control and not self.control_status_endpoint:
                 raise ValueError(
                     f"pipeline '{pipeline_key}' declares control_table but the "
-                    f"component has no control_status_endpoint set (or the "
-                    f"older load_complete_endpoint)."
+                    f"component has no control_status_endpoint set."
                 )
 
             # A single pipeline-wide primary_key remains supported as the
@@ -519,47 +513,39 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
                 **pipeline_attrs
             )
 
+            # The gate must be a dep of every extraction asset BEFORE the
+            # multi_asset is built. Adding it afterwards with
+            # map_asset_specs rewrites the declared deps -- lineage and the
+            # UI look right -- while leaving keys_by_input_name empty, so
+            # Dagster has nothing to order on and the extraction op starts
+            # immediately. The marker is a LOCK: rows read before it lands
+            # are read unprotected, so this ordering is the feature.
+            started_keys: List[AssetKey] = []
+            if control and control.consumer_started_value:
+                started_keys.append(AssetKey([f"{pipeline_key}_load_started"]))
+
             dlt_assets_group = create_dlt_assets(
                 sources=sources,
                 source_config=self.source_config,
                 dest_config=self.dest_config,
                 config=pydantic_config,
-                staging_config=self.staging_config
+                staging_config=self.staging_config,
+                extra_deps=started_keys or None,
             )
+
+            if started_keys:
+                generated_assets.append(
+                    self._make_status_asset(
+                        f"{pipeline_key}_load_started", control,
+                        control.consumer_started_value, deps=None,
+                    )
+                )
             # Real dlt asset keys — the cycle job selects all of them; each
             # ack dispatch depends on only its OWN table (see below).
             # Both derived BEFORE any gate dependency is injected, so the
             # per-table mapping still sees exactly one dep per spec.
             dlt_keys = _executable_asset_keys(dlt_assets_group)
             dlt_key_for = dlt_key_by_source_table(dlt_assets_group, sources)
-
-            # ---- the gate: claim before reading a single row -------------------
-            started_keys: List[AssetKey] = []
-            if control and control.consumer_started_value:
-                started_name = f"{pipeline_key}_load_started"
-                started_key = AssetKey([started_name])
-                generated_assets.append(
-                    self._make_status_asset(
-                        started_name, control,
-                        control.consumer_started_value, deps=None,
-                    )
-                )
-                started_keys.append(started_key)
-                # Ordering here is CORRECTNESS, not tidiness. The marker
-                # tells the source to hold off updating the data, so a
-                # single row read before it lands is read unprotected.
-                # Injected as a dep of every extraction asset rather than
-                # sequenced by a separate job, because a job boundary
-                # leaves exactly that window open.
-                dlt_assets_group = [
-                    item.map_asset_specs(
-                        lambda spec: spec.replace_attributes(
-                            deps=[*spec.deps, started_key]
-                        )
-                    )
-                    if hasattr(item, "keys") else item
-                    for item in dlt_assets_group
-                ]
 
             generated_assets.extend(dlt_assets_group)
             dispatch_keys: List[AssetKey] = []
@@ -829,7 +815,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
         parameter -- so start, done and abort are the same call with
         different configured values, not three handlers.
         """
-        endpoint = self._control_endpoint()
+        endpoint = self.control_status_endpoint
 
         @asset(name=name, **({"deps": deps} if deps else {}))
         def status_asset(context):
@@ -849,17 +835,8 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
 
         return status_asset
 
-    def _control_endpoint(self) -> str:
-        """Where control-status rows are written.
-
-        ``control_status_endpoint`` is the accurate name now that the same
-        handler serves start, done and abort. ``load_complete_endpoint``
-        stays as a fallback so existing config keeps working.
-        """
-        return self.control_status_endpoint or self.load_complete_endpoint
-
     def _make_complete_asset(self, name: str, control: ControlTableSpec, deps):
-        endpoint = self.load_complete_endpoint
+        endpoint = self.control_status_endpoint
 
         @asset(name=name, deps=deps)
         def load_complete_asset(context):
@@ -1016,7 +993,7 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
         arrangement of code here that covers a process that never reports
         anything.
         """
-        endpoint = self._control_endpoint()
+        endpoint = self.control_status_endpoint
 
         @run_failure_sensor(name=name, monitored_jobs=[job])
         def abort_sensor(context):
