@@ -120,6 +120,15 @@ enforced by `InventoryRegistry.publish_build` and regression-tested by
 
 ## Part 1 — Continuous: survey stage in Jenkins (per repo)
 
+> **If your definitions need secrets to import, the survey cannot run in the
+> Jenkins workspace.** The survey imports your `Definitions`, and a location
+> that cannot import produces no inventory at all. Keep Jenkins as the
+> trigger and move the execution into a pod that already has the
+> environment — see
+> [surveying-deployed-code-locations.md](surveying-deployed-code-locations.md).
+> The intent below is unchanged: one inventory per build, keyed by
+> `(repo, git_sha)`.
+
 **Objective:** Every build of every fleet repo publishes a fresh structural
 inventory and proves its definitions load under the repo's pinned Dagster
 version.
