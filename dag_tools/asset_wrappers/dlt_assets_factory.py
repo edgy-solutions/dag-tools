@@ -287,18 +287,25 @@ def _arrow_item(item: Any) -> bool:
     return _pa is not False and isinstance(item, (_pa.Table, _pa.RecordBatch))
 
 
-def select_columns_f(doc: Any, select_columns: Optional[List[str]] = None) -> Any:
+def select_columns_f(doc: Any, *, select_columns: Optional[List[str]] = None) -> Any:
+    """Keep only ``select_columns``. NOT an ``add_map`` argument -- see
+    :func:`make_select_columns`, and the note there on why the second
+    parameter is keyword-only."""
     if not select_columns:
         return doc
     if _arrow_item(doc):
         return doc.select([c for c in select_columns if c in doc.schema.names])
     if isinstance(doc, list):
-        return [select_columns_f(row, select_columns) for row in doc]
+        return [select_columns_f(row, select_columns=select_columns) for row in doc]
     return {k: doc[k] for k in select_columns if k in doc}
 
 
-def add_timestamp_f(item: Any, column: str = "_updated_at") -> Any:
+def add_timestamp_f(item: Any, *, column: str = "_updated_at") -> Any:
     """Stamp a load timestamp onto a dlt item, whatever shape the backend yields.
+
+    DO NOT hand this to ``add_map`` -- use :func:`make_add_timestamp`.
+    ``column`` is keyword-only so that mistake RAISES instead of silently
+    writing a column named ``null``; see make_add_timestamp for why.
 
     Always UTC-aware and, on the arrow path, explicitly typed — a naive
     datetime infers a different destination column type than an aware one, so
@@ -352,9 +359,16 @@ def make_add_timestamp(column: str = "_updated_at") -> Callable[[Any], Any]:
     The error dlt raises claims the second argument must be *named*
     ``meta``. It does not check that -- only the count -- so a
     plausible-looking signature passes inspection and misbehaves.
+
+    Both raw transforms now take their second parameter KEYWORD-ONLY.
+    That does not change dlt's count -- it still sees two and still calls
+    ``f(item, meta)`` -- but the call now raises TypeError immediately
+    instead of binding meta to the column name. The mistake became loud.
+    A silently wrong column name is unrecoverable in the destination: it
+    persists in dlt's stored schema, so a later fix does not remove it.
     """
     def _add_timestamp(item: Any) -> Any:
-        return add_timestamp_f(item, column)
+        return add_timestamp_f(item, column=column)
 
     return _add_timestamp
 
@@ -369,7 +383,7 @@ def make_select_columns(columns: Optional[List[str]]) -> Callable[[Any], Any]:
     configured column selection silently did nothing.
     """
     def _select_columns(item: Any) -> Any:
-        return select_columns_f(item, columns)
+        return select_columns_f(item, select_columns=columns)
 
     return _select_columns
 

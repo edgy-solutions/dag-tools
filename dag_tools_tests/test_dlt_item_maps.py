@@ -78,23 +78,23 @@ def test_timestamp_rejects_unknown_shape():
 
 
 def test_select_on_dict():
-    assert select_columns_f({"a": 1, "b": 2, "c": 3}, ["a", "c"]) == {"a": 1, "c": 3}
+    assert select_columns_f({"a": 1, "b": 2, "c": 3}, select_columns=["a", "c"]) == {"a": 1, "c": 3}
 
 
 def test_select_on_arrow_table():
-    out = select_columns_f(pa.table({"a": [1], "b": [2], "c": [3]}), ["a", "c"])
+    out = select_columns_f(pa.table({"a": [1], "b": [2], "c": [3]}), select_columns=["a", "c"])
     assert out.column_names == ["a", "c"]
 
 
 def test_select_ignores_missing_columns():
     """A column absent from the source is skipped, not an error — as for dicts."""
-    out = select_columns_f(pa.table({"a": [1]}), ["a", "nope"])
+    out = select_columns_f(pa.table({"a": [1]}), select_columns=["a", "nope"])
     assert out.column_names == ["a"]
 
 
 def test_select_without_columns_is_identity():
     table = pa.table({"a": [1]})
-    assert select_columns_f(table, None) is table
+    assert select_columns_f(table, select_columns=None) is table
 
 
 # ---------------------------------------------------------------------------
@@ -172,3 +172,64 @@ def test_map_item_passes_a_list_of_rows_through_element_by_element():
     """MapItem unwraps lists itself, so each element arrives alone."""
     out = MapItem(make_add_timestamp())([{"id": 1}, {"id": 2}], meta=None)
     assert all("_updated_at" in row for row in out)
+
+
+# ---------------------------------------------------------------------------
+# Through a REAL pipeline -- the only place the damage becomes visible
+# ---------------------------------------------------------------------------
+#
+# Everything above stops at the transform. The reported failure was a column
+# literally named `null` sitting in postgres next to `_updated_at`, and it is
+# dlt's NORMALIZER that turns a None dict key into that name -- a step no
+# transform-level test reaches. These run extract -> normalize -> load.
+#
+# The residue is also why this matters more than an ordinary bug: once a bad
+# column reaches the destination it is recorded in dlt's stored schema, so
+# fixing the code does NOT remove it, and dropping it by hand makes the next
+# load fail terminally ("Table does not have a column with name null").
+
+
+def _load_and_get_columns(mapper, tmp_path, name):
+    """Run a one-row pipeline through duckdb and return its user columns."""
+    duckdb = pytest.importorskip("duckdb")
+    import dlt as _dlt
+
+    def rows():
+        yield {"id": 1, "name": "a"}
+
+    res = _dlt.resource(rows, name="widgets")
+    res.add_map(mapper)
+    pipeline = _dlt.pipeline(
+        pipeline_name=f"test_item_maps_{name}",
+        destination=_dlt.destinations.duckdb(str(tmp_path / "t.duckdb")),
+        dataset_name="ds",
+        dev_mode=True,
+    )
+    pipeline.run(res)
+    cols = pipeline.default_schema.get_table_columns("widgets")
+    return [c for c in cols if not c.startswith("_dlt")]
+
+
+def test_a_loaded_table_has_updated_at_and_no_null_column(tmp_path):
+    """The reported bug, end to end."""
+    cols = _load_and_get_columns(make_add_timestamp(), tmp_path, "fixed")
+    assert cols == ["id", "name", "_updated_at"]
+    assert "null" not in cols
+
+
+def test_selection_actually_reaches_the_destination_schema(tmp_path):
+    """The quiet half: a no-op filter loads every column and nothing errors."""
+    cols = _load_and_get_columns(make_select_columns(["id"]), tmp_path, "sel")
+    assert cols == ["id"]
+
+
+def test_handing_the_raw_transform_to_add_map_is_now_loud(tmp_path):
+    """Regression guard for how the `null` column got made.
+
+    Before the second parameter became keyword-only this silently produced
+    a column named `null`. It must now fail instead -- a crash is cheap, a
+    poisoned destination schema is not.
+    """
+    with pytest.raises(Exception) as exc:
+        _load_and_get_columns(add_timestamp_f, tmp_path, "raw")
+    assert "positional argument" in str(exc.value) or "MapItem" in str(exc.value)
