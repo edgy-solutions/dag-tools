@@ -19,7 +19,10 @@ attributes:
   # a durable dispatch ledger; see the pipeline's `staged:` flag.
   dest_config:
     drivername: postgresql
-    credentials: "{{ env.POSTGRES_DSN }}"
+    host: "{{ env.POSTGRES_HOST }}"
+    port: 5432
+    username: "{{ env.POSTGRES_USER }}"
+    password: "{{ env.POSTGRES_PASSWORD }}"
     database: telemetry
     schema: otel_staging
 

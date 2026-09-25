@@ -666,3 +666,74 @@ def test_dispatch_asset_publishes_what_it_dispatched(rows, ingress):
     dispatched = metadata[component_module.DISPATCHED_METADATA_KEY].value
     assert [d["group_key"] for d in dispatched] == ["run-42"]
     assert dispatched[0]["plan_hash"] == ingress.posts[0]["json"]["plan_hash"]
+
+
+# ---------------------------------------------------------------------------
+# Staging destination configuration
+#
+# The read-back half of this component used to resolve its own credential,
+# preferring a DSN string and the ambient dlt env var over the
+# host/username/password parts every other component is configured with.
+# It now goes through the same `config_to_credentials` as the dlt half.
+# ---------------------------------------------------------------------------
+
+_PARTS = {
+    "drivername": "postgresql",
+    "host": "pg.internal",
+    "port": 5433,
+    "username": "admin",
+    "password": "password",
+    "database": "telemetry",
+    "schema": "otel_staging",
+}
+
+
+def test_staging_engine_accepts_the_same_host_parts_as_every_other_component():
+    url = component_module._staging_engine(dict(_PARTS)).url
+    assert url.host == "pg.internal"
+    assert url.port == 5433
+    assert url.username == "admin"
+    assert url.password == "password"
+    assert url.database == "telemetry"
+    # `schema` is not part of a DSN and must not leak into the query string.
+    assert "schema" not in url.query
+
+
+def test_explicit_dest_config_host_beats_the_ambient_dlt_env_var(monkeypatch):
+    """The trap: one DESTINATION__*__CREDENTIALS left over from another
+    pipeline used to silently retarget this component's read-back."""
+    monkeypatch.setenv(
+        "DESTINATION__POSTGRES__CREDENTIALS", "postgresql://other:other@elsewhere:5432/wrong"
+    )
+    url = component_module._staging_engine(dict(_PARTS)).url
+    assert url.host == "pg.internal"
+    assert url.database == "telemetry"
+
+
+def test_a_password_with_url_metacharacters_survives(monkeypatch):
+    config = dict(_PARTS, password="p@ss/w:rd")
+    assert component_module._staging_engine(config).url.password == "p@ss/w:rd"
+
+
+def test_staging_engine_still_accepts_a_credentials_dsn():
+    url = component_module._staging_engine(
+        {"drivername": "postgresql", "credentials": "postgresql://u:p@dsnhost:5432/db"}
+    ).url
+    assert url.host == "dsnhost"
+    assert url.database == "db"
+
+
+def test_staging_engine_falls_back_to_the_dlt_env_var(monkeypatch):
+    monkeypatch.setenv(
+        "DESTINATION__POSTGRES__CREDENTIALS", "postgresql://u:p@envhost:5432/envdb"
+    )
+    url = component_module._staging_engine({"drivername": "postgresql"}).url
+    assert url.host == "envhost"
+    assert url.database == "envdb"
+
+
+def test_staging_engine_names_the_parts_shape_when_nothing_resolves(monkeypatch):
+    monkeypatch.delenv("DESTINATION__POSTGRES__CREDENTIALS", raising=False)
+    monkeypatch.delenv("DESTINATION__POSTGRESQL__CREDENTIALS", raising=False)
+    with pytest.raises(ValueError, match="host/username/password"):
+        component_module._staging_engine({"drivername": "postgresql"})

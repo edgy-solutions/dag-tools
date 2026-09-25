@@ -188,7 +188,14 @@ class OtelApiSyncSchema(BaseModel):
         )
     )
     dest_config: Optional[Dict[str, Any]] = Field(
-        default=None, description="Staging destination; required when any pipeline is staged."
+        default=None,
+        description=(
+            "Staging destination; required when any pipeline is staged. Takes the "
+            "same shape as every other component: drivername, host, port, username, "
+            "password, database, schema. A single `credentials` DSN string is also "
+            "accepted, and with neither the dlt env var "
+            "DESTINATION__<DRIVER>__CREDENTIALS is the last resort."
+        ),
     )
     staging_config: Optional[Dict[str, Any]] = Field(default=None)
     pipelines: Dict[str, OtelApiSyncPipelineSchema] = Field(default_factory=dict)

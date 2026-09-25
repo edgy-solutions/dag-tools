@@ -75,38 +75,38 @@ def _executable_asset_keys(items: List[Any]) -> List[AssetKey]:
 def _staging_engine(dest_config: Dict[str, Any]):
     """SQLAlchemy engine for the staging destination.
 
-    Mirrors how the existing Restate components resolve the destination
-    credential, so a deployment configures one env var, not two.
+    Resolved through the same ``config_to_credentials`` the dlt half of this
+    component uses, so the writer and the read-back cannot disagree about
+    which database they are talking to -- and so ``dest_config`` takes the
+    same host/port/username/password/database shape here as it does in every
+    other component, rather than demanding a DSN of its own.
+
+    Explicit configuration wins over the ambient dlt env var. A deployment
+    that names a host in ``dest_config`` means it, and a
+    ``DESTINATION__*__CREDENTIALS`` left over from another pipeline must not
+    silently retarget the read.
     """
     import sqlalchemy as sa
-    from sqlalchemy.engine.url import URL
 
-    credentials = dest_config.get("credentials")
-    if isinstance(credentials, str) and credentials:
-        return sa.create_engine(credentials)
+    from dag_tools.asset_wrappers.dlt_assets_factory import config_to_credentials
 
-    driver = dest_config.get("drivername", "postgres")
-    env_name = f"DESTINATION__{driver.upper()}__CREDENTIALS"
-    url = os.environ.get(env_name) or os.environ.get("DESTINATION__POSTGRES__CREDENTIALS")
-    if url:
-        return sa.create_engine(url)
+    config = dict(dest_config or {})
 
-    if dest_config.get("host"):
-        return sa.create_engine(
-            URL.create(
-                drivername=driver,
-                username=dest_config.get("username"),
-                password=dest_config.get("password"),
-                host=dest_config.get("host"),
-                port=dest_config.get("port"),
-                database=dest_config.get("database"),
+    if not config.get("host") and not config.get("credentials"):
+        driver = config.get("drivername") or config.get("type") or "postgres"
+        env_name = f"DESTINATION__{driver.upper()}__CREDENTIALS"
+        url = os.environ.get(env_name) or os.environ.get("DESTINATION__POSTGRES__CREDENTIALS")
+        if not url:
+            raise ValueError(
+                "Cannot reach the staging destination: set host/username/password/"
+                "database in dest_config (preferred -- same shape as every other "
+                f"component), or dest_config.credentials, or {env_name}."
             )
-        )
+        config["credentials"] = url
 
-    raise ValueError(
-        f"Cannot reach the staging destination: set {env_name}, dest_config.credentials, "
-        "or host/username/password in dest_config."
-    )
+    # dlt percent-encodes the user info, so a password containing @ / or :
+    # survives the round trip into SQLAlchemy.
+    return sa.create_engine(config_to_credentials(config).to_native_representation())
 
 
 def _read_staged_rows(

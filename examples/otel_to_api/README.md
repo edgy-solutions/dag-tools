@@ -125,7 +125,9 @@ docker compose up -d                     # clickhouse + postgres + restate + moc
 # "Where configuration lives" below for why TARGET_API_BASE_URL moved here.
 export RESTATE_INGRESS_URL=http://localhost:8080
 export CLICKHOUSE_HOST=localhost
-export POSTGRES_DSN=postgresql://admin:password@localhost:5433/telemetry
+export POSTGRES_HOST=localhost
+export POSTGRES_USER=admin
+export POSTGRES_PASSWORD=password
 export TARGET_API_BASE_URL=http://localhost:9100
 
 dagster dev -w workspace.yaml

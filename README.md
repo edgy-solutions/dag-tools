@@ -322,9 +322,12 @@ attributes:
     drivername: clickhouse
     host: "{{ env.CLICKHOUSE_HOST }}"
     database: otel
-  dest_config:
+  dest_config:                     # same shape as every other component
     drivername: postgresql
-    credentials: "{{ env.POSTGRES_DSN }}"
+    host: "{{ env.POSTGRES_HOST }}"
+    username: "{{ env.POSTGRES_USER }}"
+    password: "{{ env.POSTGRES_PASSWORD }}"
+    database: telemetry
     schema: otel_staging
   pipelines:
     ci_results:
