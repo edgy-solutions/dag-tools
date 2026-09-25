@@ -236,26 +236,30 @@ def config_to_credentials(
     kinds.append(KIND_MAPPING.get(kind, kind))
 
     # If we have a raw connection string provided, parse it into the credentials object
+    parsed_dsn = False
     if isinstance(creds, ConnectionStringCredentials) and config.get("credentials") and isinstance(config.get("credentials"), str):
         try:
             creds.parse_native_representation(config["credentials"])
+            parsed_dsn = True
         except Exception:
             pass
 
     STANDARD_ATTRS = {"host", "port", "username", "password", "database", "drivername", "schema"}
     if not hasattr(creds, "query") or creds.query is None:
         creds.query = {}
-    
-    is_connection_string = isinstance(creds, ConnectionStringCredentials)
-    
+
     for key, item in config.items():
         if key == "credentials":
             continue
 
         if key in STANDARD_ATTRS:
-            # If we already have a full DSN, avoid setting individual DB/Schema attrs 
-            # which can cause DLT/SQLAlchemy parsing conflicts
-            if is_connection_string and key in ["database", "schema"]:
+            # A parsed DSN already names the database it connects to; a
+            # config `database` beside it must not retarget the connection.
+            # `schema` is not part of a DSN, so it always applies -- skipping
+            # it silently landed data in the SOURCE schema. The skip used to
+            # key off the credentials class, so a config with no DSN at all
+            # lost `database` too and the asset key got a None segment.
+            if parsed_dsn and key == "database":
                 continue
             setattr(creds, key, item)
         elif key not in ["destination", "drivername", "type"]:
