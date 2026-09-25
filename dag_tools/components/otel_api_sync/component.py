@@ -72,8 +72,8 @@ def _executable_asset_keys(items: List[Any]) -> List[AssetKey]:
     return keys
 
 
-def _staging_engine(dest_config: Dict[str, Any]):
-    """SQLAlchemy engine for the staging destination.
+def _staging_url(dest_config: Dict[str, Any]) -> str:
+    """Resolve the staging destination to a SQLAlchemy URL.
 
     Resolved through the same ``config_to_credentials`` the dlt half of this
     component uses, so the writer and the read-back cannot disagree about
@@ -85,9 +85,12 @@ def _staging_engine(dest_config: Dict[str, Any]):
     that names a host in ``dest_config`` means it, and a
     ``DESTINATION__*__CREDENTIALS`` left over from another pipeline must not
     silently retarget the read.
-    """
-    import sqlalchemy as sa
 
+    Split out from :func:`_staging_engine` because ``create_engine`` eagerly
+    imports the DBAPI: resolution is what this module decides and what the
+    tests pin, and it must stay assertable without a postgres driver
+    installed.
+    """
     from dag_tools.asset_wrappers.dlt_assets_factory import config_to_credentials
 
     config = dict(dest_config or {})
@@ -106,7 +109,14 @@ def _staging_engine(dest_config: Dict[str, Any]):
 
     # dlt percent-encodes the user info, so a password containing @ / or :
     # survives the round trip into SQLAlchemy.
-    return sa.create_engine(config_to_credentials(config).to_native_representation())
+    return config_to_credentials(config).to_native_representation()
+
+
+def _staging_engine(dest_config: Dict[str, Any]):
+    """SQLAlchemy engine for the staging destination."""
+    import sqlalchemy as sa
+
+    return sa.create_engine(_staging_url(dest_config))
 
 
 def _read_staged_rows(

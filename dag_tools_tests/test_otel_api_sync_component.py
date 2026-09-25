@@ -675,6 +675,10 @@ def test_dispatch_asset_publishes_what_it_dispatched(rows, ingress):
 # preferring a DSN string and the ambient dlt env var over the
 # host/username/password parts every other component is configured with.
 # It now goes through the same `config_to_credentials` as the dlt half.
+#
+# These assert on `_staging_url`, not on a live engine: `create_engine`
+# eagerly imports the DBAPI, and CI installs no postgres driver. `make_url`
+# only parses.
 # ---------------------------------------------------------------------------
 
 _PARTS = {
@@ -688,8 +692,14 @@ _PARTS = {
 }
 
 
-def test_staging_engine_accepts_the_same_host_parts_as_every_other_component():
-    url = component_module._staging_engine(dict(_PARTS)).url
+def _staging_url(config):
+    from sqlalchemy.engine import make_url
+
+    return make_url(component_module._staging_url(config))
+
+
+def test_staging_url_accepts_the_same_host_parts_as_every_other_component():
+    url = _staging_url(dict(_PARTS))
     assert url.host == "pg.internal"
     assert url.port == 5433
     assert url.username == "admin"
@@ -705,35 +715,34 @@ def test_explicit_dest_config_host_beats_the_ambient_dlt_env_var(monkeypatch):
     monkeypatch.setenv(
         "DESTINATION__POSTGRES__CREDENTIALS", "postgresql://other:other@elsewhere:5432/wrong"
     )
-    url = component_module._staging_engine(dict(_PARTS)).url
+    url = _staging_url(dict(_PARTS))
     assert url.host == "pg.internal"
     assert url.database == "telemetry"
 
 
-def test_a_password_with_url_metacharacters_survives(monkeypatch):
-    config = dict(_PARTS, password="p@ss/w:rd")
-    assert component_module._staging_engine(config).url.password == "p@ss/w:rd"
+def test_a_password_with_url_metacharacters_survives():
+    assert _staging_url(dict(_PARTS, password="p@ss/w:rd")).password == "p@ss/w:rd"
 
 
-def test_staging_engine_still_accepts_a_credentials_dsn():
-    url = component_module._staging_engine(
+def test_staging_url_still_accepts_a_credentials_dsn():
+    url = _staging_url(
         {"drivername": "postgresql", "credentials": "postgresql://u:p@dsnhost:5432/db"}
-    ).url
+    )
     assert url.host == "dsnhost"
     assert url.database == "db"
 
 
-def test_staging_engine_falls_back_to_the_dlt_env_var(monkeypatch):
+def test_staging_url_falls_back_to_the_dlt_env_var(monkeypatch):
     monkeypatch.setenv(
         "DESTINATION__POSTGRES__CREDENTIALS", "postgresql://u:p@envhost:5432/envdb"
     )
-    url = component_module._staging_engine({"drivername": "postgresql"}).url
+    url = _staging_url({"drivername": "postgresql"})
     assert url.host == "envhost"
     assert url.database == "envdb"
 
 
-def test_staging_engine_names_the_parts_shape_when_nothing_resolves(monkeypatch):
+def test_staging_url_names_the_parts_shape_when_nothing_resolves(monkeypatch):
     monkeypatch.delenv("DESTINATION__POSTGRES__CREDENTIALS", raising=False)
     monkeypatch.delenv("DESTINATION__POSTGRESQL__CREDENTIALS", raising=False)
     with pytest.raises(ValueError, match="host/username/password"):
-        component_module._staging_engine({"drivername": "postgresql"})
+        component_module._staging_url({"drivername": "postgresql"})
