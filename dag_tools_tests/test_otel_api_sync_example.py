@@ -31,7 +31,14 @@ MAPPING_PATH = os.path.join(
 @pytest.fixture
 def spec():
     with open(MAPPING_PATH, "r", encoding="utf-8") as handle:
-        return load_spec(yaml.safe_load(handle))
+        document = yaml.safe_load(handle)
+    # The example mapping declares no base_url: it is meant to be portable,
+    # with component.yaml's `api:` block supplying one via
+    # OtelApiSyncComponent._apply_api_override. This test drives the pure
+    # engine directly (load_spec), bypassing the component, so it stands in
+    # for that override here.
+    document.setdefault("api", {})["base_url"] = "https://api.test"
+    return load_spec(document)
 
 
 def _span(

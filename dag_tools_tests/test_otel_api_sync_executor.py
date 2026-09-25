@@ -10,7 +10,6 @@ import json
 from typing import Any, Dict, List, Optional
 
 import pytest
-import restate
 
 from dag_tools.restate_handlers import api_call_plan
 from dag_tools.restate_handlers.api_call_plan import execute_plan
@@ -169,11 +168,24 @@ def test_retryable_status_raises_so_restate_retries(http):
     assert ctx.step_names == ["00-s-single"]
 
 
-def test_unhandled_client_error_is_terminal_not_retried(http):
-    """A 400 cannot be fixed by retrying; it must fail terminally."""
+def test_unhandled_client_error_halts_and_is_recorded_not_raised(http):
+    """A 400 cannot be fixed by retrying, but raising it would be pointless.
+
+    Dagster dispatches through `/send`, the one-way ingress, so nothing
+    would ever observe a raised TerminalError. Worse, Restate rolls back
+    uncommitted state on a terminal failure, which would erase the very
+    failure record the asset check reads back. So the plan halts and
+    records `FAILED` in object state instead of raising.
+    """
     http({"POST /a": 400})
-    with pytest.raises(restate.TerminalError):
-        _run(StubContext(), _plan([{"id": "s", "calls": [_call("single", "/a")], "aggregate_fallbacks": []}]))
+    ctx = StubContext()
+    result = _run(ctx, _plan([{"id": "s", "calls": [_call("single", "/a")], "aggregate_fallbacks": []}]))
+
+    assert result["status"] == "FAILED"
+    assert result["halted"] is True
+    assert len(result["failures"]) == 1
+    assert result["failures"][0]["status"] == 400
+    assert ctx.state["last_result"] == result
 
 
 def test_status_with_a_fallback_does_not_raise(http):
@@ -367,13 +379,18 @@ def test_auth_headers_are_expanded_from_the_workers_environment(http, monkeypatc
     assert plan["api"]["header_env"]["Authorization"] == "Bearer ${TEST_API_TOKEN}"
 
 
-def test_a_missing_credential_fails_terminally_with_a_named_variable(http):
-    http()
+def test_a_missing_credential_is_recorded_with_a_named_variable(http):
+    fake = http()
+    ctx = StubContext()
     plan = _plan([{"id": "s", "calls": [_call("single", "/a")], "aggregate_fallbacks": []}])
     plan["api"]["header_env"] = {"Authorization": "Bearer ${DEFINITELY_NOT_SET_TOKEN}"}
 
-    with pytest.raises(restate.TerminalError, match="DEFINITELY_NOT_SET_TOKEN"):
-        _run(StubContext(), plan)
+    result = _run(ctx, plan)
+
+    assert result["status"] == "FAILED"
+    assert "DEFINITELY_NOT_SET_TOKEN" in result["failures"][0]["error"]
+    assert fake.calls == []
+    assert ctx.state["last_result"] == result
 
 
 # --- wire contract ---------------------------------------------------------
@@ -381,12 +398,16 @@ def test_a_missing_credential_fails_terminally_with_a_named_variable(http):
 
 def test_an_unknown_plan_format_version_is_refused_not_partially_executed(http):
     fake = http()
+    ctx = StubContext()
     plan = _plan([{"id": "s", "calls": [_call("single", "/a")], "aggregate_fallbacks": []}])
     plan["format_version"] = 99
 
-    with pytest.raises(restate.TerminalError, match="format_version"):
-        _run(StubContext(), plan)
+    result = _run(ctx, plan)
+
+    assert result["status"] == "FAILED"
     assert fake.calls == []
+    assert "format_version" in result["failures"][0]["error"]
+    assert ctx.state["last_result"] == result
 
 
 # --- overlapping re-dispatch (late-arriving rows) --------------------------
@@ -566,3 +587,59 @@ def test_a_failed_aggregate_fallback_does_not_mark_its_items_delivered(http):
     }
     _run(ctx, _plan([step]))
     assert "k-e2" not in ctx.state["completed_call_keys"]
+
+
+# --- a halted plan is recorded, never raised --------------------------------
+
+
+def test_halted_plan_banks_calls_delivered_before_the_halt(http):
+    """A raise used to discard this; recording must not.
+
+    x succeeds before y fails and halts the plan. x's call key must still
+    be banked, or a corrected re-dispatch would re-send it.
+    """
+    http({"POST /b": 400})
+    ctx = StubContext()
+    plan = _plan(
+        [
+            {
+                "id": "s1",
+                "aggregate_fallbacks": [],
+                "calls": [
+                    _keyed_call("x", "/a", "k1"),
+                    _keyed_call("y", "/b", "k2"),
+                ],
+            }
+        ]
+    )
+    result = _run(ctx, plan)
+
+    assert result["status"] == "FAILED"
+    assert result["halted"] is True
+    assert ctx.state["completed_call_keys"] == ["k1"]
+
+
+def test_halted_plan_does_not_record_its_plan_hash_as_completed(http):
+    """A halted plan is incomplete: a corrected re-dispatch of the same
+    hash must be allowed through. Per-call dedupe protects what already
+    landed."""
+    http({"POST /b": 400})
+    ctx = StubContext()
+    plan = _plan(
+        [{"id": "s1", "aggregate_fallbacks": [], "calls": [_keyed_call("y", "/b", "k2")]}]
+    )
+    _run(ctx, plan)
+    assert ctx.state.get("completed_plan_hashes") in (None, [])
+
+
+def test_halted_plan_does_not_execute_a_later_step(http):
+    fake = http({"POST /a": 400})
+    ctx = StubContext()
+    plan = _plan(
+        [
+            {"id": "s1", "aggregate_fallbacks": [], "calls": [_call("x", "/a")]},
+            {"id": "s2", "aggregate_fallbacks": [], "calls": [_call("y", "/never")]},
+        ]
+    )
+    _run(ctx, plan)
+    assert [c["path"] for c in fake.calls] == ["/a"]

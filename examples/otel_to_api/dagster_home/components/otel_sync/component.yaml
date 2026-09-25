@@ -53,3 +53,28 @@ attributes:
         enabled: true
         backend: sql
         table: otel_api_dispatch_ledger
+
+      # Non-secret, per-deployment API config. Resolved by Dagster's own
+      # `{{ env.X }}` substitution (a different mechanism from mapping.yaml's
+      # Jinja, which the mapping engine renders) and merged over the
+      # mapping's `api:` block before validation, so mapping.yaml stays
+      # portable across environments.
+      api:
+        base_url: "{{ env.TARGET_API_BASE_URL }}"
+        # Rarely needed: header values placed here are rendered directly
+        # into the plan and persisted in the Restate journal (readable via
+        # the Restate CLI/UI), unlike mapping.yaml's `header_env`, which
+        # keeps the secret on the worker and puts only its variable name in
+        # the plan. Only uncomment this for a header whose exposure in the
+        # journal is acceptable.
+        # plan_carried_headers:
+        #   X-Trace-Source: dag-tools
+
+      # Reconciles dispatch against what Restate actually executed. `/send`
+      # only means "accepted"; this polls get_status so a run doesn't go
+      # green on a plan that failed after acceptance.
+      completion_check:
+        enabled: true
+        blocking: true
+        poll_interval_seconds: 2
+        timeout_seconds: 300

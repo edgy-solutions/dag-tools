@@ -7,8 +7,22 @@
 # attributes that identify its execution group, its primary entity, its
 # process item, and its metrics.
 
+# API config is split three ways, each landing in a different place for a
+# reason:
+#   1. component.yaml `api:` block  - non-secret, per-deployment values
+#      (base_url, static headers). Resolved by Dagster's own `{{ env.X }}`
+#      substitution and merged over this block before validation, so the
+#      base URL differs per environment without touching this file.
+#   2. This file's `header_env`     - secrets. Expanded from the Restate
+#      worker's environment at call time; only the variable name ever
+#      appears in the rendered plan, never the value.
+#   3. component.yaml
+#      `api.plan_carried_headers`   - the rare case where a header value
+#      must be rendered directly into the plan (and therefore persisted in
+#      the Restate journal); see its docstring for the trade-off.
+# There is deliberately no `base_url` here: this mapping is meant to be
+# portable across environments, and the component always supplies one.
 api:
-  base_url_env: TARGET_API_BASE_URL
   header_env:
     # Expanded from the Restate worker's environment at call time. The
     # rendered plan carries this string verbatim, never the token.

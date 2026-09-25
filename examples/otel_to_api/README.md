@@ -120,21 +120,25 @@ Upsert-shaped calls tolerate duplication, but per-event records do not.
 
 ```bash
 docker compose up -d                     # clickhouse + postgres + restate + mock API
+
+# Read by Dagster (component.yaml's `{{ env.X }}` substitution) — see
+# "Where configuration lives" below for why TARGET_API_BASE_URL moved here.
 export RESTATE_INGRESS_URL=http://localhost:8080
 export CLICKHOUSE_HOST=localhost
 export POSTGRES_DSN=postgresql://admin:password@localhost:5433/telemetry
 export TARGET_API_BASE_URL=http://localhost:9100
-export TARGET_API_TOKEN=dev-token
 
 dagster dev -w workspace.yaml
 ```
 
-Register the worker's handlers by selecting the service:
+Register the worker's handlers by selecting the service. The worker only
+ever needs the secret — the base URL is Dagster's problem now:
 
 ```bash
 RESTATE_SERVICES=api_call_plan \
 RESTATE_ADMIN_URL=http://localhost:9070 \
 RESTATE_ADVERTISED_URI=http://restate-worker:9080 \
+TARGET_API_TOKEN=dev-token \
 python -m dag_tools.restate_handlers.serve
 ```
 
@@ -156,6 +160,12 @@ Other run-time knobs: `limit`, `max_groups`, `only_group`,
 `ignore_readiness` (dispatch a still-filling group), `ignore_ledger`
 (re-send an already-dispatched group).
 
+Dispatch is only a `/send` — HTTP 200 means "Restate accepted the plan",
+not "the plan succeeded". The `restate_plans_completed` asset check
+(configured under `completion_check:`) polls each dispatched group's
+`get_status` handler and fails the run if any plan failed or never
+confirmed within `timeout_seconds`, closing exactly that false-green gap.
+
 ## Configuration reference
 
 Deploy-time shape lives in
@@ -165,3 +175,20 @@ which mapping file to use. `staged: false` skips dlt entirely and reads
 ClickHouse directly in the dispatch asset — lighter, but it gives up the
 replayable staged copy, the incremental cursor, and the SQL ledger
 (which falls back to Dagster asset metadata).
+
+### Where configuration lives
+
+API configuration is deliberately split three ways:
+
+| Tier | File | Resolution | Holds |
+|---|---|---|---|
+| Non-secret, per-deployment | `component.yaml`'s `api:` block | Dagster's `{{ env.X }}` substitution | `base_url`, static `headers`, `timeout_seconds` |
+| Secret | `mapping.yaml`'s `api.header_env` | Expanded from the Restate worker's environment at call time | credentials — only the variable name ever reaches the rendered plan |
+| Plan-carried (rare) | `component.yaml`'s `api.plan_carried_headers` | Same `{{ env.X }}` substitution, rendered straight into the plan | a header value that must travel with the plan and is acceptable to persist in the Restate invocation journal |
+
+`component.yaml`'s `api:` block is merged over `mapping.yaml`'s `api:`
+block *before* the mapping is validated, which is why `mapping.yaml` here
+declares no `base_url` at all — it stays portable across environments,
+and the component supplies the URL. Setting `api.base_url` on the
+component also clears any `api.base_url_env` the mapping declared, so the
+worker-side env var can't silently keep winning.

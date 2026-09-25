@@ -84,6 +84,53 @@ class ClickHouseResourceSchema(BaseModel):
     limit: int = Field(default=0)
 
 
+class ApiOverrideSchema(BaseModel):
+    """Dagster-side API settings, merged over the mapping file's `api` block.
+
+    component.yaml attributes get `{{ env.VAR }}` resolution, so a base URL
+    that differs per environment is configured here rather than as an env
+    var on the shared Restate worker. The mapping file stays portable.
+    """
+
+    base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Overrides the mapping's api.base_url and clears api.base_url_env "
+            "so the worker-side env var cannot silently keep winning."
+        ),
+    )
+    headers: Dict[str, str] = Field(default_factory=dict, description="Static non-secret headers.")
+    plan_carried_headers: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Header values rendered directly into the plan. The plan is POSTed "
+            "to the Restate ingress and persisted in the invocation journal, so "
+            "these values are durable, replayable, and readable from the "
+            "Restate CLI/UI. Use this for credentials only when that exposure "
+            "is acceptable; the alternative is api.header_env in the mapping "
+            "file, which keeps the credential on the worker and puts only its "
+            "variable name in the plan. This is a separate field so that "
+            "putting a credential in the plan is a decision, not an accident."
+        ),
+    )
+    timeout_seconds: Optional[float] = Field(default=None)
+
+
+class CompletionCheckSchema(BaseModel):
+    """Reconcile dispatched plans against what Restate actually executed."""
+
+    enabled: bool = Field(default=True)
+    blocking: bool = Field(default=True, description="Fail the run when a dispatched plan failed.")
+    poll_interval_seconds: float = Field(default=2.0)
+    timeout_seconds: float = Field(
+        default=300.0,
+        description=(
+            "Give up waiting for still-running plans. A timeout is reported "
+            "as a failed check, not a pass."
+        ),
+    )
+
+
 class OtelApiSyncPipelineSchema(BaseModel):
     """One ClickHouse-to-API pipeline."""
 
@@ -120,6 +167,11 @@ class OtelApiSyncPipelineSchema(BaseModel):
         ),
     )
     ledger: LedgerSchema = Field(default_factory=LedgerSchema)
+    api: Optional[ApiOverrideSchema] = Field(
+        default=None,
+        description="Dagster-side overrides merged into the mapping's api block before validation.",
+    )
+    completion_check: CompletionCheckSchema = Field(default_factory=CompletionCheckSchema)
     group_name: Optional[str] = Field(default=None, description="Dagster asset group name.")
     io_manager_key: str = Field(default="io_manager")
     pipeline_kwargs: Dict[str, Any] = Field(default_factory=dict)

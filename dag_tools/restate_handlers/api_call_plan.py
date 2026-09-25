@@ -30,6 +30,19 @@ aggregate fallback arrives as a container body plus one fragment per
 call; this handler splices in only the fragments of the calls that
 actually failed. That constraint is deliberate — it makes it structurally
 impossible to send a bulk request covering items that succeeded.
+
+**A failed plan is recorded, never raised.** ``execute_plan`` never lets
+a plan-level failure escape as ``restate.TerminalError``. Two reasons,
+both hard requirements: Dagster dispatches through ``/send``, the
+one-way ingress, so nothing ever observes a raised exception — a
+TerminalError here is simply invisible. And Restate rolls back
+uncommitted state on a terminal failure, which would destroy the very
+failure record the Dagster asset check reads back through
+``get_status``. So a halted plan is written to object state and
+returned normally with ``status: "FAILED"``. The trade-off this buys:
+the Restate invocation itself always completes successfully, so
+failures must be read from object state, never inferred from
+``restate invocations list``.
 """
 from __future__ import annotations
 
@@ -186,20 +199,46 @@ async def _run_call(
     )
 
 
+def _plan_level_failure(group_key: str, plan_hash: str, exc: Exception) -> Dict[str, Any]:
+    """Summary for a failure that happens before any call is attempted.
+
+    Recorded the same way as a mid-plan halt: no ``step``/``item`` scope
+    exists yet, so the failure carries only ``phase: "plan"``.
+    """
+    return {
+        "status": "FAILED",
+        "halted": True,
+        "group_key": group_key,
+        "plan_hash": plan_hash,
+        "calls_executed": 0,
+        "calls_skipped_already_delivered": 0,
+        "fallbacks_run": 0,
+        "failures": [{"phase": "plan", "status": 0, "error": str(exc)}],
+    }
+
+
 @service.handler()
 async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict[str, Any]:
     """Execute one rendered call plan for this object's execution group."""
 
-    version = int(plan.get("format_version") or 0)
-    if version != PLAN_FORMAT_VERSION:
-        # Refuse rather than half-execute a plan shape we do not know.
-        raise restate.TerminalError(
-            f"unsupported call plan format_version {version}; this worker "
-            f"speaks version {PLAN_FORMAT_VERSION}"
-        )
-
     plan_hash = str(plan.get("plan_hash") or "")
     group_key = str(plan.get("group_key") or ctx.key())
+
+    version = int(plan.get("format_version") or 0)
+    if version != PLAN_FORMAT_VERSION:
+        # Refuse rather than half-execute a plan shape we do not know —
+        # but record the refusal, because a raise here would be rolled
+        # back and the asset check would see nothing at all.
+        summary = _plan_level_failure(
+            group_key,
+            plan_hash,
+            restate.TerminalError(
+                f"unsupported call plan format_version {version}; this worker "
+                f"speaks version {PLAN_FORMAT_VERSION}"
+            ),
+        )
+        ctx.set(_LAST_RESULT_KEY, summary)
+        return summary
 
     completed: List[str] = (await ctx.get(_COMPLETED_KEY)) or []
     if plan_hash and plan_hash in completed:
@@ -212,7 +251,12 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
             "plan_hash": plan_hash,
         }
 
-    base_url, base_headers, timeout, retry_statuses, idempotency_header = _resolve_api(plan)
+    try:
+        base_url, base_headers, timeout, retry_statuses, idempotency_header = _resolve_api(plan)
+    except restate.TerminalError as exc:
+        summary = _plan_level_failure(group_key, plan_hash, exc)
+        ctx.set(_LAST_RESULT_KEY, summary)
+        return summary
 
     delivered: List[str] = (await ctx.get(_COMPLETED_CALLS_KEY)) or []
     delivered_set = set(delivered)
@@ -222,6 +266,7 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
     skipped = 0
     fallbacks_run = 0
     failures: List[Dict[str, Any]] = []
+    halted = False
 
     for step_index, step in enumerate(plan.get("steps") or []):
         step_id = step.get("id") or f"step{step_index}"
@@ -332,10 +377,20 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
 
             failures.append(failure)
             if not continue_on_error:
-                raise restate.TerminalError(
-                    f"group {group_key} step '{step_id}' item '{item_key}' failed with "
-                    f"{failure['status']} and no fallback matched: {failure['body']}"
+                logger.error(
+                    "group %s step '%s' item '%s' failed with %s and no fallback matched; "
+                    "halting plan %s",
+                    group_key,
+                    step_id,
+                    item_key,
+                    failure["status"],
+                    plan_hash,
                 )
+                halted = True
+                break
+
+        if halted:
+            break
 
         # 3. One aggregate call per status, carrying only what failed.
         for status, fragments in collected.items():
@@ -378,13 +433,32 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
                     }
                 )
                 if not continue_on_error:
-                    raise restate.TerminalError(
-                        f"group {group_key} step '{step_id}' aggregate fallback for "
-                        f"{status} failed with {agg_status}: {agg_result.get('body')}"
+                    logger.error(
+                        "group %s step '%s' aggregate fallback for %s failed with %s: %s; "
+                        "halting plan %s",
+                        group_key,
+                        step_id,
+                        status,
+                        agg_status,
+                        agg_result.get("body"),
+                        plan_hash,
                     )
+                    halted = True
+                    break
+
+        if halted:
+            break
+
+    if halted:
+        status_value = "FAILED"
+    elif failures:
+        status_value = "COMPLETED_WITH_ERRORS"
+    else:
+        status_value = "COMPLETED"
 
     summary = {
-        "status": "COMPLETED" if not failures else "COMPLETED_WITH_ERRORS",
+        "status": status_value,
+        "halted": halted,
         "group_key": group_key,
         "plan_hash": plan_hash,
         "calls_executed": executed,
@@ -393,13 +467,19 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
         "failures": failures,
     }
 
-    if plan_hash:
-        ctx.set(_COMPLETED_KEY, (completed + [plan_hash])[-_COMPLETED_HISTORY:])
+    # Calls that already landed must be banked even on a halted plan — a
+    # raise used to discard this and a corrected re-dispatch would re-send
+    # calls that already succeeded.
     if newly_delivered:
         ctx.set(
             _COMPLETED_CALLS_KEY,
             (delivered + newly_delivered)[-_COMPLETED_CALLS_HISTORY:],
         )
+    # A halted plan is incomplete: don't mark its hash completed, so a
+    # corrected re-dispatch of the same hash is allowed through. Per-call
+    # dedupe (above) protects the calls that already landed.
+    if plan_hash and not halted:
+        ctx.set(_COMPLETED_KEY, (completed + [plan_hash])[-_COMPLETED_HISTORY:])
     ctx.set(_LAST_RESULT_KEY, summary)
 
     return summary

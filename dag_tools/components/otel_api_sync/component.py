@@ -14,18 +14,24 @@ worker redeploy. Execution happens in Restate so that a partially
 completed group is resumed, not restarted.
 """
 import json
+import logging
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
 from dagster import (
+    AssetCheckResult,
+    AssetCheckSeverity,
+    AssetChecksDefinition,
     AssetExecutionContext,
     AssetKey,
     AssetsDefinition,
     Definitions,
     MetadataValue,
     asset,
+    asset_check,
 )
 from dagster.components import Component, ComponentLoadContext
 from dagster.components.resolved.base import Resolvable
@@ -44,10 +50,17 @@ from dag_tools.components.otel_api_sync.schema import OtelApiSyncRunConfig
 from dag_tools.otel_api_sync.render import render_plans
 from dag_tools.otel_api_sync.spec import OtelApiSyncSpec, load_spec
 
+logger = logging.getLogger(__name__)
+
 # Restate ingress path for the group-keyed plan executor. `/send` makes the
 # invocation one-way: Dagster hands off the plan and Restate owns
 # completion from there, which is the whole point of the split.
 _INGRESS_TEMPLATE = "{ingress}/ApiCallPlanService/{group_key}/execute_plan/send"
+
+# Shared between the dispatch asset (which writes it) and the completion
+# check (which reads it back from the materialization event) so the two
+# never drift on the metadata key name.
+DISPATCHED_METADATA_KEY = "dispatched"
 
 
 def _executable_asset_keys(items: List[Any]) -> List[AssetKey]:
@@ -149,6 +162,110 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _reconcile_dispatch_completion(
+    context: Any,
+    dispatch_key: AssetKey,
+    ingress: str,
+    poll_interval_seconds: float,
+    timeout_seconds: float,
+) -> AssetCheckResult:
+    """Poll Restate for what the dispatch asset only ever fired-and-forgot.
+
+    `/send` dispatch means HTTP 200 only says "accepted into the journal" —
+    nothing about whether the plan's calls actually succeeded. This reads
+    the dispatch asset's latest materialization, extracts the group/plan
+    hashes it recorded under `DISPATCHED_METADATA_KEY`, and polls each
+    group's read-only `get_status` handler until every plan resolves or the
+    timeout elapses.
+
+    Kept as a plain module-level function (rather than inlined in the
+    `@asset_check`-decorated closure) so it can be unit tested directly
+    with a fake `context` object, without going through Dagster's asset
+    check execution machinery.
+    """
+    event = context.instance.get_latest_materialization_event(dispatch_key)
+    materialization = getattr(event, "asset_materialization", None) if event else None
+    if materialization is None:
+        return AssetCheckResult(
+            passed=True,
+            severity=AssetCheckSeverity.ERROR,
+            metadata={"note": "no materialization to reconcile against"},
+        )
+
+    raw = (materialization.metadata or {}).get(DISPATCHED_METADATA_KEY)
+    dispatched = getattr(raw, "data", raw) if raw is not None else None
+    if not dispatched:
+        return AssetCheckResult(
+            passed=True,
+            severity=AssetCheckSeverity.ERROR,
+            metadata={"note": "nothing was dispatched (dry run or empty batch)"},
+        )
+
+    pending = {(str(d["group_key"]), str(d["plan_hash"])) for d in dispatched}
+    completed: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
+
+    deadline = time.monotonic() + timeout_seconds
+    with httpx.Client(timeout=30.0) as client:
+        while pending:
+            for group_key, plan_hash in list(pending):
+                url = f"{ingress}/ApiCallPlanService/{quote(group_key, safe='')}/get_status"
+                try:
+                    response = client.post(url)
+                    response.raise_for_status()
+                    status = response.json()
+                except Exception as exc:
+                    failed.append(
+                        {"group_key": group_key, "plan_hash": plan_hash, "error": str(exc)}
+                    )
+                    pending.discard((group_key, plan_hash))
+                    continue
+
+                # Order matters: COMPLETED_WITH_ERRORS DOES get its hash
+                # recorded in completed_plan_hashes, so checking that list
+                # first would report a partially-failed plan as a pass.
+                last = status.get("last_result") or {}
+                if last.get("plan_hash") == plan_hash:
+                    pending.discard((group_key, plan_hash))
+                    if last.get("status") == "COMPLETED":
+                        completed.append({"group_key": group_key, "plan_hash": plan_hash})
+                    else:
+                        failed.append(
+                            {
+                                "group_key": group_key,
+                                "plan_hash": plan_hash,
+                                "status": last.get("status"),
+                                "failures": last.get("failures"),
+                            }
+                        )
+                elif plan_hash in (status.get("completed_plan_hashes") or []):
+                    pending.discard((group_key, plan_hash))
+                    completed.append({"group_key": group_key, "plan_hash": plan_hash})
+                # else: still executing — poll again next round.
+
+            if not pending:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(poll_interval_seconds)
+
+    still_pending = [{"group_key": g, "plan_hash": p} for g, p in pending]
+
+    # A timeout with groups still pending is a failed check — "we never
+    # confirmed it landed" is exactly the false-green this check exists to
+    # close.
+    return AssetCheckResult(
+        passed=not failed and not still_pending,
+        severity=AssetCheckSeverity.ERROR,
+        metadata={
+            "groups_checked": len(dispatched),
+            "groups_completed": len(completed),
+            "groups_failed": MetadataValue.json(failed),
+            "groups_still_running": MetadataValue.json(still_pending),
+        },
+    )
+
+
 class OtelApiSyncComponent(Component, Resolvable, Model):
     """Push any ClickHouse telemetry to any ordered set of API endpoints."""
 
@@ -179,27 +296,77 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
         """
         inline = attrs.get("mapping")
         if inline:
-            return load_spec(inline)
+            raw: Dict[str, Any] = dict(inline)
+        else:
+            mapping_file = attrs.get("mapping_file")
+            if not mapping_file:
+                raise ValueError(
+                    f"pipeline '{pipeline_key}' must declare either 'mapping' (inline) "
+                    "or 'mapping_file'"
+                )
 
-        mapping_file = attrs.get("mapping_file")
-        if not mapping_file:
-            raise ValueError(
-                f"pipeline '{pipeline_key}' must declare either 'mapping' (inline) "
-                "or 'mapping_file'"
+            import yaml
+
+            path = os.path.join(str(context.path), mapping_file)
+            if not os.path.exists(path):
+                path = mapping_file
+            with open(path, "r", encoding="utf-8") as handle:
+                raw = dict(yaml.safe_load(handle) or {})
+
+        self._apply_api_override(pipeline_key, raw, attrs.get("api"))
+        return load_spec(raw)
+
+    @staticmethod
+    def _apply_api_override(
+        pipeline_key: str, raw: Dict[str, Any], override: Optional[Dict[str, Any]]
+    ) -> None:
+        """Merge the component's `api:` override into the mapping's `api` block.
+
+        component.yaml attributes get `{{ env.X }}` resolution; mapping.yaml
+        cannot be, since it is full of mapping-engine Jinja. So non-secret,
+        per-deployment API config (base URL, static headers) is layered on
+        here, before `load_spec` validates the merged document.
+        """
+        if not override:
+            return
+
+        api = dict(raw.get("api") or {})
+
+        base_url = override.get("base_url")
+        if base_url:
+            api["base_url"] = base_url
+            # _resolve_api lets base_url_env override base_url on the
+            # worker; leaving it in place would silently keep the worker
+            # env var winning over this override.
+            api.pop("base_url_env", None)
+
+        timeout_seconds = override.get("timeout_seconds")
+        if timeout_seconds is not None:
+            api["timeout_seconds"] = timeout_seconds
+
+        headers = dict(api.get("headers") or {})
+        headers.update(override.get("headers") or {})
+        plan_carried_headers = dict(override.get("plan_carried_headers") or {})
+        headers.update(plan_carried_headers)
+        if headers:
+            api["headers"] = headers
+
+        if plan_carried_headers:
+            logger.warning(
+                "pipeline '%s': header(s) %s are rendered into the call plan and will be "
+                "persisted in the Restate journal; use api.header_env in the mapping to "
+                "keep credentials worker-side",
+                pipeline_key,
+                sorted(plan_carried_headers.keys()),
             )
 
-        import yaml
-
-        path = os.path.join(str(context.path), mapping_file)
-        if not os.path.exists(path):
-            path = mapping_file
-        with open(path, "r", encoding="utf-8") as handle:
-            return load_spec(yaml.safe_load(handle))
+        raw["api"] = api
 
     # --- definitions -------------------------------------------------------
 
     def build_defs(self, context: ComponentLoadContext) -> Definitions:
         generated_assets: List[Any] = []
+        generated_checks: List[AssetChecksDefinition] = []
 
         for pipeline_key, raw_attrs in self.pipelines.items():
             attrs = dict(raw_attrs)
@@ -217,6 +384,7 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
                 (s for s in sources if s["name"] == dispatch_from), sources[0]
             )
             ledger_config = dict(attrs.get("ledger") or {})
+            check_config = dict(attrs.get("completion_check") or {})
 
             upstream_keys: List[AssetKey] = []
             if staged:
@@ -230,21 +398,28 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
                 generated_assets.extend(extraction_assets)
                 upstream_keys = _executable_asset_keys(extraction_assets)
 
-            generated_assets.append(
-                self._build_dispatch_asset(
-                    pipeline_key=pipeline_key,
-                    spec=spec,
-                    staged=staged,
-                    dest_schema=dest_schema,
-                    dispatch_config=dispatch_config,
-                    upstream_keys=upstream_keys,
-                    ledger_config=ledger_config,
-                    group_name=group_name,
-                    max_plan_bytes=int(attrs.get("max_plan_bytes", 4 * 1024 * 1024)),
-                )
+            dispatch_asset = self._build_dispatch_asset(
+                pipeline_key=pipeline_key,
+                spec=spec,
+                staged=staged,
+                dest_schema=dest_schema,
+                dispatch_config=dispatch_config,
+                upstream_keys=upstream_keys,
+                ledger_config=ledger_config,
+                group_name=group_name,
+                max_plan_bytes=int(attrs.get("max_plan_bytes", 4 * 1024 * 1024)),
             )
+            generated_assets.append(dispatch_asset)
 
-        return Definitions(assets=generated_assets, resources=dlt_resources())
+            if check_config.get("enabled", True):
+                dispatch_key = list(dispatch_asset.keys)[0]
+                generated_checks.append(
+                    self._build_completion_check(pipeline_key, dispatch_key, check_config)
+                )
+
+        return Definitions(
+            assets=generated_assets, asset_checks=generated_checks, resources=dlt_resources()
+        )
 
     def _build_extraction_assets(
         self,
@@ -469,6 +644,12 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
                     "plans": MetadataValue.json(
                         _json_safe(pending[:5] if config.dry_run else [])
                     ),
+                    DISPATCHED_METADATA_KEY: MetadataValue.json(
+                        [
+                            {"group_key": str(p["group_key"]), "plan_hash": p["plan_hash"]}
+                            for p in sent
+                        ]
+                    ),
                     LEDGER_METADATA_KEY: ledger.serialize()
                     if (ledger_enabled and ledger_backend == "dagster")
                     else "",
@@ -481,6 +662,46 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
                 )
 
         return dispatch_asset
+
+    def _build_completion_check(
+        self, pipeline_key: str, dispatch_key: AssetKey, check_config: Dict[str, Any]
+    ) -> AssetChecksDefinition:
+        """Factory-built check reconciling dispatch against Restate's own record.
+
+        `/send` dispatch means HTTP 200 only says "accepted into the
+        journal" — nothing about whether the plan's calls actually
+        succeeded. This check polls each dispatched group's read-only
+        `get_status` handler and fails when a plan failed or never
+        confirmed. Same factory-function discipline as
+        `_build_dispatch_asset`: loop variables are bound as factory
+        locals, never as asset-function parameters.
+
+        The actual reconciliation logic lives in the module-level
+        `_reconcile_dispatch_completion` so tests can drive it directly with
+        a fake context, without going through Dagster's asset-check
+        machinery.
+        """
+        ingress = self.restate_endpoint.rstrip("/")
+        blocking = bool(check_config.get("blocking", True))
+        poll_interval_seconds = float(check_config.get("poll_interval_seconds", 2.0))
+        timeout_seconds = float(check_config.get("timeout_seconds", 300.0))
+
+        @asset_check(
+            asset=dispatch_key,
+            name="restate_plans_completed",
+            blocking=blocking,
+            description="Polls each dispatched group's Restate object and fails if any plan failed.",
+        )
+        def completion_check(context) -> AssetCheckResult:
+            return _reconcile_dispatch_completion(
+                context=context,
+                dispatch_key=dispatch_key,
+                ingress=ingress,
+                poll_interval_seconds=poll_interval_seconds,
+                timeout_seconds=timeout_seconds,
+            )
+
+        return completion_check
 
     async def _dispatch_plans(
         self, context: AssetExecutionContext, ingress: str, plans: List[Dict[str, Any]]

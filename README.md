@@ -336,15 +336,23 @@ attributes:
           cursor_column: Timestamp
           lookback_seconds: 600    # re-read window for late-arriving spans
           primary_key: [TraceId, SpanId]
+      api:
+        base_url: "{{ env.TARGET_API_BASE_URL }}"   # non-secret, per-deployment; merged over mapping.yaml's api: block
+        # plan_carried_headers:                     # rare: rendered into the plan itself (see below)
+        #   X-Trace-Source: dag-tools
+      completion_check:
+        blocking: true                              # fail the run if a dispatched plan actually failed
+        timeout_seconds: 300
 ```
 
 `mapping.yaml` — grouping, derived collections, then ordered steps:
 
 ```yaml
 api:
-  base_url_env: TARGET_API_BASE_URL
   header_env:
     Authorization: "Bearer ${TARGET_API_TOKEN}"   # expanded on the WORKER, never in the plan
+  # No base_url here — component.yaml's api.base_url supplies it, keeping
+  # this file portable across environments.
 
 group_by: "{{ attr(row, 'execution.group_id') }}"
 
@@ -386,7 +394,11 @@ Four design points worth knowing before you write a mapping:
 - **Status is data, not an exception.** The handler returns the HTTP status from inside `ctx.run` and classifies outside it: 2xx done, a status with a fallback runs the fallback, 5xx/429 raise so Restate retries, other 4xx is terminal. Raising on every non-2xx would retry a 404 forever and never reach the fallback.
 - **Types survive.** Mapping expressions render through a combined native + sandboxed Jinja environment, so a single-expression template returns a real `int`/`bool`/`list`. OTel attributes are `Map(String, String)`; use `as_int`/`as_float`/`as_bool`/`split`/`metrics_from_prefix` for non-string fields.
 
-Duplicate dispatch is suppressed twice: a Dagster-side ledger of `(group, plan hash)` pairs, and the group-keyed Restate `VirtualObject`, which refuses a plan hash it has already completed. The handler ships in the shared worker image as `RESTATE_SERVICES=api_call_plan`.
+**Non-secret API config lives in component.yaml, not the worker's environment.** component.yaml's `api:` block (`base_url`, static `headers`, `timeout_seconds`) is resolved by Dagster's own `{{ env.X }}` substitution and merged over `mapping.yaml`'s `api:` block before the mapping is validated — so `mapping.yaml` stays portable across environments and never needs its own `base_url`. Setting `api.base_url` also clears any `api.base_url_env` the mapping declared, so a worker-side env var can't silently keep winning. Secrets stay on the mapping side, as `api.header_env` — expanded from the Restate worker's environment at call time, so only the variable name ever reaches the rendered plan. The exception is `api.plan_carried_headers`, which renders straight into the plan and is therefore persisted in the Restate invocation journal; use it only when that exposure is an acceptable trade-off for a header that must travel with the plan.
+
+**Dispatch succeeding is not the same as the plan succeeding.** `/send` is one-way — HTTP 200 means Restate accepted the plan into its journal, nothing about whether the calls inside it actually landed. The `restate_plans_completed` asset check (`completion_check:` in component.yaml) closes that gap: it reads the group/plan hashes the dispatch asset recorded in its materialization metadata and polls each group's `get_status` handler until every plan resolves or `timeout_seconds` elapses. Classification checks `last_result` before `completed_plan_hashes`, deliberately — `COMPLETED_WITH_ERRORS` plans do get their hash recorded in `completed_plan_hashes`, so checking that list first would report a partially-failed plan as a pass.
+
+Duplicate dispatch is suppressed twice: a Dagster-side ledger of `(group, plan hash)` pairs, and the group-keyed Restate `VirtualObject`, which refuses a plan hash it has already completed. The handler ships in the shared worker image as `RESTATE_SERVICES=api_call_plan`. A failed plan is recorded in that object's state and returned normally, never raised as `restate.TerminalError` — `/send` dispatch means nothing would ever observe the raise, and a terminal failure would roll back the very state the failure record lives in.
 
 A complete runnable stack — ClickHouse + Postgres + Restate + a mock API that reproduces the 404-then-bulk-create behaviour — is in [examples/otel_to_api](./examples/otel_to_api).
 

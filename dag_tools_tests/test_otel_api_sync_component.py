@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 import pytest
 import yaml
-from dagster import DagsterInstance, materialize
+from dagster import AssetKey, DagsterInstance, materialize
 
 # The component imports DagsterDltResource at module scope; see the note
 # in test_dlt_item_maps.py for why a collection-time error is worse than
@@ -108,6 +108,10 @@ def _component(**pipeline_overrides) -> OtelApiSyncComponent:
         "mapping": _mapping(),
         "sources": [{"name": "spans", "table": "otel.otel_traces"}],
         "ledger": {"enabled": True, "backend": "dagster"},
+        # mapping.yaml no longer carries a base URL (it is deliberately
+        # portable across environments); the component supplies one, same
+        # as the real component.yaml does.
+        "api": {"base_url": "https://api.test"},
     }
     pipeline.update(pipeline_overrides)
     return OtelApiSyncComponent(
@@ -183,6 +187,7 @@ def _staged_component() -> OtelApiSyncComponent:
                     }
                 ],
                 "ledger": {"enabled": False},
+                "api": {"base_url": "https://api.test"},
             }
         },
     )
@@ -398,3 +403,266 @@ def test_ignore_readiness_dispatches_a_filling_group(monkeypatch, ingress):
     with DagsterInstance.ephemeral() as instance:
         _materialize(_dispatch_asset(_component()), {"ignore_readiness": True}, instance)
     assert len(ingress.posts) == 1
+
+
+# --- api override (component.yaml `api:` merged over mapping.yaml `api:`) --
+
+
+def _minimal_mapping(api: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "api": api,
+        "group_by": "{{ attr(row, 'execution.group_id') }}",
+        "steps": [{"id": "s", "path": "/x", "payload": {}}],
+    }
+
+
+def test_component_base_url_override_wins_and_clears_base_url_env(rows, ingress):
+    """base_url_env must not silently keep winning once the component sets base_url."""
+    component = _component(
+        mapping=_minimal_mapping({"base_url_env": "SOME_WORKER_ENV_VAR", "timeout_seconds": 5}),
+        api={"base_url": "https://override.example"},
+    )
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(component), {}, instance)
+    assert ingress.posts[0]["json"]["api"]["base_url"] == "https://override.example"
+
+
+def test_mapping_with_no_base_url_is_valid_when_component_supplies_one(rows, ingress):
+    """mapping.yaml is portable: it need not declare api.base_url at all."""
+    component = _component(
+        mapping=_minimal_mapping({"timeout_seconds": 5}),
+        api={"base_url": "https://override.example"},
+    )
+    # Would raise at definition-load time (ApiSpec requires base_url or
+    # base_url_env) if the override merge were not applied before load_spec.
+    assets = list(_defs(component).assets or [])
+    assert len(assets) == 1
+
+
+def test_plan_carried_headers_appear_in_the_rendered_plan(rows, ingress):
+    component = _component(
+        mapping=_minimal_mapping({"base_url": "https://api.test"}),
+        api={
+            "base_url": "https://api.test",
+            "plan_carried_headers": {"X-Trace-Source": "dag-tools"},
+        },
+    )
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(component), {}, instance)
+    assert ingress.posts[0]["json"]["api"]["headers"]["X-Trace-Source"] == "dag-tools"
+
+
+def test_mapping_headers_survive_with_component_headers_layered_on_top(rows, ingress):
+    component = _component(
+        mapping=_minimal_mapping(
+            {"base_url": "https://api.test", "headers": {"X-From-Mapping": "m"}}
+        ),
+        api={"base_url": "https://api.test", "headers": {"X-From-Component": "c"}},
+    )
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(component), {}, instance)
+    headers = ingress.posts[0]["json"]["api"]["headers"]
+    assert headers["X-From-Mapping"] == "m"
+    assert headers["X-From-Component"] == "c"
+
+
+# --- completion check (`restate_plans_completed`) ---------------------------
+
+
+class _FakeMaterializationEvent:
+    def __init__(self, dispatched):
+        self.asset_materialization = _FakeMaterialization(dispatched)
+
+
+class _FakeMaterialization:
+    def __init__(self, dispatched):
+        self.metadata = (
+            {component_module.DISPATCHED_METADATA_KEY: _FakeMetadataValue(dispatched)}
+            if dispatched is not None
+            else {}
+        )
+
+
+class _FakeMetadataValue:
+    """Stands in for dagster's MetadataValue.json(...): exposes `.data`."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeInstance:
+    def __init__(self, dispatched):
+        self._event = _FakeMaterializationEvent(dispatched) if dispatched is not None else None
+
+    def get_latest_materialization_event(self, asset_key):
+        return self._event
+
+
+class _FakeCheckContext:
+    def __init__(self, dispatched):
+        self.instance = _FakeInstance(dispatched)
+
+
+class _FakeStatusResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakeStatusClient:
+    """Stands in for httpx.Client: routes get_status POSTs to a status map keyed by group_key."""
+
+    def __init__(self, status_by_group):
+        self._status_by_group = status_by_group
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, url):
+        # URL shape: {ingress}/ApiCallPlanService/{group_key}/get_status
+        group_key = url.split("/ApiCallPlanService/", 1)[1].rsplit("/get_status", 1)[0]
+        return _FakeStatusResponse(self._status_by_group[group_key])
+
+
+def _run_completion_check(monkeypatch, dispatched, status_by_group, timeout_seconds=5.0):
+    monkeypatch.setattr(
+        component_module.httpx, "Client", lambda **kwargs: _FakeStatusClient(status_by_group)
+    )
+    monkeypatch.setattr(component_module.time, "sleep", lambda *_: None)
+    context = _FakeCheckContext(dispatched)
+    return component_module._reconcile_dispatch_completion(
+        context=context,
+        dispatch_key=component_module.AssetKey("ci_dispatch"),
+        ingress="http://restate:8080",
+        poll_interval_seconds=0.01,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def test_completion_check_passes_when_every_group_completed(monkeypatch):
+    dispatched = [{"group_key": "g1", "plan_hash": "h1"}, {"group_key": "g2", "plan_hash": "h2"}]
+    status_by_group = {
+        "g1": {"last_result": {"plan_hash": "h1", "status": "COMPLETED"}},
+        "g2": {"last_result": {"plan_hash": "h2", "status": "COMPLETED"}},
+    }
+    result = _run_completion_check(monkeypatch, dispatched, status_by_group)
+    assert result.passed is True
+    assert result.metadata["groups_completed"].value == 2
+
+
+def test_completion_check_fails_when_a_group_recorded_failed(monkeypatch):
+    dispatched = [{"group_key": "g1", "plan_hash": "h1"}, {"group_key": "g2", "plan_hash": "h2"}]
+    status_by_group = {
+        "g1": {"last_result": {"plan_hash": "h1", "status": "COMPLETED"}},
+        "g2": {"last_result": {"plan_hash": "h2", "status": "FAILED", "failures": [{"status": 400}]}},
+    }
+    result = _run_completion_check(monkeypatch, dispatched, status_by_group)
+    assert result.passed is False
+    failed = result.metadata["groups_failed"].value
+    assert [f["group_key"] for f in failed] == ["g2"]
+
+
+def test_completion_check_treats_completed_with_errors_as_a_failure(monkeypatch):
+    """The ordering trap: COMPLETED_WITH_ERRORS still lands in completed_plan_hashes,
+    so last_result must be checked BEFORE that list or this would wrongly pass."""
+    dispatched = [{"group_key": "g1", "plan_hash": "h1"}]
+    status_by_group = {
+        "g1": {
+            "last_result": {"plan_hash": "h1", "status": "COMPLETED_WITH_ERRORS"},
+            "completed_plan_hashes": ["h1"],
+        },
+    }
+    result = _run_completion_check(monkeypatch, dispatched, status_by_group)
+    assert result.passed is False
+    assert [f["group_key"] for f in result.metadata["groups_failed"].value] == ["g1"]
+
+
+def test_completion_check_times_out_on_a_group_that_never_reports(monkeypatch):
+    dispatched = [{"group_key": "g1", "plan_hash": "h1"}]
+    status_by_group = {"g1": {}}  # never records last_result or completed_plan_hashes
+    result = _run_completion_check(monkeypatch, dispatched, status_by_group, timeout_seconds=0)
+    assert result.passed is False
+    assert [g["group_key"] for g in result.metadata["groups_still_running"].value] == ["g1"]
+
+
+def test_completion_check_passes_when_nothing_was_dispatched(monkeypatch):
+    result = _run_completion_check(monkeypatch, dispatched=[], status_by_group={})
+    assert result.passed is True
+    assert "note" in result.metadata
+
+
+def test_completion_check_passes_when_there_is_no_materialization(monkeypatch):
+    monkeypatch.setattr(
+        component_module.httpx, "Client", lambda **kwargs: _FakeStatusClient({})
+    )
+    context = _FakeCheckContext(dispatched=None)
+    result = component_module._reconcile_dispatch_completion(
+        context=context,
+        dispatch_key=component_module.AssetKey("ci_dispatch"),
+        ingress="http://restate:8080",
+        poll_interval_seconds=0.01,
+        timeout_seconds=5.0,
+    )
+    assert result.passed is True
+    assert "note" in result.metadata
+
+
+def test_completion_check_records_an_ingress_error_instead_of_crashing(monkeypatch):
+    """A check that raised would fail the run with a transport traceback
+    rather than the thing the operator needs to see: which group is
+    unaccounted for."""
+
+    class _ExplodingClient(_FakeStatusClient):
+        def post(self, url):
+            raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(component_module.httpx, "Client", lambda **kwargs: _ExplodingClient({}))
+    monkeypatch.setattr(component_module.time, "sleep", lambda *_: None)
+    result = component_module._reconcile_dispatch_completion(
+        context=_FakeCheckContext([{"group_key": "g1", "plan_hash": "h1"}]),
+        dispatch_key=component_module.AssetKey("ci_dispatch"),
+        ingress="http://restate:8080",
+        poll_interval_seconds=0.01,
+        timeout_seconds=5.0,
+    )
+    assert result.passed is False
+    failed = result.metadata["groups_failed"].value
+    assert [f["group_key"] for f in failed] == ["g1"]
+    assert "connection refused" in failed[0]["error"]
+
+
+# --- wiring: the check has to actually reach Definitions -------------------
+
+
+def test_build_defs_emits_the_completion_check_by_default():
+    checks = list(_defs(_component()).asset_checks or [])
+    assert len(checks) == 1
+    spec = next(iter(checks[0].check_specs))
+    assert spec.name == "restate_plans_completed"
+    assert spec.asset_key == AssetKey("ci_dispatch")
+
+
+def test_completion_check_can_be_disabled():
+    """Opting out must remove the check, not leave a disabled one behind."""
+    component = _component(completion_check={"enabled": False})
+    assert list(_defs(component).asset_checks or []) == []
+
+
+def test_dispatch_asset_publishes_what_it_dispatched(rows, ingress):
+    """The check reads this metadata back; if the asset stops writing it,
+    every check silently degrades to 'nothing to reconcile' and passes."""
+    with DagsterInstance.ephemeral() as instance:
+        result = _materialize(_dispatch_asset(_component()), {}, instance)
+
+    metadata = result.asset_materializations_for_node("ci_dispatch")[0].metadata
+    dispatched = metadata[component_module.DISPATCHED_METADATA_KEY].value
+    assert [d["group_key"] for d in dispatched] == ["run-42"]
+    assert dispatched[0]["plan_hash"] == ingress.posts[0]["json"]["plan_hash"]
