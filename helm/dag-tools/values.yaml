@@ -91,6 +91,51 @@ restateWorker:
   envFrom: []
   # - secretRef:
   #     name: dag-tools-worker-secrets
+  # --------------------------------------------------------------------------
+  # Extra CA certificates, for endpoints served with a private or self-signed
+  # CA. Covers every outbound TLS call the worker makes: the API endpoints the
+  # api_sync / api_call_plan / otel_api_sync handlers POST to, the SAP OData
+  # host, and RESTATE_ADMIN_URL itself if Restate is fronted by TLS.
+  #
+  # Turning this on mounts your certs, CONCATENATES them with the image's
+  # public roots in an init container, and points SSL_CERT_FILE,
+  # REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE at the merged file.
+  #
+  # Both halves of that matter, and both were measured rather than assumed:
+  #
+  #   * The handlers use `requests` AND `httpx`, which disagree about the env
+  #     var. `requests` honours REQUESTS_CA_BUNDLE and ignores SSL_CERT_FILE;
+  #     `httpx` honours SSL_CERT_FILE and ignores REQUESTS_CA_BUNDLE. Setting
+  #     one leaves the other half of the handlers rejecting the endpoint --
+  #     including worker self-registration, which is httpx, so the worker
+  #     would never serve at all.
+  #   * Those env vars REPLACE the trust store rather than extending it.
+  #     Naming a private CA directly makes every PUBLIC endpoint fail. Hence
+  #     the merge; do not point the env vars at a bare cert by hand via
+  #     `env:` above.
+  #
+  # Set exactly ONE source. The init container exits non-zero if the mount
+  # turns out to be empty, rather than starting a worker that looks
+  # configured and still rejects the endpoint.
+  caCerts:
+    enabled: false
+    # An existing Secret holding one or more PEM files (any key names).
+    secretName: ""
+    # ...or an existing ConfigMap, same shape.
+    configMapName: ""
+    # ...or give the PEM here. A root CA is public material -- it is what the
+    # endpoint presents to every client -- so this is a ConfigMap, not a
+    # Secret, and putting it in values is not a leak. Private keys do not
+    # belong here.
+    inline: {}
+    #   corp-root.crt: |
+    #     -----BEGIN CERTIFICATE-----
+    #     ...
+    #     -----END CERTIFICATE-----
+    # Restrict a Secret/ConfigMap source to specific keys. Empty = all keys.
+    items: []
+    # - key: ca.crt
+    #   path: ca.crt
   resources:
     requests:
       cpu: 200m
@@ -129,6 +174,49 @@ centralGateway:
   envFrom: []
   # - secretRef:
   #     name: central-gateway-secrets
+  # --------------------------------------------------------------------------
+  # Extra CA certificates, for endpoints served with a private or self-signed
+  # CA. Covers the gateway's outbound TLS calls -- most often Topaz, which
+  # is commonly deployed with a self-signed cert (see TOPAZ_URL above).
+  #
+  # Turning this on mounts your certs, CONCATENATES them with the image's
+  # public roots in an init container, and points SSL_CERT_FILE,
+  # REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE at the merged file.
+  #
+  # Both halves of that matter, and both were measured rather than assumed:
+  #
+  #   * The handlers use `requests` AND `httpx`, which disagree about the env
+  #     var. `requests` honours REQUESTS_CA_BUNDLE and ignores SSL_CERT_FILE;
+  #     `httpx` honours SSL_CERT_FILE and ignores REQUESTS_CA_BUNDLE. Setting
+  #     one leaves the other half of the handlers rejecting the endpoint --
+  #     and a failed authz call is a DENY, not a retry.
+  #   * Those env vars REPLACE the trust store rather than extending it.
+  #     Naming a private CA directly makes every PUBLIC endpoint fail. Hence
+  #     the merge; do not point the env vars at a bare cert by hand via
+  #     `env:` above.
+  #
+  # Set exactly ONE source. The init container exits non-zero if the mount
+  # turns out to be empty, rather than starting a pod that looks
+  # configured and still rejects the endpoint.
+  caCerts:
+    enabled: false
+    # An existing Secret holding one or more PEM files (any key names).
+    secretName: ""
+    # ...or an existing ConfigMap, same shape.
+    configMapName: ""
+    # ...or give the PEM here. A root CA is public material -- it is what the
+    # endpoint presents to every client -- so this is a ConfigMap, not a
+    # Secret, and putting it in values is not a leak. Private keys do not
+    # belong here.
+    inline: {}
+    #   corp-root.crt: |
+    #     -----BEGIN CERTIFICATE-----
+    #     ...
+    #     -----END CERTIFICATE-----
+    # Restrict a Secret/ConfigMap source to specific keys. Empty = all keys.
+    items: []
+    # - key: ca.crt
+    #   path: ca.crt
   resources:
     requests:
       cpu: 100m

@@ -15,6 +15,7 @@ This library follows a **Dagster-first** configuration approach.
 
 ## Structure
 - **[Surveying deployed code locations: docs/surveying-deployed-code-locations.md](docs/surveying-deployed-code-locations.md)** — running `survey` where the secrets are: why CI cannot do it, why you survey the BASELINE containers only, and the minimal install that does not perturb the container you are measuring.
+- **[Private/self-signed TLS endpoints: docs/restate-worker-ca-certs.md](docs/restate-worker-ca-certs.md)** — `restateWorker.caCerts` / `centralGateway.caCerts` in the Helm chart: injecting a CA bundle, why it takes two env vars and a merge rather than one, and how to confirm it took.
 - **[Local dev loops: docs/local-dev-loops.md](docs/local-dev-loops.md)** — iterating on dbt and dlt without the Dagster UI: `dagtools dlt run --destination ./dev.duckdb`, `--extract-only`, `dagtools dlt env`, and how to do it without copying credentials onto a laptop.
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
@@ -46,6 +47,8 @@ To ensure scalability and security, `dag-tools` enforces a strict separation bet
 2. **Data Plane (Restate)**: Executes high-volume, row-level API and database mutations durably.
 
 Data Plane workers run the shared `restate-worker` image (built from the repo-root `Dockerfile.restate-worker` and published by CI). Its env-driven entrypoint `dag_tools.restate_handlers.serve` selects which handlers to host via the `RESTATE_SERVICES` environment variable and self-registers with Restate on startup (`RESTATE_ADMIN_URL` / `RESTATE_ADVERTISED_URI`). Workers use `Hypercorn` for the mandatory HTTP/2 support required by modern Restate SDKs — no bespoke per-project entrypoint or Dockerfile is needed.
+
+When a handler's endpoint — an API, the SAP OData host, or Restate's own admin URL — is served with a private or self-signed certificate, set `restateWorker.caCerts` in the Helm chart. It mounts your PEM files, merges them with the image's public roots in an init container, and points every TLS client at the result; `centralGateway.caCerts` is the same block for the gateway (Topaz is commonly self-signed). Both are off by default. See [docs/restate-worker-ca-certs.md](docs/restate-worker-ca-certs.md) — including why one environment variable is not enough and why the bundle is merged rather than replaced.
 
 ## Component Configuration Examples
 

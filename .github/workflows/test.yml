@@ -51,6 +51,14 @@ jobs:
       # which the runner image does not ship.
       - name: Install system build deps
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unixodbc-dev
+      # The chart-rendering tests shell out to `helm template`. They are not
+      # optional coverage: the restate-worker chart shipped with no way to
+      # inject a CA bundle at all, and a skipped render test is how a
+      # chart regression reaches a cluster.
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.16.2
 
       - name: Create venv
         run: uv venv --python ${{ matrix.python }}
@@ -89,9 +97,10 @@ jobs:
       - name: Fail on dependency-driven skips
         if: always()
         run: |
-          if grep -E "SKIPPED.*(could not import|not installed|No module named)" pytest-output.txt; then
+          if grep -E "SKIPPED.*(could not import|not installed|No module named|helm is not installed)" pytest-output.txt; then
             echo "::error::Tests skipped because a dependency is missing. CI is under-installed —"
-            echo "::error::add the package so these tests actually run instead of silently passing."
+            echo "::error::add the package (or the binary) so these tests actually run"
+            echo "::error::instead of silently passing."
             exit 1
           fi
           echo "No dependency-driven skips."
@@ -124,6 +133,14 @@ jobs:
 
       - name: Install system build deps
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unixodbc-dev
+      # The chart-rendering tests shell out to `helm template`. They are not
+      # optional coverage: the restate-worker chart shipped with no way to
+      # inject a CA bundle at all, and a skipped render test is how a
+      # chart regression reaches a cluster.
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.16.2
 
       - name: Create venv
         run: uv venv --python 3.11

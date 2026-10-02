@@ -33,6 +33,11 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $ca := dict "ca" (.Values.centralGateway.caCerts | default dict) "root" . "component" "central-gateway" "image" (include "dag-tools.image" (dict "name" "central-gateway" "image" .Values.centralGateway.image "root" .)) "pullPolicy" .Values.centralGateway.image.pullPolicy }}
+      {{- with include "dag-tools.caCerts.initContainer" $ca }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
         - name: central-gateway
           image: {{ include "dag-tools.image" (dict "name" "central-gateway" "image" .Values.centralGateway.image "root" .) | quote }}
@@ -40,14 +45,22 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.centralGateway.port }}
+          {{- $caEnv := include "dag-tools.caCerts.env" $ca }}
+          {{- if or .Values.centralGateway.env $caEnv }}
           env:
             {{- range $k, $v := .Values.centralGateway.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- with $caEnv }}{{ . | nindent 12 }}{{ end }}
+          {{- end }}
           {{- with .Values.centralGateway.envFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with include "dag-tools.caCerts.volumeMounts" $ca }}
+          volumeMounts:
+            {{- . | nindent 12 }}
           {{- end }}
           readinessProbe:
             httpGet:
@@ -63,6 +76,10 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.centralGateway.resources | nindent 12 }}
+      {{- with include "dag-tools.caCerts.volumes" $ca }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

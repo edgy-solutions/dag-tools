@@ -1,0 +1,31 @@
+{{/*
+Chart-owned ConfigMap for CA certs given INLINE in values.
+
+A root CA certificate is public material -- it is what the endpoint already
+presents to anyone who connects -- so a ConfigMap is the right object and
+inline values are not a leak. Private keys are a different thing and have no
+business here; the key is on the server.
+
+Operators who would rather keep the cert out of their values file set
+caCerts.secretName or caCerts.configMapName instead and this renders
+nothing.
+*/}}
+{{- range $component := (list "restateWorker" "centralGateway") }}
+{{- $cfg := index $.Values $component }}
+{{- $ca := $cfg.caCerts | default dict }}
+{{- if and $cfg.enabled $ca.enabled $ca.inline }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dag-tools.caCerts.inlineConfigMapName" (dict "root" $ "component" (kebabcase $component)) }}
+  labels:
+    {{- include "dag-tools.labels" $ | nindent 4 }}
+    {{- include "dag-tools.selectorLabels" (dict "component" (kebabcase $component) "root" $) | nindent 4 }}
+data:
+  {{- range $name, $pem := $ca.inline }}
+  {{ $name }}: |
+    {{- $pem | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
