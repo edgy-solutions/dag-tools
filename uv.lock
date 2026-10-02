@@ -1736,6 +1736,7 @@ dependencies = [
     { name = "pyodbc" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "sqlalchemy" },
 ]
 
 [package.optional-dependencies]
@@ -1866,6 +1867,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "restate-sdk", marker = "extra == 'worker'", specifier = ">=0.14.0,<0.15.0" },
     { name = "s3fs", marker = "extra == 'orchestrator'", specifier = ">=2023.1.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.0,<2.1" },
     { name = "sqlalchemy", marker = "extra == 'worker'", specifier = ">=2.0.0" },
     { name = "typer", marker = "extra == 'qual'", specifier = ">=0.12" },
 ]
