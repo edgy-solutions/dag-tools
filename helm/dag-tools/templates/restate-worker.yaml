@@ -33,6 +33,11 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $ca := dict "ca" (.Values.restateWorker.caCerts | default dict) "root" . "component" "restate-worker" "image" (include "dag-tools.image" (dict "name" "restate-worker" "image" .Values.restateWorker.image "root" .)) "pullPolicy" .Values.restateWorker.image.pullPolicy }}
+      {{- with include "dag-tools.caCerts.initContainer" $ca }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
         - name: restate-worker
           image: {{ include "dag-tools.image" (dict "name" "restate-worker" "image" .Values.restateWorker.image "root" .) | quote }}
@@ -53,12 +58,21 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- include "dag-tools.caCerts.env" $ca | nindent 12 }}
           {{- with .Values.restateWorker.envFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with include "dag-tools.caCerts.volumeMounts" $ca }}
+          volumeMounts:
+            {{- . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.restateWorker.resources | nindent 12 }}
+      {{- with include "dag-tools.caCerts.volumes" $ca }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
