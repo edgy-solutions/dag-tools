@@ -52,6 +52,38 @@ dependencies = [
     # deltalake brings the delta-rs runtime; pyiceberg covers iceberg REST.
     "deltalake>=0.20",
     "pyiceberg>=0.7",
+    # THE UPPER BOUND IS LOAD-BEARING, AND THIS IS A CONSTRAINT ON A
+    # TRANSITIVE DEPENDENCY, NOT A NEW DIRECT ONE. Nothing in dag_tools
+    # imports sqlalchemy at the top level; it arrives via dagster-postgres
+    # and acryl-datahub. It is declared here anyway because main
+    # `dependencies` is the only place that binds the resolution for EVERY
+    # consumer — the user-deployment image installs `.[broker]` with
+    # `uv pip install --system`, which re-resolves and does not read
+    # uv.lock, so a ceiling in an extra or in the lock cannot hold it.
+    #
+    # WHY <2.1, MEASURED NOT ASSUMED. SQLAlchemy 2.1 changed which DBAPI
+    # `postgresql://` selects by default: psycopg2 through 2.0.x, psycopg
+    # (v3) from 2.1. Read off the two live sandbox pods on 2026-10-01:
+    #
+    #     sqlalchemy 2.0.54 -> sqlalchemy.dialects.postgresql.psycopg2
+    #     sqlalchemy 2.1.0  -> sqlalchemy.dialects.postgresql.psycopg
+    #
+    # dagster-postgres declares and ships `psycopg2-binary`, never
+    # `psycopg`, so on 2.1 its own run storage asks for a driver that is
+    # not installed. `dagster_postgres.utils.create_pg_engine` raises
+    # `ModuleNotFoundError: No module named 'psycopg'` while building the
+    # DagsterInstance, which happens before any sensor body runs — so
+    # EVERY sensor in this code location fails its tick, not just the ones
+    # that touch a database. It was firing 224 times in 30 minutes in
+    # sandbox (`datahub_sensor` among them) before this pin.
+    #
+    # The alternative fix is to add `psycopg` and let 2.1 have its new
+    # default. Rejected for now: that silently moves Dagster's own run and
+    # event storage onto a driver dagster-postgres does not declare and
+    # upstream does not test at this version. Revisit when
+    # dagster-postgres declares psycopg3 support, at which point the right
+    # change is to add the driver and DROP this ceiling — not to carry both.
+    "sqlalchemy>=2.0.0,<2.1",
 ]
 
 [project.optional-dependencies]
@@ -130,6 +162,8 @@ worker = [
     "hypercorn>=0.16.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
+    # Ceiling lives in main `dependencies` (see the sqlalchemy note there)
+    # and applies here too, since extras resolve on top of the base set.
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
 ]
