@@ -104,6 +104,15 @@ def _internal_ct_source(
             else:
                 print(f"WARNING: Table '{name}' was not found in reflected metadata.")
 
+    # The generators below yield INSIDE `engine.connect()`, so each table
+    # holds a connection until it is exhausted, and parallelize() starts
+    # them all at once. A default QueuePool (5 + 10 overflow) therefore
+    # times out on the 16th table whenever the ones ahead of it take longer
+    # than pool_timeout -- the "QueuePool limit ... reached" failure.
+    extract_engine = engine
+    if not isinstance(credentials, sa.engine.Engine):
+        extract_engine = _extraction_engine(engine, len(tables_to_process))
+
     for table_obj in tables_to_process:
         # Prepare keys for lookup
         t_schema = (table_obj.schema or "dbo").lower()
@@ -118,7 +127,7 @@ def _internal_ct_source(
                 print(f"WARNING: Table '{table_obj.name}' does NOT have Change Tracking enabled. Falling back to FULL LOAD (replace).")
             
             yield dlt.resource(
-                _make_full_load_generator(engine, table_obj, chunk_size),
+                _make_full_load_generator(extract_engine, table_obj, chunk_size),
                 name=table_obj.name,
                 write_disposition="replace" 
             )
@@ -131,7 +140,7 @@ def _internal_ct_source(
         if not primary_keys:
             print(f"WARNING: Table '{table_obj.name}' has no Primary Key. Falling back to FULL LOAD (replace).")
             yield dlt.resource(
-                _make_full_load_generator(engine, table_obj, chunk_size),
+                _make_full_load_generator(extract_engine, table_obj, chunk_size),
                 name=table_obj.name,
                 write_disposition="replace" 
             )
@@ -157,7 +166,7 @@ def _internal_ct_source(
         
         print(f"--- [DEBUG] CT Resource '{resource_name}' configured with write_disposition='{write_disposition}'")
         yield dlt.resource(
-            _make_ct_generator(engine, table_obj, chunk_size),
+            _make_ct_generator(extract_engine, table_obj, chunk_size),
             name=resource_name,
             primary_key=primary_keys,
             columns=columns_hint,
@@ -338,6 +347,23 @@ def sql_ct_database(
     return None
 
 # --- GENERATORS (Helper Functions) ---
+
+def _extraction_engine(engine: sa.engine.Engine, n_tables: int) -> sa.engine.Engine:
+    """An engine whose pool holds one connection per table, plus headroom.
+
+    Rebuilt from ``engine.url`` (a URL object, so the password survives),
+    which is all ``engine_from_credentials`` was given. An Engine the caller
+    supplied is never resized -- its pool is theirs to size. Capping the
+    pool BELOW the table count cannot work with this generator shape; to
+    bound connections, extract with ``EXTRACT__NEXT_ITEM_MODE=fifo``.
+    """
+    return sa.create_engine(
+        engine.url,
+        pool_size=n_tables + 2,
+        max_overflow=10,
+        pool_pre_ping=True,
+    )
+
 
 def _make_full_load_generator(engine: sa.engine.Engine, table_obj: sa.Table, chunk_size: int):
     def generator():
