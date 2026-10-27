@@ -32,6 +32,34 @@ def _iom(tmp_path, **kw) -> ConfigurableDuckDBIOManager:
     )
 
 
+def test_row_count_leaves_the_cached_connection_usable(tmp_path):
+    """The manager caches ONE connection, and duckdb 2.0 refuses work on
+    a connection that still holds an undrained result. `_row_count` runs
+    on every handle_output, so a half-fetched count there poisons every
+    later read -- and because `_row_count` swallows its own exceptions,
+    the breakage lands somewhere else entirely
+    (`ResourceInUseException` raised from the NEXT operation).
+
+    Only load-bearing on duckdb >= 2.0; it passes either way on 1.x.
+    """
+    base = str(tmp_path).replace("\\", "/")
+    # file_size_bytes=None keeps the single-file shape, so the count
+    # targets the uri directly rather than a directory glob.
+    iom = DuckDBIOManager(
+        resource=DuckDBResource(), uri_base=base, file_size_bytes=None
+    )
+    con = iom._connection()
+
+    uri = f"{base}/counted.parquet"
+    con.sql("SELECT i AS id FROM range(7) t(i)").write_parquet(uri)
+
+    assert iom._row_count(uri) == 7
+    # Same connection, straight after. This is the assertion that fails
+    # when the count is fetched with fetchone().
+    assert con.sql("SELECT 1").fetchall() == [(1,)]
+    assert iom._row_count(uri) == 7
+
+
 def _s3_iom(uri_base="s3://dag-lake/pub", **kw) -> ConfigurableDuckDBIOManager:
     return ConfigurableDuckDBIOManager(
         duckdb=DuckDBResource(

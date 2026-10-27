@@ -249,13 +249,24 @@ class DuckDBIOManager(IOManager):
 
         Best-effort -- a missing row count costs a metadata field, so it
         must never fail the materialization that already succeeded.
+
+        fetchall, NOT fetchone: duckdb 2.0 holds a result open until it is
+        drained and refuses all other work on that connection meanwhile
+        (``ResourceInUseException: connection has an unfinished result
+        from execute()``). This manager caches ONE connection for its
+        lifetime, so a half-fetched count here poisons every later read
+        through it -- and since this helper swallows its own exceptions,
+        the failure surfaces in whatever ran next rather than here.
+        Measured on duckdb 2.0.0: fetchone() leaves the result
+        unfinished, fetchall() drains it. For a one-row count the two are
+        otherwise equivalent.
         """
         try:
             target = f"{uri}/**/*.parquet" if self.file_size_bytes else uri
-            (rows,) = self._connection().execute(
+            rows = self._connection().execute(
                 "SELECT count(*) FROM read_parquet(?)", [target]
-            ).fetchone()
-            return int(rows)
+            ).fetchall()
+            return int(rows[0][0])
         except Exception:
             return None
 

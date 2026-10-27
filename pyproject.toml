@@ -117,7 +117,13 @@ orchestrator = [
     # bake it in at image build time if the cluster restricts egress and
     # point DUCKDB_EXTENSION_DIRECTORY at it, or DuckDBResource will fail
     # with guidance.
-    "duckdb>=1.1",
+    # Capped below 3: duckdb 2.0 removed DuckDBPyRelation.fetchone() and
+    # started refusing work on a connection holding an undrained result,
+    # which broke this library and anything downstream calling fetchone()
+    # on a relation we hand out. Both 1.x and 2.x work today, so the cap
+    # changes nothing now -- it stops the NEXT major arriving unannounced
+    # through a transitive resolve.
+    "duckdb>=1.1,<3",
 ]
 
 # DataHub catalog registration. Required by

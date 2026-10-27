@@ -1838,7 +1838,7 @@ requires-dist = [
     { name = "dbt-postgres", marker = "extra == 'orchestrator'", specifier = ">=1.8.0" },
     { name = "deltalake", specifier = ">=0.20" },
     { name = "dlt", extras = ["postgres", "snowflake", "filesystem", "clickhouse", "databricks"], marker = "extra == 'orchestrator'", specifier = ">=1.23.0" },
-    { name = "duckdb", marker = "extra == 'orchestrator'", specifier = ">=1.1" },
+    { name = "duckdb", marker = "extra == 'orchestrator'", specifier = ">=1.1,<3" },
     { name = "edgy-dag-tools", extras = ["orchestrator", "datahub", "worker", "qual", "broker", "dev"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'broker'", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.28.1" },
