@@ -20,7 +20,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from ..classes import Representative
-from ..graphql import DagsterGraphQLClient, EventLogEntry, RunStatusInfo
+from ..graphql import (
+    DagsterGraphQLClient,
+    DagsterSubsetNotSupportedError,
+    EventLogEntry,
+    RunStatusInfo,
+)
 from ..qualify import QualificationManifest
 from .records import (
     AssetCheckResultSummary,
@@ -98,22 +103,45 @@ def launch_representative(
     if manifest.staging_overrides:
         resolved_config.setdefault("__staging_overrides__", manifest.staging_overrides)
 
-    selection, partition_key = plan_asset_selection(
-        list(rep.asset_key), launch_info or {}
-    )
+    info = launch_info or {}
+    selection, partition_key = plan_asset_selection(list(rep.asset_key), info)
     if partition_key is not None:
         # Dagster resolves context.partition_key from the RUN TAG, so this
         # is what turns an asset job into a partitioned run.
         tags[PARTITION_NAME_TAG] = partition_key
 
-    return client.launch_asset_run(
-        location_name=location_name or "default",
-        repository_name=DEFAULT_REPOSITORY_NAME,
-        job_name=job_name or DEFAULT_JOB_NAME,
-        asset_selection=selection,
-        run_config=resolved_config,
-        tags=tags,
-    )
+    def _launch(sel: List[List[str]]) -> str:
+        return client.launch_asset_run(
+            location_name=location_name or "default",
+            repository_name=DEFAULT_REPOSITORY_NAME,
+            job_name=job_name or DEFAULT_JOB_NAME,
+            asset_selection=sel,
+            run_config=resolved_config,
+            tags=tags,
+        )
+
+    try:
+        return _launch(selection)
+    except DagsterSubsetNotSupportedError:
+        # The representative belongs to a multi_asset that refuses a
+        # partial selection. Widen to the op's siblings and try once more.
+        # Deliberately NOT done up front: a subsettable definition
+        # (@dbt_assets above all) accepts the one-key selection, and
+        # widening it there materializes the whole project per
+        # representative. See plan_asset_selection.
+        widened = expand_to_op_siblings(list(rep.asset_key), info)
+        if len(widened) <= len(selection):
+            # Nothing to widen to -- the deployment reported no siblings,
+            # so the refusal is about something else and re-raising keeps
+            # the original, accurate message.
+            raise
+        logger.info(
+            "qual: %s refused a partial selection; retrying with its %d "
+            "op-mates (non-subsettable multi_asset)",
+            "/".join(rep.asset_key),
+            len(widened) - 1,
+        )
+        return _launch(widened)
 
 
 def is_launchable(
@@ -171,34 +199,73 @@ def plan_asset_selection(
 
     Returns ``(asset_selection, partition_key)``.
 
-    Two corrections, both discovered by launching a real code location
-    rather than a hand-made one:
+    The selection is ONE asset -- the representative and nothing else.
+    That is the whole point of a representative: Q2 compares the behaviour
+    of one asset per equivalence class, so materializing its op-mates
+    costs compute the qualification never looks at.
 
-    * **multi_asset siblings.** A non-subsettable ``multi_asset`` refuses
-      a partial selection outright::
+    This used to pre-emptively select every asset sharing the
+    representative's op, to get ahead of a non-subsettable
+    ``multi_asset``::
 
-          DagsterInvalidSubsetError: ... contains asset keys
-          [order_lines, orders] ... but attempted to select only
-          [order_lines]. This AssetsDefinition does not support subsetting.
+        DagsterInvalidSubsetError: ... contains asset keys
+        [order_lines, orders] ... but attempted to select only
+        [order_lines]. This AssetsDefinition does not support subsetting.
 
-      Assets produced by one op share an ``opNames`` entry, so the
-      siblings are recoverable from the deployment and get selected
-      together.
+    But dagster raises that ONLY for ``can_subset=False``. ``@dbt_assets``
+    is subsettable and translates a one-key selection into a one-model
+    ``--select``, so the widening was pure cost there -- a consumer with a
+    22-model dbt project had every representative launch build all 22, and
+    the op-mates that the selection dragged in brought their own upstream
+    requirements, so most of them failed. ``AssetNode`` exposes no
+    ``canSubset`` field (checked against the 1.13 schema), so the
+    subsettable case cannot be told apart up front. It is told apart
+    AFTERWARDS instead: :func:`launch_representative` retries with
+    :func:`expand_to_op_siblings` when, and only when, the deployment
+    answers ``InvalidSubsetError``.
 
-    * **partitioned assets.** Launched with no partition, the run is not
-      a partitioned run, and the asset dies as soon as it reads
-      ``context.partition_key``. The LAST partition is chosen: for a
-      time-based definition that is the most recent period, which is the
-      one whose data is most likely to exist and the closest analogue to
-      what production would just have run.
+    **Partitioned assets** are still resolved here. Launched with no
+    partition, the run is not a partitioned run, and the asset dies as
+    soon as it reads ``context.partition_key``. The LAST partition is
+    chosen: for a time-based definition that is the most recent period,
+    which is the one whose data is most likely to exist and the closest
+    analogue to what production would just have run.
 
     Degrades to ``([asset_key], None)`` when the deployment told us
-    nothing, which is exactly the old behaviour.
+    nothing.
+    """
+    info = launch_info.get("/".join(asset_key))
+    if not info:
+        return [list(asset_key)], None
+
+    partition_key: Optional[str] = None
+    if info.get("is_partitioned"):
+        keys = info.get("partition_keys") or []
+        partition_key = str(keys[-1]) if keys else None
+
+    return [list(asset_key)], partition_key
+
+
+def expand_to_op_siblings(
+    asset_key: List[str],
+    launch_info: Dict[str, Dict[str, Any]],
+) -> List[List[str]]:
+    """Every executable asset produced by the same op as ``asset_key``.
+
+    Only used to RETRY a launch the deployment rejected with
+    ``InvalidSubsetError`` -- i.e. a ``multi_asset`` declared
+    ``can_subset=False``, which must be selected whole or not at all.
+    Assets produced by one op share an ``opNames`` entry, so the siblings
+    are recoverable from what the deployment already told us.
+
+    Returns a deterministically ordered selection that always contains
+    ``asset_key`` itself, so the result is safe to launch even when the
+    deployment reported no siblings.
     """
     key_str = "/".join(asset_key)
     info = launch_info.get(key_str)
     if not info:
-        return [list(asset_key)], None
+        return [list(asset_key)]
 
     selection: List[List[str]] = [list(asset_key)]
     op_names = set(info.get("op_names") or [])
@@ -215,14 +282,9 @@ def plan_asset_selection(
             if op_names & set(other.get("op_names") or []):
                 selection.append(list(other["asset_key"]))
 
-    partition_key: Optional[str] = None
-    if info.get("is_partitioned"):
-        keys = info.get("partition_keys") or []
-        partition_key = str(keys[-1]) if keys else None
-
     # Deterministic order so a re-run produces an identical selection.
     selection.sort()
-    return selection, partition_key
+    return selection
 
 
 def _class_hash_from_rep(rep: Representative) -> str:

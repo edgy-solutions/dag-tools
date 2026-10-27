@@ -134,6 +134,22 @@ class DagsterGraphQLError(RuntimeError):
     malformed responses)."""
 
 
+class DagsterSubsetNotSupportedError(DagsterGraphQLError):
+    """The deployment refused a PARTIAL selection of a multi-asset.
+
+    Dagster raises ``DagsterInvalidSubsetError`` only when the
+    ``AssetsDefinition`` has ``can_subset=False``; a subsettable one
+    (notably ``@dbt_assets``) subsets cleanly and never gets here. The
+    GraphQL layer wraps that into the ``InvalidSubsetError`` union member,
+    so the typename is a reliable signal that -- and only that -- this
+    definition needs all of its keys selected at once.
+
+    Separated from the base error so the launcher can retry with the op's
+    siblings instead of widening EVERY launch pre-emptively. Widening
+    pre-emptively is what turned a one-model dbt launch into a 22-model
+    one; see ``expand_to_op_siblings``."""
+
+
 class DagsterGraphQLClient:
     """Tiny version-tolerant GraphQL client for the Dagster test deployment."""
 
@@ -351,6 +367,15 @@ mutation DagtoolsLaunchAssetRun($params: ExecutionParams!) {
                 "(or `synthetic_required: \"true\"`) so Q1 classifies it "
                 "non-RUNNABLE and Q2 skips it."
             )
+        if typename == "InvalidSubsetError":
+            # Load-bearing: the launcher retries this ONE shape with the
+            # op's siblings. Keep it a distinct type rather than matching
+            # on message text -- the wording comes from dagster core and
+            # has no stability guarantee.
+            raise DagsterSubsetNotSupportedError(
+                f"launch failed ({typename}): {msg or 'no detail'}"
+            )
+
         raise DagsterGraphQLError(
             f"launch failed ({typename or 'unknown'}): {msg or 'no detail'}{hint}"
         )

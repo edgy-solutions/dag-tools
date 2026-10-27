@@ -315,7 +315,11 @@ rep, chosen deterministically and recorded in run state):
 
 1. Launch via GraphQL against the test deployment — asset-job launch /
    `launchPipelineExecution` with the staging resource overrides as run
-   config and a tag `dagtools/qual: <qual_id>`. **Launching through the
+   config and a tag `dagtools/qual: <qual_id>`. The selection is the
+   representative **alone**. Op-mates are added only after the deployment
+   refuses the partial selection (`InvalidSubsetError` — a `multi_asset`
+   with `can_subset=False` must be selected whole); `@dbt_assets` is
+   subsettable and so builds exactly one model. **Launching through the
    deployment is the point:** it exercises webserver, daemon, run launcher,
    k8s job spin-up, executor, and user code deployment images — all of which
    are upgrade surface (dagster-k8s changes bite regularly).
@@ -858,6 +862,16 @@ them, you're probably violating a recipe rule. Read carefully first.
 - **Business logic is out of scope.** This system validates behavior
   preservation at the framework boundary; pipeline correctness vs. business
   intent is the user's job.
+- **Nothing stages the data a representative reads.** Q2 launches the
+  representative alone and Dagster does not materialize upstreams — an
+  unmaterialized upstream is a *loaded input* whose output must already
+  exist in the IO manager, so a run fails at input loading unless the
+  staged deployment already holds that data (or the representative's
+  upstreams are all external). The seed / `--empty` minimal-data story
+  for dbt representatives above is **not implemented**; today the
+  operator must stage the schema themselves. Widening the selection to
+  pull in upstreams is NOT the fix — it turns a one-asset comparison into
+  a whole-subgraph build.
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
   needs the Q5 probes code location infrastructure to land first. The
