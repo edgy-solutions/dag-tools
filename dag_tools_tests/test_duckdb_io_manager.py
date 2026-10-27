@@ -237,7 +237,11 @@ def test_downstream_reads_upstream_output(tmp_path):
     @asset(name="down")
     def down(up) -> int:
         # up arrives as a lazy relation; count without materializing it.
-        return up.aggregate("count(*)").fetchone()[0]
+        # fetchall, not fetchone: duckdb removed fetchone() from
+        # DuckDBPyRelation (a relation keeps no cursor between calls, so
+        # every call re-ran the query). Connection-level
+        # execute().fetchone() is unaffected -- it is only relations.
+        return up.aggregate("count(*)").fetchall()[0][0]
 
     result = materialize(
         [up, down], resources={"iom": _iom(tmp_path), "duck": DuckDBResource()}
