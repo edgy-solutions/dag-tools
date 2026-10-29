@@ -46,6 +46,7 @@ from ..graphql import (
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry
 from .launcher import build_run_record, is_launchable, launch_representative
+from .staging import resolve_staging_overrides, storage_fetch
 from .records import RunRecord
 from .state import (
     QualRunState,
@@ -285,6 +286,15 @@ def _drive_state(
     # trip for every rep while telling us nothing new. Empty dict on
     # failure — plan_asset_selection degrades to the plain single-key
     # selection rather than blocking the run.
+    # Resolved ONCE per side, same reasoning as launch_info: the pointer
+    # names one whole-deployment document. Unlike launch_info this does NOT
+    # degrade on failure -- launching against un-overridden resources would
+    # bank run records that look like a qualification but describe the
+    # wrong deployment.
+    staging_overrides = resolve_staging_overrides(
+        manifest.staging_overrides, fetch=storage_fetch(registry.storage)
+    )
+
     launch_info = client.get_asset_launch_info()
     if not launch_info:
         logger.warning(
@@ -350,6 +360,7 @@ def _drive_state(
                 location_name=manifest.deployment.location_name,
                 job_name=manifest.deployment.job_name,
                 launch_info=launch_info,
+                staging_overrides=staging_overrides,
             )
         except DagsterGraphQLError as e:
             rep_state = transition(

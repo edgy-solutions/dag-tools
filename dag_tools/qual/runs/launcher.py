@@ -27,6 +27,10 @@ from ..graphql import (
     RunStatusInfo,
 )
 from ..qualify import QualificationManifest
+from .staging import (
+    StagingOverridesNotResolved,
+    merge_run_config,
+)
 from .records import (
     AssetCheckResultSummary,
     MaterializationEventSummary,
@@ -64,6 +68,7 @@ def launch_representative(
     job_name: Optional[str] = None,
     run_config: Optional[Dict[str, Any]] = None,
     launch_info: Optional[Dict[str, Dict[str, Any]]] = None,
+    staging_overrides: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Submit the launch mutation for one representative.
 
@@ -73,7 +78,8 @@ def launch_representative(
       qual_id, side: persisted as the ``dagtools/qual`` and
         ``dagtools/side`` tags so qualification runs are filterable from
         normal traffic on the test deployment.
-      manifest: read to honor the ``staging_overrides`` pointer and any
+      manifest: read to detect whether a ``staging_overrides`` pointer was
+        declared (so an unresolved one fails loudly) and for any
         per-deployment defaults.
       location_name: overrides per-rep location; falls back to whatever
         the survey recorded on the AssetRecord.
@@ -85,6 +91,9 @@ def launch_representative(
         :meth:`DagsterGraphQLClient.get_asset_launch_info`, used to expand
         multi_asset siblings into the selection and to pick a partition.
         Optional — omitting it reproduces the old single-key behaviour.
+      staging_overrides: the RESOLVED staging run config document from
+        :func:`~dag_tools.qual.runs.staging.resolve_staging_overrides`.
+        Required whenever ``manifest.staging_overrides`` is set.
 
     Returns the new ``run_id``.
     """
@@ -95,13 +104,25 @@ def launch_representative(
         "dagtools/asset_key": "/".join(rep.asset_key),
     }
 
-    resolved_config = dict(run_config or {})
-    # Staging overrides are deliberately layered first so per-rep config
-    # can shadow them. (Right now nothing layers anything on top — this
-    # exists so callers can supply asset-specific config without re-reading
-    # the manifest.)
-    if manifest.staging_overrides:
-        resolved_config.setdefault("__staging_overrides__", manifest.staging_overrides)
+    # manifest.staging_overrides is a POINTER (s3://...), not a config
+    # document, so it cannot go into run_config as-is -- see
+    # dag_tools.qual.runs.staging. Resolution needs IO, which belongs in
+    # the runner (once per side), not here (once per rep); this function
+    # stays pure. If the manifest declares a pointer and the caller
+    # resolved nothing, fail loudly rather than launch against
+    # un-overridden production resources and bank the result as a
+    # qualification data point.
+    if manifest.staging_overrides and staging_overrides is None:
+        raise StagingOverridesNotResolved(
+            f"manifest declares staging_overrides={manifest.staging_overrides!r} "
+            "but no resolved document was passed to launch_representative; "
+            "call resolve_staging_overrides() first"
+        )
+
+    # Staging overrides are layered FIRST so per-rep config shadows them.
+    resolved_config = merge_run_config(
+        overrides=staging_overrides, explicit=run_config
+    )
 
     info = launch_info or {}
     selection, partition_key = plan_asset_selection(list(rep.asset_key), info)

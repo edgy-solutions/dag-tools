@@ -22,6 +22,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlparse
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -114,6 +115,27 @@ class S3Storage:
             if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
                 return None
             raise
+
+    def get_uri(self, uri: str) -> bytes:
+        """Read a full ``s3://bucket/key`` URI, which may name ANOTHER bucket.
+
+        Every other reader here takes a key and implies ``settings.bucket``,
+        because the layout module owns registry keys. This one exists for
+        operator-supplied pointers that live outside the registry --
+        ``manifest.staging_overrides`` is the only current caller -- so it
+        takes the bucket from the URI while still going through this
+        storage's client, which is what carries the MinIO ``endpoint_url``
+        and region.
+        """
+        parsed = urlparse(uri)
+        if parsed.scheme != "s3":
+            raise ValueError(f"expected an s3:// URI, got {uri!r}")
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+        if not bucket or not key:
+            raise ValueError(f"s3 URI must have a bucket and a key, got {uri!r}")
+        resp = self._s3.get_object(Bucket=bucket, Key=key)
+        return resp["Body"].read()
 
     def list_prefix(self, prefix: str, delimiter: Optional[str] = None) -> List[Dict[str, Any]]:
         """Returns a list of object summaries. When ``delimiter`` is set

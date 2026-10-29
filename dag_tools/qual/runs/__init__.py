@@ -9,6 +9,9 @@ Public surface:
   * :func:`launch_representative` and :func:`build_run_record` — building
     blocks the runner composes; importable for the inevitable bespoke
     one-off probe Q5 will need.
+  * :func:`resolve_staging_overrides` — turns the manifest's
+    ``staging_overrides`` POINTER into a run config document. The launchers
+    will not accept an unresolved pointer; see :mod:`.staging`.
 """
 from .launcher import build_run_record, launch_representative
 from .records import (
@@ -17,6 +20,14 @@ from .records import (
     RunRecord,
 )
 from .runner import SideOutcome, SideSummary, run_side
+from .staging import (
+    RUN_CONFIG_TOP_LEVEL_KEYS,
+    StagingOverridesError,
+    StagingOverridesNotResolved,
+    merge_run_config,
+    resolve_staging_overrides,
+    storage_fetch,
+)
 from .state import (
     QualRunState,
     RepState,
@@ -47,4 +58,11 @@ __all__ = [
     # building blocks
     "launch_representative",
     "build_run_record",
+    # staging overrides
+    "resolve_staging_overrides",
+    "merge_run_config",
+    "storage_fetch",
+    "StagingOverridesError",
+    "StagingOverridesNotResolved",
+    "RUN_CONFIG_TOP_LEVEL_KEYS",
 ]

@@ -268,6 +268,28 @@ selection:
   reps_per_class: 2
 ```
 
+`staging_overrides` is a **pointer** to a Dagster run config document,
+not the document itself. It is fetched and parsed once per side (see
+`dag_tools.qual.runs.staging`) and layered *under* any per-representative
+config, so the document's top level must contain only keys Dagster
+accepts — `ops`, `resources`, `execution`, `loggers`:
+
+```yaml
+# s3://dag-tools/config/staging_resources.yaml
+resources:
+  io_manager:
+    config: {s3_bucket: qual-staging}
+  warehouse:
+    config: {schema: qual_staging}
+```
+
+An `s3://` pointer is read through the registry's own client, so a MinIO
+endpoint needs no extra configuration; a local path or `file://` URI also
+works, which is how an operator iterates on the document before
+uploading it. Resolution failure aborts the side rather than falling back
+to no overrides — a run launched against un-overridden resources would be
+recorded as a qualification data point for the wrong deployment.
+
 ### Phase Q1 — Build the fleet equivalence-class matrix
 
 ```

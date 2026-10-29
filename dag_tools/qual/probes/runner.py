@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -41,6 +41,12 @@ from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry
 from ..runs.launcher import build_run_record
 from ..runs.records import RunRecord
+from ..runs.staging import (
+    StagingOverridesNotResolved,
+    merge_run_config,
+    resolve_staging_overrides,
+    storage_fetch,
+)
 from ..synthetic import ProbeManifest, ProbeModule
 from .state import (
     ProbeRepState,
@@ -270,6 +276,15 @@ def _drive_state(
 ) -> None:
     probe_lookup = {p.class_hash: p for p in probe_manifest.probes}
 
+    # Resolved ONCE per side: the pointer names one whole-deployment
+    # document, so re-reading it per probe would add an S3 round trip per
+    # launch and tell us nothing new. A failure here is fatal on purpose --
+    # launching probes against un-overridden resources would bank results
+    # that look like a qualification but describe the wrong deployment.
+    staging_overrides = resolve_staging_overrides(
+        manifest.staging_overrides, fetch=storage_fetch(registry.storage)
+    )
+
     for probe_state in pending_or_resumable(state):
         if only_class and probe_state.class_hash != only_class:
             continue
@@ -302,7 +317,8 @@ def _drive_state(
         # --- PENDING or FAILED-with-retry: launch fresh.
         try:
             run_id = _launch_probe(client, probe, qual_id=qual_id, side=side,
-                                   manifest=manifest)
+                                   manifest=manifest,
+                                   staging_overrides=staging_overrides)
         except DagsterGraphQLError as e:
             probe_state = transition(
                 probe_state, status=ProbeRepStatus.FAILED,
@@ -336,6 +352,7 @@ def _launch_probe(
     qual_id: str,
     side: str,
     manifest: QualificationManifest,
+    staging_overrides: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Submit the launch mutation for one probe — BOTH assets in one run.
 
@@ -357,9 +374,16 @@ def _launch_probe(
         "dagtools/probe": "true",
         "dagtools/class_hash": probe.class_hash,
     }
-    run_config: Dict = {}
-    if manifest.staging_overrides:
-        run_config["__staging_overrides__"] = manifest.staging_overrides
+    # The manifest field is a POINTER (s3://...), never a config document;
+    # writing it into run_config was rejected by Dagster at submission. See
+    # dag_tools.qual.runs.staging. Resolved once per side by the caller.
+    if manifest.staging_overrides and staging_overrides is None:
+        raise StagingOverridesNotResolved(
+            f"manifest declares staging_overrides={manifest.staging_overrides!r} "
+            "but no resolved document reached the probe launcher; "
+            "call resolve_staging_overrides() first"
+        )
+    run_config = merge_run_config(overrides=staging_overrides, explicit=None)
     return client.launch_asset_run(
         location_name=PROBES_LOCATION_NAME,
         repository_name=PROBES_REPOSITORY_NAME,
