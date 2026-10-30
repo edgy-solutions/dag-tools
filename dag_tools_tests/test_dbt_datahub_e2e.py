@@ -407,4 +407,10 @@ def test_dbt_empty_env_var_is_the_documented_name():
 
     empty = next((prm for prm in build.params if prm.name == "empty"), None)
     assert empty is not None, [prm.name for prm in build.params]
-    assert empty.envvar == "DBT_EMPTY", empty.envvar
+    # dbt declares an ALIAS LIST here, not a string (observed:
+    # ['DBT_ENGINE_EMPTY', 'DBT_EMPTY']), and click uses whichever is set
+    # first. The name we document must stay among them.
+    declared = empty.envvar
+    if not isinstance(declared, (list, tuple)):
+        declared = [declared]
+    assert "DBT_EMPTY" in declared, declared
