@@ -324,9 +324,26 @@ dagtools qual classes --id <qual_id>
 ### Phase Q2 — Baseline pass (test deployment on current version)
 
 Precondition: test deployment runs `baseline` versions and the pinned repo
-SHAs are deployed to it (`dagtools qual preflight` checks deployed
-code-location versions via GraphQL against `inventory_pins` and fails on
-mismatch).
+SHAs are deployed to it. `dagtools qual preflight` checks this via GraphQL
+(`deployed_shas_match_pins`, both sides) and fails on mismatch. Dagster
+exposes no git sha, so the operator must **stamp** each code location in
+`workspace.yaml` via `additional_metadata`; the keys are
+`deployment.repo_metadata_key` / `sha_metadata_key` (defaults `repo` /
+`git_sha`). The check is pin-driven: every `inventory_pins` entry needs a
+stamped location whose sha equals the pin (case-insensitive; a prefix of at
+least 7 chars is accepted). Unstamped locations such as `dag-tools-probes`
+are informational.
+
+```yaml
+load_from:
+  - grpc_server:
+      host: domain-a-user-deployment
+      port: 4000
+      location_name: domain-a
+      additional_metadata:
+        repo: domain-a
+        git_sha: 9f2c1ab
+```
 
 ```
 dagtools qual run --id <qual_id> --side baseline
@@ -777,11 +794,11 @@ caught it on itself.
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
 | 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
-| 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
+| 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + deployed-sha-vs-`inventory_pins` (both sides) + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
 | 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
 | 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
-| 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's downstream asset against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
+| 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's upstream AND downstream asset (together, so the downstream's input loads) against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
 | 2 | Q5d Probe deploy-state visibility — `dagtools qual probes status` | ✅ done — GraphQL cross-reference of probe manifest vs the dag-tools-probes location: fully-loaded vs partially-loaded vs missing classes + stale-asset detection |
 | 2 | Q5e Probe RunRecord diff in Q6 | ✅ done — divergent-but-passing probes (both PASSED but materialization / metadata / asset-check parity broke) populate `synthetic_classes_red` and block GO regardless of acceptance flags; `ClassVerdict.probe_diff` carries the per-class diff for `UPGRADE_VERDICT.md` |
 | 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides AND (when records exist) diff cleanly; graceful degradation to status-only when records are missing |
@@ -819,6 +836,13 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q3 preflight fails when any code location doesn't load | `test_preflight.py::test_run_preflight_fails_when_a_code_location_does_not_load` |
 | Q3 candidate preflight samples baseline runs for back-compat | `test_preflight.py::test_candidate_preflight_samples_baseline_runs` |
 | Q3 baseline preflight skips the run-rendering check | `test_preflight.py::test_baseline_preflight_does_not_sample_baseline_runs` |
+| Q3 preflight fails when a deployed sha differs from its pin | `test_preflight.py::test_preflight_fails_when_deployed_sha_does_not_match_pin` |
+| Q3 preflight fails when a pinned repo is not deployed | `test_preflight.py::test_preflight_fails_when_a_pinned_repo_is_not_deployed_at_all` |
+| Q3 sha check cannot pass vacuously (pins, zero stamps -> FAIL) | `test_preflight.py::test_preflight_fails_when_no_location_carries_a_stamp` |
+| Q3 unstamped locations (e.g. `dag-tools-probes`) never fail the sha check | `test_preflight.py::test_an_unstamped_location_is_informational_not_a_failure` |
+| Q3 sha grammar: exact or >=7-char prefix | `test_preflight.py::test_preflight_accepts_a_short_sha_prefix_of_at_least_seven_chars`, `test_preflight_rejects_a_prefix_shorter_than_seven_chars` |
+| Q3 sha check reuses check 2's workspace call | `test_preflight.py::test_sha_check_does_not_make_a_second_workspace_call` |
+| Every client GraphQL document validates against the installed schema | `test_graphql_query_schema_validation.py` |
 | Q6 metadata parity uses key SET only (values may differ) | `test_verdict_diff.py::test_diff_compares_metadata_KEY_set_not_values` |
 | Q6 duration deltas are informational, never gating | `test_verdict_diff.py::test_diff_duration_is_informational_not_gating` |
 | Q6 candidate-preflight failure is a hard gate | `test_verdict.py::test_verdict_no_go_when_candidate_preflight_failed` |
@@ -834,7 +858,7 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 dag-tools-probes location loads cleanly when no probes are deployed | `test_probes_location_loader.py::test_loader_returns_empty_report_when_env_unset` |
 | Q5 dag-tools-probes location soft-fails per-probe (one broken probe does NOT block the location) | `test_probes_location_loader.py::test_loader_soft_fails_a_malformed_probe` |
 | Q5 N generated probes merge into one Definitions without conflict | `test_probes_location_loader.py::test_loaded_probes_merge_into_one_definitions_without_resource_collision` |
-| Q5c probe runner launches against `dag-tools-probes` location with downstream asset key only | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
+| Q5c probe runner launches against `dag-tools-probes` location with BOTH upstream and downstream asset keys | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
 | Q5c PASSED probe is sacred (no relaunch on re-invocation) | `test_probes_runner.py::test_run_probes_side_skips_passed_probes_on_re_invocation` |
 | Q5c LAUNCHED probes reconcile via GraphQL poll, not relaunch | `test_probes_runner.py::test_run_probes_side_reconciles_launched_via_poll_not_relaunch` |
 | Q5c state mirrors to registry after every transition | `test_probes_runner.py::test_run_probes_side_mirrors_state_to_registry_after_each_transition` |
@@ -848,6 +872,11 @@ them, you're probably violating a recipe rule. Read carefully first.
 
 ## Known limitations
 
+- **Dagster exposes no git sha.** `WorkspaceLocationEntry` carries no
+  source revision (`versionKey` is an internal cache key). Preflight relies
+  on an operator stamp in `workspace.yaml` `additional_metadata`
+  (surfaced as `displayMetadata`); an unstamped deployment cannot be
+  verified, so preflight fails the pin rather than guessing.
 - **GraphQL drift.** Dagster GraphQL fields and internals shift across
   versions; the survey and launcher must be defensive and version-gated
   (schema introspection, soft per-field failure). The inventory extractor
