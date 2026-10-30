@@ -45,9 +45,10 @@ first and outranks the tags.
 """
 from __future__ import annotations
 
-from typing import Callable, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from .key import ClassMember, Representative, Runnability
+from .key import ClassMember, Representative, Runnability, StagingNeed
+from .staging import classify_staging_need
 
 
 def pick_representatives(
@@ -55,6 +56,7 @@ def pick_representatives(
     *,
     prefer_tag: str,
     reps_per_class: int,
+    executability_index: Optional[Dict[Tuple[str, ...], Optional[bool]]] = None,
 ) -> List[Representative]:
     """Pick up to ``reps_per_class`` representatives from a class's members.
 
@@ -99,7 +101,9 @@ def pick_representatives(
             chosen.append(m)
 
     return [
-        _to_representative(m, prefer_tag=prefer_tag)
+        _to_representative(
+            m, prefer_tag=prefer_tag, executability_index=executability_index
+        )
         for m in chosen
     ]
 
@@ -128,8 +132,20 @@ def classify_runnability(member: ClassMember) -> Tuple[Runnability, str]:
     return Runnability.RUNNABLE, "default (no opt-out tag)"
 
 
-def _to_representative(member: ClassMember, *, prefer_tag: str) -> Representative:
+def _to_representative(
+    member: ClassMember,
+    *,
+    prefer_tag: str,
+    executability_index: Optional[Dict[Tuple[str, ...], Optional[bool]]] = None,
+) -> Representative:
     runnability, reason = classify_runnability(member)
+    if executability_index is None:
+        need, need_reason = (
+            StagingNeed.UNKNOWN,
+            "no executability index supplied",
+        )
+    else:
+        need, need_reason = classify_staging_need(member, executability_index)
     return Representative(
         repo=member.repo,
         git_sha=member.git_sha,
@@ -137,6 +153,8 @@ def _to_representative(member: ClassMember, *, prefer_tag: str) -> Representativ
         runnability=runnability,
         runnability_reason=reason,
         is_preferred=_is_preferred(member, prefer_tag),
+        staging_need=need,
+        staging_need_reason=need_reason,
     )
 
 

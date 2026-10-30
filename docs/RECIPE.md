@@ -316,6 +316,18 @@ dagtools qual classes --id <qual_id>
      override layer.
    - `SYNTHETIC_REQUIRED` — touches prod-only/expensive systems.
    - `OBSERVE_ONLY` — external/observable assets.
+
+   Alongside runnability, each representative carries a `staging_need`
+   (`none_needed` / `required` / `unknown`) with a persisted reason, derived
+   from the inventory's `upstream_asset_keys` and an executability index built
+   across **all** pinned repos. `required` means at least one upstream is a
+   computed asset Q2 will not materialize; `unknown` covers pre-v3
+   inventories (re-survey the pinned SHA) and unresolvable upstreams — it is
+   never read as `none_needed`. The matrix reports
+   `coverage_by_staging_need` and `launchable_now_count` (runnable AND
+   `none_needed`). This is derived purely from the pinned inventories, so it
+   needs no workspace or deployment access, and it only reports: it gates
+   nothing and does not change `Runnability`.
 6. Emit `classes/equivalence_classes.json` + human-readable
    `equivalence_classes.md` (expect hundreds of assets → ~15–40 classes),
    publish to the registry, and print the coverage table for operator review
@@ -324,9 +336,26 @@ dagtools qual classes --id <qual_id>
 ### Phase Q2 — Baseline pass (test deployment on current version)
 
 Precondition: test deployment runs `baseline` versions and the pinned repo
-SHAs are deployed to it (`dagtools qual preflight` checks deployed
-code-location versions via GraphQL against `inventory_pins` and fails on
-mismatch).
+SHAs are deployed to it. `dagtools qual preflight` checks this via GraphQL
+(`deployed_shas_match_pins`, both sides) and fails on mismatch. Dagster
+exposes no git sha, so the operator must **stamp** each code location in
+`workspace.yaml` via `additional_metadata`; the keys are
+`deployment.repo_metadata_key` / `sha_metadata_key` (defaults `repo` /
+`git_sha`). The check is pin-driven: every `inventory_pins` entry needs a
+stamped location whose sha equals the pin (case-insensitive; a prefix of at
+least 7 chars is accepted). Unstamped locations such as `dag-tools-probes`
+are informational.
+
+```yaml
+load_from:
+  - grpc_server:
+      host: domain-a-user-deployment
+      port: 4000
+      location_name: domain-a
+      additional_metadata:
+        repo: domain-a
+        git_sha: 9f2c1ab
+```
 
 ```
 dagtools qual run --id <qual_id> --side baseline
@@ -356,8 +385,67 @@ rep, chosen deterministically and recorded in run state):
    `load_input`, not just `handle_output`.
 
 dbt representatives: ensure manifests were generated with the side's dbt
-version; build against the staging schema with seed/`--empty`-style minimal
-data.
+version. Staging data is covered under **Staging data for Q2** below.
+
+#### Staging data for Q2
+
+Q2 launches a representative alone, so whatever it reads must already
+exist. `dagtools qual classes` reports this per representative
+(`staging_need`: `none_needed` / `required` / `unknown`) and in total as
+`launchable_now_count`; read that first to size the work before doing any
+of it.
+
+**dbt representatives — `--empty`.** Two equivalent mechanisms make the
+dbt build schema-only (models build with `limit 0`; input refs and sources
+are limited to zero rows):
+
+- Component: `cli_args: ["build", "--empty"]` in `component.yaml`.
+  `CustomDbtProjectComponent.execute()` passes the resolved `cli_args` to
+  the **build** invocation only; `source snapshot-freshness` and
+  `docs generate` are hardcoded and never receive them.
+- Environment: `DBT_EMPTY=true` in the deployment environment. The flag
+  declares `DBT_EMPTY` as an env var and exists only on `build` / `compile` /
+  `run`, so it self-selects to those and is inert for freshness, docs and
+  seed. This also covers a consumer's own hand-rolled `@dbt_assets`. Newer
+  dbt declares an alias list (observed: `DBT_ENGINE_EMPTY`, then
+  `DBT_EMPTY`) and uses whichever is set first, so do not set both to
+  conflicting values.
+
+(`docs generate` has a lookalike, `--empty-catalog`; it is a different
+flag.) `--empty` exercises the *wrapping* Q2 exists to qualify — manifest
+parse, one-key selection into a one-model `--select`, `run_results.json`
+into materialization metadata — and nothing about data.
+
+**Hazard: vacuous test parity.** dbt tests still run under `--empty`, and on
+empty relations the common generic tests (`not_null`, `unique`,
+`accepted_values`, `relationships`) pass vacuously. dbt tests surface to
+Dagster as asset checks, which Q2 records and Q6 diffs for parity. A
+qualification under `--empty` therefore compares two sets of vacuous passes:
+the resulting asset-check parity is **not evidence of data correctness**.
+Do not read a green Q6 on `--empty` representatives as a statement about
+the data.
+
+**Non-dbt representatives — `staging_overrides`.** The operator stages a
+schema or bucket once and points resources at it with a run-config
+document named by `dagtools qual init --staging-overrides <s3://... or path>`
+(see Q0). Only `ops` / `resources` / `execution` / `loggers` are accepted
+at the top level; anything else is rejected by design. Example:
+
+```yaml
+resources:
+  io_manager:
+    config: {s3_bucket: qual-staging}      # pre-populated once by the operator
+  warehouse:
+    config: {schema: qual_staging}
+```
+
+The merge with a per-representative block is recursive (explicit wins at
+the leaf), so a per-rep `resources` block does not drop sibling staging
+resources.
+
+**Generated seeder assets are deliberately NOT built.** It would be a large
+build whose value depends on fleet shape, and the override path covers the
+need today.
 
 **Local orchestration snapshots, baseline side** *(⚠️ planned — the
 `dagtools qual orchestration` command is NOT implemented yet; this
@@ -775,13 +863,13 @@ caught it on itself.
 | 1 | 4 Documentation Recipe + ADRs | ✅ done — this file |
 | 1 | (opt) Canary stage | Not yet started |
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
-| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
+| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability and staging-need reporting (`launchable_now_count`), JSON + Markdown |
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
-| 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + (candidate-only) historical-run-rendering checks |
+| 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + deployed-sha-vs-`inventory_pins` (both sides) + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
 | 2 | Q5 Synthetic probe **generation** + `dagtools qual synthetic` | ✅ done — per-class self-contained module emitted with real IO manager FQN + fallback, persisted to registry + `~/.dagtools/quals/<id>/probes/` |
 | 2 | Q5 Synthetic probe **deploy target** — `dag-tools-probes` code location | ✅ done — `dag_tools.probes_location.definitions` dynamically loads every `<class_hash>.py` from `DAGTOOLS_PROBES_DIR`, merges via `Definitions.merge`, soft-fails per probe |
-| 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's downstream asset against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
+| 2 | Q5c Synthetic probe **runner** + `dagtools qual probes run` | ✅ done — launches each probe's upstream AND downstream asset (together, so the downstream's input loads) against the dag-tools-probes location, resumable per-side state, immutable run records under `<side>/probes/runs/<class_hash>/<run_id>.json` |
 | 2 | Q5d Probe deploy-state visibility — `dagtools qual probes status` | ✅ done — GraphQL cross-reference of probe manifest vs the dag-tools-probes location: fully-loaded vs partially-loaded vs missing classes + stale-asset detection |
 | 2 | Q5e Probe RunRecord diff in Q6 | ✅ done — divergent-but-passing probes (both PASSED but materialization / metadata / asset-check parity broke) populate `synthetic_classes_red` and block GO regardless of acceptance flags; `ClassVerdict.probe_diff` carries the per-class diff for `UPGRADE_VERDICT.md` |
 | 2 | Q6 synthetic-coverage integration | ✅ done — `synthetic_classes_with_probe_coverage` counts classes whose probes passed on BOTH sides AND (when records exist) diff cleanly; graceful degradation to status-only when records are missing |
@@ -804,6 +892,15 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Qualification manifest is immutable per qual_id | `test_qualify_init.py::test_re_init_same_qual_id_raises` |
 | Dagster-family pins filtered from co_upgrade_risks | `test_qualify_risks.py::test_dagster_family_is_filtered_out` |
 | Inventory pins freeze the registry snapshot at init time | `test_qualify_init.py::test_create_qualification_pins_inventories` |
+| Pre-v3 inventory (`upstream_asset_keys=None`) classifies UNKNOWN, never NONE_NEEDED | `test_qual_staging_need.py::test_pre_v3_inventory_classifies_unknown_not_none_needed` |
+| `launchable_now_count` counts only RUNNABLE + NONE_NEEDED reps | `test_qual_staging_need.py::test_launchable_now_counts_only_runnable_and_unstaged` |
+| Staging need does not change runnability (report-only) | `test_qual_staging_need.py::test_staging_need_does_not_change_runnability` |
+| dbt `cli_args` (e.g. `--empty`) reach only the build invocation | `test_dbt_empty_staging.py::test_resolved_cli_args_reach_only_the_build_invocation` |
+| freshness / docs invocations are hardcoded, never parameterized | `test_dbt_empty_staging.py::test_the_non_build_invocations_are_hardcoded_and_unparameterized` |
+| `--empty` is a subcommand option, never a global flag | `test_dbt_empty_staging.py::test_empty_is_not_a_global_config_flag` |
+| The `--empty` vacuous-test-parity hazard stays documented | `test_dbt_empty_staging.py::test_empty_makes_dbt_tests_vacuous_is_documented` |
+| Real dbt: `--empty` on build, not docs generate (`--empty-catalog` distinct) | `test_dbt_datahub_e2e.py::test_dbt_accepts_empty_on_build_and_not_on_docs_generate` |
+| Real dbt: `DBT_EMPTY` is the flag's env var | `test_dbt_datahub_e2e.py::test_dbt_empty_env_var_is_the_documented_name` |
 | Q1 reads the manifest's inventory_pins, NOT the registry's latest | `test_classes_builder.py::test_q1_reads_pinned_sha_not_latest` |
 | Custom dbt translators force their own equivalence class | `test_classes_builder.py::test_build_class_matrix_segregates_custom_dbt_translator` |
 | Class hash is deterministic over its components | `test_classes_key.py::test_class_hash_is_deterministic` |
@@ -819,6 +916,13 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q3 preflight fails when any code location doesn't load | `test_preflight.py::test_run_preflight_fails_when_a_code_location_does_not_load` |
 | Q3 candidate preflight samples baseline runs for back-compat | `test_preflight.py::test_candidate_preflight_samples_baseline_runs` |
 | Q3 baseline preflight skips the run-rendering check | `test_preflight.py::test_baseline_preflight_does_not_sample_baseline_runs` |
+| Q3 preflight fails when a deployed sha differs from its pin | `test_preflight.py::test_preflight_fails_when_deployed_sha_does_not_match_pin` |
+| Q3 preflight fails when a pinned repo is not deployed | `test_preflight.py::test_preflight_fails_when_a_pinned_repo_is_not_deployed_at_all` |
+| Q3 sha check cannot pass vacuously (pins, zero stamps -> FAIL) | `test_preflight.py::test_preflight_fails_when_no_location_carries_a_stamp` |
+| Q3 unstamped locations (e.g. `dag-tools-probes`) never fail the sha check | `test_preflight.py::test_an_unstamped_location_is_informational_not_a_failure` |
+| Q3 sha grammar: exact or >=7-char prefix | `test_preflight.py::test_preflight_accepts_a_short_sha_prefix_of_at_least_seven_chars`, `test_preflight_rejects_a_prefix_shorter_than_seven_chars` |
+| Q3 sha check reuses check 2's workspace call | `test_preflight.py::test_sha_check_does_not_make_a_second_workspace_call` |
+| Every client GraphQL document validates against the installed schema | `test_graphql_query_schema_validation.py` |
 | Q6 metadata parity uses key SET only (values may differ) | `test_verdict_diff.py::test_diff_compares_metadata_KEY_set_not_values` |
 | Q6 duration deltas are informational, never gating | `test_verdict_diff.py::test_diff_duration_is_informational_not_gating` |
 | Q6 candidate-preflight failure is a hard gate | `test_verdict.py::test_verdict_no_go_when_candidate_preflight_failed` |
@@ -834,7 +938,7 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 dag-tools-probes location loads cleanly when no probes are deployed | `test_probes_location_loader.py::test_loader_returns_empty_report_when_env_unset` |
 | Q5 dag-tools-probes location soft-fails per-probe (one broken probe does NOT block the location) | `test_probes_location_loader.py::test_loader_soft_fails_a_malformed_probe` |
 | Q5 N generated probes merge into one Definitions without conflict | `test_probes_location_loader.py::test_loaded_probes_merge_into_one_definitions_without_resource_collision` |
-| Q5c probe runner launches against `dag-tools-probes` location with downstream asset key only | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
+| Q5c probe runner launches against `dag-tools-probes` location with BOTH upstream and downstream asset keys | `test_probes_runner.py::test_run_probes_side_launches_against_dag_tools_probes_location` |
 | Q5c PASSED probe is sacred (no relaunch on re-invocation) | `test_probes_runner.py::test_run_probes_side_skips_passed_probes_on_re_invocation` |
 | Q5c LAUNCHED probes reconcile via GraphQL poll, not relaunch | `test_probes_runner.py::test_run_probes_side_reconciles_launched_via_poll_not_relaunch` |
 | Q5c state mirrors to registry after every transition | `test_probes_runner.py::test_run_probes_side_mirrors_state_to_registry_after_each_transition` |
@@ -848,6 +952,11 @@ them, you're probably violating a recipe rule. Read carefully first.
 
 ## Known limitations
 
+- **Dagster exposes no git sha.** `WorkspaceLocationEntry` carries no
+  source revision (`versionKey` is an internal cache key). Preflight relies
+  on an operator stamp in `workspace.yaml` `additional_metadata`
+  (surfaced as `displayMetadata`); an unstamped deployment cannot be
+  verified, so preflight fails the pin rather than guessing.
 - **GraphQL drift.** Dagster GraphQL fields and internals shift across
   versions; the survey and launcher must be defensive and version-gated
   (schema introspection, soft per-field failure). The inventory extractor
@@ -889,11 +998,17 @@ them, you're probably violating a recipe rule. Read carefully first.
   unmaterialized upstream is a *loaded input* whose output must already
   exist in the IO manager, so a run fails at input loading unless the
   staged deployment already holds that data (or the representative's
-  upstreams are all external). The seed / `--empty` minimal-data story
-  for dbt representatives above is **not implemented**; today the
-  operator must stage the schema themselves. Widening the selection to
+  upstreams are all external). Staging now has documented
+  mechanisms (see **Staging data for Q2**): dbt representatives can build
+  schema-only via `cli_args: ["build", "--empty"]` or `DBT_EMPTY=true`
+  (with the vacuous-test-parity caveat), and non-dbt representatives are
+  pointed at an operator-staged schema or bucket via `staging_overrides`.
+  What remains **unbuilt** is generated seeder assets; the operator
+  still stages the data. Widening the selection to
   pull in upstreams is NOT the fix — it turns a one-asset comparison into
-  a whole-subgraph build.
+  a whole-subgraph build. The size of the gap is now *reported* per
+  representative (`staging_need`) and in total (`launchable_now_count`) by
+  `qual classes`, so it is visible before any pass is burned.
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
   needs the Q5 probes code location infrastructure to land first. The

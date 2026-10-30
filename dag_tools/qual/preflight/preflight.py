@@ -8,7 +8,7 @@ Recipe (Phase Q3, item 3):
   > infrastructure), and historical runs/materializations from the
   > baseline pass still render (event-log back-compat spot check).
 
-So preflight is **three checks** on the candidate side, **two checks** on
+So preflight is **four checks** on the candidate side, **three checks** on
 the baseline side (no priors exist yet to back-compat-check):
 
   1. **Version check.** Read the manifest's ``baseline.dagster`` or
@@ -19,7 +19,13 @@ the baseline side (no priors exist yet to back-compat-check):
      ``workspaceOrError.locationEntries``; any non-``LOADED`` status
      fails the gate. The error message comes from
      ``locationOrLoadError`` for operator triage.
-  3. **(Candidate only) Run rendering check.** Sample baseline run_ids
+  3. **Deployed shas match pins** (``deployed_shas_match_pins``, both
+     sides). Pin-driven: every ``manifest.inventory_pins`` entry must be
+     matched by a location whose ``displayMetadata`` stamps that repo and a
+     compatible git sha. Dagster surfaces no git sha itself, so the stamp is
+     an operator contract (``workspace.yaml`` ``additional_metadata``).
+     Unstamped / unpinned locations are informational.
+  4. **(Candidate only) Run rendering check.** Sample baseline run_ids
      from the previously-published Q2 state and ``pipelineRunOrError``
      each one. Any not-found = event-log back-compat broke; investigate.
 
@@ -31,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -55,7 +61,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class CheckResult(BaseModel):
@@ -86,6 +92,18 @@ class RunRenderingCheck(BaseModel):
     detail: Optional[str] = None
 
 
+class RepoShaCheck(BaseModel):
+    """Per-pin detail for the deployed-sha-vs-pin check."""
+    model_config = ConfigDict(extra="ignore")
+
+    repo: str
+    expected_sha: str
+    deployed_sha: Optional[str] = None
+    location_name: Optional[str] = None
+    matched: bool = False
+    detail: Optional[str] = None
+
+
 class PreflightReport(BaseModel):
     """The persisted ``preflight.json`` payload."""
     model_config = ConfigDict(extra="ignore")
@@ -104,8 +122,14 @@ class PreflightReport(BaseModel):
     sampled_runs: List[RunRenderingCheck] = Field(default_factory=list)
     """Empty when ``side == baseline`` — there's nothing to back-compat-check yet."""
 
+    pinned_repos: List[RepoShaCheck] = Field(default_factory=list)
+    """One entry per ``inventory_pins`` entry, satisfied or not."""
+
+    unstamped_locations: List[str] = Field(default_factory=list)
+    """Loaded locations carrying no repo stamp. Informational only."""
+
     checks: List[CheckResult] = Field(default_factory=list)
-    """Roll-up of the three high-level checks. UI / CLI reads this for
+    """Roll-up of the high-level checks. UI / CLI reads this for
     the operator summary; the per-item lists above are for forensics."""
 
     passed: bool = False
@@ -146,6 +170,8 @@ def run_preflight(
     deployment_version: Optional[str] = None
     code_locations: List[CodeLocationStatus] = []
     sampled_runs: List[RunRenderingCheck] = []
+    pinned_repos: List[RepoShaCheck] = []
+    unstamped_locations: List[str] = []
     checks: List[CheckResult] = []
 
     try:
@@ -187,6 +213,21 @@ def run_preflight(
                 detail=f"workspace lookup failed: {e}",
             ))
 
+        # --- 2b. Deployed shas match the manifest's inventory pins -------
+        # Reuses check 2's ``code_locations`` (no second workspace call).
+        # If check 2 failed the list is empty and every pin is unsatisfied.
+        try:
+            pinned_repos, unstamped_locations, sha_check = _check_deployed_shas(
+                manifest, code_locations,
+            )
+        except Exception as e:  # §4g: never raise
+            pinned_repos, unstamped_locations = [], []
+            sha_check = CheckResult(
+                name=SHA_CHECK_NAME, passed=False,
+                detail=f"sha check failed unexpectedly: {e}",
+            )
+        checks.append(sha_check)
+
         # --- 3. (Candidate only) historical run rendering ----------------
         if side == "candidate":
             sampled_runs = _check_baseline_runs_render(
@@ -213,6 +254,8 @@ def run_preflight(
             for c in code_locations
         ],
         sampled_runs=sampled_runs,
+        pinned_repos=pinned_repos,
+        unstamped_locations=unstamped_locations,
         checks=checks,
         passed=all(c.passed for c in checks),
     )
@@ -262,6 +305,119 @@ def _versions_compatible(deployment: str, expected: str) -> bool:
         prefix = expected[:-2]
         return deployment.startswith(prefix + ".") or deployment == prefix
     return False
+
+
+SHA_CHECK_NAME = "deployed_shas_match_pins"
+_MIN_SHA_PREFIX = 7
+
+
+def _shas_match(a: str, b: str) -> bool:
+    """Case-insensitive; equal, or one a prefix of the other with the
+    shorter at least 7 chars. That is the entire grammar."""
+    a, b = a.strip().lower(), b.strip().lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= _MIN_SHA_PREFIX and long_.startswith(short)
+
+
+def _check_deployed_shas(
+    manifest: QualificationManifest,
+    code_locations: List[CodeLocationStatus],
+) -> Tuple[List[RepoShaCheck], List[str], CheckResult]:
+    """Pin-driven: every ``inventory_pins`` entry must be satisfied by a
+    stamped location. Locations the qualification does not pin (e.g.
+    ``dag-tools-probes``) are informational and never fail the check."""
+    pins = manifest.inventory_pins
+    if not pins:
+        return [], [], CheckResult(
+            name=SHA_CHECK_NAME, passed=True,
+            detail="no inventory pins to verify",
+        )
+
+    repo_key = manifest.deployment.repo_metadata_key
+    sha_key = manifest.deployment.sha_metadata_key
+
+    by_repo: Dict[str, List[Tuple[str, Optional[str]]]] = {}
+    unstamped: List[str] = []
+    for loc in code_locations:
+        meta = loc.display_metadata or {}
+        repo = meta.get(repo_key)
+        if not repo:
+            unstamped.append(loc.name)
+            continue
+        by_repo.setdefault(repo, []).append((loc.name, meta.get(sha_key)))
+
+    results: List[RepoShaCheck] = []
+    for pin in pins:
+        stamps = by_repo.get(pin.repo, [])
+        if not stamps:
+            results.append(RepoShaCheck(
+                repo=pin.repo, expected_sha=pin.git_sha,
+                detail="pinned code is not deployed: no location stamps "
+                       f"{repo_key}={pin.repo!r}",
+            ))
+            continue
+        first = stamps[0][1] or ""
+        # An empty `first` is covered: _shas_match("", x) is False for every
+        # x, so a repo stamped by several locations where the first carries no
+        # sha reads as a disagreement, which is what it is.
+        if any(not _shas_match(first, sha or "") for _, sha in stamps[1:]):
+            names = ", ".join(f"{n}={sha!r}" for n, sha in stamps)
+            results.append(RepoShaCheck(
+                repo=pin.repo, expected_sha=pin.git_sha,
+                location_name=stamps[0][0],
+                detail=f"ambiguous: locations stamping this repo disagree ({names})",
+            ))
+            continue
+        name, sha = stamps[0]
+        if not sha:
+            results.append(RepoShaCheck(
+                repo=pin.repo, expected_sha=pin.git_sha, location_name=name,
+                detail=f"location {name!r} stamps the repo but no {sha_key!r}",
+            ))
+        elif _shas_match(sha, pin.git_sha):
+            results.append(RepoShaCheck(
+                repo=pin.repo, expected_sha=pin.git_sha, deployed_sha=sha,
+                location_name=name, matched=True,
+            ))
+        else:
+            results.append(RepoShaCheck(
+                repo=pin.repo, expected_sha=pin.git_sha, deployed_sha=sha,
+                location_name=name,
+                detail=f"mismatch: location {name!r} deploys {sha!r}, "
+                       f"pin expects {pin.git_sha!r}",
+            ))
+
+    pinned_names = {p.repo for p in pins}
+    extra = sorted(r for r in by_repo if r not in pinned_names)
+    bad = [r for r in results if not r.matched]
+    if not bad:
+        detail = f"{len(results)} pin(s) verified"
+        if extra:
+            detail += f"; stamped but not pinned (ignored): {', '.join(extra)}"
+        return results, unstamped, CheckResult(
+            name=SHA_CHECK_NAME, passed=True, detail=detail,
+        )
+    parts = [
+        f"{r.repo}: {r.detail} (expected {r.expected_sha!r}, "
+        f"deployed {r.deployed_sha!r}, location {r.location_name!r})"
+        for r in bad
+    ]
+    detail = f"{len(bad)} of {len(results)} pin(s) unsatisfied: " + "; ".join(parts)
+    if unstamped:
+        detail += (
+            f". Unstamped location(s): {', '.join(unstamped)} - the operator "
+            f"likely needs to stamp additional_metadata ({repo_key}, {sha_key}) "
+            "in workspace.yaml"
+        )
+    if extra:
+        detail += f". Stamped but not pinned (ignored): {', '.join(extra)}"
+    return results, unstamped, CheckResult(
+        name=SHA_CHECK_NAME, passed=False, detail=detail,
+    )
 
 
 def _check_baseline_runs_render(

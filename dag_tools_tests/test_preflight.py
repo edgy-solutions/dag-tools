@@ -25,6 +25,7 @@ from dag_tools.qual.preflight import (
 )
 from dag_tools.qual.qualify import (
     Deployment,
+    InventoryPin,
     VersionTarget,
     create_qualification,
 )
@@ -97,9 +98,9 @@ def test_run_preflight_baseline_passes_when_version_and_locations_ok(setup):
     assert report.passed
     assert report.deployment_version == "1.10.6"
     assert report.expected_version == "1.10.6"
-    # baseline side has only two checks; no run rendering.
+    # baseline side has three checks; no run rendering.
     assert {c.name for c in report.checks} == {
-        "dagster_version", "code_locations_loaded",
+        "dagster_version", "code_locations_loaded", "deployed_shas_match_pins",
     }
 
 
@@ -332,3 +333,171 @@ def test_published_report_round_trips(setup):
 
 # Helper so mocked .side_effect = exception works cleanly.
 BaseException = Exception
+
+
+# ---------------------------------------------------------------------------
+# Deployed sha vs inventory pins
+# ---------------------------------------------------------------------------
+
+SHA = "9f2c1ab4d5e6f708192a3b4c5d6e7f8091a2b3c4"
+CHECK = "deployed_shas_match_pins"
+
+
+def _pinned(monkeypatch, registry, pins, **deployment):
+    """Seed a manifest, then give it explicit inventory pins."""
+    from dag_tools.qual.preflight import preflight as pf
+
+    _seed_manifest(registry)
+    real = pf._read_manifest
+
+    def patched(reg, qual_id):
+        m = real(reg, qual_id)
+        m.inventory_pins = [InventoryPin(repo=r, git_sha=s) for r, s in pins]
+        for k, v in deployment.items():
+            setattr(m.deployment, k, v)
+        return m
+
+    monkeypatch.setattr(pf, "_read_manifest", patched)
+
+
+def _loc(name, repo=None, sha=None, repo_key="repo", sha_key="git_sha"):
+    md = {"host": "h", "port": "4000"}
+    if repo is not None:
+        md[repo_key] = repo
+    if sha is not None:
+        md[sha_key] = sha
+    return CodeLocationStatus(name=name, load_status="LOADED", display_metadata=md)
+
+
+def _run(registry, locations, side="candidate"):
+    client = _client(
+        version="1.12.1" if side == "candidate" else "1.10.6",
+        locations=locations,
+    )
+    report = run_preflight(
+        "q1", side, registry=registry, client_factory=_factory(client),
+    )
+    return report, next(c for c in report.checks if c.name == CHECK)
+
+
+def test_preflight_fails_when_deployed_sha_does_not_match_pin(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    report, chk = _run(setup, [_loc("a", "domain-a", "deadbeef1234")])
+    assert not chk.passed and not report.passed
+    assert "deadbeef1234" in chk.detail and SHA in chk.detail and "'a'" in chk.detail
+
+
+def test_preflight_fails_when_a_pinned_repo_is_not_deployed_at_all(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA), ("domain-b", SHA)])
+    report, chk = _run(setup, [_loc("a", "domain-a", SHA)])
+    assert not chk.passed
+    assert "domain-b" in chk.detail and "not deployed" in chk.detail
+    assert [p.matched for p in report.pinned_repos] == [True, False]
+
+
+def test_preflight_fails_when_no_location_carries_a_stamp(setup, monkeypatch):
+    """Non-vacuity: pins present, zero stamps, must FAIL."""
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    report, chk = _run(setup, [_loc("a"), _loc("b")])
+    assert not chk.passed and not report.passed
+    assert "workspace.yaml" in chk.detail
+    assert report.unstamped_locations == ["a", "b"]
+
+
+def test_preflight_passes_when_every_pin_matches_its_stamped_location(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA), ("domain-b", "abcdef0123456")])
+    report, chk = _run(setup, [
+        _loc("a", "domain-a", SHA), _loc("b", "domain-b", "ABCDEF0123456"),
+    ])
+    assert chk.passed and report.passed
+    assert "2 pin(s) verified" in chk.detail
+    assert all(p.matched for p in report.pinned_repos)
+
+
+def test_preflight_accepts_a_short_sha_prefix_of_at_least_seven_chars(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    _, chk = _run(setup, [_loc("a", "domain-a", SHA[:7].upper())])
+    assert chk.passed
+
+
+def test_preflight_rejects_a_prefix_shorter_than_seven_chars(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    _, chk = _run(setup, [_loc("a", "domain-a", SHA[:6])])
+    assert not chk.passed
+
+
+def test_preflight_fails_when_two_locations_claim_one_repo_with_different_shas(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    _, chk = _run(setup, [_loc("a1", "domain-a", SHA), _loc("a2", "domain-a", "1234567890")])
+    assert not chk.passed
+    assert "ambiguous" in chk.detail and "a1" in chk.detail and "a2" in chk.detail
+
+
+def test_two_replicas_with_the_same_sha_pass(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    _, chk = _run(setup, [_loc("a1", "domain-a", SHA), _loc("a2", "domain-a", SHA)])
+    assert chk.passed
+
+
+def test_an_unstamped_location_is_informational_not_a_failure(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    report, chk = _run(setup, [
+        _loc("a", "domain-a", SHA), _loc("dag-tools-probes"),
+        _loc("other", "unpinned-repo", "1111111"),
+    ])
+    assert chk.passed and report.passed
+    assert report.unstamped_locations == ["dag-tools-probes"]
+    assert "unpinned-repo" in chk.detail
+
+
+def test_sha_check_runs_on_the_baseline_side_too(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    report, chk = _run(setup, [_loc("a", "domain-a", "deadbeef1234")], side="baseline")
+    assert not chk.passed and not report.passed
+
+
+def test_sha_check_uses_the_manifest_configured_metadata_keys(setup, monkeypatch):
+    _pinned(
+        monkeypatch, setup, [("domain-a", SHA)],
+        sha_metadata_key="build", repo_metadata_key="project",
+    )
+    _, ok = _run(setup, [_loc("a", "domain-a", SHA, repo_key="project", sha_key="build")])
+    assert ok.passed
+    _, bad = _run(setup, [_loc("a", "domain-a", SHA)])  # default keys: ignored
+    assert not bad.passed
+
+
+def test_empty_inventory_pins_passes_with_an_explicit_detail(setup):
+    _seed_manifest(setup)
+    _, chk = _run(setup, [_loc("a")])
+    assert chk.passed and "no inventory pins to verify" in chk.detail
+
+
+def test_sha_check_becomes_a_failed_check_not_an_exception_on_graphql_error(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    report, chk = _run(setup, DagsterGraphQLError("workspace down"))
+    assert not chk.passed and not report.passed
+    assert "domain-a" in chk.detail
+
+
+def test_sha_check_does_not_make_a_second_workspace_call(setup, monkeypatch):
+    _pinned(monkeypatch, setup, [("domain-a", SHA)])
+    calls = []
+
+    def fake_post(self, query, variables=None):
+        calls.append(query)
+        if query == DagsterGraphQLClient.VERSION_QUERY:
+            return {"version": "1.10.6"}
+        return {"workspaceOrError": {"__typename": "Workspace", "locationEntries": [{
+            "name": "a", "loadStatus": "LOADED", "locationOrLoadError": {},
+            "displayMetadata": [{"key": "repo", "value": "domain-a"},
+                                {"key": "git_sha", "value": SHA}],
+        }]}}
+
+    monkeypatch.setattr(DagsterGraphQLClient, "post", fake_post)
+    report = run_preflight(
+        "q1", "baseline", registry=setup,
+        client_factory=lambda m: DagsterGraphQLClient(endpoint_url="http://x/graphql"),
+    )
+    assert report.passed
+    assert calls.count(DagsterGraphQLClient.LOCATIONS_QUERY) == 1
