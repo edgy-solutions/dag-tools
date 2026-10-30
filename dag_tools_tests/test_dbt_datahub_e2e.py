@@ -359,3 +359,39 @@ def test_dbt_build_publishes_to_datahub_end_to_end(
         "the dbt *source* never reached DataHub, which is exactly what "
         f"sources.json carries; emitted urns: {sorted(urns)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Canary: the dbt-side facts the `--empty` staging path rests on
+# ---------------------------------------------------------------------------
+# Same precedent as TestWhatTheClientsActuallyHonour in test_chart_ca_certs.py:
+# pin the third-party behaviour the design depends on. See docs/RECIPE.md
+# "Staging data for Q2".
+
+
+def _dbt_help(*subcommand):
+    exe = shutil.which("dbt")
+    assert exe, "the dbt CLI must be installed"
+    out = subprocess.run(
+        [exe, *subcommand, "--help"], capture_output=True, text=True, check=True
+    )
+    return out.stdout
+
+
+def _has_flag(help_text, flag):
+    import re
+
+    return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text) is not None
+
+
+def test_dbt_accepts_empty_on_build_and_not_on_docs_generate():
+    assert _has_flag(_dbt_help("build"), "--empty")
+    docs = _dbt_help("docs", "generate")
+    assert not _has_flag(docs, "--empty")
+    # The near-miss name is a distinct flag and must stay distinct.
+    assert _has_flag(docs, "--empty-catalog")
+    assert not _has_flag(_dbt_help("source", "snapshot-freshness"), "--empty")
+
+
+def test_dbt_empty_env_var_is_the_documented_name():
+    assert "DBT_EMPTY" in _dbt_help("build")
