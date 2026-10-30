@@ -394,4 +394,17 @@ def test_dbt_accepts_empty_on_build_and_not_on_docs_generate():
 
 
 def test_dbt_empty_env_var_is_the_documented_name():
-    assert "DBT_EMPTY" in _dbt_help("build")
+    """`--empty` carries envvar="DBT_EMPTY" in dbt's own click declaration.
+
+    Introspect the installed dbt rather than grepping `--help`: click omits
+    envvar names from help unless the option sets `show_envvar=True`, and dbt
+    does not. The first version of this canary grepped the help text and
+    failed against the real CLI for that reason -- the flag was fine, the
+    assertion method was not. Both assertions carry the observed value so a
+    future dbt renaming the envvar says so instead of just going red.
+    """
+    from dbt.cli.main import build
+
+    empty = next((prm for prm in build.params if prm.name == "empty"), None)
+    assert empty is not None, [prm.name for prm in build.params]
+    assert empty.envvar == "DBT_EMPTY", empty.envvar
