@@ -158,6 +158,7 @@ def _extract_one(
         asset_key=asset_key_path,
         location=location,
         is_executable=_is_executable(assets_def),
+        upstream_asset_keys=_upstream_asset_keys(spec),
         group=_safe_attr(spec, "group_name"),
         compute_kind=_compute_kind(spec),
         code_version=_safe_attr(spec, "code_version"),
@@ -199,6 +200,31 @@ def _is_executable(assets_def: Any) -> Optional[bool]:
         return None
     value = _safe_attr(assets_def, "is_executable", default=None)
     return bool(value) if isinstance(value, bool) else None
+
+
+def _upstream_asset_keys(spec: Any) -> Optional[List[List[str]]]:
+    """Declared upstream asset-key paths for one asset, sorted.
+
+    Returns ``[]`` only when ``spec.deps`` is present and empty - the asset
+    genuinely has no upstreams. Returns None (never ``[]``) when the
+    attribute is absent or the iteration fails, so a reader can tell "no
+    upstreams" from "we couldn't tell" and never concludes an asset needs no
+    staged data merely because the lookup moved on a different Dagster
+    version. A malformed deps list yields None rather than a partial answer.
+    """
+    deps = _safe_attr(spec, "deps", default=None)
+    if deps is None:
+        return None
+    out: List[List[str]] = []
+    try:
+        for d in deps:
+            path = _safe_attr(_safe_attr(d, "asset_key"), "path")
+            if path is None:
+                continue
+            out.append([str(p) for p in path])
+    except Exception:
+        return None
+    return sorted(out)
 
 
 def _get_assets_def(defs: Any, asset_key: Any) -> Optional[Any]:

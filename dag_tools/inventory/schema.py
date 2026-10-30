@@ -30,7 +30,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """Monotonic schema version for AssetRecord. Bump on every additive change.
 
 History:
@@ -38,6 +38,9 @@ History:
       automation, freshness/backfill, tags, checks, jobs, URN sidecar).
   2 — is_executable, so qualification can tell an asset Dagster runs from
       an external/source asset it only observes.
+  3 — upstream_asset_keys, so qualification can tell a representative whose
+      upstreams are external sources (launchable as-is) from one whose
+      upstreams are computed assets Q2 will not materialize.
 """
 
 
@@ -90,6 +93,19 @@ class AssetRecord(BaseModel):
             "than launching them. None means the survey predates this field "
             "(schema_version < 2) or the lookup failed; readers MUST treat "
             "None as 'unknown', never as False."
+        ),
+    )
+    upstream_asset_keys: Optional[List[List[str]]] = Field(
+        default=None,
+        description=(
+            "Declared upstream dependencies, one asset-key path per dep, "
+            "sorted. THREE states, and they are not interchangeable: "
+            "None means the survey predates this field (schema_version < 3) "
+            "or the lookup failed - UNKNOWN, and readers MUST NOT treat it "
+            "as 'no upstreams'. [] means the asset genuinely declares no "
+            "upstreams and is launchable without staged data. A non-empty "
+            "list holds one entry per declared dep (in-graph upstreams and "
+            "the stub key for an out-of-Definitions external dep alike)."
         ),
     )
     compute_kind: Optional[str] = Field(

@@ -316,6 +316,18 @@ dagtools qual classes --id <qual_id>
      override layer.
    - `SYNTHETIC_REQUIRED` — touches prod-only/expensive systems.
    - `OBSERVE_ONLY` — external/observable assets.
+
+   Alongside runnability, each representative carries a `staging_need`
+   (`none_needed` / `required` / `unknown`) with a persisted reason, derived
+   from the inventory's `upstream_asset_keys` and an executability index built
+   across **all** pinned repos. `required` means at least one upstream is a
+   computed asset Q2 will not materialize; `unknown` covers pre-v3
+   inventories (re-survey the pinned SHA) and unresolvable upstreams — it is
+   never read as `none_needed`. The matrix reports
+   `coverage_by_staging_need` and `launchable_now_count` (runnable AND
+   `none_needed`). This is derived purely from the pinned inventories, so it
+   needs no workspace or deployment access, and it only reports: it gates
+   nothing and does not change `Runnability`.
 6. Emit `classes/equivalence_classes.json` + human-readable
    `equivalence_classes.md` (expect hundreds of assets → ~15–40 classes),
    publish to the registry, and print the coverage table for operator review
@@ -792,7 +804,7 @@ caught it on itself.
 | 1 | 4 Documentation Recipe + ADRs | ✅ done — this file |
 | 1 | (opt) Canary stage | Not yet started |
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
-| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability, JSON + Markdown |
+| 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability and staging-need reporting (`launchable_now_count`), JSON + Markdown |
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
 | 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + deployed-sha-vs-`inventory_pins` (both sides) + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
@@ -821,6 +833,9 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Qualification manifest is immutable per qual_id | `test_qualify_init.py::test_re_init_same_qual_id_raises` |
 | Dagster-family pins filtered from co_upgrade_risks | `test_qualify_risks.py::test_dagster_family_is_filtered_out` |
 | Inventory pins freeze the registry snapshot at init time | `test_qualify_init.py::test_create_qualification_pins_inventories` |
+| Pre-v3 inventory (`upstream_asset_keys=None`) classifies UNKNOWN, never NONE_NEEDED | `test_qual_staging_need.py::test_pre_v3_inventory_classifies_unknown_not_none_needed` |
+| `launchable_now_count` counts only RUNNABLE + NONE_NEEDED reps | `test_qual_staging_need.py::test_launchable_now_counts_only_runnable_and_unstaged` |
+| Staging need does not change runnability (report-only) | `test_qual_staging_need.py::test_staging_need_does_not_change_runnability` |
 | Q1 reads the manifest's inventory_pins, NOT the registry's latest | `test_classes_builder.py::test_q1_reads_pinned_sha_not_latest` |
 | Custom dbt translators force their own equivalence class | `test_classes_builder.py::test_build_class_matrix_segregates_custom_dbt_translator` |
 | Class hash is deterministic over its components | `test_classes_key.py::test_class_hash_is_deterministic` |
@@ -922,7 +937,10 @@ them, you're probably violating a recipe rule. Read carefully first.
   for dbt representatives above is **not implemented**; today the
   operator must stage the schema themselves. Widening the selection to
   pull in upstreams is NOT the fix — it turns a one-asset comparison into
-  a whole-subgraph build.
+  a whole-subgraph build. The size of the gap is now *reported* per
+  representative (`staging_need`) and in total (`launchable_now_count`) by
+  `qual classes`, so it is visible before any pass is burned; staging
+  itself is still unimplemented (B2/B3 remain the fix).
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
   needs the Q5 probes code location infrastructure to land first. The
