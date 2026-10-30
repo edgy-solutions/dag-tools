@@ -31,7 +31,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """Bump on every additive change to the manifest schema."""
 
 
@@ -104,6 +104,19 @@ class Deployment(BaseModel):
     """Job to launch representatives through. Defaults to Dagster's
     implicit ``"__ASSET_JOB"`` when unset, which is correct for
     asset-only locations."""
+
+    sha_metadata_key: str = "git_sha"
+    """Key the operator stamps into ``workspace.yaml``'s
+    ``grpc_server.additional_metadata`` holding the git sha the code
+    location was built from. Preflight uses it to match a live code
+    location to an ``inventory_pins`` entry. Configurable because nothing
+    in this library hardcodes names a downstream deployment owns."""
+
+    repo_metadata_key: str = "repo"
+    """Key the operator stamps into ``additional_metadata`` naming the repo
+    the code location was built from (matched against
+    ``inventory_pins[].repo``). Configurable for the same reason as
+    ``sha_metadata_key``."""
 
 
 class Selection(BaseModel):

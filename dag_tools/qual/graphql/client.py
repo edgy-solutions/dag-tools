@@ -92,6 +92,10 @@ class CodeLocationStatus:
     operator must wait; ``"ERROR"`` means the user-code image is broken."""
     error: Optional[str] = None
     """When ``load_status`` is ``"ERROR"``, the operator-actionable message."""
+    display_metadata: Dict[str, str] = field(default_factory=dict)
+    """The deployment's own key/value stamp, from ``workspace.yaml``'s
+    ``grpc_server.additional_metadata``. Dagster puts ``host``/``port``/
+    ``socket`` here too, so the dict is not purely operator-supplied."""
 
     @property
     def loaded(self) -> bool:
@@ -491,6 +495,7 @@ query DagtoolsWorkspace {
       locationEntries {
         name
         loadStatus
+        displayMetadata { key value }
         locationOrLoadError {
           __typename
           ... on PythonError { message }
@@ -523,8 +528,17 @@ query DagtoolsWorkspace {
             link = entry.get("locationOrLoadError") or {}
             if link.get("__typename") == "PythonError":
                 error = link.get("message")
+            metadata: Dict[str, str] = {}
+            try:
+                for item in entry.get("displayMetadata") or []:
+                    if not isinstance(item, dict) or item.get("key") is None:
+                        continue
+                    metadata[str(item["key"])] = str(item.get("value"))
+            except Exception:  # soft-fail: a malformed stamp must not abort
+                pass
             out.append(CodeLocationStatus(
                 name=name, load_status=load_status, error=error,
+                display_metadata=metadata,
             ))
         return out
 
