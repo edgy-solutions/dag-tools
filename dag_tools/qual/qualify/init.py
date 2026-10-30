@@ -37,6 +37,7 @@ from ..registry import InventoryRegistry
 from .manifest import (
     Deployment,
     InventoryPin,
+    ProbeSettings,
     QualificationManifest,
     Selection,
     VersionTarget,
@@ -64,6 +65,7 @@ def create_qualification(
     deployment: Optional[Deployment] = None,
     staging_overrides: Optional[str] = None,
     selection: Optional[Selection] = None,
+    probes: Optional[ProbeSettings] = None,
     local_path: Optional[Path] = None,
     allow_overwrite: bool = False,
     now: Optional[datetime] = None,
@@ -92,6 +94,7 @@ def create_qualification(
         deployment=deployment,
         staging_overrides=staging_overrides,
         selection=selection,
+        probes=probes or ProbeSettings(),
     )
 
     yaml_body = _to_yaml_bytes(manifest)

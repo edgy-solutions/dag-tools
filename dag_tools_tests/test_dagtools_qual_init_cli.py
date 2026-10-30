@@ -223,3 +223,59 @@ def test_dagtools_qual_init_bad_pins_file_exits_clean(home_override, tmp_path):
         )
     assert result.exit_code == 2
     assert "must contain a mapping" in result.output
+
+
+def test_qual_init_reads_probe_config_yaml_into_the_manifest(home_override, tmp_path):
+    cfg = tmp_path / "probe.yaml"
+    cfg.write_text(textwrap.dedent("""
+        io_manager_config:
+          dagster_aws.s3.S3PickleIOManager:
+            s3_bucket: {env: QUAL_PROBE_BUCKET}
+            s3_prefix: qual-probes/
+        io_manager_config_by_class:
+          abc123def456:
+            base_path: /tmp/special-case
+    """))
+    runner = CliRunner()
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+        reg = InventoryRegistry(S3Storage(StorageSettings(bucket=BUCKET)))
+        _publish(reg, "patriot", "sha-patriot")
+        result = runner.invoke(app, [
+            "--registry", f"s3://{BUCKET}", "qual", "init",
+            "--id", "probe-cfg", "--baseline", "1.10.6", "--candidate", "1.12.1",
+            "--probe-config", str(cfg),
+        ])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["schema_version"] == 3
+        io = payload["probes"]["io_manager_config"]["dagster_aws.s3.S3PickleIOManager"]
+        assert io == {"s3_bucket": {"env": "QUAL_PROBE_BUCKET"}, "s3_prefix": "qual-probes/"}
+        assert payload["probes"]["io_manager_config_by_class"]["abc123def456"] == {
+            "base_path": "/tmp/special-case"
+        }
+        stored = yaml.safe_load(reg.read_qualification_manifest("probe-cfg"))
+        assert stored["probes"]["io_manager_config"] == payload["probes"]["io_manager_config"]
+
+
+def test_qual_init_rejects_a_malformed_probe_config_with_a_clean_error(home_override, tmp_path):
+    cfg = tmp_path / "bad.yaml"
+    cfg.write_text(textwrap.dedent("""
+        io_manager_config:
+          some.Fqn:
+            token: {env: X, extra: y}
+    """))
+    runner = CliRunner()
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+        reg = InventoryRegistry(S3Storage(StorageSettings(bucket=BUCKET)))
+        _publish(reg, "patriot", "sha-patriot")
+        result = runner.invoke(app, [
+            "--registry", f"s3://{BUCKET}", "qual", "init",
+            "--id", "probe-bad", "--baseline", "1.10.6", "--candidate", "1.12.1",
+            "--probe-config", str(cfg),
+        ])
+        assert result.exit_code != 0
+        assert "some.Fqn" in result.output
+        assert "Traceback" not in result.output
+        assert reg.read_qualification_manifest("probe-bad") is None

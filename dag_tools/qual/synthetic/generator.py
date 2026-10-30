@@ -19,6 +19,8 @@ What this v1 generates:
     not a code-location load failure. The operator can deploy the
     dag-tools-probes location alongside other location work and triage
     individual probes iteratively.
+  * Constructs the IO manager with the manifest's ``probes`` config
+    (literals, or ``{env: VAR}`` rendered as ``os.environ[...]``).
   * Produces a deterministic dict payload that survives any IO manager's
     handle_output / load_input round-trip (the recipe's "small
     deterministic payload matching the class's broad shape" — for v1
@@ -29,18 +31,17 @@ What this v1 generates:
 
 Deferred to follow-up slices:
   * Partition def + partition mapping mirroring (recorded in ``notes``).
-  * Real staging-config injection (placeholder instantiation today;
-    the generated module's ``_IO_MANAGER = <Class>()`` is a hook the
-    operator wires up at deploy time).
   * Resource other than the IO manager (only the IO manager is bound in v1).
 """
 from __future__ import annotations
 
+import keyword
 import logging
 from textwrap import dedent
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..classes import EquivalenceClass, Runnability
+from ..qualify.manifest import ProbeSettings, is_env_ref
 from .schema import ProbeModule, ProbeStatus
 
 
@@ -56,6 +57,7 @@ def generate_probe_module(
     cls: EquivalenceClass,
     *,
     qual_id: str,
+    probe_settings: Optional[ProbeSettings] = None,
 ) -> Tuple[Optional[ProbeModule], str]:
     """Build a :class:`ProbeModule` + its source text for one class.
 
@@ -89,12 +91,23 @@ def generate_probe_module(
             "probe if translator behavior is part of the qualification surface"
         )
 
+    io_fqn = cls.key.io_manager_class
+    settings = probe_settings or ProbeSettings()
+    io_config = settings.config_for(cls.class_hash, io_fqn)
+    if io_fqn and not settings.has_config_for(cls.class_hash, io_fqn):
+        notes.append(
+            f"no constructor config supplied for `{io_fqn}`; the probe "
+            "constructs it with no arguments and will fail at materialization "
+            "if the class requires config"
+        )
+
     short = cls.class_hash[:8]
     module_name = f"probe_{short}"
     source_key = f"qualifications/{qual_id}/probes/{cls.class_hash}.py"
 
     source = generate_probe_source(
         cls=cls, module_name=module_name, qual_id=qual_id, notes=notes,
+        io_manager_config=io_config,
     )
 
     probe = ProbeModule(
@@ -102,6 +115,7 @@ def generate_probe_module(
         module_name=module_name,
         source_key=source_key,
         io_manager_class=cls.key.io_manager_class,
+        io_manager_config_keys=sorted(io_config),
         resource_classes=dict(zip(
             range_resource_keys(cls), cls.key.resource_classes,
         )),
@@ -136,6 +150,7 @@ def generate_probe_source(
     module_name: str,
     qual_id: str,
     notes: List[str],
+    io_manager_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Return the Python source text for one probe module.
 
@@ -147,7 +162,9 @@ def generate_probe_source(
     short = cls.class_hash[:8]
     rep0 = cls.representatives[0]
     io_manager_fqn = cls.key.io_manager_class
-    io_manager_import, io_manager_construct = _io_manager_import_lines(io_manager_fqn)
+    io_manager_import, io_manager_construct = _io_manager_import_lines(
+        io_manager_fqn, config=io_manager_config,
+    )
 
     notes_block = "\n".join(f"#   - {n}" for n in notes) if notes else "#   (none)"
 
@@ -174,9 +191,11 @@ Representative used as the seed shape:
   asset_key= {list(rep0.asset_key)!r}
 
 Operator integration:
-  Wire `_IO_MANAGER = ...` below with the staging-configured constructor
-  call for your deployment (the import block is a no-arg fallback so the
-  code-location load succeeds even when the real class needs config).
+  `_IO_MANAGER` is constructed with the constructor config from the
+  qualification manifest's `probes` block (`dagtools qual init
+  --probe-config`); env references appear as os.environ[...] and are
+  resolved at code-location load, never baked into this file. With no
+  config it is a no-arg construct.
 """
 from __future__ import annotations
 
@@ -237,12 +256,17 @@ defs = Definitions(
 # ---------------------------------------------------------------------------
 
 
-def _io_manager_import_lines(io_manager_fqn: Optional[str]) -> Tuple[str, str]:
+def _io_manager_import_lines(
+    io_manager_fqn: Optional[str],
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str]:
     """Build the IO manager import block + the constructor expression.
 
     Returns ``(import_block, construct_expr)`` where:
       * ``import_block`` is a multi-line string defining ``_IO_MANAGER_CLASS``,
         ``_IO_MANAGER``, and ``_IO_MANAGER_ERROR`` with a try/except fallback.
+      * ``config`` is the already-resolved constructor kwargs (no lookup here).
       * ``construct_expr`` is the expression to reference in the
         ``Definitions(resources={...})`` block — always ``_IO_MANAGER``,
         but factored out in case future generators want something more
@@ -269,18 +293,47 @@ def _io_manager_import_lines(io_manager_fqn: Optional[str]) -> Tuple[str, str]:
             "_IO_MANAGER",
         )
 
-    return (
-        dedent(f'''\
-        try:
-            from {module_path} import {class_name} as _IO_MANAGER_CLASS
-            _IO_MANAGER = _IO_MANAGER_CLASS()  # operator: override with staging config
-            _IO_MANAGER_ERROR = None
-        except Exception as _e:  # noqa: BLE001
-            # Fall back to InMemoryIOManager so the code location LOADS;
-            # the probe asset will raise at materialization with the
-            # captured error so operators can triage iteratively.
-            from dagster._core.storage.mem_io_manager import InMemoryIOManager
-            _IO_MANAGER = InMemoryIOManager()
-            _IO_MANAGER_ERROR = repr(_e)'''),
-        "_IO_MANAGER",
+    construct, uses_os = _render_construct(config or {})
+    block = (
+        "try:\n"
+        f"    from {module_path} import {class_name} as _IO_MANAGER_CLASS\n"
+        f"{construct}\n"
+        "    _IO_MANAGER_ERROR = None\n"
+        "except Exception as _e:  # noqa: BLE001\n"
+        "    # Fall back to InMemoryIOManager so the code location LOADS;\n"
+        "    # the probe asset will raise at materialization with the\n"
+        "    # captured error so operators can triage iteratively.\n"
+        "    from dagster._core.storage.mem_io_manager import InMemoryIOManager\n"
+        "    _IO_MANAGER = InMemoryIOManager()\n"
+        "    _IO_MANAGER_ERROR = repr(_e)"
     )
+    if uses_os:
+        block = "import os\n" + block
+    return block, "_IO_MANAGER"
+
+
+def _render_construct(config: Dict[str, Any]) -> Tuple[str, bool]:
+    """Render the ``_IO_MANAGER = _IO_MANAGER_CLASS(...)`` lines (indented
+    for the ``try`` body). Returns ``(text, uses_os)``.
+
+    No config -> exactly the historical no-arg line. Kwargs are sorted by
+    name so regenerating an unchanged config is byte-identical. Env
+    references render as ``os.environ["VAR"]`` and are NEVER resolved here:
+    the source is published to the registry and written to disk.
+    """
+    if not config:
+        return "    _IO_MANAGER = _IO_MANAGER_CLASS()  # operator: override with staging config", False
+    uses_os = False
+    lines = ["    _IO_MANAGER = _IO_MANAGER_CLASS("]
+    for key in sorted(config):
+        value = config[key]
+        if not key.isidentifier() or keyword.iskeyword(key):
+            raise ValueError(f"io manager kwarg name {key!r} is not a valid identifier")
+        if is_env_ref(value):
+            uses_os = True
+            rendered = f"os.environ[{value['env']!r}]"
+        else:
+            rendered = repr(value)
+        lines.append(f"        {key}={rendered},")
+    lines.append("    )")
+    return "\n".join(lines), uses_os

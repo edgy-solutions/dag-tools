@@ -535,6 +535,39 @@ What the generator produces per class:
   mappings, custom `DagsterDbtTranslator` subclasses (a dbt-aware probe is
   the operator's job).
 
+#### Probe IO manager constructor config (`qual init --probe-config`)
+
+Before this existed, the generated probe built its IO manager with no
+arguments. A class that requires config (a bucket, a base path) therefore
+failed at materialization with `_IO_MANAGER_ERROR` and could never PASS, so
+`--accept-synthetic-coverage-missing` was required forever. The config now
+enters at `qual init` time (the manifest is immutable) from a YAML file:
+
+```yaml
+io_manager_config:                      # keyed by IO manager FQN (stable across re-surveys)
+  dag_tools.io_managers.arrow.ConfigurableArrowIOManager:
+    base_path: /tmp/qual-probes
+  dagster_aws.s3.S3PickleIOManager:
+    s3_bucket: {env: QUAL_PROBE_BUCKET}  # env reference, see below
+    s3_prefix: qual-probes/
+io_manager_config_by_class:             # keyed by class_hash; beats the FQN entry
+  abc123def456:
+    base_path: /tmp/special-case
+```
+
+- Values are JSON-able literals or `{env: VAR_NAME}`. An env reference is
+  rendered as `os.environ["VAR_NAME"]` in the generated source and is never
+  resolved at generation time, so no credential reaches the registry or
+  `~/.dagtools/quals/<id>/probes/`. It is read when the probe code location
+  loads, so the variable must be set in that deployment.
+- Keyed by FQN because class hashes change on every re-survey.
+- A bad value fails `qual init` with a non-zero exit and a message naming the
+  FQN and key. A wrong value that passes validation (bad bucket) degrades to
+  `_IO_MANAGER_ERROR` at materialization, as before.
+- An IO manager with no config entry gets a `notes` entry in the probe
+  manifest; the probe manifest records kwarg names only (`io_manager_config_keys`).
+- Only the IO manager is configured; other resources are out of scope.
+
 Outputs:
 
 - Registry: `qualifications/<qual_id>/probes/<class_hash>.py` (one per
@@ -932,6 +965,9 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 generated source always parses as Python (code location loads) | `test_synthetic_generator.py::test_generated_source_parses_as_python` |
 | Q5 source imports IO manager by FQN with InMemoryIOManager fallback | `test_synthetic_generator.py::test_generated_source_has_inmemory_fallback_for_missing_io_manager` |
 | Q5 generated probes do NOT import `dag_tools.qual.*` (decoupled deploy cycles) | `test_synthetic_generator.py::test_generate_probe_source_is_self_contained` |
+| Q5 probe IO manager config: env refs render as `os.environ[...]`, the resolved secret never lands in source | `test_synthetic_probe_config.py::test_env_reference_renders_os_environ_not_the_literal_value` |
+| Q5 probe IO manager construct stays inside the try/except | `test_synthetic_probe_config.py::test_the_construct_stays_inside_the_try_block` |
+| Q5 probe manifest records config key names, never values | `test_synthetic_bundle.py::test_probe_manifest_records_config_key_names_never_values` |
 | Q5 manifest written LAST in publish (sources visible-then-manifest invariant) | `test_synthetic_bundle.py::test_publish_bundle_writes_sources_then_manifest` |
 | Q5 probe artifacts are immutable per qual_id | `test_synthetic_bundle.py::test_publish_bundle_is_immutable_by_default` |
 | Q5 each probe uses class-unique `io_manager_<short>` resource key (no merge collision) | `test_synthetic_generator.py::test_each_probe_uses_class_unique_io_manager_resource_key` |

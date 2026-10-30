@@ -51,7 +51,7 @@ def generate_bundle(
     """
     now = now or datetime.now(tz=timezone.utc)
 
-    _read_manifest(registry, qual_id)  # raises FileNotFoundError if missing
+    qual_manifest = _read_manifest(registry, qual_id)  # raises FileNotFoundError if missing
     matrix = _read_class_matrix(registry, qual_id)
 
     probes: List[ProbeModule] = []
@@ -65,7 +65,9 @@ def generate_bundle(
         if cls.representatives[0].runnability != Runnability.SYNTHETIC_REQUIRED:
             continue
         synthetic_total += 1
-        probe, source_or_reason = generate_probe_module(cls, qual_id=qual_id)
+        probe, source_or_reason = generate_probe_module(
+            cls, qual_id=qual_id, probe_settings=qual_manifest.probes,
+        )
         if probe is None:
             logger.warning(
                 "generate_bundle: class %s skipped: %s",
