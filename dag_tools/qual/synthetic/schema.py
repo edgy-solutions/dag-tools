@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION_PROBE_MANIFEST = 1
+SCHEMA_VERSION_PROBE_MANIFEST = 2
 
 
 class ProbeStatus(str, Enum):
@@ -61,6 +61,10 @@ class ProbeModule(BaseModel):
     io_manager_class: Optional[str] = None
     """FQN of the IO manager the probe targets. None when the class had no
     detected IO manager — the probe then runs against an in-memory fallback."""
+
+    io_manager_config_keys: List[str] = Field(default_factory=list)
+    """Constructor kwarg NAMES bound into this probe. Names only -- values are
+    deliberately excluded so the manifest never carries a credential."""
 
     resource_classes: Dict[str, str] = Field(default_factory=dict)
     integration_libs: List[str] = Field(default_factory=list)

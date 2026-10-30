@@ -26,12 +26,13 @@ sample) but the on-disk shape is just ``QualificationManifest.model_dump()``.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Optional
+import keyword
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """Bump on every additive change to the manifest schema."""
 
 
@@ -131,6 +132,114 @@ class Selection(BaseModel):
     says ideally spanning >=2 repos per class — Q1 will best-effort that."""
 
 
+def is_env_ref(value: Any) -> bool:
+    """True for the exact ``{env: VAR_NAME}`` shape (a single-key dict)."""
+    return isinstance(value, dict) and set(value.keys()) == {"env"}
+
+
+def _check_literal(value: Any, where: str) -> None:
+    """Recursively require a JSON-able literal (nested env refs unsupported)."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _check_literal(item, where)
+        return
+    if isinstance(value, dict):
+        if "env" in value:
+            raise ValueError(
+                f"{where}: an 'env' key inside a nested literal is ambiguous; "
+                "env references are supported only as a whole top-level value "
+                "({env: VAR_NAME})"
+            )
+        for k, v in value.items():
+            if not isinstance(k, str):
+                raise ValueError(f"{where}: nested dict keys must be strings, got {k!r}")
+            _check_literal(v, where)
+        return
+    raise ValueError(
+        f"{where}: value of type {type(value).__name__} cannot be rendered "
+        "into probe source (allowed: str/int/float/bool/None/list/dict or {env: VAR})"
+    )
+
+
+def _validate_config_map(mapping: Dict[str, Dict[str, Any]], label: str) -> None:
+    for owner, kwargs in mapping.items():
+        for key, value in kwargs.items():
+            where = f"{label}[{owner!r}].{key}"
+            if not isinstance(key, str) or not key.isidentifier() or keyword.iskeyword(key):
+                raise ValueError(
+                    f"{where}: kwarg name {key!r} is not a valid Python identifier"
+                )
+            if isinstance(value, dict) and "env" in value:
+                if not is_env_ref(value):
+                    raise ValueError(
+                        f"{where}: a dict with an 'env' key must be exactly "
+                        f"{{env: VAR_NAME}}; got extra keys {sorted(set(value) - {'env'})}"
+                    )
+                name = value["env"]
+                if not isinstance(name, str) or not name:
+                    raise ValueError(f"{where}: env reference needs a non-empty variable name")
+                continue
+            _check_literal(value, where)
+
+
+class ProbeSettings(BaseModel):
+    """Constructor config for the IO managers the synthetic probes bind.
+
+    A probe whose IO manager needs constructor config (a bucket, a base
+    path) cannot be built with no arguments, so it could never PASS and Q6
+    would need ``--accept-synthetic-coverage-missing`` forever. The config
+    enters here, at ``qual init`` time, because the manifest is immutable.
+
+    Values are JSON-able literals or an env reference ``{env: VAR_NAME}``.
+    An env reference is rendered into the generated source as
+    ``os.environ["VAR_NAME"]`` and is never resolved at generation time:
+    probe source is published to the registry and written to disk, so a
+    literal credential would land in both.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    io_manager_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    """Constructor kwargs per IO manager, keyed by the IO manager's FQN
+    exactly as the inventory records it (``ClassKeyComponents.io_manager_class``).
+    Keyed by FQN, not class_hash, because class hashes are derived from the
+    inventory and change on every re-survey; making the operator re-key
+    their config on each ``qual classes`` run would make this unusable.
+    FQNs are stable and what the operator recognises."""
+
+    io_manager_config_by_class: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    """Per-equivalence-class override, keyed by class_hash. Takes precedence
+    over the FQN entry when both match. Deliberately narrow escape hatch
+    for one class needing different config from other users of the same
+    IO manager."""
+
+    @field_validator("io_manager_config")
+    @classmethod
+    def _v_fqn(cls, v):
+        _validate_config_map(v, "io_manager_config")
+        return v
+
+    @field_validator("io_manager_config_by_class")
+    @classmethod
+    def _v_class(cls, v):
+        _validate_config_map(v, "io_manager_config_by_class")
+        return v
+
+    def config_for(self, class_hash: str, io_manager_fqn: Optional[str]) -> Dict[str, Any]:
+        """Resolve the kwargs for one class: class_hash entry beats FQN entry."""
+        if class_hash in self.io_manager_config_by_class:
+            return dict(self.io_manager_config_by_class[class_hash])
+        if io_manager_fqn and io_manager_fqn in self.io_manager_config:
+            return dict(self.io_manager_config[io_manager_fqn])
+        return {}
+
+    def has_config_for(self, class_hash: str, io_manager_fqn: Optional[str]) -> bool:
+        return class_hash in self.io_manager_config_by_class or bool(
+            io_manager_fqn and io_manager_fqn in self.io_manager_config
+        )
+
+
 class QualificationManifest(BaseModel):
     """The full qualification manifest.
 
@@ -158,3 +267,6 @@ class QualificationManifest(BaseModel):
     config. Phase 2 GraphQL launches pull this as run_config."""
 
     selection: Selection = Field(default_factory=Selection)
+
+    probes: ProbeSettings = Field(default_factory=ProbeSettings)
+    """Constructor config for synthetic probe IO managers (schema v3)."""

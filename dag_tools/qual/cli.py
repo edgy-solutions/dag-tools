@@ -415,6 +415,14 @@ def qual_init(
         None, "--staging-overrides",
         help="Pointer (typically s3://...) to the staging resource override config.",
     ),
+    probe_config: Optional[Path] = typer.Option(
+        None, "--probe-config",
+        help=(
+            "YAML file supplying probe IO manager constructor config "
+            "(io_manager_config / io_manager_config_by_class). Values are "
+            "literals or {env: VAR_NAME} for secrets."
+        ),
+    ),
     prefer_tag: str = typer.Option(
         "regression", "--prefer-tag",
         help="When picking representatives, prefer assets tagged with this.",
@@ -445,6 +453,7 @@ def qual_init(
 
     baseline_pins_dict = _load_pins_file(baseline_pins)
     candidate_pins_dict = _load_pins_file(candidate_pins)
+    probe_settings = _load_probe_config(probe_config)
 
     auth = f"env:{graphql_auth_env}" if graphql_auth_env else None
 
@@ -465,6 +474,7 @@ def qual_init(
             ),
             staging_overrides=staging_overrides,
             selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
+            probes=probe_settings,
             local_path=local_path,
             allow_overwrite=allow_overwrite,
         )
@@ -500,6 +510,41 @@ def _load_pins_file(path: Optional[Path]) -> dict:
         raise typer.Exit(code=2)
     # All values to strings for stable diffing.
     return {str(k): str(v) for k, v in doc.items()}
+
+
+def _load_probe_config(path: Optional[Path]):
+    """Parse + validate a ``--probe-config`` YAML into ``ProbeSettings``.
+
+    Any failure is a clean non-zero exit with the message, never a traceback.
+    """
+    from .qualify import ProbeSettings
+
+    if path is None:
+        return ProbeSettings()
+    import yaml
+    try:
+        with path.open(encoding="utf-8") as f:
+            doc = yaml.safe_load(f) or {}
+    except Exception as e:
+        typer.secho(
+            f"error: failed to read probe config {path}: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    if not isinstance(doc, dict):
+        typer.secho(
+            f"error: probe config {path} must contain a mapping at top level",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        return ProbeSettings.model_validate(doc)
+    except Exception as e:
+        typer.secho(
+            f"error: invalid probe config {path}: {e}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
 
 
 def _print_manifest_table(manifest) -> None:
