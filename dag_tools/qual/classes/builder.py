@@ -26,10 +26,12 @@ from .key import (
     ClassMember,
     EquivalenceClass,
     Runnability,
+    StagingNeed,
     class_hash,
     compute_class_key,
 )
 from .selection import pick_representatives
+from .staging import build_executability_index
 
 
 logger = logging.getLogger(__name__)
@@ -55,10 +57,12 @@ def build_class_matrix(
     members: List[ClassMember] = []
     key_components: Dict[Tuple[str, ...], ClassKeyComponents] = {}
     class_member_map: Dict[str, List[ClassMember]] = defaultdict(list)
+    all_records: List[AssetRecord] = []
 
     for pin in manifest.inventory_pins:
         records = _read_asset_records(registry, pin.repo, pin.git_sha)
         custom_translators = _custom_dbt_translators(registry, pin.repo, pin.git_sha)
+        all_records.extend(records)
         for record in records:
             member = ClassMember(
                 repo=pin.repo,
@@ -67,6 +71,7 @@ def build_class_matrix(
                 location=record.location,
                 tags=dict(record.tags or {}),
                 is_executable=record.is_executable,
+                upstream_asset_keys=record.upstream_asset_keys,
             )
             components = compute_class_key(
                 record, custom_dbt_translators_in_repo=custom_translators
@@ -75,6 +80,10 @@ def build_class_matrix(
             class_member_map[ch].append(member)
             key_components.setdefault(_key_components_id(ch), components)
             members.append(member)
+
+    # The index spans every pin: an upstream stub in one repo may be a real,
+    # computed asset in another.
+    executability_index = build_executability_index(all_records)
 
     # 2. Assemble per-class records with representatives.
     classes: List[EquivalenceClass] = []
@@ -85,6 +94,7 @@ def build_class_matrix(
             cls_members,
             prefer_tag=selection.prefer_tag,
             reps_per_class=selection.reps_per_class,
+            executability_index=executability_index,
         )
         classes.append(EquivalenceClass(
             class_hash=ch,
@@ -107,12 +117,29 @@ def build_class_matrix(
     for r in Runnability:
         coverage.setdefault(r.value, 0)
 
+    staging = Counter(
+        rep.staging_need.value
+        for cls in classes
+        for rep in cls.representatives
+    )
+    for s in StagingNeed:
+        staging.setdefault(s.value, 0)
+    launchable_now = sum(
+        1
+        for cls in classes
+        for rep in cls.representatives
+        if rep.runnability == Runnability.RUNNABLE
+        and rep.staging_need == StagingNeed.NONE_NEEDED
+    )
+
     return ClassMatrix(
         qual_id=qual_id,
         generated_at=now,
         asset_count=len(members),
         class_count=len(classes),
         coverage_by_runnability=dict(coverage),
+        coverage_by_staging_need=dict(staging),
+        launchable_now_count=launchable_now,
         classes=classes,
     )
 
@@ -157,6 +184,14 @@ def render_markdown(matrix: ClassMatrix) -> str:
     for runnab in Runnability:
         n = matrix.coverage_by_runnability.get(runnab.value, 0)
         lines.append(f"  - **{runnab.value}**: {n}")
+    lines.append("- Representatives by staging need:")
+    for need in StagingNeed:
+        n = matrix.coverage_by_staging_need.get(need.value, 0)
+        lines.append(f"  - **{need.value}**: {n}")
+    lines.append(
+        "- Launchable now (runnable, no staged upstream needed): "
+        f"**{matrix.launchable_now_count}**"
+    )
     lines.append("")
 
     lines.append("## Classes")
@@ -203,7 +238,9 @@ def render_markdown(matrix: ClassMatrix) -> str:
                 pref = " ⭐" if rep.is_preferred else ""
                 lines.append(
                     f"- **{rep.runnability.value}**: `{rep.repo}@{rep.git_sha[:12]}` "
-                    f"→ `{ak}`{pref}  _({rep.runnability_reason})_"
+                    f"→ `{ak}`{pref}  _({rep.runnability_reason})_  "
+                    f"staging **{rep.staging_need.value}** "
+                    f"_({rep.staging_need_reason})_"
                 )
             lines.append("")
         # First few members (in addition to reps) so the operator sees what's in the bucket.

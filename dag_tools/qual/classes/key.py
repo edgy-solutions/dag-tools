@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dag_tools.inventory import AssetRecord
 
 
-SCHEMA_VERSION_CLASS_MATRIX = 1
+SCHEMA_VERSION_CLASS_MATRIX = 2
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +54,22 @@ class Runnability(str, Enum):
     RUNNABLE = "runnable"
     SYNTHETIC_REQUIRED = "synthetic_required"
     OBSERVE_ONLY = "observe_only"
+
+
+class StagingNeed(str, Enum):
+    """Whether Q2 must stage upstream data before launching a representative.
+
+    * ``NONE_NEEDED`` - zero upstreams, or every upstream is external.
+    * ``REQUIRED`` - at least one upstream is a computed asset Q2 will not run.
+    * ``UNKNOWN`` - cannot be determined from this inventory. Never to be
+      read as ``NONE_NEEDED``.
+
+    Defined here (re-exported from ``.staging``) to avoid an import cycle.
+    """
+
+    NONE_NEEDED = "none_needed"
+    REQUIRED = "required"
+    UNKNOWN = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +125,10 @@ class ClassMember(BaseModel):
     materialize this asset at all, which forces OBSERVE_ONLY regardless of
     tags. None means the survey predates the field — treated as unknown,
     so old inventories classify exactly as they did before."""
+    upstream_asset_keys: Optional[List[List[str]]] = None
+    """From ``AssetRecord.upstream_asset_keys``. None means the survey
+    predates the field (unknown - NOT 'no upstreams'); ``[]`` means
+    genuinely none."""
 
 
 class Representative(BaseModel):
@@ -122,6 +142,8 @@ class Representative(BaseModel):
     runnability_reason: str
     is_preferred: bool = False
     """True when this rep matched the configured ``prefer_tag`` from the manifest."""
+    staging_need: StagingNeed = StagingNeed.UNKNOWN
+    staging_need_reason: str = ""
 
 
 class EquivalenceClass(BaseModel):
@@ -153,6 +175,11 @@ class ClassMatrix(BaseModel):
     Sums to ``sum(reps_per_class for each class)`` — usually less than
     the asset count because each class contributes ``reps_per_class``
     representatives, not all members."""
+    coverage_by_staging_need: Dict[str, int] = Field(default_factory=dict)
+    """Count of representatives per :class:`StagingNeed` bucket."""
+    launchable_now_count: int = 0
+    """Representatives Q2 can launch today with no staged upstream data:
+    ``runnability == RUNNABLE and staging_need == NONE_NEEDED``."""
     classes: List[EquivalenceClass]
 
 

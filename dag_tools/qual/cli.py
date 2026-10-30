@@ -573,6 +573,13 @@ def _print_classes_table(matrix) -> None:
             f"{k}={v}" for k, v in matrix.coverage_by_runnability.items()
         )
     )
+    typer.echo(
+        "  staging: "
+        + "  ".join(
+            f"{k}={v}" for k, v in matrix.coverage_by_staging_need.items()
+        )
+        + f"  launchable_now={matrix.launchable_now_count}"
+    )
     typer.echo()
     typer.echo("  HASH         SIZE  REPOS  REPS  COMPUTE      IO MANAGER")
     for cls in matrix.classes:
