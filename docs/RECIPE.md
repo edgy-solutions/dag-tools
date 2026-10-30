@@ -385,8 +385,64 @@ rep, chosen deterministically and recorded in run state):
    `load_input`, not just `handle_output`.
 
 dbt representatives: ensure manifests were generated with the side's dbt
-version; build against the staging schema with seed/`--empty`-style minimal
-data.
+version. Staging data is covered under **Staging data for Q2** below.
+
+#### Staging data for Q2
+
+Q2 launches a representative alone, so whatever it reads must already
+exist. `dagtools qual classes` reports this per representative
+(`staging_need`: `none_needed` / `required` / `unknown`) and in total as
+`launchable_now_count`; read that first to size the work before doing any
+of it.
+
+**dbt representatives — `--empty`.** Two equivalent mechanisms make the
+dbt build schema-only (models build with `limit 0`; input refs and sources
+are limited to zero rows):
+
+- Component: `cli_args: ["build", "--empty"]` in `component.yaml`.
+  `CustomDbtProjectComponent.execute()` passes the resolved `cli_args` to
+  the **build** invocation only; `source snapshot-freshness` and
+  `docs generate` are hardcoded and never receive them.
+- Environment: `DBT_EMPTY=true` in the deployment environment. The flag
+  carries `envvar="DBT_EMPTY"` and exists only on `build` / `compile` /
+  `run`, so it self-selects to those and is inert for freshness, docs and
+  seed. This also covers a consumer's own hand-rolled `@dbt_assets`.
+
+(`docs generate` has a lookalike, `--empty-catalog`; it is a different
+flag.) `--empty` exercises the *wrapping* Q2 exists to qualify — manifest
+parse, one-key selection into a one-model `--select`, `run_results.json`
+into materialization metadata — and nothing about data.
+
+**Hazard: vacuous test parity.** dbt tests still run under `--empty`, and on
+empty relations the common generic tests (`not_null`, `unique`,
+`accepted_values`, `relationships`) pass vacuously. dbt tests surface to
+Dagster as asset checks, which Q2 records and Q6 diffs for parity. A
+qualification under `--empty` therefore compares two sets of vacuous passes:
+the resulting asset-check parity is **not evidence of data correctness**.
+Do not read a green Q6 on `--empty` representatives as a statement about
+the data.
+
+**Non-dbt representatives — `staging_overrides`.** The operator stages a
+schema or bucket once and points resources at it with a run-config
+document named by `dagtools qual init --staging-overrides <s3://... or path>`
+(see Q0). Only `ops` / `resources` / `execution` / `loggers` are accepted
+at the top level; anything else is rejected by design. Example:
+
+```yaml
+resources:
+  io_manager:
+    config: {s3_bucket: qual-staging}      # pre-populated once by the operator
+  warehouse:
+    config: {schema: qual_staging}
+```
+
+The merge with a per-representative block is recursive (explicit wins at
+the leaf), so a per-rep `resources` block does not drop sibling staging
+resources.
+
+**Generated seeder assets are deliberately NOT built.** It would be a large
+build whose value depends on fleet shape, and the override path covers the
+need today.
 
 **Local orchestration snapshots, baseline side** *(⚠️ planned — the
 `dagtools qual orchestration` command is NOT implemented yet; this
@@ -836,6 +892,12 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Pre-v3 inventory (`upstream_asset_keys=None`) classifies UNKNOWN, never NONE_NEEDED | `test_qual_staging_need.py::test_pre_v3_inventory_classifies_unknown_not_none_needed` |
 | `launchable_now_count` counts only RUNNABLE + NONE_NEEDED reps | `test_qual_staging_need.py::test_launchable_now_counts_only_runnable_and_unstaged` |
 | Staging need does not change runnability (report-only) | `test_qual_staging_need.py::test_staging_need_does_not_change_runnability` |
+| dbt `cli_args` (e.g. `--empty`) reach only the build invocation | `test_dbt_empty_staging.py::test_resolved_cli_args_reach_only_the_build_invocation` |
+| freshness / docs invocations are hardcoded, never parameterized | `test_dbt_empty_staging.py::test_the_non_build_invocations_are_hardcoded_and_unparameterized` |
+| `--empty` is a subcommand option, never a global flag | `test_dbt_empty_staging.py::test_empty_is_not_a_global_config_flag` |
+| The `--empty` vacuous-test-parity hazard stays documented | `test_dbt_empty_staging.py::test_empty_makes_dbt_tests_vacuous_is_documented` |
+| Real dbt: `--empty` on build, not docs generate (`--empty-catalog` distinct) | `test_dbt_datahub_e2e.py::test_dbt_accepts_empty_on_build_and_not_on_docs_generate` |
+| Real dbt: `DBT_EMPTY` is the flag's env var | `test_dbt_datahub_e2e.py::test_dbt_empty_env_var_is_the_documented_name` |
 | Q1 reads the manifest's inventory_pins, NOT the registry's latest | `test_classes_builder.py::test_q1_reads_pinned_sha_not_latest` |
 | Custom dbt translators force their own equivalence class | `test_classes_builder.py::test_build_class_matrix_segregates_custom_dbt_translator` |
 | Class hash is deterministic over its components | `test_classes_key.py::test_class_hash_is_deterministic` |
@@ -933,14 +995,17 @@ them, you're probably violating a recipe rule. Read carefully first.
   unmaterialized upstream is a *loaded input* whose output must already
   exist in the IO manager, so a run fails at input loading unless the
   staged deployment already holds that data (or the representative's
-  upstreams are all external). The seed / `--empty` minimal-data story
-  for dbt representatives above is **not implemented**; today the
-  operator must stage the schema themselves. Widening the selection to
+  upstreams are all external). Staging now has documented
+  mechanisms (see **Staging data for Q2**): dbt representatives can build
+  schema-only via `cli_args: ["build", "--empty"]` or `DBT_EMPTY=true`
+  (with the vacuous-test-parity caveat), and non-dbt representatives are
+  pointed at an operator-staged schema or bucket via `staging_overrides`.
+  What remains **unbuilt** is generated seeder assets; the operator
+  still stages the data. Widening the selection to
   pull in upstreams is NOT the fix — it turns a one-asset comparison into
   a whole-subgraph build. The size of the gap is now *reported* per
   representative (`staging_need`) and in total (`launchable_now_count`) by
-  `qual classes`, so it is visible before any pass is burned; staging
-  itself is still unimplemented (B2/B3 remain the fix).
+  `qual classes`, so it is visible before any pass is burned.
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
   needs the Q5 probes code location infrastructure to land first. The
