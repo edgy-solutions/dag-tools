@@ -404,9 +404,12 @@ are limited to zero rows):
   the **build** invocation only; `source snapshot-freshness` and
   `docs generate` are hardcoded and never receive them.
 - Environment: `DBT_EMPTY=true` in the deployment environment. The flag
-  carries `envvar="DBT_EMPTY"` and exists only on `build` / `compile` /
+  declares `DBT_EMPTY` as an env var and exists only on `build` / `compile` /
   `run`, so it self-selects to those and is inert for freshness, docs and
-  seed. This also covers a consumer's own hand-rolled `@dbt_assets`.
+  seed. This also covers a consumer's own hand-rolled `@dbt_assets`. Newer
+  dbt declares an alias list (observed: `DBT_ENGINE_EMPTY`, then
+  `DBT_EMPTY`) and uses whichever is set first, so do not set both to
+  conflicting values.
 
 (`docs generate` has a lookalike, `--empty-catalog`; it is a different
 flag.) `--empty` exercises the *wrapping* Q2 exists to qualify — manifest
