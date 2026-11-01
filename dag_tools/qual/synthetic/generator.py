@@ -158,10 +158,13 @@ def range_resource_keys(cls: EquivalenceClass) -> List[str]:
     members. ClassKeyComponents flattens to a list of FQNs without their
     keys, so we use member-level keys when available."""
     # ClassKeyComponents.resource_classes is a flat sorted list of FQNs
-    # (the key was discarded during class-key construction). For the
-    # ProbeModule we just enumerate as "resource_0", "resource_1", etc. so
-    # downstream UIs can still display them. The actual generated module
-    # only binds io_manager — other resources are operator's job.
+    # (the key was discarded during class-key construction, deliberately —
+    # the hash must be stable across repos that name the same resource
+    # differently). For this display-only field we enumerate as
+    # "resource_0", "resource_1", etc. so downstream UIs can still show the
+    # count. The REAL key -> FQN map for resources actually bound into the
+    # probe is ProbeModule.resource_bindings, routed via
+    # Representative.resource_classes (C3); read that, not this.
     return [f"resource_{i}" for i in range(len(cls.key.resource_classes))]
 
 
