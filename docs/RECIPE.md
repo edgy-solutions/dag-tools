@@ -566,7 +566,44 @@ io_manager_config_by_class:             # keyed by class_hash; beats the FQN ent
   `_IO_MANAGER_ERROR` at materialization, as before.
 - An IO manager with no config entry gets a `notes` entry in the probe
   manifest; the probe manifest records kwarg names only (`io_manager_config_keys`).
-- Only the IO manager is configured; other resources are out of scope.
+- Only the IO manager is configured by `io_manager_config`; see below for other resources.
+
+##### Binding the class's other resources (`resource_config`)
+
+The same YAML may carry a `resource_config` block. **Binding is opt-in, per
+resource class FQN**: a resource is bound into the probe if and only if it has
+an entry here (`{}` = construct with no arguments). A declared resource with no
+entry is NOT bound and is named in the probe's `notes`. With no entries at all
+the generated source is byte-identical to the pre-C3 output.
+
+```yaml
+resource_config:                        # keyed by resource class FQN (AssetRecord.resource_classes values)
+  my_pkg.resources.WarehouseResource:
+    host: {env: QUAL_PROBE_WAREHOUSE_HOST}   # point at STAGING, see below
+    port: 5432
+  my_pkg.resources.ClockResource: {}    # explicit opt-in with defaults
+```
+
+- Why opt-in: auto-binding everything the class declares could turn a probe
+  that PASSES today into one that fails or hangs (a `ConfigurableResource`
+  that connects in `setup_for_execution` really connects). A self-inflicted
+  coverage regression is indistinguishable from a real Q6 finding.
+- Bound resources get class-unique keys `<key>_<short>` (`RESOURCE_KEYS` in the
+  generated module maps original -> generated), so `Definitions.merge` across
+  probes never collides. Each resource is imported and constructed in its own
+  `try`; a failure lands in `_RESOURCE_ERRORS`, the resource is left out of
+  `Definitions`, and the probe fails at materialization naming it. The code
+  location still loads.
+- Same value grammar as `io_manager_config` (literals and `{env: VAR}`); the
+  probe manifest records kwarg names only (`resource_config_keys`) and the
+  bound set (`resource_bindings`).
+- **What this proves:** the resource class imports, constructs with that
+  config, and is available on the asset context. It does NOT prove the
+  resource works against its backend.
+- **A `ConfigurableResource` that connects in `setup_for_execution` will
+  attempt that connection** during probe materialization. Point its config at
+  staging via `{env: VAR}`.
+- No `resource_config_by_class` override yet: no demonstrated need.
 
 Outputs:
 
@@ -968,6 +1005,11 @@ them, you're probably violating a recipe rule. Read carefully first.
 | Q5 probe IO manager config: env refs render as `os.environ[...]`, the resolved secret never lands in source | `test_synthetic_probe_config.py::test_env_reference_renders_os_environ_not_the_literal_value` |
 | Q5 probe IO manager construct stays inside the try/except | `test_synthetic_probe_config.py::test_the_construct_stays_inside_the_try_block` |
 | Q5 probe manifest records config key names, never values | `test_synthetic_bundle.py::test_probe_manifest_records_config_key_names_never_values` |
+| Q5 no `resource_config` -> probe source byte-identical to pre-C3 | `test_synthetic_probe_resources.py::test_no_resource_config_emits_source_identical_to_c1` |
+| Q5 resources bind under class-unique keys (no merge collision) | `test_synthetic_probe_resources.py::test_two_probes_with_the_same_resource_key_do_not_collide_on_merge` |
+| Q5 resource binding is opt-in; unconfigured resource is noted, not bound | `test_synthetic_probe_resources.py::test_a_resource_without_a_config_entry_is_not_bound_and_is_noted` |
+| Q5 a failing resource never reaches `Definitions` and never breaks the load | `test_synthetic_probe_resources.py::test_a_failing_resource_does_not_reach_the_definitions_resources` |
+| Q5 resource env refs never leak the resolved secret | `test_synthetic_probe_resources.py::test_env_reference_in_resource_config_never_renders_the_literal` |
 | Q5 manifest written LAST in publish (sources visible-then-manifest invariant) | `test_synthetic_bundle.py::test_publish_bundle_writes_sources_then_manifest` |
 | Q5 probe artifacts are immutable per qual_id | `test_synthetic_bundle.py::test_publish_bundle_is_immutable_by_default` |
 | Q5 each probe uses class-unique `io_manager_<short>` resource key (no merge collision) | `test_synthetic_generator.py::test_each_probe_uses_class_unique_io_manager_resource_key` |

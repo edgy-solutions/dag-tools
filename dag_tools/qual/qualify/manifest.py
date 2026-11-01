@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 """Bump on every additive change to the manifest schema."""
 
 
@@ -214,6 +214,23 @@ class ProbeSettings(BaseModel):
     for one class needing different config from other users of the same
     IO manager."""
 
+    resource_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    """Constructor kwargs per NON-IO-manager resource, keyed by the resource
+    class FQN as the inventory records it (AssetRecord.resource_classes values).
+    Presence of a key is the opt-in to bind that resource; {} binds it with no
+    arguments. A resource with no entry is not bound.
+
+    Binding is opt-in, never automatic: a probe that PASSES today must not be
+    able to start failing (or hanging, if the resource connects in
+    ``setup_for_execution``) merely because this field exists -- a
+    self-inflicted coverage regression is indistinguishable from a real Q6
+    finding. Same value grammar as ``io_manager_config``.
+
+    Deliberately deferred: no ``resource_config_by_class`` override. C1 has one
+    for IO managers because a class needing a different bucket is a
+    demonstrated need; a per-class resource override is a second nested
+    dimension with no demonstrated need yet."""
+
     @field_validator("io_manager_config")
     @classmethod
     def _v_fqn(cls, v):
@@ -225,6 +242,19 @@ class ProbeSettings(BaseModel):
     def _v_class(cls, v):
         _validate_config_map(v, "io_manager_config_by_class")
         return v
+
+    @field_validator("resource_config")
+    @classmethod
+    def _v_resource(cls, v):
+        _validate_config_map(v, "resource_config")
+        return v
+
+    def has_resource_config(self, resource_fqn: str) -> bool:
+        """True iff the operator opted this resource class in (``{}`` counts)."""
+        return resource_fqn in self.resource_config
+
+    def resource_kwargs(self, resource_fqn: str) -> Dict[str, Any]:
+        return dict(self.resource_config.get(resource_fqn, {}))
 
     def config_for(self, class_hash: str, io_manager_fqn: Optional[str]) -> Dict[str, Any]:
         """Resolve the kwargs for one class: class_hash entry beats FQN entry."""
@@ -269,4 +299,4 @@ class QualificationManifest(BaseModel):
     selection: Selection = Field(default_factory=Selection)
 
     probes: ProbeSettings = Field(default_factory=ProbeSettings)
-    """Constructor config for synthetic probe IO managers (schema v3)."""
+    """Constructor config for synthetic probe IO managers (v3) and resources (v4)."""

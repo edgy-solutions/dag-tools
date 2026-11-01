@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION_PROBE_MANIFEST = 2
+SCHEMA_VERSION_PROBE_MANIFEST = 3
 
 
 class ProbeStatus(str, Enum):
@@ -67,6 +67,17 @@ class ProbeModule(BaseModel):
     deliberately excluded so the manifest never carries a credential."""
 
     resource_classes: Dict[str, str] = Field(default_factory=dict)
+
+    resource_bindings: Dict[str, str] = Field(default_factory=dict)
+    """Generated resource key -> resource class FQN for every resource actually
+    bound into this probe. Excludes the IO manager (see io_manager_class) and
+    excludes resources with no config entry (see notes)."""
+
+    resource_config_keys: Dict[str, List[str]] = Field(default_factory=dict)
+    """Generated resource key -> constructor kwarg NAMES bound for it. Names
+    only -- values are deliberately excluded so the manifest never carries a
+    credential, same rule as io_manager_config_keys."""
+
     integration_libs: List[str] = Field(default_factory=list)
 
     runnability: Optional[str] = None

@@ -248,7 +248,7 @@ def test_qual_init_reads_probe_config_yaml_into_the_manifest(home_override, tmp_
         ])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
-        assert payload["schema_version"] == 3
+        assert payload["schema_version"] == 4
         io = payload["probes"]["io_manager_config"]["dagster_aws.s3.S3PickleIOManager"]
         assert io == {"s3_bucket": {"env": "QUAL_PROBE_BUCKET"}, "s3_prefix": "qual-probes/"}
         assert payload["probes"]["io_manager_config_by_class"]["abc123def456"] == {

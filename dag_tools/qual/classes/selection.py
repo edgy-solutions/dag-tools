@@ -155,6 +155,7 @@ def _to_representative(
         is_preferred=_is_preferred(member, prefer_tag),
         staging_need=need,
         staging_need_reason=need_reason,
+        resource_classes=dict(member.resource_classes),
     )
 
 
