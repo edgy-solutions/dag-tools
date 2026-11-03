@@ -30,7 +30,18 @@ class CortexDataClient:
         originator_email: Optional[str] = None,
         caller: Optional[Caller] = None,
         service_identity: bool = False,
+        on_behalf_of: Optional[str] = None,
     ):
+        # `on_behalf_of` is the ruled wire name for the originator's authz_id (the same word the
+        # ingest door uses). `originator_email` stays as an alias of it. Naming two different
+        # users is a mistake worth stopping on, not a precedence puzzle.
+        if on_behalf_of is not None and originator_email is not None and on_behalf_of != originator_email:
+            raise ValueError(
+                "on_behalf_of and originator_email (its alias) name different subjects; "
+                "pass one of them."
+            )
+        if on_behalf_of is None:
+            on_behalf_of = originator_email
         # 1. Resolve Broker URL (Central Gateway)
         resolved_broker = broker_url or os.getenv("CORTEX_BROKER_URL")
         if not resolved_broker:
@@ -84,7 +95,7 @@ class CortexDataClient:
         )
         self.authz_id, self.identity_rung = resolve_authz_id(
             caller=caller,
-            explicit_authz_id=originator_email,
+            explicit_authz_id=on_behalf_of,
             allow_service_identity=opted_in,
         )
         self.originator_email = self.authz_id
@@ -117,6 +128,9 @@ class CortexDataClient:
         if self.originator_sub:
             headers["X-Originator-Sub"] = self.originator_sub
         if self.originator_email:
+            # Both spellings, same value: `on_behalf_of` is the ruled name; the legacy header
+            # stays so a gateway that has not been upgraded still reads the subject.
+            headers["on_behalf_of"] = self.originator_email
             headers["X-Originator-Email"] = self.originator_email
 
         url = f"{self.gateway_url}/api/v1/assets/{urn}/authorize"
@@ -131,7 +145,15 @@ class CortexDataClient:
                 ) from e
             detail = ""
             try:
-                detail = str((response.json() or {}).get("detail", ""))
+                raw_detail = (response.json() or {}).get("detail", "")
+                if isinstance(raw_detail, dict):
+                    # The gateway refuses with {"error": <reason token>, "message": ...}.
+                    # Surface the reason; never assume detail is a string.
+                    err = raw_detail.get("error")
+                    msg = raw_detail.get("message")
+                    detail = f"{err}: {msg}" if err and msg else str(err or msg or raw_detail)
+                else:
+                    detail = str(raw_detail)
             except Exception:
                 detail = response.text[:200]
             outcome = classify_response(response.status_code, detail)
