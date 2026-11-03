@@ -4,6 +4,7 @@ import logging
 import httpx
 import boto3
 
+from dag_tools.central_gateway import internal_door
 from dag_tools.domain_broker.sql_minting import (
     mint_clickhouse as _mint_clickhouse,
     mint_postgres as _mint_postgres,
@@ -11,7 +12,7 @@ from dag_tools.domain_broker.sql_minting import (
 )
 from typing import Dict, Any, List, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -962,6 +963,7 @@ async def _register_once(client: httpx.AsyncClient) -> None:
     resp = await client.post(
         f"{CENTRAL_GATEWAY_URL}/api/v1/internal/register",
         json=payload,
+        headers=await internal_door.service_headers(),
         timeout=10.0,
     )
     resp.raise_for_status()
@@ -1147,7 +1149,11 @@ async def ready():
     return {"status": "ok", "assets": len(LOCAL_ASSETS)}
 
 
-@app.post("/api/v1/internal/resolve")
+@app.post(
+    "/api/v1/internal/resolve",
+    dependencies=[Depends(internal_door.door(internal_door.ROUTE_RESOLVE,
+                                             internal_door.BROKER_RESOLVE_CALLERS))],
+)
 async def resolve_asset(request: ResolveRequest):
     """
     Called ONLY by the Central Gateway to resolve a DataHub URN into a physical routing ticket.

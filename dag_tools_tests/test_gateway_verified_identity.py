@@ -554,8 +554,8 @@ def test_identity_and_main_import_under_the_FLAT_container_layout(tmp_path):
     src = Path(__file__).resolve().parents[1] / "dag_tools" / "central_gateway"
     flat = tmp_path / "app"
     flat.mkdir()
-    for f in ("identity.py", "subject_gauge.py", "main.py"):
-        (flat / f).write_text((src / f).read_text(encoding="utf-8"), encoding="utf-8")
+    for f in src.glob("*.py"):  # the image does `COPY . .`: every module, not a hand-kept list
+        (flat / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
     code = "import sys; sys.path.insert(0, sys.argv[1]); import identity, main; print('ok', identity.ROUTE_AUTHORIZE)"
     out = subprocess.run([sys.executable, "-I", "-c", code, str(flat)], capture_output=True, text=True,
                          cwd=str(tmp_path), timeout=120)

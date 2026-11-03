@@ -104,17 +104,26 @@ def _refuse(reason: str, token_sub: Optional[str] = None) -> IdentityDecision:
 # ---------------------------------------------------------------------------
 # Settings — read per call
 # ---------------------------------------------------------------------------
-def posture() -> str:
-    """`observe` (default, also when blank) or `enforce`. Anything else is `enforce`, loudly."""
-    raw = (os.getenv("GATEWAY_IDENTITY_POSTURE") or "").strip().lower()
+def parse_posture(env_name: str) -> str:
+    """`observe` (default, also when blank) or `enforce`, read from `env_name`.
+
+    Anything else is `enforce`, loudly. Shared by every posture switch in this package so an
+    unknown value is handled the same way everywhere.
+    """
+    raw = (os.getenv(env_name) or "").strip().lower()
     if raw in ("", POSTURE_OBSERVE):
         return POSTURE_OBSERVE
     if raw != POSTURE_ENFORCE:
         logger.error(
-            "GATEWAY_IDENTITY_POSTURE has an unrecognised value (%d chars) — treating it as "
-            "'enforce'", len(raw),
+            "%s has an unrecognised value (%d chars) — treating it as "
+            "'enforce'", env_name, len(raw),
         )
     return POSTURE_ENFORCE
+
+
+def posture() -> str:
+    """`observe` (default, also when blank) or `enforce`. Anything else is `enforce`, loudly."""
+    return parse_posture("GATEWAY_IDENTITY_POSTURE")
 
 
 def entitlement_claim() -> str:

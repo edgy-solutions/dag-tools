@@ -29,6 +29,13 @@ try:
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import subject_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
+# The internal doors' service-token guard and the caller side that satisfies it. Same
+# two-layout rule: this module is flat in the gateway image.
+try:
+    from . import internal_door  # package layout: the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import internal_door  # type: ignore[no-redef]  # flat /app layout: the deployed image
+
 # The VERIFIED-IDENTITY decision (observe by default; `enforce` is opt-in). Same two-layout rule
 # as above: a bare relative import here would crash-loop the flat image.
 try:
@@ -124,7 +131,11 @@ async def readiness_check():
         logger.error(f"Readiness check failed: {e}")
         raise HTTPException(status_code=503, detail="Redis unreachable")
 
-@app.post("/api/v1/internal/register")
+@app.post(
+    "/api/v1/internal/register",
+    dependencies=[Depends(internal_door.door(internal_door.ROUTE_REGISTER,
+                                             internal_door.GATEWAY_REGISTER_CALLERS))],
+)
 async def register_broker(payload: RegisterPayload):
     """
     Receives heartbeats from Domain Brokers.
@@ -453,7 +464,11 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
                 "row_filters": row_filters,
                 "subject": verified.subject if verified is not None else originator_email,
             }
-            response = await client.post(resolve_url, json=payload, timeout=10.0)
+            # The broker's resolve door wants this service's own token (no-op `{}` until the
+            # MESH_SERVICE_* settings are present).
+            response = await client.post(
+                resolve_url, json=payload, headers=await internal_door.service_headers(),
+                timeout=10.0)
             
             if response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Asset not found on broker")
