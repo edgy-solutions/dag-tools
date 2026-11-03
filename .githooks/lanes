@@ -1,0 +1,4 @@
+# The registered lanes in this repo: a lane id, then the branch globs that lane commits on.
+# Lane 1 of invincible-agent owns the gateway and broker code here (ruled 2026-11-02; Chris merges).
+# A row is never removed. A closed lane gets a comment on its row.
+dag-tools   lane/01 lane/01-*
