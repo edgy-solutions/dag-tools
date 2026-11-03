@@ -385,10 +385,13 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     # filtered by the END USER's identity.
     if DENIED_USER_SUBS:
         if enforcing:
-            # Under enforce ONLY the verified token's sub counts: X-Originator-Sub is an
-            # unsigned header and would let a caller pick which identity the list is applied to.
-            originator_sub = ""
+            # Under enforce the verified token's sub is ALWAYS checked. X-Originator-Sub is an
+            # unsigned header, so it is added to the check ONLY when a listed delegate is
+            # vouching for a user (via is set): there it can only ADD a refusal, never remove
+            # one. On a user's own token it is ignored, so naming a denied sub cannot deny or
+            # free anyone.
             token_sub = verified.token_sub or ""
+            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if verified.via else ""
         else:
             originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
             try:
@@ -397,6 +400,8 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             except Exception:
                 token_sub = ""
         effective_sub = originator_sub or token_sub
+        if enforcing:
+            effective_sub = next((x for x in (token_sub, originator_sub) if x and x in DENIED_USER_SUBS), "")
         if effective_sub and effective_sub in DENIED_USER_SUBS:
             logger.warning(
                 "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) urn=%s reason=explicit_deny_list",

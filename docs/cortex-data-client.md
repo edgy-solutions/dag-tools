@@ -158,8 +158,9 @@ gateway verifies the bearer's signature, expiry and exact issuer, and then:
   header alone is refused with 403 `legacy_header`. A listed service that
   sends a blank `on_behalf_of` acts as itself.
 - The audit line, `IDENTITY_AUDIT`, names both the subject and the service.
-- Under `enforce`, `X-Originator-Sub` no longer feeds the deny list; the
-  verified token's `sub` does.
+- Under `enforce`, the verified token's `sub` feeds the deny list, and
+  `X-Originator-Sub` is ignored on a user's own token. A delegate read is
+  deny-listed only if the delegate sends `X-Originator-Sub`.
 
 A refusal's body is `{"detail": {"error": <reason>, "message": ...}}` and
 the client surfaces the reason in the `NotEntitled` message. Verification

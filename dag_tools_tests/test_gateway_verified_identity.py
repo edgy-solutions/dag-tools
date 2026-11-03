@@ -343,6 +343,34 @@ def test_enforce_deny_list_uses_the_verified_sub_not_the_originator_sub(enforce,
     assert "deny list" in r2.json()["detail"]
 
 
+def test_deny_1_listed_delegate_originator_sub_in_list_is_refused(enforce, world, http, monkeypatch):
+    monkeypatch.setattr(gateway, "DENIED_USER_SUBS", {"kc-bad"})
+    r = call(http, svc_tok(), on_behalf_of="alice@example.com", **{"X-Originator-Sub": "kc-bad"})
+    assert r.status_code == 403 and "deny list" in r.json()["detail"]
+    assert world.topaz == []
+
+
+def test_deny_2_listed_delegate_sub_not_in_list_is_allowed(enforce, world, http, monkeypatch):
+    monkeypatch.setattr(gateway, "DENIED_USER_SUBS", {"kc-bad"})
+    r = call(http, svc_tok(), on_behalf_of="alice@example.com", **{"X-Originator-Sub": "kc-fine"})
+    assert r.status_code == 200
+    assert world.topaz == ["alice@example.com"]
+
+
+def test_deny_3_user_token_own_sub_denied_is_refused_despite_other_header(enforce, world, http, monkeypatch):
+    monkeypatch.setattr(gateway, "DENIED_USER_SUBS", {"kc-bad"})
+    r = call(http, user_tok("alice@example.com", sub="kc-bad"), **{"X-Originator-Sub": "kc-fine"})
+    assert r.status_code == 403
+    assert world.topaz == []
+
+
+def test_deny_4_user_token_not_denied_header_names_denied_sub_is_allowed(enforce, world, http, monkeypatch):
+    monkeypatch.setattr(gateway, "DENIED_USER_SUBS", {"kc-bad"})
+    r = call(http, user_tok("alice@example.com"), **{"X-Originator-Sub": "kc-bad"})
+    assert r.status_code == 200
+    assert world.topaz == ["alice@example.com"]
+
+
 # ---------------------------------------------------------------------------
 # The posture parse
 # ---------------------------------------------------------------------------
