@@ -27,13 +27,14 @@ from dag_tools.domain_broker.main import physical_urn_for
 from dag_tools.io_managers.arrow import ConfigurableArrowIOManager, LocalFSConfig
 from dag_tools.user_deployment.mesh_demo_assets import (
     EV_FIXTURE_CSV,
-    EV_FIXTURE_NUMERIC_COLUMNS,
+    EV_FIXTURE_FLOAT_COLUMNS,
+    EV_FIXTURE_INTEGER_COLUMNS,
     EV_FIXTURE_STRING_COLUMNS,
     build_demo_defs,
     ev_fixture,
 )
 
-COLUMNS = EV_FIXTURE_STRING_COLUMNS + EV_FIXTURE_NUMERIC_COLUMNS
+COLUMNS = EV_FIXTURE_STRING_COLUMNS + EV_FIXTURE_INTEGER_COLUMNS + EV_FIXTURE_FLOAT_COLUMNS
 
 
 @pytest.fixture(scope="module")
@@ -51,11 +52,19 @@ def test_the_columns_are_the_contract(frame):
     assert sorted(frame.columns) == sorted(COLUMNS)
 
 
-def test_the_strings_stay_strings_and_the_money_is_numeric(frame):
-    for column in EV_FIXTURE_STRING_COLUMNS:
-        assert frame.schema[column] == pl.String, column
-    for column in EV_FIXTURE_NUMERIC_COLUMNS:
-        assert frame.schema[column] == pl.Float64, column
+def test_the_types_a_reader_gets(frame):
+    """Written out rather than read from the asset's tuples, which would agree with any move."""
+    assert dict(frame.schema) == {
+        "program_id": pl.String,
+        "program_name": pl.String,
+        "program_bac": pl.Int64,
+        "control_account": pl.String,
+        "work_package": pl.String,
+        "period": pl.String,
+        "bcws": pl.Int64,
+        "bcwp": pl.Float64,
+        "acwp": pl.Float64,
+    }
 
 
 def test_no_value_is_null(frame):

@@ -111,7 +111,10 @@ def mesh_demo_customers(context):
 # Synthetic earned-value rows: one row per (work_package, period), period
 # amounts and never cumulative. Everything that names a program lives in the
 # CSV, so nothing in code does. The strings are declared rather than inferred:
-# a control account such as ``1.1`` would otherwise arrive as a float.
+# a control account such as ``1.1`` would otherwise arrive as a float. The
+# amounts keep the seed's integer and float split, because a reader that prints
+# its inputs prints ``12000000.0`` for a float budget and the audit strings would
+# then differ from the seed's though no figure does.
 EV_FIXTURE_CSV = Path(__file__).parent / "demo_data" / "ev_fixture.csv"
 EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
     "program_id",
@@ -120,9 +123,11 @@ EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
     "work_package",
     "period",
 )
-EV_FIXTURE_NUMERIC_COLUMNS: Tuple[str, ...] = (
+EV_FIXTURE_INTEGER_COLUMNS: Tuple[str, ...] = (
     "program_bac",
     "bcws",
+)
+EV_FIXTURE_FLOAT_COLUMNS: Tuple[str, ...] = (
     "bcwp",
     "acwp",
 )
@@ -145,7 +150,8 @@ def ev_fixture(context):
         EV_FIXTURE_CSV,
         schema_overrides={
             **{c: pl.String for c in EV_FIXTURE_STRING_COLUMNS},
-            **{c: pl.Float64 for c in EV_FIXTURE_NUMERIC_COLUMNS},
+            **{c: pl.Int64 for c in EV_FIXTURE_INTEGER_COLUMNS},
+            **{c: pl.Float64 for c in EV_FIXTURE_FLOAT_COLUMNS},
         },
     )
     context.log.info(
