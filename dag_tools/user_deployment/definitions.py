@@ -4,7 +4,8 @@ Single demo-mode switch (``DAG_TOOLS_DEMO_MODE``) selects which surface
 this deployment exposes:
 
 * ``on`` (``true`` / ``1`` / ``yes``) — registers the synthetic
-  ``mesh_demo_customers`` dataset from ``mesh_demo_assets.py``. Used in
+  ``mesh_demo_customers`` and ``ev_fixture`` datasets from
+  ``mesh_demo_assets.py``. Used in
   sandbox / dev clusters where the bar-chart demo must remain
   exercised.
 
