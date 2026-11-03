@@ -1,0 +1,29 @@
+name: Lane trailers
+
+# Ruling: no local hook; the trailer is checked in CI on dag-tools PRs.
+# A PR whose head branch matches a row of .githooks/lanes must have `Lane: <id>/<branch>` on
+# every commit. A branch matching no row passes with a notice.
+
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  lane-trailers:
+    name: Lane trailer on every commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check the trailers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: python3 scripts/check_lane_trailers.py
