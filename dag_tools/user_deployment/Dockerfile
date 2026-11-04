@@ -93,7 +93,17 @@ COPY . /app
 #     never starts and Dagster reports the location as unavailable.
 #     (pyarrow is already a base dag-tools dependency, so it comes in
 #     via the ``.`` install.)
-#   * ``boto3`` + ``s3fs`` — S3 writes.
+#   * ``boto3`` — S3 writes.
+#   * ``s3fs`` is deliberately NOT listed here. The fsspec-backed
+#     Delta and Arrow IO managers import it, but it needs a version
+#     FLOOR: a bare pin on this line left the resolver free to reach
+#     back to s3fs 0.4.2 (2020), which cannot accept an
+#     ``endpoint_url`` and so fails against every MinIO-backed
+#     deployment. It is declared by the ``broker`` extra instead,
+#     where the floor travels with the install and the test suite
+#     can see it. Do not re-add it here: a bare pin shadows nothing,
+#     but it invites the next person to drop the extra's floor as a
+#     duplicate.
 #   * ``.[broker]`` extras — fastapi, hypercorn, pydantic, httpx,
 #     boto3 for the broker pod (same image, helm picks the
 #     entrypoint).
@@ -112,8 +122,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         acryl-datahub \
         acryl-datahub-dagster-plugin \
         pandas \
-        boto3 \
-        s3fs
+        boto3
 
 # Default port for the Dagster gRPC code-location.
 EXPOSE 4000

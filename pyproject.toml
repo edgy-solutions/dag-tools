@@ -193,6 +193,21 @@ broker = [
     "pydantic>=2.0.0",
     "httpx>=0.28.1",
     "boto3>=1.34",
+    # NOT imported by the broker itself -- it is here because the
+    # user-deployment image installs `.[broker]` and deliberately NOT
+    # `orchestrator` (see dag_tools/user_deployment/Dockerfile), so the
+    # s3fs floor declared on that extra never bound for the image. The
+    # image carried a bare `s3fs` on its own install line instead, which
+    # left the resolver free to reach back to 0.4.2 (2020) -- and that
+    # release dies with "Session.__init__() got an unexpected keyword
+    # argument 'endpoint_url'" the moment dag_tools.io_managers.delta or
+    # .arrow builds its fsspec backend against a MinIO endpoint.
+    #
+    # Declaring it on the extra is what puts the floor where the lock and
+    # the test suite can see it; the Dockerfile now pins no s3fs of its
+    # own, so this is the single source. See the note on `orchestrator`
+    # for the full history, and test_image_s3fs_floor.py for the guard.
+    "s3fs>=2023.1.0",
     # UNDECLARED UNTIL 2026-08-11, and both are MODULE-LEVEL imports in
     # dag_tools/central_gateway/main.py — so `pip install "dag-tools[broker]"`
     # produced a gateway that could not import at all. It worked only where
