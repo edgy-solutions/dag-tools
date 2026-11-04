@@ -193,6 +193,18 @@ missed enough pushes to fall out of the table — not that the asset does
 not exist. It is a liveness signal, not a catalog lookup. If you need to
 know whether an asset exists at all, ask DataHub, not the gateway.
 
+The two internal doors this flow crosses, the broker's `/api/v1/internal/resolve`
+and the gateway's `/api/v1/internal/register`, require a service token.
+`INTERNAL_DOOR_POSTURE` is `observe` (default) or `enforce`; each door
+accepts only `svc:` tokens whose service is named in its own list,
+`BROKER_RESOLVE_CALLERS` (broker) and `GATEWAY_REGISTER_CALLERS` (gateway),
+comma-separated; an empty list admits nobody under `enforce`. Callers present
+their own token from `MESH_SERVICE_TOKEN_URL`, `MESH_SERVICE_CLIENT_ID` and
+`MESH_SERVICE_CLIENT_SECRET`, and both doors verify it with the
+`GATEWAY_JWT_ISSUER` and key settings. To turn it on: set the callers'
+credentials, set both lists, read the `internal_door would_refuse` log lines
+until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
+
 Both HTTP calls use a 10-second timeout and there is no retry. Treat
 `get_dataframe` as a call that can fail transiently.
 
