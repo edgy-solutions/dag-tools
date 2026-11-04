@@ -117,11 +117,19 @@ arguments:
 client = CortexDataClient(
     client_id=..., client_secret=...,
     originator_sub="8f3e...",              # -> X-Originator-Sub
-    originator_email="user@example.com",   # -> X-Originator-Email
+    on_behalf_of="user@example.com",       # -> on_behalf_of (and X-Originator-Email)
 )
 ```
 
-`originator_email` is the one that matters for allow/deny. The gateway's
+`on_behalf_of` is the ruled name for the header; it carries the user's
+authz_id (email in sandbox, employee-id at work-deploy), not necessarily an
+email. `originator_email` remains as an alias of the same argument. Pass
+one; passing both with different values raises `ValueError`. The client
+sends the value in both the `on_behalf_of` header and the legacy
+`X-Originator-Email` header, so a gateway that has not been upgraded still
+reads it.
+
+`on_behalf_of` is the one that matters for allow/deny. The gateway's
 Topaz `can_read` check is **keyed on email** (the entitlement key is email
 in sandbox, employee-id at work-deploy), and an M2M token carries no user
 email. Omit it and the check has no subject to evaluate, so it denies —
@@ -130,6 +138,34 @@ for every user, uniformly.
 `originator_sub` is checked against the explicit deny list and takes
 precedence over the token's own `sub`, so a service account cannot be used
 to read around a per-user denial.
+
+#### The gateway's posture: observe, then enforce
+
+The gateway has an identity posture, `GATEWAY_IDENTITY_POSTURE`. Under
+`observe` (the default) nothing changes for callers: the gateway logs an
+`IDENTITY_WOULD` line saying what it would have done. Under `enforce` the
+gateway verifies the bearer's signature, expiry and exact issuer, and then:
+
+- A **user** token's identity is its verified claim. An `on_behalf_of` (or
+  legacy header) that names anyone else is refused with 403
+  `on_behalf_of_differs`. A user may omit the header or send their own.
+- A **service** token (claim starting `svc:`) may name a user only if the
+  policy rail lists that service as a delegate for the route (the asset
+  authorize route is `assets.authorize`). The list lives in the policy rail,
+  not in gateway configuration; until the gateway's rail reader is wired no
+  service is a delegate. A service not listed is refused with 403
+  `not_a_delegate`. A listed service must use `on_behalf_of`; the legacy
+  header alone is refused with 403 `legacy_header`. A listed service that
+  sends a blank `on_behalf_of` acts as itself.
+- The audit line, `IDENTITY_AUDIT`, names both the subject and the service.
+- Under `enforce`, the verified token's `sub` feeds the deny list, and
+  `X-Originator-Sub` is ignored on a user's own token. A delegate read is
+  deny-listed only if the delegate sends `X-Originator-Sub`.
+
+A refusal's body is `{"detail": {"error": <reason>, "message": ...}}` and
+the client surfaces the reason in the `NotEntitled` message. Verification
+failures read 401 `token_absent` / `token_invalid`, or 503
+`verification_unconfigured` / `jwks_unavailable`; a 503 is worth retrying.
 
 Omit both when the service is genuinely reading as itself (a Dagster asset
 materializing, a scheduled job). Then the M2M identity *is* the subject and

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import logging
@@ -27,6 +28,13 @@ try:
     from . import subject_gauge  # package layout — the test suite
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import subject_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
+
+# The VERIFIED-IDENTITY decision (observe by default; `enforce` is opt-in). Same two-layout rule
+# as above: a bare relative import here would crash-loop the flat image.
+try:
+    from . import identity  # package layout — the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import identity  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +74,7 @@ async def lifespan(app: FastAPI):
     # establishes its own log visibility before making the claim — announcing a posture whose
     # evidence channel is dark is the defect the pairing exists to prevent.
     subject_gauge.announce()
+    identity.announce()
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to Redis.")
     yield
@@ -75,6 +84,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Central Gateway")
 security = HTTPBearer()
+
+
+def _enforce_identity(token: str, on_behalf_of, legacy, urn: str):
+    """The `enforce` posture: decide from the VERIFIED token, audit, refuse or return the decision.
+
+    Called before any Topaz call. A refusal raises here and nothing downstream runs.
+    """
+    try:
+        decision = identity.decide(token, on_behalf_of, legacy, identity.ROUTE_AUTHORIZE)
+    except Exception as exc:  # noqa: BLE001 — fail CLOSED: an enforcing gate that errors refuses
+        logger.error("identity decision failed (%s) — refusing", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "verification_error", "message": "identity verification failed"},
+        )
+    identity.audit(identity.ROUTE_AUTHORIZE, decision, urn)
+    if decision.refused:
+        raise HTTPException(
+            status_code=decision.status,
+            detail={"error": decision.refused, "message": identity.message_for(decision.refused)},
+        )
+    return decision
 
 @app.get("/health")
 async def health_check():
@@ -113,12 +144,16 @@ async def register_broker(payload: RegisterPayload):
     logger.info(f"Registered {len(payload.asset_urns)} assets for broker {payload.broker_url}")
     return {"status": "success", "registered_assets": len(payload.asset_urns)}
 
-async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str] = None) -> tuple[bool, Optional[List[str]], Optional[str]]:
+async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str] = None, *, verified: Optional["identity.IdentityDecision"] = None) -> tuple[bool, Optional[List[str]], Optional[str]]:
     """
     Calls the Topaz REST API to check authorization.
     Subject = Keycloak user_id (extracted from JWT)
     Resource = {urn}
     Permission = can_read
+
+    `verified` is the `enforce` posture's decision: when given, the subject is exactly
+    `verified.subject` and NOTHING is read from the token unverified (no jwt.decode, no
+    fallback to a claim). Omitted, the legacy behaviour below is unchanged.
     """
     try:
         # Decode JWT. The SUBJECT of the DA-read authz decision is the
@@ -128,8 +163,12 @@ async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str
         # (auth.USER_ENTITLEMENT_CLAIM). Sending the sub here is why the gate
         # was dormant-unverified: it matched no owner and denied everyone,
         # which looks safe and hid the misalignment. Sub is kept for logs.
-        unverified_claims = jwt.decode(token, options={"verify_signature": False})
-        user_id = unverified_claims.get("sub")
+        if verified is not None:
+            unverified_claims = {}
+            user_id = verified.token_sub
+        else:
+            unverified_claims = jwt.decode(token, options={"verify_signature": False})
+            user_id = unverified_claims.get("sub")
         # The authz SUBJECT is the ORIGINATING USER, threaded via
         # X-Originator-Email (the caller's authz_id / entitlement key —
         # email in sandbox, employee-id at work-deploy). The `token` here
@@ -153,7 +192,10 @@ async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str
         # docstring already promised to mirror this precedence; now it cannot
         # drift from it.
         claim = subject_gauge.entitlement_claim()
-        subject_key = (originator_email or "").strip() or unverified_claims.get(claim)
+        if verified is not None:
+            subject_key = verified.subject
+        else:
+            subject_key = (originator_email or "").strip() or unverified_claims.get(claim)
         if not subject_key:
             logger.error(
                 "DA-read subject unresolvable — no X-Originator-Email and no "
@@ -291,7 +333,17 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     # The originating user's authz_id (email in sandbox), threaded by the
     # data client as X-Originator-Email. `token` is a service-account M2M
     # JWT (DA's transport identity); the authz SUBJECT is this end user.
-    originator_email = (request.headers.get("X-Originator-Email") or "").strip() or None
+    #
+    # `on_behalf_of` is the same thing under its ruled wire name (the word the ingest door
+    # uses); it is honoured exactly where X-Originator-Email is. If both are present the new
+    # name wins; `enforce` additionally refuses the two when they differ.
+    legacy_header = (request.headers.get("X-Originator-Email") or "").strip() or None
+    on_behalf_of = (request.headers.get("on_behalf_of") or "").strip() or None
+    originator_email = on_behalf_of or legacy_header
+    enforcing = identity.posture() == identity.POSTURE_ENFORCE
+    verified = None
+    if enforcing:
+        verified = _enforce_identity(token, on_behalf_of, legacy_header, urn)
 
     # ---- SUBJECT-SOURCE GAUGE — observe only, refuse nothing -------------------------------
     # Sited HERE, on the same two inputs the gate below actually uses, so it reports the subject
@@ -312,19 +364,44 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     except Exception as exc:  # noqa: BLE001
         logger.warning("subject-source gauge failed (%s) — request unaffected", type(exc).__name__)
 
+    # ---- IDENTITY_WOULD — observe posture: say what `enforce` would do, change nothing ----------
+    # Same blanket-except rule as the gauge: a defect here degrades to a warning and the
+    # request proceeds exactly as it does today. Nothing below reads the result.
+    if not enforcing:
+        try:
+            identity.would(
+                await asyncio.to_thread(
+                    identity.decide, token, on_behalf_of, legacy_header, identity.ROUTE_AUTHORIZE
+                ),
+                urn,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("identity would-decide failed (%s) — request unaffected", type(exc).__name__)
+
     # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
     # Checked before Topaz so a known-denied user cannot slip through if
     # Topaz is mock-allowing for the happy path. Originator-Sub header
     # wins over the JWT sub so a service-account M2M token still gets
     # filtered by the END USER's identity.
     if DENIED_USER_SUBS:
-        originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
-        try:
-            claims = jwt.decode(token, options={"verify_signature": False})
-            token_sub = claims.get("sub") or ""
-        except Exception:
-            token_sub = ""
+        if enforcing:
+            # Under enforce the verified token's sub is ALWAYS checked. X-Originator-Sub is an
+            # unsigned header, so it is added to the check ONLY when a listed delegate is
+            # vouching for a user (via is set): there it can only ADD a refusal, never remove
+            # one. On a user's own token it is ignored, so naming a denied sub cannot deny or
+            # free anyone.
+            token_sub = verified.token_sub or ""
+            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if verified.via else ""
+        else:
+            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
+            try:
+                claims = jwt.decode(token, options={"verify_signature": False})
+                token_sub = claims.get("sub") or ""
+            except Exception:
+                token_sub = ""
         effective_sub = originator_sub or token_sub
+        if enforcing:
+            effective_sub = next((x for x in (token_sub, originator_sub) if x and x in DENIED_USER_SUBS), "")
         if effective_sub and effective_sub in DENIED_USER_SUBS:
             logger.warning(
                 "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) urn=%s reason=explicit_deny_list",
@@ -336,7 +413,7 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             )
 
     # 1. Topaz AuthZ
-    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, originator_email)
+    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, originator_email, verified=verified)
     if not is_authorized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -374,7 +451,7 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
                 "urn": urn,
                 "allowed_columns": allowed_columns,
                 "row_filters": row_filters,
-                "subject": originator_email,
+                "subject": verified.subject if verified is not None else originator_email,
             }
             response = await client.post(resolve_url, json=payload, timeout=10.0)
             
