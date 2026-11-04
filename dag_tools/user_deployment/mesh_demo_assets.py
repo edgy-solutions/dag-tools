@@ -29,6 +29,7 @@ flat-Definitions pattern works — each singleton module exports an
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Tuple
 
 from dagster import (
@@ -107,8 +108,62 @@ def mesh_demo_customers(context):
     return df
 
 
+# Synthetic earned-value rows: one row per (work_package, period), period
+# amounts and never cumulative. Everything that names a program lives in the
+# CSV, so nothing in code does. The strings are declared rather than inferred:
+# a control account such as ``1.1`` would otherwise arrive as a float. The
+# amounts keep the seed's integer and float split, because a reader that prints
+# its inputs prints ``12000000.0`` for a float budget and the audit strings would
+# then differ from the seed's though no figure does.
+EV_FIXTURE_CSV = Path(__file__).parent / "demo_data" / "ev_fixture.csv"
+EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
+    "program_id",
+    "program_name",
+    "control_account",
+    "work_package",
+    "period",
+)
+EV_FIXTURE_INTEGER_COLUMNS: Tuple[str, ...] = (
+    "program_bac",
+    "bcws",
+)
+EV_FIXTURE_FLOAT_COLUMNS: Tuple[str, ...] = (
+    "bcwp",
+    "acwp",
+)
+
+
+@asset(
+    name="ev_fixture",
+    group_name="mesh_demo",
+    io_manager_key="mesh_demo_io",
+    description=(
+        "Synthetic earned-value fixture for exercising a governed read. "
+        "Not a real program's figures."
+    ),
+)
+def ev_fixture(context):
+    """Materialize the synthetic earned-value rows as parquet."""
+    import polars as pl
+
+    df = pl.read_csv(
+        EV_FIXTURE_CSV,
+        schema_overrides={
+            **{c: pl.String for c in EV_FIXTURE_STRING_COLUMNS},
+            **{c: pl.Int64 for c in EV_FIXTURE_INTEGER_COLUMNS},
+            **{c: pl.Float64 for c in EV_FIXTURE_FLOAT_COLUMNS},
+        },
+    )
+    context.log.info(
+        "ev_fixture materialized: %d rows, %d columns",
+        df.height,
+        df.width,
+    )
+    return df
+
+
 def build_demo_defs() -> Definitions:
-    """Build a Definitions containing the synthetic demo asset and its
+    """Build a Definitions containing the synthetic demo assets and their
     IO manager.
 
     The demo asset PRODUCES data, so it uses a producer IO manager —
@@ -155,6 +210,6 @@ def build_demo_defs() -> Definitions:
     )
 
     return Definitions(
-        assets=[mesh_demo_customers],
+        assets=[mesh_demo_customers, ev_fixture],
         resources={"mesh_demo_io": io_manager},
     )
