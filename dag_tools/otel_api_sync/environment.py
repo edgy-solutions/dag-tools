@@ -23,14 +23,24 @@ while ``sandboxed = True`` and the sandbox's method overrides still
 apply. (Verified against Jinja2 3.1.x — if a future release moves either
 attribute onto the sandbox class, ``test_render_is_native_and_sandboxed``
 fails loudly.)
+
+**A string result is literal-parsed, but never into a value JSON cannot
+carry.** Jinja's ``native_concat`` runs ``ast.literal_eval`` on a string
+result, so ``"8e01234"`` read out of an attribute would come back as
+``inf`` and ``"1j"`` as a complex number. When the parse yields a
+non-finite float or a complex anywhere, the original string is kept.
+Every other literal parse is unchanged. ``NativeTemplate.render`` looks
+``concat`` up on its ``environment_class`` rather than on the
+environment instance, which is why a matching template class exists.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Sequence
+import math
+from typing import Any, Dict, List, Mapping, Sequence
 from urllib.parse import quote, urlencode
 
 from jinja2 import StrictUndefined, Undefined
-from jinja2.nativetypes import NativeEnvironment
+from jinja2.nativetypes import NativeEnvironment, NativeTemplate, native_concat
 from jinja2.sandbox import SandboxedEnvironment
 
 from dag_tools.otel_api_sync.functions import DEFAULT_ATTRIBUTE_COLUMNS, build_functions
@@ -44,8 +54,39 @@ AS_KEY = "_as"
 TEMPLATE_KEY = "_template"
 
 
+def _json_unrepresentable(value: Any) -> bool:
+    if isinstance(value, complex):
+        return True
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if isinstance(value, dict):
+        return any(_json_unrepresentable(k) or _json_unrepresentable(v) for k, v in value.items())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_json_unrepresentable(v) for v in value)
+    return False
+
+
+def _json_safe_native_concat(values: Any) -> Any:
+    nodes: List[Any] = list(values)
+    result = native_concat(nodes)
+    if len(nodes) == 1 and not isinstance(nodes[0], str):
+        return result
+    if _json_unrepresentable(result):
+        return nodes[0] if len(nodes) == 1 else "".join(str(v) for v in nodes)
+    return result
+
+
 class NativeSandboxedEnvironment(SandboxedEnvironment, NativeEnvironment):
     """Sandboxed evaluation that preserves native Python types."""
+
+    concat = staticmethod(_json_safe_native_concat)  # type: ignore[assignment]
+
+
+class _NativeSandboxedTemplate(NativeTemplate):
+    environment_class = NativeSandboxedEnvironment
+
+
+NativeSandboxedEnvironment.template_class = _NativeSandboxedTemplate
 
 
 def build_environment(
