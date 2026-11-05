@@ -31,12 +31,28 @@ What this v1 generates:
 
 Deferred to follow-up slices:
   * Partition def + partition mapping mirroring (recorded in ``notes``).
-  * Resource other than the IO manager (only the IO manager is bound in v1).
+  * Per-class resource override (``resource_config_by_class``): no
+    demonstrated need yet.
+
+Resources other than the IO manager (Phase C3) are bound OPT-IN, per resource
+class FQN: a resource is bound if and only if the manifest's
+``probes.resource_config`` has an entry for its FQN (``{}`` = construct with
+no arguments). Do NOT "just bind everything the class declares": a probe that
+PASSES today would start constructing resources it never touched (a
+``ConfigurableResource`` that connects in ``setup_for_execution`` really
+connects), and a self-inflicted coverage regression is indistinguishable from
+a real Q6 finding. Unbound resources are named in ``notes``. With no
+``resource_config`` entries the generated source is byte-identical to the
+pre-C3 output. Bound resources get class-unique keys ``<key>_<short>`` (same
+reason as the IO manager: ``Definitions.merge`` rejects duplicate keys), and
+each is imported + constructed in its own ``try`` so one bad resource never
+takes the code location down.
 """
 from __future__ import annotations
 
 import keyword
 import logging
+import re
 from textwrap import dedent
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -102,12 +118,20 @@ def generate_probe_module(
         )
 
     short = cls.class_hash[:8]
+    resources = _plan_resources(cls, settings, io_fqn=io_fqn, short=short)
+    # Unbound-resource notes always reach the ProbeModule (manifest). They reach
+    # the source docstring only once the operator engages resource_config, so
+    # a class with declared resources and NO entries stays byte-identical to
+    # the pre-C3 source.
+    source_notes = notes + (resources.notes if settings.resource_config else [])
+    notes.extend(resources.notes)
     module_name = f"probe_{short}"
     source_key = f"qualifications/{qual_id}/probes/{cls.class_hash}.py"
 
     source = generate_probe_source(
-        cls=cls, module_name=module_name, qual_id=qual_id, notes=notes,
+        cls=cls, module_name=module_name, qual_id=qual_id, notes=source_notes,
         io_manager_config=io_config,
+        resource_plan=resources,
     )
 
     probe = ProbeModule(
@@ -116,6 +140,8 @@ def generate_probe_module(
         source_key=source_key,
         io_manager_class=cls.key.io_manager_class,
         io_manager_config_keys=sorted(io_config),
+        resource_bindings={b.generated_key: b.fqn for b in resources.bound},
+        resource_config_keys={b.generated_key: sorted(b.config) for b in resources.bound},
         resource_classes=dict(zip(
             range_resource_keys(cls), cls.key.resource_classes,
         )),
@@ -132,10 +158,13 @@ def range_resource_keys(cls: EquivalenceClass) -> List[str]:
     members. ClassKeyComponents flattens to a list of FQNs without their
     keys, so we use member-level keys when available."""
     # ClassKeyComponents.resource_classes is a flat sorted list of FQNs
-    # (the key was discarded during class-key construction). For the
-    # ProbeModule we just enumerate as "resource_0", "resource_1", etc. so
-    # downstream UIs can still display them. The actual generated module
-    # only binds io_manager — other resources are operator's job.
+    # (the key was discarded during class-key construction, deliberately —
+    # the hash must be stable across repos that name the same resource
+    # differently). For this display-only field we enumerate as
+    # "resource_0", "resource_1", etc. so downstream UIs can still show the
+    # count. The REAL key -> FQN map for resources actually bound into the
+    # probe is ProbeModule.resource_bindings, routed via
+    # Representative.resource_classes (C3); read that, not this.
     return [f"resource_{i}" for i in range(len(cls.key.resource_classes))]
 
 
@@ -151,6 +180,7 @@ def generate_probe_source(
     qual_id: str,
     notes: List[str],
     io_manager_config: Optional[Dict[str, Any]] = None,
+    resource_plan: Optional["_ResourcePlan"] = None,
 ) -> str:
     """Return the Python source text for one probe module.
 
@@ -166,7 +196,21 @@ def generate_probe_source(
         io_manager_fqn, config=io_manager_config,
     )
 
+    plan = resource_plan or _ResourcePlan()
+    resource_block, resources_use_os = _resource_block(plan)
+    if resources_use_os and "import os\n" not in io_manager_import:
+        io_manager_import = "import os\n" + io_manager_import
+
     notes_block = "\n".join(f"#   - {n}" for n in notes) if notes else "#   (none)"
+
+    if plan.bound:
+        downstream_extra_decorator = ", required_resource_keys=set(_RESOURCES)"
+        downstream_context = "context, "
+        downstream_resource_checks = _RESOURCE_CHECKS
+        defs_resources_extra = ", **_RESOURCES"
+    else:
+        downstream_extra_decorator = downstream_context = ""
+        downstream_resource_checks = defs_resources_extra = ""
 
     return dedent(f'''\
 """Synthetic probe for equivalence class {cls.class_hash}.
@@ -213,7 +257,7 @@ CLASS_HASH = "{cls.class_hash}"
 # point this key at staging-configured IO managers at deploy time.
 IO_MANAGER_KEY = "io_manager_{short}"
 
-PROBE_PAYLOAD: Dict[str, Any] = {{
+{resource_block}PROBE_PAYLOAD: Dict[str, Any] = {{
     "schema_version": 1,
     "class_hash": CLASS_HASH,
     "probe": "dag-tools synthetic",
@@ -232,8 +276,8 @@ def {module_name}_upstream() -> Dict[str, Any]:
     return dict(PROBE_PAYLOAD)
 
 
-@asset(deps=[{module_name}_upstream], io_manager_key=IO_MANAGER_KEY)
-def {module_name}_downstream({module_name}_upstream: Dict[str, Any]) -> bool:
+@asset(deps=[{module_name}_upstream], io_manager_key=IO_MANAGER_KEY{downstream_extra_decorator})
+def {module_name}_downstream({downstream_context}{module_name}_upstream: Dict[str, Any]) -> bool:
     """Load upstream's payload via the same IO manager and assert it
     survived the round-trip intact."""
     payload = {module_name}_upstream
@@ -241,12 +285,12 @@ def {module_name}_downstream({module_name}_upstream: Dict[str, Any]) -> bool:
     assert payload.get("class_hash") == CLASS_HASH, (
         "payload corrupted after IO manager round-trip"
     )
-    return True
+{downstream_resource_checks}    return True
 
 
 defs = Definitions(
     assets=[{module_name}_upstream, {module_name}_downstream],
-    resources={{IO_MANAGER_KEY: {io_manager_construct}}},
+    resources={{IO_MANAGER_KEY: {io_manager_construct}{defs_resources_extra}}},
 )
 ''')
 
@@ -312,23 +356,122 @@ def _io_manager_import_lines(
     return block, "_IO_MANAGER"
 
 
-def _render_construct(config: Dict[str, Any]) -> Tuple[str, bool]:
-    """Render the ``_IO_MANAGER = _IO_MANAGER_CLASS(...)`` lines (indented
-    for the ``try`` body). Returns ``(text, uses_os)``.
+_RESOURCE_CHECKS = (
+    "    # C3: every bound resource must have imported + constructed, and be\n"
+    "    # present on the context. This proves import/construct/availability,\n"
+    "    # NOT that the resource works against its backend.\n"
+    "    if _RESOURCE_ERRORS:\n"
+    "        raise RuntimeError(\n"
+    "            \"probe resource(s) could not be built: \" + repr(_RESOURCE_ERRORS)\n"
+    "        )\n"
+    "    for _k in _RESOURCES:\n"
+    "        assert getattr(context.resources, _k, None) is not None, (\n"
+    "            \"resource \" + _k + \" missing from context\"\n"
+    "        )\n"
+)
 
-    No config -> exactly the historical no-arg line. Kwargs are sorted by
-    name so regenerating an unchanged config is byte-identical. Env
-    references render as ``os.environ["VAR"]`` and are NEVER resolved here:
-    the source is published to the registry and written to disk.
+
+class _BoundResource:
+    def __init__(self, *, original_key, generated_key, fqn, config):
+        self.original_key = original_key
+        self.generated_key = generated_key
+        self.fqn = fqn
+        self.config = config
+
+
+class _ResourcePlan:
+    def __init__(self):
+        self.bound: List[_BoundResource] = []
+        self.notes: List[str] = []
+
+
+def _plan_resources(
+    cls: EquivalenceClass, settings: ProbeSettings, *, io_fqn: Optional[str], short: str,
+) -> _ResourcePlan:
+    """Decide which of the class's declared resources get bound (opt-in only)."""
+    plan = _ResourcePlan()
+    declared: Dict[str, str] = {}
+    for rep in cls.representatives:
+        for key, fqn in (getattr(rep, "resource_classes", None) or {}).items():
+            declared.setdefault(key, fqn)
+    for key in sorted(declared):
+        fqn = declared[key]
+        if io_fqn and fqn == io_fqn:
+            continue  # the IO manager has its own path
+        if not settings.has_resource_config(fqn):
+            plan.notes.append(
+                f"resource `{key}` (`{fqn}`) has no `probes.resource_config` "
+                "entry; NOT bound into the probe (add an entry, `{}` for "
+                "defaults, to cover it)"
+            )
+            continue
+        safe = re.sub(r"[^0-9A-Za-z_]", "_", key)
+        plan.bound.append(_BoundResource(
+            original_key=key,
+            generated_key=f"{safe}_{short}",
+            fqn=fqn,
+            config=settings.resource_kwargs(fqn),
+        ))
+    return plan
+
+
+def _resource_block(plan: _ResourcePlan) -> Tuple[str, bool]:
+    """Source for the bound resources. Empty string when none (byte-identical
+    to pre-C3 output). Each resource is imported + constructed in its OWN
+    try/except; a failure lands in ``_RESOURCE_ERRORS`` and the resource is
+    left out of ``_RESOURCES`` (so out of ``Definitions``)."""
+    if not plan.bound:
+        return "", False
+    uses_os = False
+    out = [
+        "# --- Bound resources (opt-in via probes.resource_config) --------------",
+        "# Original key -> generated class-unique key (Definitions.merge rejects",
+        "# duplicate resource keys across probes).",
+        "RESOURCE_KEYS: Dict[str, str] = {",
+    ]
+    for b in plan.bound:
+        out.append(f"    {b.original_key!r}: {b.generated_key!r},")
+    out += ["}", "_RESOURCES: Dict[str, Any] = {}", "_RESOURCE_ERRORS: Dict[str, str] = {}", ""]
+    for n, b in enumerate(plan.bound):
+        module_path, _, class_name = b.fqn.rpartition(".")
+        if not module_path or not class_name:
+            msg = "malformed resource FQN: " + repr(b.fqn)
+            out += [f"_RESOURCE_ERRORS[{b.generated_key!r}] = {msg!r}", ""]
+            continue
+        construct, u = _render_call(
+            f"_RESOURCES[{b.generated_key!r}]", f"_RESOURCE_CLASS_{n}", b.config,
+            what=f"resource {b.fqn!r} kwarg",
+        )
+        uses_os = uses_os or u
+        out += [
+            "try:",
+            f"    from {module_path} import {class_name} as _RESOURCE_CLASS_{n}",
+            construct,
+            "except Exception as _e:  # noqa: BLE001",
+            f"    _RESOURCE_ERRORS[{b.generated_key!r}] = repr(_e)",
+            "",
+        ]
+    return "\n".join(out) + "\n", uses_os
+
+
+def _render_call(
+    target: str, callee: str, config: Dict[str, Any], *, what: str, no_arg_suffix: str = "",
+) -> Tuple[str, bool]:
+    """Render ``    <target> = <callee>(<kwargs>)`` for a ``try`` body.
+
+    Shared by the IO manager and resources: one value grammar, one renderer.
+    Kwargs are sorted (byte-identical regeneration); env references render as
+    ``os.environ["VAR"]`` and are NEVER resolved here -- the source is
+    published to the registry and written to disk.
     """
     if not config:
-        return "    _IO_MANAGER = _IO_MANAGER_CLASS()  # operator: override with staging config", False
+        return f"    {target} = {callee}(){no_arg_suffix}", False
     uses_os = False
-    lines = ["    _IO_MANAGER = _IO_MANAGER_CLASS("]
+    lines = [f"    {target} = {callee}("]
     for key in sorted(config):
         value = config[key]
         if not key.isidentifier() or keyword.iskeyword(key):
-            raise ValueError(f"io manager kwarg name {key!r} is not a valid identifier")
+            raise ValueError(f"{what} name {key!r} is not a valid identifier")
         if is_env_ref(value):
             uses_os = True
             rendered = f"os.environ[{value['env']!r}]"
@@ -337,3 +480,11 @@ def _render_construct(config: Dict[str, Any]) -> Tuple[str, bool]:
         lines.append(f"        {key}={rendered},")
     lines.append("    )")
     return "\n".join(lines), uses_os
+
+
+def _render_construct(config: Dict[str, Any]) -> Tuple[str, bool]:
+    """The IO manager's construct lines. No config -> the historical no-arg line."""
+    return _render_call(
+        "_IO_MANAGER", "_IO_MANAGER_CLASS", config, what="io manager kwarg",
+        no_arg_suffix="  # operator: override with staging config",
+    )

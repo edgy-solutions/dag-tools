@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dag_tools.inventory import AssetRecord
 
 
-SCHEMA_VERSION_CLASS_MATRIX = 2
+SCHEMA_VERSION_CLASS_MATRIX = 3
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +129,11 @@ class ClassMember(BaseModel):
     """From ``AssetRecord.upstream_asset_keys``. None means the survey
     predates the field (unknown - NOT 'no upstreams'); ``[]`` means
     genuinely none."""
+    resource_classes: Dict[str, str] = Field(default_factory=dict)
+    """From ``AssetRecord.resource_classes``: resource key -> FQN. The class
+    key discards the keys on purpose (hash stable across repos naming a
+    resource differently), so they travel here. ``{}`` also reads an
+    old matrix: "none recorded", not "this class has no resources"."""
 
 
 class Representative(BaseModel):
@@ -144,6 +149,8 @@ class Representative(BaseModel):
     """True when this rep matched the configured ``prefer_tag`` from the manifest."""
     staging_need: StagingNeed = StagingNeed.UNKNOWN
     staging_need_reason: str = ""
+    resource_classes: Dict[str, str] = Field(default_factory=dict)
+    """Resource key -> FQN, copied from the member (see ClassMember)."""
 
 
 class EquivalenceClass(BaseModel):

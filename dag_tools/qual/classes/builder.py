@@ -72,6 +72,7 @@ def build_class_matrix(
                 tags=dict(record.tags or {}),
                 is_executable=record.is_executable,
                 upstream_asset_keys=record.upstream_asset_keys,
+                resource_classes=dict(record.resource_classes or {}),
             )
             components = compute_class_key(
                 record, custom_dbt_translators_in_repo=custom_translators

@@ -275,7 +275,7 @@ def test_coverage_by_staging_need_sums_to_representative_count(registry):
     n_reps = sum(len(c.representatives) for c in matrix.classes)
     assert sum(matrix.coverage_by_staging_need.values()) == n_reps
     assert set(matrix.coverage_by_staging_need) == {s.value for s in StagingNeed}
-    assert matrix.schema_version == 2
+    assert matrix.schema_version == 3
 
 
 def test_markdown_reports_launchable_now(registry):
