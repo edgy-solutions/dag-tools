@@ -12,6 +12,18 @@ it back are named.
 
 ## 0.11.0 — 2026-11-04
 
+**Tag repaired 2026-11-05 (UTC).** `v0.11.0` was first pushed at `cc915a5`, which is
+0.10.0's tree, by operator error; the tag was deleted and re-pushed at `4924235`, the merge
+that carries everything below. **Nothing consumed the first tag.** PyPI refused the upload
+(`0.10.0` was already there under that content), so `0.11.0` on PyPI has only ever been built
+from `4924235`. The container images are the part that did go out: the cancellation landed
+after their push steps had finished, so `:0.11.0`, `:0.11` and `:latest` carried 0.10.0's tree
+for about four minutes — 02:01:21 to 02:06:38 UTC — before the corrected tag's run replaced
+every one of them. The replacement was confirmed by resolving each tag's digest against the
+registry, not from the run's own status. Nothing in the fleet pins those tag names to a
+digest; `:latest` is what a chart resolves for these images, and it was replaced too. If you
+pulled a dag-tools image inside that window, re-pull.
+
 ### Added
 
 - **The central gateway verifies the token before deciding who a request reads as.** (#6)
