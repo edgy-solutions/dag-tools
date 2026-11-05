@@ -5,7 +5,11 @@ pinning is the shape after the parquet round trip rather than the CSV on disk: a
 control account such as ``1.1`` is the failure an inferring reader would produce,
 and it only shows up once the frame has been built.
 
-The figures are not pinned here. They are whatever the CSV says.
+The figures are not pinned here. They are whatever the CSV says. What is pinned
+is which level of the fixture each figure belongs to, because that is what a
+reader has to know to compute with it: a work-package figure summed over the
+work package's periods is counted once per period, and the sum still looks
+like money.
 
 No test names a program. Nothing in this repository should.
 """
@@ -60,6 +64,8 @@ def test_the_types_a_reader_gets(frame):
         "program_bac": pl.Int64,
         "control_account": pl.String,
         "work_package": pl.String,
+        "bac": pl.Int64,
+        "eac": pl.Int64,
         "period": pl.String,
         "bcws": pl.Int64,
         "bcwp": pl.Float64,
@@ -96,6 +102,65 @@ def test_a_work_package_has_one_control_account(frame):
         pl.col("control_account").n_unique().alias("accounts")
     )
     assert per_package["accounts"].to_list() == [1] * per_package.height
+
+
+# ---------------------------------------------------------------------------
+# The completion figures. Each is a work-package figure at a status date, so it
+# repeats on every one of that work package's rows -- the same way
+# ``program_bac`` repeats on every row of the program.
+# ---------------------------------------------------------------------------
+COMPLETION_FIGURES = ("bac", "eac")
+
+
+@pytest.mark.parametrize("column", COMPLETION_FIGURES)
+def test_a_completion_figure_is_the_same_on_every_row_of_its_work_package(frame, column):
+    """A reader takes the value once per work package, so there has to be one to take."""
+    per_package = frame.group_by("work_package").agg(
+        pl.col(column).n_unique().alias("values")
+    )
+    assert per_package["values"].to_list() == [1] * per_package.height
+
+
+@pytest.mark.parametrize("column", COMPLETION_FIGURES)
+def test_a_completion_figure_cannot_be_non_finite(frame, column):
+    """Integers, so no arithmetic a reader does with them can produce a NaN or an
+    infinity. The schema test above pins the type; this one says what the type buys."""
+    assert frame.schema[column].is_integer()
+
+
+def test_the_work_package_budgets_sum_to_the_program_budget_once_each(frame):
+    """The roll-up holds over work packages, and only over work packages.
+
+    Summed over rows instead it comes to one program budget per period: a figure
+    that is wrong by a factor of six here and still conserves, which is why the
+    level a figure belongs to is part of the contract rather than a detail.
+    """
+    program_bac = frame["program_bac"].unique().item()
+    per_package = frame.group_by("work_package").agg(pl.col("bac").first())
+    assert per_package["bac"].sum() == program_bac
+
+    periods = frame["period"].n_unique()
+    assert frame["bac"].sum() == program_bac * periods
+
+
+def test_the_fixture_has_a_work_package_on_either_side_of_its_budget(frame):
+    """Both signs of a completion variance, so a reader of this fixture meets both."""
+    per_package = frame.group_by("work_package").agg(
+        pl.col("bac").first(), pl.col("eac").first()
+    )
+    variance = (per_package["eac"] - per_package["bac"]).to_list()
+    assert any(v > 0 for v in variance), "no work package forecasts an overrun"
+    assert any(v < 0 for v in variance), "no work package forecasts an underrun"
+
+
+def test_no_completion_estimate_is_below_the_cost_already_booked(frame):
+    """An estimate to complete the work for less than has already been spent on it
+    would be incoherent, and a reader computing a remaining cost would go negative."""
+    per_package = frame.group_by("work_package").agg(
+        pl.col("eac").first(), pl.col("acwp").sum().alias("booked")
+    )
+    below = per_package.filter(pl.col("eac") < pl.col("booked"))
+    assert below.height == 0, below.to_dicts()
 
 
 def test_the_csv_ships_inside_the_package():
