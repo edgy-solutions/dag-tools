@@ -1,0 +1,49 @@
+type: dag_tools.ReadAuditComponent
+
+attributes:
+  # Where the query-history rows come from.
+  #
+  # This example uses `rows_file` so it runs with no warehouse and no
+  # credentials: the operator exported history themselves and this reads the
+  # export. That is also the usual first pass in a real deployment -- the
+  # account that can read query history is often not the one Dagster holds,
+  # and measurement should not wait on a grant.
+  #
+  # To have a resource run the read instead, replace the block with:
+  #
+  #   history:
+  #     resource_key: warehouse
+  #     relation: "{{ env.AUDIT_HISTORY_RELATION }}"
+  #     columns:
+  #       query_id: "{{ env.AUDIT_COL_QUERY_ID }}"
+  #       started_at: "{{ env.AUDIT_COL_STARTED_AT }}"
+  #       principal: "{{ env.AUDIT_COL_PRINCIPAL }}"
+  #       query_tag: "{{ env.AUDIT_COL_QUERY_TAG }}"
+  #       relations: "{{ env.AUDIT_COL_RELATIONS }}"
+  #     principal_filter: "{{ env.AUDIT_PRINCIPAL }}"
+  #     lookback_hours: 168
+  #
+  # None of those names has a default. This library does not know how your
+  # account spells its query history and will not guess: a wrong guess would
+  # audit the wrong column in silence, and a right guess would put one of
+  # your object names in a public repo.
+  history:
+    rows_file: history_rows.json
+    lookback_hours: 168
+
+  # Run windows, used only for reads that carry no query tag. Until the
+  # tagged warehouse resource is deployed that is most of them, and the
+  # windows are what keeps the first report from being all gap.
+  #
+  # `from_instance: true` reads them from the Dagster instance this asset
+  # runs in. Only runs that carried an asset selection can attribute
+  # anything; a run that selected everything stays ambiguous, which the
+  # report counts as unexplained rather than guessing.
+  runs:
+    runs_file: run_windows.json
+    from_instance: false
+
+  asset_name: read_audit
+  group_name: audit
+  tags:
+    read_only: "true"

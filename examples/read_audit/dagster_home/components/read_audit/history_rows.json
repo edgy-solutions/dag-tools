@@ -1,0 +1,78 @@
+[
+  {
+    "query_id": "q-001",
+    "started_at": "2026-10-29T01:00:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": "{\"asset_key\":\"orders_clean\",\"principal\":\"pipeline:daily_load\",\"schema_version\":1}",
+    "relations": [
+      "db1.sch1.t_alpha",
+      "db1.sch1.t_beta"
+    ]
+  },
+  {
+    "query_id": "q-002",
+    "started_at": "2026-10-29T01:05:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": "{\"asset_key\":\"orders_clean\",\"principal\":\"pipeline:daily_load\",\"schema_version\":1}",
+    "relations": [
+      "db1.sch1.t_alpha"
+    ]
+  },
+  {
+    "query_id": "q-003",
+    "started_at": "2026-10-29T02:10:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": "{\"principal\":\"pipeline:daily_load\",\"run_id\":\"run-single\",\"schema_version\":1}",
+    "relations": [
+      "db1.sch2.t_gamma"
+    ]
+  },
+  {
+    "query_id": "q-004",
+    "started_at": "2026-10-29T03:15:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": "{\"principal\":\"pipeline:daily_load\",\"run_id\":\"run-multi\",\"schema_version\":1}",
+    "relations": [
+      "db1.sch2.t_delta"
+    ]
+  },
+  {
+    "query_id": "q-005",
+    "started_at": "2026-10-29T02:12:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": null,
+    "relations": [
+      "db1.sch2.t_gamma",
+      "db2.sch1.t_epsilon"
+    ]
+  },
+  {
+    "query_id": "q-006",
+    "started_at": "2026-10-29T04:20:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": null,
+    "relations": [
+      "db2.sch1.t_zeta"
+    ]
+  },
+  {
+    "query_id": "q-007",
+    "started_at": "2026-10-29T06:30:00+00:00",
+    "principal": "svc_pipeline",
+    "query_tag": null,
+    "relations": [
+      "db2.sch2.t_eta",
+      "db2.sch2.t_theta"
+    ]
+  },
+  {
+    "query_id": "q-008",
+    "started_at": "2026-10-29T07:40:00+00:00",
+    "principal": "analyst_one",
+    "query_tag": "{\"asset_key\":\"orders_clean\",\"principal\":\"user:analyst-one\",\"schema_version\":1}",
+    "relations": [
+      "db2.sch2.t_theta",
+      "db3.sch1.t_iota"
+    ]
+  }
+]

@@ -1202,6 +1202,13 @@ dlt_app = typer.Typer(
 )
 app.add_typer(dlt_app)
 
+# `dagtools audit ...` lives in dag_tools.audit, which imports neither
+# this package nor Dagster. Registered here because this is where the
+# console script points; the two lines are the whole coupling.
+from dag_tools.audit.cli import audit_app  # noqa: E402
+
+app.add_typer(audit_app)
+
 
 def _require_dlt_extra():
     """dlt and its drivers live in the orchestrator extra, not [qual].
