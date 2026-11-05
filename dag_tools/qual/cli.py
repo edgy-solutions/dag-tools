@@ -728,6 +728,113 @@ def _print_run_table(outcome) -> None:
             typer.echo(f"      └─ {rep.error}")
 
 
+@qual_app.command("stage")
+def qual_stage(
+    ctx: typer.Context,
+    qual_id: str = typer.Option(..., "--id", help="Qualification identifier."),
+    side: str = typer.Option(
+        ..., "--side",
+        help="Which side to stage: 'baseline' or 'candidate'.",
+    ),
+    plan_only: bool = typer.Option(
+        False, "--plan",
+        help="Print the selection and groups; launch and write nothing.",
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Launch again even when this side already PASSED for the same selection.",
+    ),
+    max_keys: Optional[int] = typer.Option(
+        None, "--max-keys",
+        help="Refuse to launch when the selection exceeds this many keys.",
+    ),
+    poll_interval: float = typer.Option(
+        5.0, "--poll-interval", help="Seconds between run-status polls.",
+    ),
+    timeout: float = typer.Option(
+        1800.0, "--timeout", help="Per-group poll timeout in seconds.",
+    ),
+    format: OutputFormat = typer.Option(OutputFormat.JSON, "--format"),
+) -> None:
+    """Materialize the computed upstreams Q2's representatives load as inputs.
+
+    Run once per side, before `qual run`. One run per partition group
+    (usually one). Uses the manifest's staging overrides so staged outputs
+    land where Q2 reads them. Not compared by Q6.
+    """
+    if side not in ("baseline", "candidate"):
+        typer.secho(
+            f"error: --side must be 'baseline' or 'candidate', got {side!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from .stage import run_stage
+
+    settings: CliSettings = ctx.obj
+    registry = settings.registry()
+
+    try:
+        outcome = run_stage(
+            qual_id=qual_id,
+            side=side,
+            registry=registry,
+            plan_only=plan_only,
+            force=force,
+            max_keys=max_keys,
+            poll_interval_seconds=poll_interval,
+            poll_timeout_seconds=timeout,
+        )
+    except FileNotFoundError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.secho(f"error: qual stage failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    if format == OutputFormat.JSON:
+        typer.echo(outcome.model_dump_json(indent=2))
+    else:
+        _print_stage_table(outcome)
+
+    if outcome.status in ("failed", "incomplete"):
+        raise typer.Exit(code=2)
+
+
+def _print_stage_table(outcome) -> None:
+    p = outcome.plan
+    typer.echo(
+        f"qual stage: {outcome.qual_id} side={outcome.side}  "
+        f"status={outcome.status}  keys={p.key_count}  "
+        f"groups={len(p.groups)}  selection={p.selection_hash}"
+    )
+    states = {g.group_key: g for g in (outcome.state.groups if outcome.state else [])}
+    for g in p.groups:
+        st = states.get(g.group_key)
+        status = st.status.value if st else "planned"
+        typer.echo(
+            f"  [{status:9s}] {g.group_key}  keys={len(g.selection)}  "
+            f"partition={g.partition_key or '-'}  run={(st.run_id if st else None) or '-'}"
+        )
+        if st and st.error:
+            typer.echo(f"      └─ {st.error}")
+    for label, items in (
+        ("unknown reps (re-survey)", p.unknown_reps),
+        ("unknown closure keys", ["/".join(k) for k in p.unknown_closure_keys]),
+        ("unstageable keys", ["/".join(k.asset_key) for k in p.unstageable_keys]),
+        ("uncovered cross-group keys",
+         ["/".join(k.asset_key) for k in p.uncovered_cross_group_keys]),
+    ):
+        if items:
+            typer.echo(f"  {label}: {len(items)}")
+            for it in items:
+                typer.echo(f"      {it}")
+    typer.echo(
+        f"  reps ready={len(outcome.reps_ready)}  "
+        f"not ready={len(outcome.reps_not_ready)}"
+    )
+
+
 @qual_app.command("preflight")
 def qual_preflight(
     ctx: typer.Context,

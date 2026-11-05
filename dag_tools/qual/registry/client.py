@@ -602,6 +602,50 @@ class InventoryRegistry:
             layout.qualification_side_probes_summary_key(qual_id, side)
         )
 
+    # --- stage-runner per-side state / records -------------------------------
+
+    def put_stage_state(self, qual_id: str, side: str, body: bytes) -> None:
+        """Write ``qualifications/<qual_id>/<side>/stage/state.json``.
+
+        Mutable: the stage runner rewrites it after every group transition.
+        """
+        self.storage.put_mutable(
+            layout.qualification_side_stage_state_key(qual_id, side),
+            body,
+            content_type="application/json",
+        )
+
+    def read_stage_state(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_stage_state_key(qual_id, side)
+        )
+
+    def put_stage_run_record(
+        self,
+        qual_id: str,
+        side: str,
+        run_id: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Persist one stage run's record under
+        ``qualifications/<qual_id>/<side>/stage/runs/<run_id>.json``.
+
+        Immutable per ``run_id`` -- a relaunch gets a fresh run_id."""
+        key = layout.qualification_side_stage_run_key(qual_id, side, run_id)
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_stage_run_record(
+        self, qual_id: str, side: str, run_id: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_stage_run_key(qual_id, side, run_id)
+        )
+
 
 def _utcnow() -> datetime:
     """UTC ``datetime.now`` factored out so tests can monkeypatch it."""

@@ -358,6 +358,7 @@ load_from:
 ```
 
 ```
+dagtools qual stage --id <qual_id> --side baseline   # when staging_need=required reps exist
 dagtools qual run --id <qual_id> --side baseline
 ```
 
@@ -394,6 +395,44 @@ exist. `dagtools qual classes` reports this per representative
 (`staging_need`: `none_needed` / `required` / `unknown`) and in total as
 `launchable_now_count`; read that first to size the work before doing any
 of it.
+
+**Computed upstreams — `dagtools qual stage`.** The first mechanism, and the
+only one that builds anything in the deployment. For every `RUNNABLE`
+representative with `staging_need: required` it takes the transitive closure
+of *computed* upstreams (stopping at external sources), checks each key
+against the deployment's own asset list, and materializes them in runs of
+their own, tagged `dagtools/purpose: stage` and carrying no class hash.
+`--plan` prints the selection and launches nothing; `--max-keys N` refuses an
+oversized selection before anything is launched.
+
+- A run cannot mix partition definitions, so keys are grouped by partition
+  definition and launched one run per group, in dependency order, each tagged
+  with the group's last partition key. With at most one partitioned group the
+  unpartitioned keys ride along, which is the common case of exactly one run
+  per side. A failed group skips only the groups downstream of it. Keys on a
+  cross-group dependency cycle are reported, not launched.
+- Only the last partition is staged. A downstream that reads several
+  partitions of an upstream (an unpartitioned asset over a partitioned one,
+  or a non-identity partition mapping) needs more than that, and fails as a
+  visible step failure in the group's record rather than passing silently.
+- The manifest's `staging_overrides` are **mandatory** when declared: staged
+  outputs must land where Q2 will read them. An unresolvable pointer, or an
+  empty asset list from the deployment, refuses to launch.
+- Stage keeps its own state under `<side>/stage/` (`state.json`, per-run
+  records), never the representative or probe slots. A group that PASSED for
+  the same selection hash is not re-run; a changed selection (or `--force`)
+  starts over. A group whose poll fails or times out stays LAUNCHED, so the
+  next invocation reconciles that run instead of starting a concurrent one. Staging is **per side**: the candidate deployment has its own
+  storage, so run it again after Q3.
+- Q2's selection is unchanged: each representative is still launched alone.
+  `qual run` logs a warning when `required` representatives exist and stage
+  has not passed for the current selection. Q6 records whether stage ran on
+  each side in `verdict.json` (`stage_by_side`) and in `UPGRADE_VERDICT.md`,
+  but never compares it and it never reaches `status` or `blocking_issues`.
+
+`--empty` and `staging_overrides` below compose with it: stage materializes
+the computed upstreams, `--empty` keeps dbt ones schema-only, and
+`staging_overrides` says where everything lands.
 
 **dbt representatives — `--empty`.** Two equivalent mechanisms make the
 dbt build schema-only (models build with `limit 0`; input refs and sources
@@ -444,8 +483,9 @@ the leaf), so a per-rep `resources` block does not drop sibling staging
 resources.
 
 **Generated seeder assets are deliberately NOT built.** It would be a large
-build whose value depends on fleet shape, and the override path covers the
-need today.
+build whose value depends on fleet shape; `qual stage` materializes the
+deployment's own computed upstreams instead, and the override path covers
+external data.
 
 **Local orchestration snapshots, baseline side** *(⚠️ planned — the
 `dagtools qual orchestration` command is NOT implemented yet; this
@@ -488,6 +528,7 @@ document before proceeding.
 ### Phase Q4 — Candidate pass
 
 ```
+dagtools qual stage --id <qual_id> --side candidate   # staging is per side: re-run it here
 dagtools qual run --id <qual_id> --side candidate
 dagtools qual orchestration --id <qual_id> --side candidate   # NOT YET IMPLEMENTED (planned)
 ```
@@ -767,6 +808,10 @@ dagtools qual init --id <qual_id>
                 [--format json|table]
 dagtools qual classes --id <qual_id>
                 [--allow-overwrite] [--format json|table]
+dagtools qual stage --id <qual_id> --side baseline|candidate
+                [--plan] [--force] [--max-keys N]
+                [--poll-interval N] [--timeout N]
+                [--format json|table]
 dagtools qual run --id <qual_id> --side baseline|candidate
                 [--retry-failed] [--only-class <hash>]
                 [--poll-interval N] [--poll-timeout N]
@@ -934,6 +979,7 @@ caught it on itself.
 | 1 | (opt) Canary stage | Not yet started |
 | 2 | Q0 Manifest + `dagtools qual init` | ✅ done — pins inventories, version pair, co_upgrade_risks |
 | 2 | Q1 Equivalence-class matrix + `dagtools qual classes` | ✅ done — class key + hash, representatives with runnability and staging-need reporting (`launchable_now_count`), JSON + Markdown |
+| 2 | Q2 staging, `dagtools qual stage --side <side>` | ✅ done — materializes the transitive closure of computed upstreams of `required` reps, one run per partition group in dependency order, own registry slot, informational in Q6 |
 | 2 | Q2 Baseline pass + `dagtools qual run --side baseline` | ✅ done — GraphQL launcher, resumable state, per-rep records, side summary |
 | 2 | Q3 Preflight + `dagtools qual preflight --side <side>` | ✅ done — version + locations + deployed-sha-vs-`inventory_pins` (both sides) + (candidate-only) historical-run-rendering checks |
 | 2 | Q4 Candidate pass | ✅ done by Q2 — operator runs `dagtools qual run --side candidate` after Q3 passes |
@@ -1071,22 +1117,17 @@ them, you're probably violating a recipe rule. Read carefully first.
 - **Business logic is out of scope.** This system validates behavior
   preservation at the framework boundary; pipeline correctness vs. business
   intent is the user's job.
-- **Nothing stages the data a representative reads.** Q2 launches the
-  representative alone and Dagster does not materialize upstreams — an
+- **Q2 reads staged upstreams; it does not build them.** Q2 launches the
+  representative alone and Dagster does not materialize upstreams, so an
   unmaterialized upstream is a *loaded input* whose output must already
-  exist in the IO manager, so a run fails at input loading unless the
-  staged deployment already holds that data (or the representative's
-  upstreams are all external). Staging now has documented
-  mechanisms (see **Staging data for Q2**): dbt representatives can build
-  schema-only via `cli_args: ["build", "--empty"]` or `DBT_EMPTY=true`
-  (with the vacuous-test-parity caveat), and non-dbt representatives are
-  pointed at an operator-staged schema or bucket via `staging_overrides`.
-  What remains **unbuilt** is generated seeder assets; the operator
-  still stages the data. Widening the selection to
-  pull in upstreams is NOT the fix — it turns a one-asset comparison into
-  a whole-subgraph build. The size of the gap is now *reported* per
-  representative (`staging_need`) and in total (`launchable_now_count`) by
-  `qual classes`, so it is visible before any pass is burned.
+  exist in the IO manager. `dagtools qual stage` now materializes the
+  computed ones per side (see **Staging data for Q2**); `--empty` and
+  `staging_overrides` compose with it, and external data is still the
+  operator's to stage. What remains **unbuilt** is generated seeder assets.
+  Widening Q2's selection to pull in upstreams is NOT the fix. The size of
+  the gap is *reported* per representative (`staging_need`) and in total
+  (`launchable_now_count`) by `qual classes`, so it is visible before any
+  pass is burned.
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
   waited on the Q5 probes code location, which has since landed, so it

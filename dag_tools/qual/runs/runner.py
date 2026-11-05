@@ -37,6 +37,7 @@ from ..classes import (
     EquivalenceClass,
     Representative,
     Runnability,
+    StagingNeed,
 )
 from ..graphql import (
     DagsterGraphQLClient,
@@ -302,6 +303,8 @@ def _drive_state(
             "and multi_asset siblings may fail to launch"
         )
 
+    _warn_if_stage_missing(registry, matrix, launch_info, qual_id, side)
+
     for rep_state in pending_or_resumable(state):
         if only_class and rep_state.class_hash != only_class:
             continue
@@ -386,6 +389,46 @@ def _drive_state(
             poll_timeout_seconds=poll_timeout_seconds,
             sleep=sleep,
         )
+
+
+def _warn_if_stage_missing(
+    registry: InventoryRegistry,
+    matrix: ClassMatrix,
+    launch_info: Dict[str, Dict],
+    qual_id: str,
+    side: str,
+) -> None:
+    """Warn (only) when RUNNABLE reps need staged upstreams and stage has not
+    passed for the current selection. Never refuses, never alters the run."""
+    try:
+        needs = any(
+            rep.runnability == Runnability.RUNNABLE
+            and rep.staging_need == StagingNeed.REQUIRED
+            for cls in matrix.classes for rep in cls.representatives
+        )
+        if not needs:
+            return
+        # Imported here: the stage package builds on this module.
+        from ..stage.plan import build_stage_plan
+        from ..stage.state import StageState
+
+        body = registry.read_stage_state(qual_id, side)
+        stage = StageState.model_validate_json(body) if body else None
+        if stage is not None and stage.passed:
+            current = None
+            if launch_info:
+                current = build_stage_plan(matrix, launch_info).selection_hash
+            if current is None or current == stage.selection_hash:
+                return
+        logger.warning(
+            "qual run: %s has representatives with computed upstreams that "
+            "this run will not materialize, and staging has not passed for "
+            "the current selection; run `dagtools qual stage --id %s --side "
+            "%s` first or those representatives will fail at input loading",
+            side, qual_id, side,
+        )
+    except Exception as e:  # noqa: BLE001 -- advisory only
+        logger.debug("stage advisory skipped: %s", e)
 
 
 def _reconcile_or_finalize(

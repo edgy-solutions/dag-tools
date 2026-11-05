@@ -35,13 +35,14 @@ from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry, layout
 from ..runs.records import RunRecord
 from ..runs.state import QualRunState, RepStatus
+from ..stage.state import StageState, StageStatus, TERMINAL as _STAGE_TERMINAL
 from .diff import ClassVerdict, RepDiff, build_class_verdicts, diff_rep
 
 
 logger = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class VerdictStatus(str, Enum):
@@ -65,6 +66,19 @@ class GapAcceptance(BaseModel):
     orchestration_deferred: bool = False
     """When False (default), the absence of orchestration snapshots
     blocks GO. v1 doesn't run orchestration."""
+
+
+class StageSideSummary(BaseModel):
+    """Whether ``dagtools qual stage`` ran on one side. Informational only:
+    it is never compared and never reaches ``status`` or ``blocking_issues``."""
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = "not_run"
+    """not_run | passed | failed | incomplete"""
+    finished_at: Optional[datetime] = None
+    selection_hash: Optional[str] = None
+    groups_total: int = 0
+    groups_passed: int = 0
 
 
 class Verdict(BaseModel):
@@ -108,6 +122,10 @@ class Verdict(BaseModel):
     # Coverage
     asset_count: int = 0
     class_count: int = 0
+
+    stage_by_side: Dict[str, StageSideSummary] = Field(default_factory=dict)
+    """Informational: keys "baseline" and "candidate". Read from the stage
+    STATE only; stage records are never read."""
 
     # Detail
     class_verdicts: List[ClassVerdict] = Field(default_factory=list)
@@ -316,7 +334,43 @@ def build_verdict(
         asset_count=matrix.asset_count,
         class_count=matrix.class_count,
         class_verdicts=class_verdicts,
+        stage_by_side={
+            s: _stage_side_summary(registry, qual_id, s)
+            for s in ("baseline", "candidate")
+        },
         co_upgrade_risks=[r.model_dump(by_alias=True) for r in manifest.co_upgrade_risks],
+    )
+
+
+def _stage_side_summary(
+    registry: InventoryRegistry, qual_id: str, side: str
+) -> StageSideSummary:
+    try:
+        body = registry.read_stage_state(qual_id, side)
+        if not body:
+            return StageSideSummary()
+        state = StageState.model_validate_json(body)
+    except Exception as e:
+        logger.warning("build_verdict: unreadable stage state for %s/%s: %s", qual_id, side, e)
+        return StageSideSummary()
+    total = len(state.groups)
+    if total == 0:
+        return StageSideSummary(selection_hash=state.selection_hash)
+    passed = sum(1 for g in state.groups if g.status == StageStatus.PASSED)
+    if any(g.status not in _STAGE_TERMINAL for g in state.groups):
+        status = "incomplete"
+    elif passed == total:
+        status = "passed"
+    else:
+        status = "failed"
+    finished = None
+    if status == "passed":
+        stamps = [g.finished_at for g in state.groups if g.finished_at]
+        finished = max(stamps) if stamps else None
+    return StageSideSummary(
+        status=status, finished_at=finished,
+        selection_hash=state.selection_hash,
+        groups_total=total, groups_passed=passed,
     )
 
 
@@ -415,6 +469,10 @@ def render_markdown(verdict: Verdict) -> str:
     )
     lines.append(f"- {'✅' if verdict.co_upgrade_risks_total == 0 or verdict.co_upgrade_risks_accepted else '🛑'}"
                  f" **co_upgrade_risks**: {risk_line}")
+    for side_name in ("baseline", "candidate"):
+        summary = verdict.stage_by_side.get(side_name)
+        if summary is not None:
+            lines.append(_stage_line(side_name, summary))
     lines.append("")
 
     if verdict.co_upgrade_risks:
@@ -484,6 +542,20 @@ def render_markdown(verdict: Verdict) -> str:
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _stage_line(side: str, s: StageSideSummary) -> str:
+    """One informational line; deliberately carries no gate mark."""
+    label = f"- Staging ({side}, informational): "
+    if s.status == "not_run":
+        return label + "not run"
+    counts = f"({s.groups_passed}/{s.groups_total} groups)"
+    if s.status == "passed" and s.finished_at is not None:
+        at = s.finished_at
+        if at.tzinfo is not None:
+            at = at.astimezone(timezone.utc)
+        return label + f"passed at {at.strftime('%Y-%m-%dT%H:%MZ')} {counts}"
+    return label + f"{s.status} {counts}"
 
 
 def _criterion_line(name: str, value: Optional[bool], *, unknown_note: str = "unknown") -> str:

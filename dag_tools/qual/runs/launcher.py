@@ -259,12 +259,22 @@ def plan_asset_selection(
     if not info:
         return [list(asset_key)], None
 
-    partition_key: Optional[str] = None
-    if info.get("is_partitioned"):
-        keys = info.get("partition_keys") or []
-        partition_key = str(keys[-1]) if keys else None
+    return [list(asset_key)], last_partition_key(info)
 
-    return [list(asset_key)], partition_key
+
+def last_partition_key(info: Dict[str, Any]) -> Optional[str]:
+    """The partition to request for one asset's ``launch_info`` entry.
+
+    The LAST key of the deployment's partition list, or ``None`` for an
+    unpartitioned asset (or a partitioned one that reports no keys). One
+    rule, shared by every launcher that has to pick a partition, so a run
+    staged for a definition and a run that later reads it agree on which
+    partition that is.
+    """
+    if not info.get("is_partitioned"):
+        return None
+    keys = info.get("partition_keys") or []
+    return str(keys[-1]) if keys else None
 
 
 def expand_to_op_siblings(
