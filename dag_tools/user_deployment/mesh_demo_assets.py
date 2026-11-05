@@ -115,6 +115,17 @@ def mesh_demo_customers(context):
 # amounts keep the seed's integer and float split, because a reader that prints
 # its inputs prints ``12000000.0`` for a float budget and the audit strings would
 # then differ from the seed's though no figure does.
+#
+# Three levels of figure share the one row, and which level a figure belongs to
+# is the whole of its rule. ``program_bac`` is a program figure and is the same
+# on every row of the program. The completion figures are work-package figures
+# and are the same on every row of the work package -- a status-date estimate,
+# not a period amount -- so a reader that sums one of them over a work
+# package's periods gets its value once per period. ``bcws``/``bcwp``/``acwp``
+# are the only per-row amounts, and the only ones a reader may sum.
+#
+# Both completion figures are integers, so a difference taken between them
+# cannot be non-finite whatever a reader does with it.
 EV_FIXTURE_CSV = Path(__file__).parent / "demo_data" / "ev_fixture.csv"
 EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
     "program_id",
@@ -125,6 +136,8 @@ EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
 )
 EV_FIXTURE_INTEGER_COLUMNS: Tuple[str, ...] = (
     "program_bac",
+    "bac",
+    "eac",
     "bcws",
 )
 EV_FIXTURE_FLOAT_COLUMNS: Tuple[str, ...] = (
