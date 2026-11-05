@@ -412,3 +412,37 @@ def test_run_probes_side_raises_when_qual_manifest_missing(setup):
             qual_id="never-existed", side="baseline", registry=registry,
             client_factory=_factory(_fake_client()),
         )
+
+
+def test_a_probe_poll_timeout_stays_launched_and_reconciles(setup):
+    from dag_tools.qual.graphql import DagsterGraphQLError
+
+    registry, _ = setup
+    qual_id, bundle = _seed_qual_with_probes(registry)
+    probe = bundle.manifest.probes[0]
+    client = _fake_client()
+    terminal = client.poll_to_completion.return_value
+    client.poll_to_completion.side_effect = DagsterGraphQLError("did not reach terminal")
+    first = run_probes_side(qual_id=qual_id, side="baseline", registry=registry,
+                            client_factory=_factory(client))
+    assert first.state.probes[probe.class_hash].status == ProbeRepStatus.LAUNCHED
+
+    client.poll_to_completion.side_effect = None
+    client.poll_to_completion.return_value = terminal
+    second = run_probes_side(qual_id=qual_id, side="baseline", registry=registry,
+                             client_factory=_factory(client))
+    assert client.launch_asset_run.call_count == 1
+    assert second.state.probes[probe.class_hash].status == ProbeRepStatus.PASSED
+
+
+def test_a_probe_run_that_no_longer_exists_fails(setup):
+    from dag_tools.qual.graphql import DagsterRunNotFoundError
+
+    registry, _ = setup
+    qual_id, bundle = _seed_qual_with_probes(registry)
+    probe = bundle.manifest.probes[0]
+    client = _fake_client()
+    client.poll_to_completion.side_effect = DagsterRunNotFoundError("gone")
+    out = run_probes_side(qual_id=qual_id, side="baseline", registry=registry,
+                          client_factory=_factory(client))
+    assert out.state.probes[probe.class_hash].status == ProbeRepStatus.FAILED

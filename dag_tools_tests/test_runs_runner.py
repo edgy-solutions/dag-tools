@@ -391,3 +391,42 @@ def test_run_side_raises_when_classes_missing(setup):
             client_factory=_factory(client),
             sleep=lambda _: None,
         )
+
+
+def test_a_poll_timeout_leaves_the_rep_launched_and_is_never_relaunched(setup):
+    """A timed-out poll says nothing about the run, which may still be
+    executing. Marking it FAILED let the next invocation launch a second,
+    concurrent run of the same representative."""
+    from dag_tools.qual.graphql import DagsterGraphQLError
+
+    registry, _ = setup
+    qual_id = _seed_qual(registry)
+    client = _fake_client(launch_run_id="run-1")
+    terminal = client.poll_to_completion.return_value
+    client.poll_to_completion.side_effect = DagsterGraphQLError("did not reach terminal")
+    first = run_side(qual_id, "baseline", registry=registry,
+                     client_factory=_factory(client), sleep=lambda _: None)
+    (rep,) = first.state.reps.values()
+    assert rep.status == RepStatus.LAUNCHED
+    assert rep.run_id == "run-1"
+
+    client.poll_to_completion.side_effect = None
+    client.poll_to_completion.return_value = terminal
+    second = run_side(qual_id, "baseline", registry=registry,
+                      client_factory=_factory(client), sleep=lambda _: None)
+    assert client.launch_asset_run.call_count == 1
+    assert client.poll_to_completion.call_args.args[0] == "run-1"
+    assert second.summary.passed == 1
+
+
+def test_a_run_that_no_longer_exists_fails_so_the_next_pass_relaunches(setup):
+    from dag_tools.qual.graphql import DagsterRunNotFoundError
+
+    registry, _ = setup
+    qual_id = _seed_qual(registry)
+    client = _fake_client(launch_run_id="run-1")
+    client.poll_to_completion.side_effect = DagsterRunNotFoundError("gone")
+    first = run_side(qual_id, "baseline", registry=registry,
+                     client_factory=_factory(client), sleep=lambda _: None)
+    (rep,) = first.state.reps.values()
+    assert rep.status == RepStatus.FAILED

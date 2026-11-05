@@ -767,3 +767,21 @@ def test_reconcile_tolerates_a_record_already_banked(registry, tmp_path):
     dep.runs["run-existing"] = [["m0"], ["m1"]]
     out = _run(registry, dep, tmp_path)
     assert out.status == "passed"
+
+
+def test_a_stage_run_that_no_longer_exists_fails_so_the_next_pass_relaunches(
+    registry, tmp_path
+):
+    from dag_tools.qual.graphql import DagsterRunNotFoundError
+
+    _seed(registry, _chain_matrix())
+    dep = FakeDeployment(CHAIN_INFO)
+    real_poll = dep._poll
+    dep.client.poll_to_completion.side_effect = DagsterRunNotFoundError("gone")
+    first = _run(registry, dep, tmp_path)
+    assert first.state.groups[0].status == StageStatus.FAILED
+
+    dep.client.poll_to_completion.side_effect = real_poll
+    second = _run(registry, dep, tmp_path)
+    assert dep.client.launch_asset_run.call_count == 2
+    assert second.status == "passed"

@@ -42,6 +42,7 @@ from ..classes import (
 from ..graphql import (
     DagsterGraphQLClient,
     DagsterGraphQLError,
+    DagsterRunNotFoundError,
     resolve_auth_token,
 )
 from ..qualify import QualificationManifest
@@ -455,10 +456,23 @@ def _reconcile_or_finalize(
             sleep=sleep,
         )
         events = client.get_event_log(rep_state.run_id)
-    except DagsterGraphQLError as e:
+    except DagsterRunNotFoundError as e:
+        # Permanent: the run will never finish, so the next invocation
+        # launches afresh.
         rep_state = transition(
             rep_state, status=RepStatus.FAILED,
-            error=f"poll/event-log failed: {e}",
+            error=f"run not found: {e}",
+        )
+        state.reps[rep_state.rep_id] = rep_state
+        _save_state(state, registry, qual_id, side, local_state_path)
+        return
+    except DagsterGraphQLError as e:
+        # A timeout or transport error says nothing about the run, which
+        # may still be executing: stay LAUNCHED so the next invocation
+        # reconciles it instead of starting a concurrent duplicate.
+        rep_state = transition(
+            rep_state, status=RepStatus.LAUNCHED,
+            error=f"poll/event-log failed, will reconcile: {e}",
         )
         state.reps[rep_state.rep_id] = rep_state
         _save_state(state, registry, qual_id, side, local_state_path)

@@ -209,7 +209,8 @@ local: ~/.dagtools/quals/<qual_id>/<side>-stage-state.json
   - **LAUNCHED reconciles** through `get_run_status`. It is never
     relaunched. A poll that fails or times out leaves the group `LAUNCHED`
     (with the error noted), because the run may still be materializing.
-    Q2 marks the same case `FAILED`, and stage deliberately does not.
+    Only a run the deployment no longer knows (`RunNotFoundError`) is
+    marked `FAILED`. Q2 and the probe runner follow the same rule.
 - `StageRecord`, one per group run, holds `run_id`, `group_key`,
   `partition_key`, `status`, `selection` and `selection_hash`. It also
   holds a per-key outcome from the event log (`materialized` / `failed` /

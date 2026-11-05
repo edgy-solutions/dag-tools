@@ -377,3 +377,30 @@ def test_get_event_log_raises_on_not_found_shape():
     client = DagsterGraphQLClient("http://x/graphql", http=http)
     with pytest.raises(DagsterGraphQLError):
         client.get_event_log("r1")
+
+
+def test_an_unknown_run_id_raises_the_permanent_not_found_error():
+    # RunNotFoundError is what the installed schema's unions return; it is
+    # the one poll failure a runner may treat as final.
+    from dag_tools.qual.graphql import DagsterRunNotFoundError
+
+    for field, method in (("pipelineRunOrError", "get_run_status"),
+                          ("logsForRun", "get_event_log")):
+        http = _mock_http_with_response({
+            "data": {field: {"__typename": "RunNotFoundError", "message": "gone"}}
+        })
+        client = DagsterGraphQLClient("http://x/graphql", http=http)
+        with pytest.raises(DagsterRunNotFoundError):
+            getattr(client, method)("r1")
+
+
+def test_other_lookup_failures_are_not_classified_as_not_found():
+    from dag_tools.qual.graphql import DagsterRunNotFoundError
+
+    http = _mock_http_with_response({
+        "data": {"pipelineRunOrError": {"__typename": "PythonError", "message": "boom"}}
+    })
+    client = DagsterGraphQLClient("http://x/graphql", http=http)
+    with pytest.raises(DagsterGraphQLError) as exc:
+        client.get_run_status("r1")
+    assert not isinstance(exc.value, DagsterRunNotFoundError)
