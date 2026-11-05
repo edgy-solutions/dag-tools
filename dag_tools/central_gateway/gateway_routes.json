@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "description": "The central gateway's route ids, published as data so a consumer does not keep its own copy. Owned here, where the routes are defined. 'delegate_rows_may_name' is the published answer to whether a delegate row may name a route: read that field rather than deciding it from the route's name, its module, or a list kept elsewhere.",
+  "source": {
+    "package": "dag_tools.central_gateway",
+    "modules": [
+      "dag_tools/central_gateway/identity.py",
+      "dag_tools/central_gateway/internal_door.py"
+    ]
+  },
+  "routes": [
+    {
+      "id": "assets.authorize",
+      "constant": "dag_tools.central_gateway.identity.ROUTE_AUTHORIZE",
+      "delegate_rows_may_name": true,
+      "authorization": "delegate_table",
+      "note": "The delegate table is keyed on this route. It is the only route a delegate row may name."
+    },
+    {
+      "id": "broker.resolve",
+      "constant": "dag_tools.central_gateway.internal_door.ROUTE_RESOLVE",
+      "delegate_rows_may_name": false,
+      "authorization": "caller_list",
+      "callers_env": "BROKER_RESOLVE_CALLERS",
+      "note": "An internal door. It authorizes against its own caller list and never consults the delegate table."
+    },
+    {
+      "id": "gateway.register",
+      "constant": "dag_tools.central_gateway.internal_door.ROUTE_REGISTER",
+      "delegate_rows_may_name": false,
+      "authorization": "caller_list",
+      "callers_env": "GATEWAY_REGISTER_CALLERS",
+      "note": "An internal door. It authorizes against its own caller list and never consults the delegate table."
+    }
+  ]
+}
