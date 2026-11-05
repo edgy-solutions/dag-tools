@@ -6,6 +6,11 @@ that block appended (read out of the README, so the docs cannot drift from
 what is tested) and run Dagster's own automation evaluator over a window of
 sensor ticks.
 
+The block needs a Dagster whose component YAML accepts `post_processing`.
+Where it does not -- the 1.10.19 compat floor, which is the version
+production runs -- the schedule cannot be attached from YAML at all, and
+these tests skip rather than fail, naming the missing field.
+
 `AutomationCondition.on_cron` looks like the obvious choice and silently
 never fires here: it waits for every upstream to update since the tick, and
 the extraction asset's upstream is the external ClickHouse table, which
@@ -74,7 +79,33 @@ def _defs_with(tmp_path: Path, monkeypatch, post_processing: str) -> dg.Definiti
         yaml_path.read_text(encoding="utf-8").rstrip() + "\n" + post_processing,
         encoding="utf-8",
     )
-    return build_component_defs(components)
+    try:
+        return build_component_defs(components)
+    except Exception as exc:  # pragma: no cover - only on an old Dagster
+        _skip_if_post_processing_is_unsupported(exc)
+        raise
+
+
+def _skip_if_post_processing_is_unsupported(exc: Exception) -> None:
+    """Skip when this Dagster's component YAML has no `post_processing` key.
+
+    The block is the whole subject of this module, so on a version that
+    rejects it there is nothing for these tests to evaluate -- the schedule
+    cannot be attached at all. Seen on the 1.10.19 compat floor, where
+    `ComponentFileModel` forbids the field.
+
+    Matched on the raised error rather than on a version number or an import
+    path: the field is what the README's block needs, a version is only a
+    proxy for it, and anything else that goes wrong here still fails loudly
+    instead of disappearing into the skip list.
+    """
+    text = str(exc)
+    if "post_processing" in text and "extra_forbidden" in text:
+        pytest.skip(
+            "this Dagster's component YAML rejects a `post_processing` block "
+            "(extra_forbidden), so the README's schedule cannot be attached on "
+            "this version and there is nothing here to evaluate"
+        )
 
 
 def _requested_per_tick(defs: dg.Definitions) -> List[Tuple[str, Set[str]]]:

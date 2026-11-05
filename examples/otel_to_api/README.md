@@ -180,6 +180,12 @@ post_processing:
         automation_condition: "{{ dg.AutomationCondition.cron_tick_passed('*/5 * * * *').since_last_handled() }}"
 ```
 
+This block needs a Dagster whose component YAML accepts
+`post_processing`. On 1.10.19 it does not -- the file is rejected with
+`extra_forbidden`, so the whole component fails to load, not just the
+schedule. There is no YAML schedule on that version; put the condition
+on the assets from Python instead.
+
 Then switch on `default_automation_condition_sensor` (UI: Automation, or
 `dagster sensor start default_automation_condition_sensor`). Dagster
 creates it automatically for any asset with an automation condition, so

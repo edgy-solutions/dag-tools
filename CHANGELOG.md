@@ -73,6 +73,10 @@ it back are named.
   `post_processing` block and says that the auto-created `default_automation_condition_sensor`
   **starts stopped**. If you hand-wrote a `sensor.py` to work around this, the README block
   replaces it.
+  The block requires a Dagster whose component YAML accepts `post_processing`;
+  **1.10.19 rejects it and fails the whole component load**, so deployments on that
+  version have no YAML schedule and must set the condition from Python. The tests for
+  the block skip there rather than fail, naming the missing field.
 
 ### Fixed
 
