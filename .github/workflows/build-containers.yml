@@ -16,10 +16,29 @@ permissions:
   contents: read
   packages: write
 
+# A commit is built ONCE and a release renames that build.
+#
+#   branch push / PR / dispatch on a branch  →  `build`  (pushes :sha-<short> + :latest)
+#   tag push / dispatch on a tag             →  `retag`  (no build; renames :sha-<short>)
+#
+# Before this, a `v*` tag ran the same build a second time, so one commit had
+# two digests and a deployment pinning the release pinned bytes that no commit
+# tag named. The `0.11.0` tag and `sha-4924235` were measured as different
+# config AND different layer blobs -- nothing here is reproducible, because
+# every run resolves dependencies fresh and layer metadata carries build time.
+# A pin is only as good as the build it names, so a release must not be a
+# build of its own.
+#
+# `:latest` is a MASTER pointer and a tag must not move it. The branch build
+# is the only thing that pushes it. (Tag runs used to push it as well, because
+# docker/metadata-action counts a tag ref as the default branch -- which is how
+# a mistaken tag briefly published `:latest` from the wrong tree.)
 jobs:
   build:
     name: "Docker · ${{ matrix.service }}"
     runs-on: ubuntu-latest
+    # A release tag renames this job's output instead of rebuilding it.
+    if: github.ref_type != 'tag'
     strategy:
       fail-fast: false
       matrix:
@@ -69,8 +88,12 @@ jobs:
 
       # Compute image tags from the git ref:
       #   - Branch push (master/main) → :sha-<short> + :latest
-      #   - Tag push (vX.Y.Z)         → :X.Y.Z + :X.Y
       # PR builds get no tags emitted here (push: is false on PR).
+      #
+      # There are deliberately NO `type=semver` patterns. A release tag does
+      # not build: the `retag` job below renames this job's output, so the
+      # release and the commit are one digest. Adding a semver pattern here
+      # reintroduces the second build this workflow exists to avoid.
       - name: Compute image tags
         id: meta
         uses: docker/metadata-action@v6
@@ -79,17 +102,15 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          # Push on any push event the workflow triggers on — i.e. master/main
-          # branch pushes and v* tag pushes. PR events have event_name=
-          # 'pull_request' and are excluded.
+          # Push on any push event this job runs for — i.e. master/main
+          # branch pushes. A tag ref never reaches this job (see its `if`) and
+          # PR events have event_name='pull_request', so both are excluded.
           push: ${{ github.event_name == 'push' }}
           # Multi-arch: matches the runtime cluster shapes we deploy to
           # (linux/amd64 GitHub-hosted CI runners, linux/arm64 k3s clusters).
@@ -100,3 +121,100 @@ jobs:
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  # Rename the commit's build as the release. No build and no re-mint: the
+  # source manifest's own BYTES are PUT under the release name, so the release
+  # tag and the commit tag resolve to the same digest by construction.
+  #
+  # `docker buildx imagetools create` is deliberately not used. It assembles a
+  # fresh index from its sources, and these images carry buildx attestation
+  # manifests, so its output is not guaranteed to be byte-identical to the
+  # source -- which would defeat the whole point of the job.
+  retag:
+    name: "Retag · ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    strategy:
+      fail-fast: false
+      matrix:
+        # Must stay in step with the `build` matrix: a service that builds and
+        # is not retagged has no release tag at all.
+        service: [central-gateway, restate-worker, user-deployment]
+
+    steps:
+      - name: Rename the commit's build as ${{ github.ref_name }}
+        env:
+          SERVICE: ${{ matrix.service }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          SOURCE_TAG="sha-${GITHUB_SHA:0:7}"
+          REPO_PATH="${IMAGE_PREFIX}/${SERVICE}"
+          API="https://${REGISTRY}/v2/${REPO_PATH}"
+          # Every media type a buildx push can present: OCI index, legacy
+          # manifest list, and both single-platform forms. Omit one and the
+          # registry may answer with a CONVERTED manifest, which has a
+          # different digest -- the one thing this job must not accept.
+          ACCEPT='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+
+          mint_token() {
+            curl -fsS -u "${GITHUB_ACTOR}:${GH_TOKEN}" \
+              "https://${REGISTRY}/token?scope=repository:${REPO_PATH}:pull,push&service=${REGISTRY}" \
+              | jq -r .token
+          }
+          TOKEN="$(mint_token)"
+
+          # Wait for the commit's build. A release tag is normally pushed
+          # seconds after the merge, while the master run that builds this
+          # image takes a couple of minutes.
+          for attempt in $(seq 1 60); do
+            if curl -fsI -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
+                 "${API}/manifests/${SOURCE_TAG}" > /dev/null 2>&1; then
+              break
+            fi
+            if [ "${attempt}" -eq 60 ]; then
+              echo "::error::${REPO_PATH}:${SOURCE_TAG} never appeared, so there is no commit build to rename. A release tag must point at a commit whose master build pushed an image. Nothing was rebuilt."
+              exit 1
+            fi
+            echo "waiting for ${REPO_PATH}:${SOURCE_TAG} (attempt ${attempt}/60)"
+            sleep 20
+            TOKEN="$(mint_token)"
+          done
+
+          # Re-mint: a pull token expires in minutes and the wait can be long.
+          TOKEN="$(mint_token)"
+          curl -fsS -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
+            -D headers.txt -o manifest.json "${API}/manifests/${SOURCE_TAG}"
+          CONTENT_TYPE="$(tr -d '\r' < headers.txt | awk 'tolower($1) == "content-type:" { print $2 }')"
+          SOURCE_DIGEST="$(tr -d '\r' < headers.txt | awk 'tolower($1) == "docker-content-digest:" { print $2 }')"
+          echo "${REPO_PATH}:${SOURCE_TAG} is ${SOURCE_DIGEST}"
+
+          # The X.Y alias only moves for a plain three-number version, so a
+          # prerelease tag never takes `0.11` off the release that holds it.
+          NAMES=("${VERSION}")
+          if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            NAMES+=("${VERSION%.*}")
+          else
+            echo "::notice::${VERSION} is not a plain X.Y.Z, so no X.Y alias is moved."
+          fi
+
+          for name in "${NAMES[@]}"; do
+            curl -fsS -X PUT -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: ${CONTENT_TYPE}" \
+              --data-binary @manifest.json "${API}/manifests/${name}" > /dev/null
+          done
+
+          # Verify by resolving each release name against the registry, not by
+          # trusting that the PUT returned 201.
+          for name in "${NAMES[@]}"; do
+            got="$(curl -fsI -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
+              "${API}/manifests/${name}" | tr -d '\r' \
+              | awk 'tolower($1) == "docker-content-digest:" { print $2 }')"
+            if [ "${got}" != "${SOURCE_DIGEST}" ]; then
+              echo "::error::${REPO_PATH}:${name} resolved to ${got}, not the commit build's ${SOURCE_DIGEST}"
+              exit 1
+            fi
+            echo "${REPO_PATH}:${name} -> ${got}"
+          done
