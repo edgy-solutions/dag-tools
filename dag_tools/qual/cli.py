@@ -397,6 +397,20 @@ def qual_init(
         None, "--job-name",
         help="Job to launch reps through. Defaults to Dagster's '__ASSET_JOB'.",
     ),
+    sha_metadata_key: str = typer.Option(
+        "git_sha", "--sha-metadata-key",
+        help=(
+            "Key stamped into workspace.yaml grpc_server.additional_metadata "
+            "holding the code location's git sha (preflight matches it to the pins)."
+        ),
+    ),
+    repo_metadata_key: str = typer.Option(
+        "repo", "--repo-metadata-key",
+        help=(
+            "Key stamped into workspace.yaml grpc_server.additional_metadata "
+            "naming the code location's repo (matched to inventory_pins)."
+        ),
+    ),
     staging_overrides: Optional[str] = typer.Option(
         None, "--staging-overrides",
         help="Pointer (typically s3://...) to the staging resource override config.",
@@ -446,6 +460,8 @@ def qual_init(
             deployment=Deployment(
                 graphql_url=graphql_url, auth=auth,
                 location_name=location_name, job_name=job_name,
+                sha_metadata_key=sha_metadata_key,
+                repo_metadata_key=repo_metadata_key,
             ),
             staging_overrides=staging_overrides,
             selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
@@ -556,6 +572,13 @@ def _print_classes_table(matrix) -> None:
         + "  ".join(
             f"{k}={v}" for k, v in matrix.coverage_by_runnability.items()
         )
+    )
+    typer.echo(
+        "  staging: "
+        + "  ".join(
+            f"{k}={v}" for k, v in matrix.coverage_by_staging_need.items()
+        )
+        + f"  launchable_now={matrix.launchable_now_count}"
     )
     typer.echo()
     typer.echo("  HASH         SIZE  REPOS  REPS  COMPUTE      IO MANAGER")
@@ -740,6 +763,16 @@ def _print_preflight_table(report) -> None:
     for check in report.checks:
         mark = "PASS" if check.passed else "FAIL"
         typer.echo(f"  [{mark}] {check.name}: {check.detail}")
+    unsatisfied = [p for p in report.pinned_repos if not p.matched]
+    for p in unsatisfied:
+        typer.echo(
+            f"    pin {p.repo}: expected={p.expected_sha!r} "
+            f"deployed={p.deployed_sha!r} location={p.location_name!r}"
+        )
+    if unsatisfied and report.unstamped_locations:
+        typer.echo(
+            "    unstamped locations: " + ", ".join(report.unstamped_locations)
+        )
 
 
 @qual_app.command("report")

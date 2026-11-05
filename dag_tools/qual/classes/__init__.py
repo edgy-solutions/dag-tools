@@ -27,10 +27,12 @@ from .key import (
     EquivalenceClass,
     Representative,
     Runnability,
+    StagingNeed,
     class_hash,
     compute_class_key,
 )
 from .selection import classify_runnability, pick_representatives
+from .staging import build_executability_index, classify_staging_need
 
 __all__ = [
     "SCHEMA_VERSION_CLASS_MATRIX",
@@ -41,12 +43,15 @@ __all__ = [
     "EquivalenceClass",
     "Representative",
     "Runnability",
+    "StagingNeed",
     # key
     "class_hash",
     "compute_class_key",
     # selection
     "pick_representatives",
     "classify_runnability",
+    "classify_staging_need",
+    "build_executability_index",
     # builder
     "build_class_matrix",
     "publish_class_matrix",

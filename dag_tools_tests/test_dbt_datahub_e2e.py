@@ -359,3 +359,58 @@ def test_dbt_build_publishes_to_datahub_end_to_end(
         "the dbt *source* never reached DataHub, which is exactly what "
         f"sources.json carries; emitted urns: {sorted(urns)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Canary: the dbt-side facts the `--empty` staging path rests on
+# ---------------------------------------------------------------------------
+# Same precedent as TestWhatTheClientsActuallyHonour in test_chart_ca_certs.py:
+# pin the third-party behaviour the design depends on. See docs/RECIPE.md
+# "Staging data for Q2".
+
+
+def _dbt_help(*subcommand):
+    exe = shutil.which("dbt")
+    assert exe, "the dbt CLI must be installed"
+    out = subprocess.run(
+        [exe, *subcommand, "--help"], capture_output=True, text=True, check=True
+    )
+    return out.stdout
+
+
+def _has_flag(help_text, flag):
+    import re
+
+    return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_text) is not None
+
+
+def test_dbt_accepts_empty_on_build_and_not_on_docs_generate():
+    assert _has_flag(_dbt_help("build"), "--empty")
+    docs = _dbt_help("docs", "generate")
+    assert not _has_flag(docs, "--empty")
+    # The near-miss name is a distinct flag and must stay distinct.
+    assert _has_flag(docs, "--empty-catalog")
+    assert not _has_flag(_dbt_help("source", "snapshot-freshness"), "--empty")
+
+
+def test_dbt_empty_env_var_is_the_documented_name():
+    """`--empty` carries envvar="DBT_EMPTY" in dbt's own click declaration.
+
+    Introspect the installed dbt rather than grepping `--help`: click omits
+    envvar names from help unless the option sets `show_envvar=True`, and dbt
+    does not. The first version of this canary grepped the help text and
+    failed against the real CLI for that reason -- the flag was fine, the
+    assertion method was not. Both assertions carry the observed value so a
+    future dbt renaming the envvar says so instead of just going red.
+    """
+    from dbt.cli.main import build
+
+    empty = next((prm for prm in build.params if prm.name == "empty"), None)
+    assert empty is not None, [prm.name for prm in build.params]
+    # dbt declares an ALIAS LIST here, not a string (observed:
+    # ['DBT_ENGINE_EMPTY', 'DBT_EMPTY']), and click uses whichever is set
+    # first. The name we document must stay among them.
+    declared = empty.envvar
+    if not isinstance(declared, (list, tuple)):
+        declared = [declared]
+    assert "DBT_EMPTY" in declared, declared

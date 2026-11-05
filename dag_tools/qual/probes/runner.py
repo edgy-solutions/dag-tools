@@ -7,7 +7,7 @@ End-to-end flow:
       the class_hash + module_name per probe.)
   2. Build (or load existing) :class:`ProbeRunState` for ``(qual_id, side)``.
   3. For each probe in the manifest:
-       * PENDING — launch downstream asset, persist state.
+       * PENDING — launch the upstream AND downstream assets, persist state.
        * LAUNCHED — desktop died; reconcile by polling the run_id.
        * FAILED — leave alone unless ``retry_failed=True``.
        * PASSED — skip (sacred).
@@ -19,8 +19,12 @@ End-to-end flow:
 Recipe alignment: probes deploy to the ``dag-tools-probes`` user-code
 location. We hardcode the location name here — that's the contract with
 :mod:`dag_tools.probes_location`. The downstream asset's key is
-``<module_name>_downstream`` (deps pulls the upstream automatically),
-matching what the Q5 generator emits.
+``<module_name>_downstream``, matching what the Q5 generator emits. The
+launch selects BOTH the upstream and the downstream asset: ``deps`` does not
+co-materialize the upstream, so a downstream-only run dies with
+``DagsterExecutionLoadInputError`` (the upstream is a loaded input that must
+already exist in the IO manager). Upstream write -> downstream read-back is
+the whole point of the probe.
 """
 from __future__ import annotations
 
