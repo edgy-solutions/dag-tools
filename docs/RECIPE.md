@@ -1089,7 +1089,8 @@ them, you're probably violating a recipe rule. Read carefully first.
   `qual classes`, so it is visible before any pass is burned.
 - **Q2 v1 defers two recipe items.** The IO round-trip probe (per-class
   probe asset that loads representative output via the same IO manager)
-  needs the Q5 probes code location infrastructure to land first. The
+  waited on the Q5 probes code location, which has since landed, so it
+  is unbuilt rather than blocked. The
   local in-process orchestration snapshot (`dagtools qual orchestration`)
   is a separate command and ships separately. Both are tracked in the
   implementation-status table.

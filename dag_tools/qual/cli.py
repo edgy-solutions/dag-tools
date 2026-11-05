@@ -835,9 +835,10 @@ def qual_report(
     accept_synthetic_coverage_missing: bool = typer.Option(
         False, "--accept-synthetic-coverage-missing",
         help=(
-            "Operator opt-in: there are SYNTHETIC_REQUIRED classes without "
-            "probe coverage (Q5 not implemented). Required to GO when any "
-            "synthetic class exists."
+            "Operator opt-in: some SYNTHETIC_REQUIRED classes have no probe "
+            "coverage yet (probes not passed on both sides). Required to GO "
+            "while any such class remains. Never excuses a failing or "
+            "divergent probe."
         ),
     ),
     accept_orchestration_deferred: bool = typer.Option(
