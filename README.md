@@ -19,6 +19,7 @@ This library follows a **Dagster-first** configuration approach.
 - **[Private/self-signed TLS endpoints: docs/restate-worker-ca-certs.md](docs/restate-worker-ca-certs.md)** — `restateWorker.caCerts` / `centralGateway.caCerts` in the Helm chart: injecting a CA bundle, why it takes two env vars and a merge rather than one, and how to confirm it took.
 - **[Local dev loops: docs/local-dev-loops.md](docs/local-dev-loops.md)** — iterating on dbt and dlt without the Dagster UI: `dagtools dlt run --destination ./dev.duckdb`, `--extract-only`, `dagtools dlt env`, and how to do it without copying credentials onto a laptop.
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
+- `dag_tools/audit/`: The **read audit** — a pure (Dagster-free) engine that turns a warehouse's query history into a report of which asset read which object, and which reads nothing explains. Builds the SELECT and returns SQL plus bound parameters; a resource runs it. Names no relation, column or identity, not even as a default. Surfaced as `ReadAuditComponent` (YAML) and `dagtools audit` (CLI).
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
@@ -477,6 +478,46 @@ environments:
 # Ensure PyYAML is installed: pip install PyYAML
 python3 scripts/compile_and_validate_dbt.py
 ```
+
+### 12. Read Audit (`ReadAuditComponent` / `dagtools audit`)
+
+Read-only. Reports which assets read which warehouse objects, and — the part
+that matters — which reads **no asset explains**. That gap is what sizes a
+classification registry, and it is the number a query tag exists to drive to
+zero.
+
+```yaml
+# components/read_audit/component.yaml
+type: dag_tools.ReadAuditComponent
+attributes:
+  history:
+    # Either an export you already have...
+    rows_file: history_rows.json
+    lookback_hours: 168
+    # ...or a resource that runs the read, in which case `relation` and all
+    # five `columns` are required. None of them has a default: this library
+    # does not know how your account spells its query history and will not
+    # guess.
+  runs:
+    from_instance: true
+  group_name: audit
+```
+
+Each read is attributed by query tag (asset key, or a run id resolving to a
+single-asset run), else by correlation against exactly one single-asset run
+window, else it is reported as `ambiguous`, `unattributed` or
+`not_a_pipeline`. Those three stay in the headline gap *and* are broken out
+separately, because they go to different people. `coverage` is omitted rather
+than reported as 1.0 when nothing was read, and a malformed history row is
+counted in `row_failures` rather than dropped.
+
+The component builds the SELECT and hands it to a resource as SQL plus bound
+parameters (`fetch_rows(statement, parameters)`) — no driver dependency, no
+credential handling, nothing executed in this library. Runnable example with
+no warehouse required: [`examples/read_audit`](examples/read_audit).
+
+`dagtools audit statement` prints the SQL and parameters for an operator to
+run themselves; `dagtools audit reads` turns an export into the same report.
 
 ## Setup & Development
 

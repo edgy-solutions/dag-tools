@@ -10,6 +10,36 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Added
+
+- **Read audit — `ReadAuditComponent` and `dagtools audit`.** Reports which assets read which
+  warehouse objects from the warehouse's own query history, and which reads no asset explains.
+  Read-only: it issues one `SELECT` (or reads an export you already have) and writes a report;
+  it grants nothing and changes nothing. New package `dag_tools.audit` (pure — imports neither
+  Dagster nor `dag_tools.qual`), new export `dag_tools.ReadAuditComponent`, new CLI group
+  `dagtools audit` with `statement` and `reads`. Runnable example that needs no warehouse and no
+  credentials: `examples/read_audit`.
+
+  Nothing in it names a relation, a column, a level or an identity — not even as a default. The
+  five history column names and the relation are required fields on the resource topology,
+  because a wrong default would audit the wrong column and report an empty window as a clean
+  audit. Your names arrive through YAML and leave in the report.
+
+  The component builds the statement and hands it to a resource as SQL plus bound parameters
+  (`fetch_rows(statement, parameters)`); this library opens no connection and carries no driver
+  dependency. Reads are attributed by query tag, then by correlation against a single-asset run
+  window, and anything else is reported as `ambiguous` / `unattributed` / `not_a_pipeline` —
+  stated in the headline gap *and* broken out by cause, since those three have different fixes.
+  `coverage` is omitted rather than reported as `1.0` when nothing was read.
+
+  **No breaking change**: additive only. Nothing existing changes signature, export or default.
+
+  Verified on `dagster==1.10.19` as well as current — the example loads and materializes
+  identically on both, and the component file deliberately stays inside `type:` + `attributes:`
+  to keep it that way.
+
 ## 0.11.0 — 2026-11-04
 
 **Tag repaired 2026-11-05 (UTC).** `v0.11.0` was first pushed at `cc915a5`, which is
