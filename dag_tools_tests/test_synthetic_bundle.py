@@ -12,7 +12,7 @@ import boto3
 from moto import mock_aws
 
 from dag_tools.inventory import SCHEMA_VERSION as INV_VER
-from dag_tools.qual.qualify import VersionTarget, create_qualification
+from dag_tools.qual.qualify import ProbeSettings, VersionTarget, create_qualification
 from dag_tools.qual.classes import build_class_matrix, publish_class_matrix
 from dag_tools.qual.registry import (
     BuildMeta,
@@ -78,7 +78,7 @@ def _publish_asset(registry, repo, sha, *,
     )
 
 
-def _setup_qual_with_classes(registry, qual_id="q-test"):
+def _setup_qual_with_classes(registry, qual_id="q-test", probes=None):
     """Two repos:
       * alpha — runnable class (in-memory IO manager, no tag).
       * beta  — synthetic-required class (snowflake FQN + the
@@ -101,6 +101,7 @@ def _setup_qual_with_classes(registry, qual_id="q-test"):
         qual_id=qual_id, registry=registry,
         baseline=VersionTarget(dagster="1.10.6"),
         candidate=VersionTarget(dagster="1.12.1"),
+        probes=probes,
     )
     matrix = build_class_matrix(qual_id, registry=registry)
     publish_class_matrix(matrix, registry=registry)
@@ -249,3 +250,40 @@ def test_default_local_probes_dir_honors_dagtools_home(monkeypatch, tmp_path):
     monkeypatch.setenv("DAGTOOLS_HOME", str(tmp_path))
     out = default_local_probes_dir("q-test")
     assert out == tmp_path / "quals" / "q-test" / "probes"
+
+
+SNOWFLAKE = "dagster_snowflake.SnowflakeIOManager"
+
+
+def test_bundle_threads_manifest_probe_config_into_the_generator():
+    probes = ProbeSettings(io_manager_config={
+        SNOWFLAKE: {"database": "QUAL", "password": {"env": "QUAL_SF_PW"}},
+    })
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+        reg = InventoryRegistry(S3Storage(StorageSettings(bucket=BUCKET)))
+        _setup_qual_with_classes(reg, probes=probes)
+        bundle = generate_bundle("q-test", registry=reg)
+        probe = bundle.manifest.probes[0]
+        source = bundle.sources[probe.class_hash]
+        assert "database='QUAL'" in source
+        assert "QUAL_SF_PW" in source
+        assert probe.io_manager_config_keys == ["database", "password"]
+
+
+def test_probe_manifest_records_config_key_names_never_values(monkeypatch):
+    sentinel = "SENTINEL-value-must-not-persist"
+    monkeypatch.setenv("QUAL_SF_PW", sentinel)
+    probes = ProbeSettings(io_manager_config={
+        SNOWFLAKE: {"database": "plain-literal", "password": {"env": "QUAL_SF_PW"}},
+    })
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+        reg = InventoryRegistry(S3Storage(StorageSettings(bucket=BUCKET)))
+        _setup_qual_with_classes(reg, probes=probes)
+        bundle = generate_bundle("q-test", registry=reg)
+        dumped = bundle.manifest.model_dump_json()
+        assert sentinel not in dumped
+        assert "plain-literal" not in dumped
+        assert "database" in dumped and "password" in dumped
+        assert all(sentinel not in src for src in bundle.sources.values())
