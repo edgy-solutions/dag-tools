@@ -20,9 +20,11 @@ from `4924235`. The container images are the part that did go out: the cancellat
 after their push steps had finished, so `:0.11.0`, `:0.11` and `:latest` carried 0.10.0's tree
 for about four minutes — 02:01:21 to 02:06:38 UTC — before the corrected tag's run replaced
 every one of them. The replacement was confirmed by resolving each tag's digest against the
-registry, not from the run's own status. Nothing in the fleet pins those tag names to a
-digest; `:latest` is what a chart resolves for these images, and it was replaced too. If you
-pulled a dag-tools image inside that window, re-pull.
+registry, not from the run's own status. **No deployment resolves those tag names**: the
+sandbox pins these images by digest, so nothing running there could have pulled the wrong tree.
+An install that leaves a dag-tools image's `tag` unset falls through to `:latest`, which the
+first tag's run also pushed and the corrected run also replaced — if you pulled a dag-tools
+image inside that window, re-pull.
 
 ### Added
 
