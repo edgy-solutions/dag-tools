@@ -18,11 +18,20 @@ templates would be worse.
 value read out of them is a string. APIs generally want numbers,
 booleans and arrays. Nothing here guesses: use ``as_int`` / ``as_float``
 / ``as_bool`` / ``split`` when the target field is not a string.
+
+**Numeric coercion is exact or it is the default.** JSON cannot carry
+``NaN`` or ``Infinity``, so a non-finite result coerces to the default
+rather than reaching a payload. Integer strings parse exactly, never via
+``float()``, which would round anything past 2**53 and would read a
+digits-and-one-``e`` identifier as an exponent. Identifiers belong in
+string fields: no numeric helper can tell ``"1e5"`` the number from
+``"1e5"`` the id.
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
 
 Row = Dict[str, Any]
@@ -411,20 +420,44 @@ def invert_multimap(mapping: Any) -> Dict[Any, List[Any]]:
     return out
 
 
-def as_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+# Beyond this a float no longer represents every integer, so an integer
+# reached through float() may not be the one the source wrote.
+_EXACT_FLOAT_INT = 2**53
+
+
+def _exact_int(value: Any) -> Optional[int]:
+    """The integer ``value`` spells exactly (``5``, ``"5"``, ``Decimal(5)``), else None."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
     try:
-        if isinstance(value, bool):
-            return int(value)
-        return int(float(value))
-    except (TypeError, ValueError):
+        return int(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _finite_float(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def as_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    exact = _exact_int(value)
+    if exact is not None:
+        return exact
+    number = _finite_float(value)
+    if number is None or abs(number) >= _EXACT_FLOAT_INT:
         return default
+    return int(number)
 
 
 def as_float(value: Any, default: Optional[float] = None) -> Optional[float]:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+    number = _finite_float(value)
+    return default if number is None else number
 
 
 def as_number(value: Any, default: Any = None) -> Any:
@@ -434,18 +467,11 @@ def as_number(value: Any, default: Any = None) -> Any:
     care whether ``0`` arrives as ``0`` or ``0.0``; this preserves the
     distinction where the input allows it.
     """
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return value
-    try:
-        text = str(value).strip()
-        if not text:
-            return default
-        number = float(text)
-    except (TypeError, ValueError):
-        return default
-    return int(number) if number.is_integer() and "." not in text and "e" not in text.lower() else number
+    exact = _exact_int(value)
+    if exact is not None:
+        return exact
+    number = _finite_float(value)
+    return default if number is None else number
 
 
 _TRUE = {"true", "1", "yes", "y", "on", "pass", "passed", "success"}

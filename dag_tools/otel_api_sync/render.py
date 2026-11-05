@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from dag_tools.otel_api_sync.environment import (
@@ -303,6 +304,16 @@ def compute_plan_hash(steps: List[Dict[str, Any]]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+def _non_finite_paths(value: Any, path: str) -> List[str]:
+    if isinstance(value, float) and not math.isfinite(value):
+        return [path]
+    if isinstance(value, dict):
+        return [p for k, v in value.items() for p in _non_finite_paths(v, f"{path}.{k}")]
+    if isinstance(value, (list, tuple)):
+        return [p for i, v in enumerate(value) for p in _non_finite_paths(v, f"{path}[{i}]")]
+    return []
+
+
 def build_plan(group_key: Any, rows: List[Dict[str, Any]], spec: OtelApiSyncSpec) -> Dict[str, Any]:
     """Render one execution group into a complete, ordered call plan."""
     env = build_environment(spec.attribute_columns, spec.strict_undefined)
@@ -317,6 +328,24 @@ def build_plan(group_key: Any, rows: List[Dict[str, Any]], spec: OtelApiSyncSpec
         rendered = _render_step(step, group_context, env, path_env)
         if rendered is not None:
             steps.append(rendered)
+
+    # JSON has no NaN or Infinity, so the dispatch POST would refuse this
+    # plan anyway; failing here names the field and fails dry runs too,
+    # instead of passing review and failing only on the real send.
+    non_finite = [
+        path
+        for step in steps
+        for path in _non_finite_paths(
+            {k: v for k, v in step.items() if k != "id"}, f"step '{step['id']}'"
+        )
+    ]
+    if non_finite:
+        raise ValueError(
+            f"group {group_key!r}: rendered plan contains non-finite numbers "
+            f"(NaN/Infinity), which JSON cannot carry: {', '.join(non_finite[:10])}. "
+            "Send identifiers as strings; as_int / as_float / as_number return "
+            "their default for non-finite input."
+        )
 
     plan_hash = compute_plan_hash(steps)
     return {

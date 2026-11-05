@@ -14,6 +14,7 @@ This library follows a **Dagster-first** configuration approach.
 3. **Consistency**: Downstream users should interact with a consistent Dagster-centric experience regardless of the specific integration being used.
 
 ## Structure
+- **[Changelog: CHANGELOG.md](CHANGELOG.md)** — what changed in each release, and whether it changes an existing signature, export or default. Starts at 0.11.0; earlier releases are in the git history between the `v*` tags.
 - **[Surveying deployed code locations: docs/surveying-deployed-code-locations.md](docs/surveying-deployed-code-locations.md)** — running `survey` where the secrets are: why CI cannot do it, why you survey the BASELINE containers only, and the minimal install that does not perturb the container you are measuring.
 - **[Private/self-signed TLS endpoints: docs/restate-worker-ca-certs.md](docs/restate-worker-ca-certs.md)** — `restateWorker.caCerts` / `centralGateway.caCerts` in the Helm chart: injecting a CA bundle, why it takes two env vars and a merge rather than one, and how to confirm it took.
 - **[Local dev loops: docs/local-dev-loops.md](docs/local-dev-loops.md)** — iterating on dbt and dlt without the Dagster UI: `dagtools dlt run --destination ./dev.duckdb`, `--extract-only`, `dagtools dlt env`, and how to do it without copying credentials onto a laptop.

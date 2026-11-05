@@ -146,11 +146,11 @@ python -m dag_tools.restate_handlers.serve
 
 ### Review a mapping change before it goes live
 
-Materialize `ci_dispatch` with `dry_run: true`:
+Materialize `ci_results_dispatch` with `dry_run: true`:
 
 ```yaml
 ops:
-  ci_dispatch:
+  ci_results_dispatch:
     config:
       dry_run: true
 ```
@@ -167,6 +167,42 @@ not "the plan succeeded". The `restate_plans_completed` asset check
 (configured under `completion_check:`) polls each dispatched group's
 `get_status` handler and fails the run if any plan failed or never
 confirmed within `timeout_seconds`, closing exactly that false-green gap.
+
+### Run it on a schedule (YAML only)
+
+Append to `component.yaml`, at the top level next to `attributes:`:
+
+```yaml
+post_processing:
+  assets:
+    - target: "group:otel_api_sync"
+      attributes:
+        automation_condition: "{{ dg.AutomationCondition.cron_tick_passed('*/5 * * * *').since_last_handled() }}"
+```
+
+This block needs a Dagster whose component YAML accepts
+`post_processing`. On 1.10.19 it does not -- the file is rejected with
+`extra_forbidden`, so the whole component fails to load, not just the
+schedule. There is no YAML schedule on that version; put the condition
+on the assets from Python instead.
+
+Then switch on `default_automation_condition_sensor` (UI: Automation, or
+`dagster sensor start default_automation_condition_sensor`). Dagster
+creates it automatically for any asset with an automation condition, so
+no `sensor.py` is needed, but it starts **stopped**.
+
+Each tick requests extraction and dispatch together. They run in one
+run, in dependency order, with the completion check included. The run
+does not watch ClickHouse for changes. It queries ClickHouse when the
+cron fires, and readiness gating holds back any group still filling.
+
+**Do not use `AutomationCondition.on_cron` here.** It requires every
+upstream to have updated since the tick, and the extraction asset's
+upstream is the ClickHouse table — an external asset nothing ever
+materializes. The condition is evaluated and is never true, so nothing
+runs, with no error. The same applies to any dlt-backed asset whose
+source is external. Regression: `test_otel_api_sync_automation.py`
+(which reads the block above out of this README).
 
 ## Configuration reference
 
