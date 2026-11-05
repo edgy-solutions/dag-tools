@@ -12,6 +12,7 @@ from .diff import ClassVerdict, RepDiff, build_class_verdicts, diff_rep
 from .verdict import (
     GapAcceptance,
     SCHEMA_VERSION,
+    StageSideSummary,
     Verdict,
     VerdictStatus,
     build_verdict,
@@ -25,6 +26,7 @@ __all__ = [
     "Verdict",
     "VerdictStatus",
     "GapAcceptance",
+    "StageSideSummary",
     "build_verdict",
     "publish_verdict",
     "render_markdown",

@@ -176,6 +176,28 @@ def qualification_side_probes_summary_key(qual_id: str, side: str) -> str:
     return f"{qualification_prefix(qual_id)}{side}/probes/summary.json"
 
 
+# --- Stage runner state (separate slot from reps and probes) ----------------
+
+def qualification_side_stage_state_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/stage/state.json``.
+
+    Mutable per-side stage state, sibling to ``<side>/state.json`` and
+    ``<side>/probes/state.json``. Its own slot, so staging runs can never
+    be mistaken for representative runs.
+    """
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/stage/state.json"
+
+
+def qualification_side_stage_run_key(
+    qual_id: str, side: str, run_id: str
+) -> str:
+    """``qualifications/<qual_id>/<side>/stage/runs/<run_id>.json`` -- one
+    persisted stage record per group run. Immutable per run_id."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/stage/runs/{run_id}.json"
+
+
 def qualification_side_run_key(
     qual_id: str, side: str, class_hash: str, run_id: str
 ) -> str:
