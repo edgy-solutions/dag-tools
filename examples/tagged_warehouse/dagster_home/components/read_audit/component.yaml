@@ -1,0 +1,35 @@
+type: dag_tools.ReadAuditComponent
+
+attributes:
+  # Unchanged from the step-1 example except for this block: the rows now come
+  # from the warehouse instead of an export, and they come through the
+  # resource the component next door contributes. The read audit still
+  # executes nothing itself -- it builds the statement and hands it over.
+  #
+  # Every name below belongs to this example's sqlite file. In a deployment
+  # they are the operator's own names, in the operator's own YAML, with no
+  # default anywhere in this library: a wrong guess would audit the wrong
+  # column in silence, and a right guess would put one of your object names
+  # in a shared repo.
+  history:
+    resource_key: warehouse
+    relation: query_history
+    columns:
+      query_id: query_id
+      started_at: started_at
+      principal: principal
+      query_tag: query_tag
+      relations: objects_read
+    lookback_hours: 168
+
+  # No run windows here. The step-1 example shows what they are for: they
+  # correlate untagged reads to a run by time, which is the best that can be
+  # done before the resource is deployed. With the tag in place the
+  # correlation is no longer needed, and what is left untagged is honestly
+  # left in the gap.
+  runs: {}
+
+  asset_name: read_audit
+  group_name: audit
+  tags:
+    read_only: "true"
