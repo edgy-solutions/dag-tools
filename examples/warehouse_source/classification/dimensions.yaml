@@ -1,0 +1,41 @@
+# A STAND-IN classification document, for this example only.
+#
+# dag-tools ships no such document and names nothing in it: policy owns this
+# file, the deployment mounts it (normally at /etc/dagtools/classification/,
+# or wherever DAGTOOLS_CLASSIFICATION_LEVELS points), and the component
+# validates every label against whatever it finds there. The ids below are
+# deliberately shaped like placeholders -- `rung_*`, `facet_*` -- so that
+# nothing here can be mistaken for a real policy's words.
+#
+# Two things about the shape are load-bearing:
+#
+#   * EXACTLY ONE dimension sets `hierarchical: true`. That is the ladder:
+#     its values are ordered least restrictive FIRST, a label takes exactly
+#     one of them, and a reader's clearance is a ceiling on it.
+#   * Every other dimension is unordered, and a label's values on it are
+#     CONJUNCTIVE -- a reader must hold all of them. Which is why the most
+#     restrictive label on an unordered dimension is every value at once,
+#     and why an unlabelled column (deny by default) comes out that way.
+classification_dimensions:
+  - id: example_ladder
+    hierarchical: true
+    values:
+      - id: rung_open
+        reason: Anyone in the organization may read it.
+        ratified_by: example-board
+      - id: rung_internal
+        reason: Readers inside the owning domain.
+        ratified_by: example-board
+      - id: rung_restricted
+        reason: Named readers only.
+        ratified_by: example-board
+
+  - id: example_facet
+    values:
+      - id: facet_x
+        reason: A handling obligation a reader must hold.
+        ratified_by: example-board
+      # Declared but not yet signed. The component publishes it and reports it
+      # as `unratified_values`; set `require_ratified: true` to refuse instead.
+      - id: facet_y
+        reason: A second obligation, pending ratification.

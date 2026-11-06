@@ -1,0 +1,128 @@
+type: dag_tools.WarehouseSourceComponent
+
+attributes:
+  # The asset this builds. It is an OBSERVABLE SOURCE asset: materializing it
+  # moves nothing. It counts the rows, names the columns, records an as-of,
+  # and publishes the label set to the catalog.
+  asset_name: party_extract
+
+  source:
+    # The asset of record: the PHYSICAL platform's dataset URN. Never a
+    # `dagster` platform URN -- the component refuses one. The catalog
+    # registers the source under the platform it really lives on, and this
+    # Dagster asset attaches to that as lineage, so that a broker authorizing
+    # a read and a catalog describing it name one object.
+    dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:sqlite,party_extract,DEV)"
+
+    # The relation, as your warehouse spells it. No default: dag-tools names
+    # no database, schema or table.
+    table: party_extract
+
+    # How reads of it reach it. `brokered` reads are authorized per request;
+    # `passthrough` reads are the caller's own session. Published, because a
+    # reader that cannot tell the two apart cannot tell whether a denial is
+    # expected.
+    access: brokered
+
+    owner: example-domain-team
+
+    # Where the labels came from: `board` (a governance decision) or
+    # `catalog_tag` (a tag already carried in the catalog). Published as
+    # `classification_origin`.
+    label_origin: board
+
+    # The labels. Each is `{dimension: values}` against the MOUNTED document
+    # -- see ../../../classification/dimensions.yaml. The hierarchical
+    # dimension is required and takes exactly one value; every other
+    # dimension takes one value or a list, and a list is conjunctive.
+    #
+    # `loaded_at` is deliberately NOT listed. It is published as most
+    # restrictive in every dimension -- deny by default -- and the
+    # materialization reports it as `defaulted_columns`. An incomplete list
+    # under-serves rather than over-serves.
+    columns:
+      - name: party_id
+        labels:
+          example_ladder: rung_internal
+
+      - name: external_ref
+        labels:
+          example_ladder: rung_restricted
+          example_facet: [facet_x, facet_y]
+
+      - name: state
+        labels:
+          example_ladder: rung_open
+
+      - name: exposure
+        labels:
+          example_ladder: rung_restricted
+          example_facet: facet_x
+        # Your own SQL predicate narrowing which rows a read may see.
+        # Published as part of the label and never interpreted here -- this
+        # library owns no dialect.
+        cell_predicate: "state = 'open'"
+
+  observation:
+    # Count the rows. Turn it off where a count is expensive or meaningless;
+    # the data version still moves when the schema or the as-of changes.
+    count_rows: true
+
+    # Your own statements, with {table} where the relation goes. Omit them
+    # and the defaults are an aggregate and an empty projection -- which is
+    # what makes an observation a look rather than a copy.
+    #
+    #   row_count_statement: "SELECT count(*) FROM {table}"
+    #   columns_statement: "SELECT * FROM {table} WHERE 1 = 0"
+    #
+    # The as-of is optional and is recorded as written: a watermark, a load
+    # id, a max timestamp. Without it the as-of is the time of the look,
+    # which says when the source was observed and nothing about the data.
+    as_of_statement: "SELECT max(loaded_at) FROM {table}"
+
+  classification:
+    # Normally UNSET. The default is the deployment's mount, overridden by
+    # DAGTOOLS_CLASSIFICATION_LEVELS -- which is how this example points at
+    # its own stand-in document. Setting it here beats that variable, so an
+    # ambient value left over from another deployment cannot silently change
+    # which document a label is validated against.
+    #
+    #   dimensions_file: /etc/dagtools/classification/dimensions.yaml
+    #
+    # With the document absent the code location still LOADS -- a developer's
+    # checkout has no cluster mount -- and the materialization is what fails,
+    # with the path named. Deny by default: an absent document classifies
+    # everything as most restrictive, so there would be nothing to serve.
+
+    # Refuse to publish while any value the document declares carries no
+    # `ratified_by`. Off here, because the example's `facet_y` is deliberately
+    # unsigned: it is reported as `unratified_values` instead.
+    require_ratified: false
+
+  catalog:
+    # Unset, so this example emits nothing. The observation still runs and
+    # still records the whole label set in its own metadata -- which is what
+    # it would have published. Point it at a GMS and it publishes:
+    #
+    #   server: "{{ env('DATAHUB_GMS_URL') }}"
+    #   token: "{{ env('DATAHUB_TOKEN') }}"
+    #
+    # A catalog failure FAILS this materialization, deliberately. The label
+    # set is the deliverable: if it does not land, a broker finds no labels on
+    # the dataset and denies every read of it, and reporting success would
+    # turn an outage into a silent embargo.
+    description: >-
+      Example source dataset, observed rather than moved.
+
+    # Draw this Dagster asset as lineage downstream of the physical dataset.
+    emit_lineage_from_asset: true
+
+  # The tagged warehouse resource the observation reads through.
+  resource_key: warehouse
+
+  group_name: classified_sources
+
+  # Observe and record everything, emit nothing. The metadata is what would
+  # have been published -- which is how to see a label set before a catalog
+  # ever hears about it.
+  dry_run: false

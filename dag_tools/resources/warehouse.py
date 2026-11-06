@@ -52,7 +52,7 @@ configuration.
 # the same string-annotation trap that bites a component's `config:` parameter
 # is cheaper to avoid than to debug. Same reason as `read_audit.component`.
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from dagster import ConfigurableResource, InitResourceContext
 from pydantic import PrivateAttr
@@ -182,8 +182,53 @@ def escape_tag_comment(sql: str, placement: str) -> str:
     return sql[:cut].replace(":", "\\:") + sql[cut:]
 
 
+def column_names_from_result(result: Any) -> Tuple[str, ...]:
+    """The names the statement projected, whether or not it matched a row.
+
+    Separate from `rows_from_result` because the case that matters here has no
+    rows in it. `rows_from_result` reaches `result.keys()` only when it has a
+    row to zip against, so an empty result set comes back as no columns at all
+    -- and a schema observation reading that would report a source that does
+    not exist. The names come off the result's own metadata, which SQLAlchemy
+    populates from the cursor description regardless of how many rows matched.
+    """
+    keys = getattr(result, "keys", None)
+    if callable(keys):
+        try:
+            return tuple(str(name) for name in keys())
+        except Exception:
+            # Some drivers refuse keys() on a result that returns nothing.
+            # The caller gets no columns rather than an exception from a
+            # statement that otherwise succeeded; what "no columns" means is
+            # the caller's decision, not this function's.
+            pass
+    description = getattr(getattr(result, "cursor", None), "description", None)
+    if description:
+        return tuple(str(column[0]) for column in description)
+    return ()
+
+
 def execute_plan(connection: Any, plan: QueryPlan) -> List[Dict[str, Any]]:
-    """Run a plan's steps in order on one connection and return the rows.
+    """Run a plan's steps in order on one connection and return the rows."""
+    rows, _ = execute_plan_rows_and_columns(connection, plan)
+    return rows
+
+
+def execute_plan_columns(connection: Any, plan: QueryPlan) -> Tuple[str, ...]:
+    """Run a plan and return only what it projected.
+
+    The plan still runs through the same chokepoint and still has to carry its
+    tag: a schema read is a read, and a source observation that arrived in
+    query history unattributed would be counted as unexplained like any other.
+    """
+    _, columns = execute_plan_rows_and_columns(connection, plan)
+    return columns
+
+
+def execute_plan_rows_and_columns(
+    connection: Any, plan: QueryPlan
+) -> Tuple[List[Dict[str, Any]], Tuple[str, ...]]:
+    """Run a plan's steps in order on one connection; rows and projection out.
 
     One connection is not an optimisation: with `session` placement the tag is
     connection state, so a read that ran on a different connection from its
@@ -202,12 +247,14 @@ def execute_plan(connection: Any, plan: QueryPlan) -> List[Dict[str, Any]]:
         )
 
     rows: List[Dict[str, Any]] = []
+    columns: Tuple[str, ...] = ()
     for step in plan.steps:
         clause = sa.text(escape_tag_comment(step.sql, plan.placement))
         result = connection.execute(clause, step.parameters)
         if step is plan.query:
+            columns = column_names_from_result(result)
             rows = rows_from_result(result)
-    return rows
+    return rows, columns
 
 
 @dataclass(frozen=True)
@@ -237,6 +284,17 @@ class BoundWarehouse:
     ) -> List[Dict[str, Any]]:
         """The same seam as the resource's, with the sharper attribution."""
         return self.resource.run_plan(self.plan(statement, parameters))
+
+    def fetch_columns(
+        self, statement: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> Tuple[str, ...]:
+        """What the statement projects, without reading a row of it.
+
+        For observing a source rather than loading one: the statement is the
+        caller's own, so whether it reads anything is the caller's decision --
+        `warehouse_source` passes a projection that matches nothing.
+        """
+        return self.resource.run_plan_columns(self.plan(statement, parameters))
 
 
 class TaggedWarehouseResource(ConfigurableResource):
@@ -380,11 +438,23 @@ class TaggedWarehouseResource(ConfigurableResource):
         """
         return self.run_plan(self.plan(statement, parameters))
 
+    def fetch_columns(
+        self, statement: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> Tuple[str, ...]:
+        """The projection seam. Run-scoped attribution, like `fetch_rows`."""
+        return self.run_plan_columns(self.plan(statement, parameters))
+
     def run_plan(self, plan: QueryPlan) -> List[Dict[str, Any]]:
         """The one chokepoint every statement leaves through."""
         engine = self._engine()
         with engine.begin() as connection:
             return execute_plan(connection, plan)
+
+    def run_plan_columns(self, plan: QueryPlan) -> Tuple[str, ...]:
+        """The same chokepoint, keeping the projection instead of the rows."""
+        engine = self._engine()
+        with engine.begin() as connection:
+            return execute_plan_columns(connection, plan)
 
     def _engine(self) -> Any:
         import sqlalchemy as sa

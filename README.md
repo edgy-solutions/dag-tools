@@ -20,6 +20,7 @@ This library follows a **Dagster-first** configuration approach.
 - **[Local dev loops: docs/local-dev-loops.md](docs/local-dev-loops.md)** — iterating on dbt and dlt without the Dagster UI: `dagtools dlt run --destination ./dev.duckdb`, `--extract-only`, `dagtools dlt env`, and how to do it without copying credentials onto a laptop.
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/audit/`: The **read audit** — a pure (Dagster-free) engine that turns a warehouse's query history into a report of which asset read which object, and which reads nothing explains. Builds the SELECT and returns SQL plus bound parameters; a resource runs it. Names no relation, column or identity, not even as a default. Surfaced as `ReadAuditComponent` (YAML) and `dagtools audit` (CLI).
+- `dag_tools/warehouse_source/`: The **warehouse source** engine — a pure (Dagster-free, DataHub-free) package that reads the deployment's mounted classification dimensions document, validates each column's `{dimension: values}` label against it, plans an observation that moves no data, and builds the catalog payload. Surfaced as `WarehouseSourceComponent`, which publishes one source dataset as an observable source asset under the PHYSICAL platform's dataset URN and attaches the Dagster asset as lineage. Names no database, schema, table, column, dimension or value, not even as a default.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients, including the **tagged warehouse** resource (`TaggedWarehouseComponent`) — every query it sends carries which asset the read was for, and a query it cannot attribute is not sent.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
@@ -563,6 +564,80 @@ fails the load while importing no driver.
 It drops in under section 12 unchanged: same `fetch_rows(statement,
 parameters)` seam, named by `resource_key`. Runnable example, sqlite, no
 credentials: [`examples/tagged_warehouse`](examples/tagged_warehouse).
+
+### 15. Warehouse Source (`WarehouseSourceComponent`)
+
+One labelled source dataset, **observed rather than moved**. The component
+records what is there (row count, schema hash, as-of watermark) and publishes
+what a catalog needs to describe the object a broker authorizes reads of: the
+dataset itself, a classification label per column, the owner, the access mode,
+and where the labels came from.
+
+```yaml
+# components/source/component.yaml
+type: dag_tools.WarehouseSourceComponent
+attributes:
+  asset_name: party_extract
+  source:
+    # The asset of record: the PHYSICAL platform's dataset URN, never a
+    # `dagster` one -- that is refused at the load. The Dagster asset is
+    # attached to this dataset as lineage.
+    dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:sqlite,party_extract,DEV)"
+    table: party_extract            # as your warehouse spells it
+    access: brokered                # brokered | passthrough
+    owner: example-domain-team
+    label_origin: board             # board | catalog_tag
+    columns:
+      - name: party_id
+        labels: { example_ladder: rung_internal }
+      - name: external_ref
+        labels:
+          example_ladder: rung_restricted      # the hierarchical dimension,
+          example_facet: [facet_x, facet_y]    # one value; others conjunctive
+      - name: exposure
+        labels: { example_ladder: rung_restricted }
+        cell_predicate: "state = 'open'"       # published, never interpreted
+  observation:
+    count_rows: true
+    as_of_statement: "SELECT max(loaded_at) FROM {table}"
+  resource_key: warehouse           # the tagged warehouse from section 13
+  group_name: classified_sources
+```
+
+Every dimension id and value above belongs to the **deployment's** mounted
+classification document (env `DAGTOOLS_CLASSIFICATION_LEVELS`, default
+`/etc/dagtools/classification/levels.yaml`, top-level key
+`classification_dimensions`). This library ships no such file and names no
+dimension and no value, not even as a default — the hierarchical dimension is
+discovered from the document's own `hierarchical` flag. A label the document
+does not declare fails the code-location load; a column with **no** label is
+published most restrictive in every dimension, counted as
+`defaulted_columns`, and warned about. Deny by default means an incomplete
+list under-serves rather than over-serves.
+
+The document is read again **at materialization**, because the mount is the
+authority at the moment of the read. If it is absent then, the run fails and
+names the path — but the code location still loads, so one missing ConfigMap
+cannot take the location's other assets down with it.
+
+The asset is an **observable source asset**: it moves no data and it has no
+run config (Dagster calls an observe function with resources only, so every
+knob is a YAML attribute). It needs the tagged warehouse resource named by
+`resource_key`, and it reads through `fetch_columns` — a seam of its own,
+because an empty table yields no rows to read column names off. Note that
+source assets are **excluded from `AssetSelection.all()`**: name the keys in
+any job or schedule that observes it, or it will run zero steps and report
+success.
+
+Point it at a catalog with `catalog: { server: ..., token: ... }` (or
+`DATAHUB_TOKEN`); leave the server out, or set `dry_run: true`, and the
+payload is recorded in the observation metadata and sent nowhere. Unlike the
+dbt publisher, **a catalog failure fails the materialization** — here the
+publish is the deliverable, and a source whose labels never arrived is one a
+broker will answer unlabelled.
+
+Runnable example, sqlite, no credentials, no catalog:
+[`examples/warehouse_source`](examples/warehouse_source).
 
 ## Setup & Development
 

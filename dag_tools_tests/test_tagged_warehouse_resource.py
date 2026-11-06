@@ -28,6 +28,7 @@ from dag_tools.resources.warehouse import (
     BoundWarehouse,
     TaggedWarehouseResource,
     asset_key_of,
+    column_names_from_result,
     escape_tag_comment,
     execute_plan,
     rows_from_result,
@@ -310,6 +311,78 @@ def test_fetch_rows_is_the_seam_the_read_audit_calls():
     assert list(inspect.signature(BoundWarehouse.fetch_rows).parameters) == (
         ["self", "statement", "parameters"]
     )
+
+
+def test_an_empty_result_set_still_names_its_columns():
+    """The case `rows_from_result` cannot answer, and the one that matters.
+
+    A schema observation runs a projection that matches NO rows on purpose.
+    `rows_from_result` reaches `result.keys()` only when it has a row to zip
+    against, so it reports no columns at all for that statement -- and an
+    observation reading it would report a source that does not exist. Proven
+    against a real driver rather than a stub, because the behaviour under test
+    is the driver's.
+    """
+    import sqlalchemy as sa
+
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE t (a TEXT, b INTEGER)"))
+        result = connection.execute(sa.text("SELECT * FROM t WHERE 1 = 0"))
+        rows = rows_from_result(result)
+        assert rows == []
+
+        result = connection.execute(sa.text("SELECT * FROM t WHERE 1 = 0"))
+        assert column_names_from_result(result) == ("a", "b")
+
+
+def test_a_result_that_refuses_keys_falls_back_to_the_cursor_description():
+    """Some drivers raise on `keys()` for a result that returns nothing.
+
+    The fallback is what keeps the observation working on them; without it the
+    refusal would surface as a source with no columns, which is indistinguishable
+    from a relation that is not there.
+    """
+
+    class _Cursor:
+        description = [("a", None), ("b", None)]
+
+    class _Refuses:
+        cursor = _Cursor()
+
+        def keys(self):
+            raise RuntimeError("this driver will not say")
+
+    assert column_names_from_result(_Refuses()) == ("a", "b")
+
+
+def test_fetch_columns_is_a_separate_seam_from_fetch_rows():
+    """Both are seams other components look up by name.
+
+    `WarehouseSourceComponent` raises when `fetch_columns` is missing, naming
+    why rows are not enough -- so a rename here is a break, not a refactor.
+    """
+    import inspect
+
+    assert list(
+        inspect.signature(TaggedWarehouseResource.fetch_columns).parameters
+    ) == ["self", "statement", "parameters"]
+    assert list(inspect.signature(BoundWarehouse.fetch_columns).parameters) == (
+        ["self", "statement", "parameters"]
+    )
+
+
+def test_a_schema_read_still_has_to_carry_its_tag():
+    """A projection is a read, and an untagged one is an unexplained one.
+
+    The column path runs through the same chokepoint as the row path: if it
+    ever gained its own execution route, step 1's audit would start counting
+    every observation as a gap.
+    """
+    resource = _resource(pipeline_name=None)
+
+    with pytest.raises(UntaggedQuery):
+        resource.fetch_columns("SELECT * FROM t WHERE 1 = 0")
 
 
 # --- connection resolution --------------------------------------------------

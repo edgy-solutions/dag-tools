@@ -14,6 +14,57 @@ it back are named.
 
 ### Added
 
+- **Warehouse source — `WarehouseSourceComponent`.** One labelled source dataset per
+  component instance, published as a Dagster **observable source asset**: no data is moved,
+  and the observation records a row count, an order-sensitive schema hash and an optional
+  as-of watermark. The catalog payload carries a classification label per column, the owner,
+  the access mode (`brokered` / `passthrough`) and a `classification_origin` property. New
+  pure module `dag_tools.warehouse_source` (the dimensions document, the label algebra, the
+  observation plan and the catalog payload — no Dagster, no DataHub, no SQLAlchemy, no dlt),
+  new export `dag_tools.WarehouseSourceComponent`. Runnable example against sqlite with no
+  credentials and no catalog: `examples/warehouse_source`. **Nothing is removed or renamed;
+  no existing signature, export or default changes.**
+
+  **The asset of record is the physical platform's dataset URN.** A `dagster` platform URN is
+  refused at the code-location load, and the Dagster asset is attached to the physical dataset
+  as lineage in the fabric read off that URN — so a broker authorizing a read and a catalog
+  describing it name one object.
+
+  Column labels are `{dimension: values}` and are validated against the **deployment's**
+  mounted classification document — env `DAGTOOLS_CLASSIFICATION_LEVELS`, default
+  `/etc/dagtools/classification/levels.yaml`, top-level key `classification_dimensions`. This
+  library ships no such file and names no dimension and no value, not even as a default; the
+  hierarchical dimension is discovered from the document's `hierarchical` flag, takes exactly
+  one value, and is required on every label that exists. A column with **no** label is
+  published most restrictive in every dimension and counted as `defaulted_columns` — deny by
+  default, so an incomplete list under-serves rather than over-serves — while a labelled
+  column the source no longer has fails loudly instead of being defaulted. The document is
+  read again **at materialization**: if it is absent then, the run fails and names the path,
+  but the code location still loads, so a missing ConfigMap cannot take the location's other
+  assets down with it.
+
+  Reads go through the tagged warehouse resource named by `resource_key`, via a new
+  `fetch_columns(statement)` seam on `TaggedWarehouseResource` / `BoundWarehouse` —
+  **additive**, alongside the unchanged `fetch_rows`. It exists because an empty table yields
+  no rows to read column names off, so names taken from a row would report a source with zero
+  columns. A schema read is refused at the same chokepoint if it cannot carry its tag.
+
+  Two deliberate differences from `CustomDbtProjectComponent`'s DataHub publishing: **a
+  catalog failure fails the materialization** (here the publish is the deliverable, not a
+  side effect of a build worth keeping), and **no `schemaMetadata` aspect is emitted**,
+  because only column names were read. Use `dry_run: true`, or omit `catalog.server`, to see
+  the exact payload with no server.
+
+  Two Dagster facts worth knowing if you build on this: an observe function is called with
+  resources only, so an observable source asset can take **no run config** (a `config:`
+  parameter raises `TypeError` at run time, not at definition time); and source assets are
+  **excluded from `AssetSelection.all()`**, so a job built that way runs zero steps and still
+  reports success — name the keys. Both measured on `dagster==1.10.19` and current; the
+  example loads and materializes on both.
+
+  Downstream label propagation (`max` on the hierarchical dimension, union on the rest) is
+  not in this release.
+
 - **Tagged warehouse resource — `TaggedWarehouseComponent`.** A warehouse resource that
   sets a query tag of `{principal, asset_key, run_id}` on every query it sends, so the read
   audit below can explain the read. `principal` is `pipeline:<name>` or the authz_id the
