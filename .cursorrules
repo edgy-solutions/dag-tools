@@ -41,6 +41,16 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4l. Classification (ADR-0064 steps 3-5; nothing reads this yet)
+- **Never ship a classification file in dag-tools.** Read the deployment's copy: env `DAGTOOLS_CLASSIFICATION_LEVELS`, default path `/etc/dagtools/classification/levels.yaml` (the mount is unchanged by the dimensions amendment), top-level key `classification_dimensions`.
+- **Exactly one dimension is `hierarchical`, and the file says which.** Discover it from the flag; never name it in code. Zero or two must fail the load.
+- **Within a dimension, order is list position, least restrictive first. A clearance is a CEILING on the hierarchical dimension** — never an exact match. On every other dimension a label's values are conjunctive: the reader must hold them all.
+- **An absent or empty file means most restrictive in every dimension** — deny by default, which with nothing declared means nothing is served. A missing mount must never read as "unclassified, therefore readable".
+- **Never write a dimension id or a value string in code, as a default, or in a comment.** Validate every configured label against the mounted file and fail the load on anything it does not declare.
+- **A column label is `{dimension: values}` with the hierarchical dimension required** — not a bare `level`. Hierarchical takes exactly one value; a label that omits it fails the load, while a column with no label at all is most restrictive.
+- **Propagate per dimension: `max` on the hierarchical one, union on the rest.** A downgrade names the dimension, the value, a reason and a steward.
+- **Use the physical platform's dataset URN as the asset of record, never a `dagster` platform URN.** The catalog registers under the physical platform; the Dagster asset is lineage.
+
 ## 4j. Read audit and the tagged warehouse (`dag_tools.audit` + `ReadAuditComponent` + `TaggedWarehouseComponent`)
 - **Component first, CLI second.** The YAML surface is primary; `dagtools audit` is a thin wrapper over the same pure engine for operators with an export and no deployment. Never add behaviour the component cannot express.
 - **No name, not even a default.** No relation, column, level or identity literal in `dag_tools.audit` — `HistoryColumns` has five required fields and no fallbacks. A wrong default would audit the wrong column and report an empty window as a clean audit.
