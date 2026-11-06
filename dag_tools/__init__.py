@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from dag_tools.components.datahub_lineage import DatahubLineageComponent
     from dag_tools.components.otel_api_sync import OtelApiSyncComponent
     from dag_tools.components.read_audit import ReadAuditComponent
+    from dag_tools.components.tagged_warehouse import TaggedWarehouseComponent
     from dag_tools.components.restate_api_sync import RestateApiSyncComponent
     from dag_tools.components.restate_dlt_sync import RestateDltSyncComponent
     from dag_tools.components.s3_sensor import S3ToArrowComponent, S3SensorComponent, S3ToFileComponent
@@ -22,6 +23,7 @@ _module_lookup = {
     "S3ToArrowComponent": "dag_tools.components.s3_sensor.arrow_component",
     "S3SensorComponent": "dag_tools.components.s3_sensor.sensor_component",
     "S3ToFileComponent": "dag_tools.components.s3_sensor.file_component",
+    "TaggedWarehouseComponent": "dag_tools.components.tagged_warehouse.component",
 }
 
 __all__ = list(_module_lookup.keys())

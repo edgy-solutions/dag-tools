@@ -1,0 +1,53 @@
+type: dag_tools.TaggedWarehouseComponent
+
+attributes:
+  # How the tag reaches the warehouse.
+  #
+  # `comment` puts the tag in a leading comment on each statement. It is what
+  # this example uses because its stand-in warehouse is sqlite, which has no
+  # session tag -- and it is also the right choice against a connection pool
+  # that may hand the next statement to a different session.
+  #
+  # `session` runs your own statement first, on the same connection, with the
+  # tag bound as :tag. That is the form most warehouses document, and the
+  # statement is yours because this library does not know your dialect:
+  #
+  #   tag:
+  #     placement: session
+  #     statement: "{{ env('WAREHOUSE_TAG_STATEMENT') }}"
+  #
+  # The tag is always bound as a parameter, never interpolated -- it carries
+  # an asset key, which is the one part of it anything else could influence.
+  tag:
+    placement: comment
+
+  # Who the reads are attributed to when nothing narrower is bound. Rendered
+  # as `pipeline:<name>`: a service identity reading as itself.
+  #
+  # A read made for a specific person is bound per request instead, in Python,
+  # with `warehouse.for_user(authz_id)` -- the authz_id the gateway verified,
+  # never a header a client sent. A resource with neither a pipeline_name nor
+  # a bound caller refuses to send the query rather than sending a read that
+  # nothing explains.
+  principal:
+    pipeline_name: read_audit_demo
+
+  # The warehouse connection. A dsn, or the parts:
+  #
+  #   connection:
+  #     drivername: "{{ env('WAREHOUSE_DRIVER') }}"
+  #     host: "{{ env('WAREHOUSE_HOST') }}"
+  #     port: 443
+  #     username: "{{ env('WAREHOUSE_USER') }}"
+  #     password: "{{ env('WAREHOUSE_PASSWORD') }}"
+  #     database: "{{ env('WAREHOUSE_DATABASE') }}"
+  #
+  # There is no default and no environment fallback: a magic variable name
+  # would belong to whichever pipeline set it last, and a read retargeted by
+  # a leftover variable is a qualification you cannot trust.
+  connection:
+    drivername: sqlite
+    database: "{{ env('TAGGED_WAREHOUSE_DB') }}"
+
+  # The key other components name this resource by.
+  resource_key: warehouse

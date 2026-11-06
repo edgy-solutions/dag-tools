@@ -14,6 +14,40 @@ it back are named.
 
 ### Added
 
+- **Tagged warehouse resource — `TaggedWarehouseComponent`.** A warehouse resource that
+  sets a query tag of `{principal, asset_key, run_id}` on every query it sends, so the read
+  audit below can explain the read. `principal` is `pipeline:<name>` or the authz_id the
+  gateway verified for a read made on someone's behalf. **A query it cannot attribute is not
+  sent** — it raises rather than issuing an untagged read, and the refusal happens before
+  the connection is resolved. New module `dag_tools.resources.warehouse`, new pure module
+  `dag_tools.audit.warehouse` (how the tag travels, decided as data), new export
+  `dag_tools.TaggedWarehouseComponent`. Runnable example with no warehouse and no credentials:
+  `examples/tagged_warehouse`.
+
+  This library ships **no tag dialect and guesses none**. `placement: comment` puts the tag in
+  the statement text; `placement: session` runs your own statement first with the tag bound as
+  `:tag`, and a statement that does not bind it fails the code-location load rather than
+  attributing every later read to nothing. The connection has **no environment fallback**:
+  name a `dsn`, or a `drivername` with host/username/password/database. It is resolved to a URL
+  during validation and never to an engine, so a typo fails the load and no driver is imported
+  while a code location loads.
+
+  A resource is not told which asset is reading it, so `fetch_rows` tags the run; call
+  `for_asset(context)` for asset-key attribution or `for_user(authz_id)` for a brokered read.
+  It drops in under `ReadAuditComponent` unchanged — same `fetch_rows(statement,
+  parameters)` seam, named by `resource_key`.
+
+  Verified on `dagster==1.10.19` as well as current — the example loads and materializes
+  identically on both. Two things that only the floor run showed: the connection resolves
+  through SQLAlchemy rather than `config_to_credentials`, because the latter imports `dlt` and
+  `dlt` is an `orchestrator` extra (a base install could otherwise not resolve a connection at
+  all); and environment references in a component file are spelled `{{ env('X') }}`, since the
+  `{{ env.X }}` attribute form does not resolve on 1.10.19 and fails the whole code-location
+  load.
+
+  **No breaking change**: additive only. Nothing existing changes signature, export or default.
+  `sqlalchemy` was already a declared dependency and every import of it is function-local.
+
 - **Read audit — `ReadAuditComponent` and `dagtools audit`.** Reports which assets read which
   warehouse objects from the warehouse's own query history, and which reads no asset explains.
   Read-only: it issues one `SELECT` (or reads an export you already have) and writes a report;

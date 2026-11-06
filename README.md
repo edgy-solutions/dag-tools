@@ -21,7 +21,7 @@ This library follows a **Dagster-first** configuration approach.
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/audit/`: The **read audit** — a pure (Dagster-free) engine that turns a warehouse's query history into a report of which asset read which object, and which reads nothing explains. Builds the SELECT and returns SQL plus bound parameters; a resource runs it. Names no relation, column or identity, not even as a default. Surfaced as `ReadAuditComponent` (YAML) and `dagtools audit` (CLI).
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
-- `dag_tools/resources/`: Reusable resources and API/Database clients.
+- `dag_tools/resources/`: Reusable resources and API/Database clients, including the **tagged warehouse** resource (`TaggedWarehouseComponent`) — every query it sends carries which asset the read was for, and a query it cannot attribute is not sent.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
 - `dag_tools/utils/`: Assorted helper functions, centralized `AssetNormalizationRegistry`, and logging utilities.
 - `dag_tools/restate_handlers/`: Durable Data Plane services (Restate) for SAP and Database synchronization.
@@ -519,6 +519,50 @@ no warehouse required: [`examples/read_audit`](examples/read_audit).
 
 `dagtools audit statement` prints the SQL and parameters for an operator to
 run themselves; `dagtools audit reads` turns an export into the same report.
+
+### 13. Tagged Warehouse (`TaggedWarehouseComponent`)
+
+The resource that closes the gap section 12 measures. Every query it sends
+carries a query tag naming who read and what for — and **a query it cannot
+attribute is not sent**.
+
+```yaml
+# components/warehouse/component.yaml
+type: dag_tools.TaggedWarehouseComponent
+attributes:
+  tag:
+    placement: comment            # the tag rides in the statement text
+    # placement: session          # ...or your own statement runs first:
+    # statement: ALTER SESSION SET QUERY_TAG = :tag
+  principal:
+    pipeline_name: orders_etl     # tags as `pipeline:orders_etl`
+  connection:
+    dsn: "{{ env('WAREHOUSE_DSN') }}"
+  resource_key: warehouse
+```
+
+The tag is `{principal, asset_key, run_id}`. `principal` is
+`pipeline:<name>`, or the authz_id the gateway verified for a read made on
+someone's behalf. A resource cannot see which asset is reading it, so
+`fetch_rows` tags the run — which the audit resolves to an asset only when the
+run selected exactly one — and an asset that wants a sharper tag names itself:
+
+```python
+rows = context.resources.warehouse.for_asset(context).fetch_rows(statement, params)
+rows = context.resources.warehouse.for_user(authz_id).fetch_rows(statement, params)
+```
+
+This library ships **no tag dialect**. `comment` placement needs nothing and
+is what a connection pool wants. `session` placement runs *your* statement,
+which must bind the tag as `:tag`; one that does not fails the code-location
+load rather than silently attributing every later read to nothing. The
+connection has no environment fallback — name a `dsn`, or a `drivername` with
+host/user/password/database — and it is resolved during validation, so a typo
+fails the load while importing no driver.
+
+It drops in under section 12 unchanged: same `fetch_rows(statement,
+parameters)` seam, named by `resource_key`. Runnable example, sqlite, no
+credentials: [`examples/tagged_warehouse`](examples/tagged_warehouse).
 
 ## Setup & Development
 
