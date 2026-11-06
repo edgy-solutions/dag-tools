@@ -39,6 +39,7 @@ from pydantic import BaseModel, ConfigDict
 from ..graphql import (
     DagsterGraphQLClient,
     DagsterGraphQLError,
+    DagsterRunNotFoundError,
     resolve_auth_token,
 )
 from ..qualify import QualificationManifest
@@ -420,10 +421,21 @@ def _reconcile_or_finalize(
             sleep=sleep,
         )
         events = client.get_event_log(probe_state.run_id)
-    except DagsterGraphQLError as e:
+    except DagsterRunNotFoundError as e:
+        # Permanent: the run will never finish; relaunch next time.
         probe_state = transition(
             probe_state, status=ProbeRepStatus.FAILED,
-            error=f"poll/event-log failed: {e}",
+            error=f"run not found: {e}",
+        )
+        state.probes[probe_state.class_hash] = probe_state
+        _save_state(state, registry, qual_id, side, local_state_path)
+        return
+    except DagsterGraphQLError as e:
+        # The run may still be executing: stay LAUNCHED and reconcile on
+        # the next invocation rather than launching a concurrent duplicate.
+        probe_state = transition(
+            probe_state, status=ProbeRepStatus.LAUNCHED,
+            error=f"poll/event-log failed, will reconcile: {e}",
         )
         state.probes[probe_state.class_hash] = probe_state
         _save_state(state, registry, qual_id, side, local_state_path)

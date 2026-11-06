@@ -422,7 +422,9 @@ oversized selection before anything is launched.
   records), never the representative or probe slots. A group that PASSED for
   the same selection hash is not re-run; a changed selection (or `--force`)
   starts over. A group whose poll fails or times out stays LAUNCHED, so the
-  next invocation reconciles that run instead of starting a concurrent one. Staging is **per side**: the candidate deployment has its own
+  next invocation reconciles that run instead of starting a concurrent one;
+  only a run the deployment no longer knows is marked FAILED and relaunched.
+  Staging is **per side**: the candidate deployment has its own
   storage, so run it again after Q3.
 - Q2's selection is unchanged: each representative is still launched alone.
   `qual run` logs a warning when `required` representatives exist and stage

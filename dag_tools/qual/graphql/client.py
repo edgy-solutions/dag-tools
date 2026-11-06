@@ -154,6 +154,21 @@ class DagsterSubsetNotSupportedError(DagsterGraphQLError):
     one; see ``expand_to_op_siblings``."""
 
 
+_RUN_NOT_FOUND_TYPENAMES = frozenset({"RunNotFoundError"})
+"""What the ``RunOrError`` and ``EventConnectionOrError`` unions return for
+an unknown run id (checked against the installed schema)."""
+
+
+class DagsterRunNotFoundError(DagsterGraphQLError):
+    """The deployment has no run with this id (``RunNotFoundError``).
+
+    The one poll failure that is permanent. A timeout or a transport error
+    says nothing about the run, which may still be executing, so a runner
+    keeps it LAUNCHED and reconciles later; a run that does not exist will
+    never finish, so a runner marks it FAILED and the next invocation
+    launches afresh. Matched by typename, never by message wording."""
+
+
 class DagsterGraphQLClient:
     """Tiny version-tolerant GraphQL client for the Dagster test deployment."""
 
@@ -403,7 +418,11 @@ query DagtoolsRunStatus($runId: ID!) {
         typename = result.get("__typename")
         if typename != "Run":
             msg = result.get("message") or "no detail"
-            raise DagsterGraphQLError(f"run status lookup failed ({typename}): {msg}")
+            err = (
+                DagsterRunNotFoundError
+                if typename in _RUN_NOT_FOUND_TYPENAMES else DagsterGraphQLError
+            )
+            raise err(f"run status lookup failed ({typename}): {msg}")
         return RunStatusInfo(
             run_id=result.get("runId") or run_id,
             status=str(result.get("status") or "NOT_STARTED"),
@@ -707,9 +726,14 @@ query DagtoolsAssetLaunchInfo {
         through as raw dicts with as much info as we can decode."""
         data = self.post(self.LOGS_QUERY, {"runId": run_id})
         result = data.get("logsForRun") or {}
-        if result.get("__typename") != "EventConnection":
-            raise DagsterGraphQLError(
-                f"event log lookup failed: {result.get('message') or result.get('__typename')}"
+        typename = result.get("__typename")
+        if typename != "EventConnection":
+            err = (
+                DagsterRunNotFoundError
+                if typename in _RUN_NOT_FOUND_TYPENAMES else DagsterGraphQLError
+            )
+            raise err(
+                f"event log lookup failed: {result.get('message') or typename}"
             )
         events = result.get("events") or []
         out: List[EventLogEntry] = []

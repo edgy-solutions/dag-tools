@@ -10,11 +10,14 @@ Public surface:
   * :class:`DagsterSubsetNotSupportedError` — the one launch failure
     the launcher RETRIES (a non-subsettable multi_asset needs all of
     its keys); see ``runs.launcher.expand_to_op_siblings``.
+  * :class:`DagsterRunNotFoundError` — the one PERMANENT poll failure;
+    any other poll failure leaves a run LAUNCHED for reconciliation.
 """
 from .client import (
     CodeLocationStatus,
     DagsterGraphQLClient,
     DagsterGraphQLError,
+    DagsterRunNotFoundError,
     DagsterSubsetNotSupportedError,
     EventLogEntry,
     RunStatusInfo,
@@ -25,6 +28,7 @@ __all__ = [
     "CodeLocationStatus",
     "DagsterGraphQLClient",
     "DagsterGraphQLError",
+    "DagsterRunNotFoundError",
     "DagsterSubsetNotSupportedError",
     "EventLogEntry",
     "RunStatusInfo",

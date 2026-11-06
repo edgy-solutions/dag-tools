@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..graphql import (
     DagsterGraphQLClient,
     DagsterGraphQLError,
+    DagsterRunNotFoundError,
     DagsterSubsetNotSupportedError,
     EventLogEntry,
     RunStatusInfo,
@@ -456,6 +457,12 @@ def _drive(
                 timeout_seconds=poll_timeout_seconds, sleep=sleep,
             )
             events = client.get_event_log(group.run_id)
+        except DagsterRunNotFoundError as e:
+            # Permanent: the run will never finish; relaunch next time.
+            put(idx, transition(
+                group, status=StageStatus.FAILED, error=f"run not found: {e}",
+            ))
+            continue
         except DagsterGraphQLError as e:
             # The run may still be going: stay LAUNCHED so a re-invocation
             # reconciles it rather than starting a concurrent duplicate.
