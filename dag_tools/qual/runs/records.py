@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class MaterializationEventSummary(BaseModel):
@@ -77,6 +77,13 @@ class RunRecord(BaseModel):
     # Failure detail
     error: Optional[str] = None
     failure_step_keys: List[str] = Field(default_factory=list)
+
+    # Partition the launch targeted (Q2 fills it from the tag it sets).
+    partition_key: Optional[str] = None
+
+    # Values of ``dagtools/*`` metadata entries only (round-trip probes emit
+    # these themselves). Other metadata stays key-set only.
+    probe_metadata: Dict[str, str] = Field(default_factory=dict)
 
     # Raw count for sanity in summary reports
     event_count: int = 0

@@ -169,7 +169,7 @@ def test_dagtools_qual_report_goes_when_operator_accepts_gaps(home_override):
             app,
             ["--registry", f"s3://{BUCKET}",
              "qual", "report", "--id", "q1",
-             "--accept-orchestration-deferred"],
+             "--accept-orchestration-deferred", "--accept-roundtrip-missing"],
         )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -191,7 +191,7 @@ def test_dagtools_qual_report_writes_both_artifacts(home_override):
             app,
             ["--registry", f"s3://{BUCKET}",
              "qual", "report", "--id", "q1",
-             "--accept-orchestration-deferred"],
+             "--accept-orchestration-deferred", "--accept-roundtrip-missing"],
         )
         assert result.exit_code == 0, result.output
         assert reg.read_qualification_verdict_json("q1") is not None
@@ -208,7 +208,7 @@ def test_dagtools_qual_report_table_format(home_override):
             app,
             ["--registry", f"s3://{BUCKET}",
              "qual", "report", "--id", "q1",
-             "--accept-orchestration-deferred",
+             "--accept-orchestration-deferred", "--accept-roundtrip-missing",
              "--format", "table"],
         )
     assert result.exit_code == 0, result.output

@@ -262,6 +262,28 @@ def plan_asset_selection(
     return [list(asset_key)], last_partition_key(info)
 
 
+def launched_partition_key(
+    client: DagsterGraphQLClient, run_id: Optional[str]
+) -> Optional[str]:
+    """The partition a launched run actually targeted: its
+    ``dagster/partition`` tag, read back from the deployment.
+
+    Reading the tag, rather than recomputing :func:`last_partition_key`,
+    is deliberate: a time-based partition list grows, so a recomputed key
+    can name a partition the run never wrote. Best effort -- any failure
+    (or a non-string answer) yields None, never an exception, because the
+    record is more useful without the field than not written.
+    """
+    if not run_id:
+        return None
+    try:
+        value = client.get_run_tags(run_id).get(PARTITION_NAME_TAG)
+    except Exception as e:  # noqa: BLE001 - best effort by design
+        logger.warning("launched_partition_key: tag lookup failed: %s", e)
+        return None
+    return value if isinstance(value, str) else None
+
+
 def last_partition_key(info: Dict[str, Any]) -> Optional[str]:
     """The partition to request for one asset's ``launch_info`` entry.
 
@@ -338,8 +360,12 @@ def build_run_record(
     rep: Representative,
     run_status: RunStatusInfo,
     events: List[EventLogEntry],
+    partition_key: Optional[str] = None,
 ) -> RunRecord:
     """Flatten a terminal RunStatusInfo + event log into a RunRecord.
+
+    ``partition_key`` is the partition the launch targeted (the value of the
+    ``dagster/partition`` tag); it is recorded verbatim.
 
     Soft-failing per event so one malformed entry doesn't drop the whole
     record.
@@ -347,6 +373,7 @@ def build_run_record(
     materializations: List[MaterializationEventSummary] = []
     check_results: List[AssetCheckResultSummary] = []
     metadata_keys: List[str] = []
+    probe_metadata: Dict[str, str] = {}
     failure_steps: List[str] = []
 
     for ev in events:
@@ -369,6 +396,8 @@ def build_run_record(
                 for k in ev.metadata_keys or []:
                     if k and k not in metadata_keys:
                         metadata_keys.append(k)
+                for k, v in (getattr(ev, "metadata_values", None) or {}).items():
+                    probe_metadata[str(k)] = str(v)
 
             elif event_type == "AssetCheckResultEvent":
                 raw = ev.raw or {}
@@ -419,6 +448,8 @@ def build_run_record(
         materialization_events=materializations,
         asset_check_results=check_results,
         metadata_keys=metadata_keys,
+        partition_key=partition_key,
+        probe_metadata=probe_metadata,
         error=error,
         failure_step_keys=failure_steps,
         event_count=len(events),

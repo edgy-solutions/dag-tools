@@ -68,7 +68,8 @@ def setup(monkeypatch, tmp_path):
 
 
 def _publish_asset(registry, repo, sha, *,
-                   asset_key, io_manager_class, tags=None):
+                   asset_key, io_manager_class, tags=None,
+                   partitions_def_class=None):
     when = datetime.now(tz=timezone.utc) - timedelta(hours=1)
     rec = {
         "schema_version": INV_VER,
@@ -77,7 +78,7 @@ def _publish_asset(registry, repo, sha, *,
         "io_manager_key": "io_manager",
         "io_manager_class": io_manager_class,
         "io_manager_family": "snowflake",
-        "partitions_def_class": None,
+        "partitions_def_class": partitions_def_class,
         "partition_mapping_classes": [],
         "resource_keys": ["io_manager"],
         "resource_classes": {"io_manager": io_manager_class},

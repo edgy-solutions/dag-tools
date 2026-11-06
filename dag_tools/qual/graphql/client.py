@@ -80,6 +80,8 @@ class EventLogEntry:
     step_key: Optional[str] = None
     asset_key: Optional[List[str]] = None
     metadata_keys: List[str] = field(default_factory=list)
+    metadata_values: Dict[str, str] = field(default_factory=dict)
+    """Values of ``dagtools/*`` metadata entries only (text, int or json)."""
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -157,6 +159,10 @@ class DagsterSubsetNotSupportedError(DagsterGraphQLError):
 _RUN_NOT_FOUND_TYPENAMES = frozenset({"RunNotFoundError"})
 """What the ``RunOrError`` and ``EventConnectionOrError`` unions return for
 an unknown run id (checked against the installed schema)."""
+
+# Metadata labels under this prefix keep their VALUES in the parsed event
+# (round-trip probes emit them); every other label keeps its name only.
+PROBE_METADATA_PREFIX = "dagtools/"
 
 
 class DagsterRunNotFoundError(DagsterGraphQLError):
@@ -453,6 +459,112 @@ query DagtoolsRunStatus($runId: ID!) {
                 )
             sleep(interval_seconds)
 
+    # -- round-trip probe support ---------------------------------------
+
+    ADD_DYNAMIC_PARTITION_MUTATION = """
+mutation DagtoolsAddDynamicPartition(
+  $selector: RepositorySelector!, $partitionsDefName: String!, $partitionKey: String!
+) {
+  addDynamicPartition(
+    repositorySelector: $selector
+    partitionsDefName: $partitionsDefName
+    partitionKey: $partitionKey
+  ) {
+    __typename
+    ... on PythonError { message }
+    ... on UnauthorizedError { message }
+    ... on DuplicateDynamicPartitionError { partitionName }
+  }
+}
+""".strip()
+
+    def add_dynamic_partition(
+        self,
+        *,
+        location_name: str,
+        repository_name: str,
+        partitions_def_name: str,
+        partition_key: str,
+    ) -> str:
+        """Register a dynamic partition key. Idempotent: a key that already
+        exists is success. Any other result raises :class:`DagsterGraphQLError`.
+        Returns the result typename."""
+        data = self.post(
+            self.ADD_DYNAMIC_PARTITION_MUTATION,
+            {
+                "selector": {
+                    "repositoryLocationName": location_name,
+                    "repositoryName": repository_name,
+                },
+                "partitionsDefName": partitions_def_name,
+                "partitionKey": partition_key,
+            },
+        )
+        result = data.get("addDynamicPartition") or {}
+        typename = result.get("__typename")
+        if typename in ("AddDynamicPartitionSuccess", "DuplicateDynamicPartitionError"):
+            return typename
+        raise DagsterGraphQLError(
+            f"addDynamicPartition failed ({typename or 'unknown'}): "
+            f"{result.get('message') or 'no detail'}"
+        )
+
+    ASSET_LATEST_MATERIALIZATION_QUERY = """
+query DagtoolsAssetLatestMaterialization($path: [String!]!, $partitions: [String!]) {
+  assetOrError(assetKey: {path: $path}) {
+    __typename
+    ... on Asset {
+      assetMaterializations(partitions: $partitions, limit: 1) { runId }
+    }
+  }
+}
+""".strip()
+
+    def get_latest_materialization_run_id(
+        self, asset_key: List[str], partition_key: Optional[str] = None
+    ) -> Optional[str]:
+        """The ``runId`` of the asset's latest materialization (for the
+        partition, when given). None when there is none."""
+        data = self.post(
+            self.ASSET_LATEST_MATERIALIZATION_QUERY,
+            {
+                "path": list(asset_key),
+                "partitions": [partition_key] if partition_key is not None else None,
+            },
+        )
+        result = data.get("assetOrError") or {}
+        if result.get("__typename") != "Asset":
+            return None
+        mats = result.get("assetMaterializations") or []
+        if not mats:
+            return None
+        return mats[0].get("runId")
+
+    RUN_TAGS_QUERY = """
+query DagtoolsRunTags($runId: ID!) {
+  pipelineRunOrError(runId: $runId) {
+    __typename
+    ... on Run { runId tags { key value } }
+    ... on PipelineRunNotFoundError { message }
+    ... on PythonError { message }
+  }
+}
+""".strip()
+
+    def get_run_tags(self, run_id: str) -> Dict[str, str]:
+        data = self.post(self.RUN_TAGS_QUERY, {"runId": run_id})
+        result = data.get("pipelineRunOrError") or {}
+        typename = result.get("__typename")
+        if typename != "Run":
+            err = (
+                DagsterRunNotFoundError
+                if typename in _RUN_NOT_FOUND_TYPENAMES else DagsterGraphQLError
+            )
+            raise err(
+                f"run tags lookup failed ({typename}): {result.get('message') or 'no detail'}"
+            )
+        return {t["key"]: t["value"] for t in (result.get("tags") or []) if t.get("key")}
+
     # -- event log ------------------------------------------------------
 
     LOGS_QUERY = """
@@ -466,7 +578,12 @@ query DagtoolsEventLog($runId: ID!) {
         ... on MaterializationEvent {
           message timestamp stepKey
           assetKey { path }
-          metadataEntries { label }
+          metadataEntries {
+            label
+            ... on TextMetadataEntry { text }
+            ... on IntMetadataEntry { intValue }
+            ... on JsonMetadataEntry { jsonString }
+          }
         }
         ... on AssetMaterializationPlannedEvent {
           message timestamp stepKey
@@ -757,6 +874,16 @@ def _parse_event(raw: Dict[str, Any]) -> EventLogEntry:
         asset_key = list(ak["path"])
     metadata_entries = raw.get("metadataEntries") or []
     metadata_keys = [m.get("label") for m in metadata_entries if m.get("label")]
+    metadata_values: Dict[str, str] = {}
+    for m in metadata_entries:
+        label = m.get("label")
+        if not label or not str(label).startswith(PROBE_METADATA_PREFIX):
+            continue
+        for field_name in ("text", "jsonString", "intValue"):
+            value = m.get(field_name)
+            if value is not None:
+                metadata_values[label] = str(value)
+                break
     return EventLogEntry(
         event_type=raw.get("__typename"),
         message=raw.get("message"),
@@ -764,6 +891,7 @@ def _parse_event(raw: Dict[str, Any]) -> EventLogEntry:
         step_key=raw.get("stepKey"),
         asset_key=asset_key,
         metadata_keys=metadata_keys,
+        metadata_values=metadata_values,
         raw=raw,
     )
 
