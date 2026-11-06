@@ -19,6 +19,14 @@ from .records import (
     MaterializationEventSummary,
     RunRecord,
 )
+from .roundtrip import (
+    RoundTripOutcome,
+    RoundTripRunState,
+    RoundTripState,
+    RoundTripStatus,
+    RoundTripSummary,
+    run_roundtrip_side,
+)
 from .runner import SideOutcome, SideSummary, run_side
 from .staging import (
     RUN_CONFIG_TOP_LEVEL_KEYS,

@@ -698,14 +698,50 @@ def qual_run(
         typer.secho(f"error: qual run failed: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
 
+    # Q2 item 4: the IO round-trip pass. It never changes this command's
+    # exit status or its JSON stdout; its own result is on stderr and in the
+    # registry (read by `qual report`).
+    rt_line = _run_roundtrip_pass(
+        qual_id, side, registry, poll_interval, poll_timeout,
+        retry_failed, only_class,
+    )
+
     if format == OutputFormat.JSON:
         typer.echo(outcome.summary.model_dump_json(indent=2))
     else:
         _print_run_table(outcome)
+    if rt_line:
+        typer.secho(rt_line, err=True)
 
     if outcome.summary.failed or outcome.summary.launched or outcome.summary.pending:
         # Non-zero exit on any non-terminal-or-failed state so CI can gate.
         raise typer.Exit(code=2)
+
+
+def _run_roundtrip_pass(
+    qual_id, side, registry, poll_interval, poll_timeout, retry_failed, only_class,
+) -> str:
+    """Run the round-trip pass; return one summary line for stderr.
+    Any failure here is reported, never raised: the representative pass has
+    already banked its records."""
+    from .runs import run_roundtrip_side
+
+    try:
+        rt = run_roundtrip_side(
+            qual_id, side, registry=registry,
+            poll_interval_seconds=poll_interval,
+            poll_timeout_seconds=poll_timeout,
+            retry_failed=retry_failed, only_class=only_class,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"round-trip pass failed: {e}"
+    if not rt.recorded:
+        return rt.note or "round-trip pass recorded nothing"
+    s = rt.summary
+    return (
+        f"round-trip: probes={s.probe_total} passed={s.passed} failed={s.failed} "
+        f"launched={s.launched} pending={s.pending} skipped={s.skipped}"
+    )
 
 
 def _print_run_table(outcome) -> None:
@@ -948,6 +984,16 @@ def qual_report(
             "divergent probe."
         ),
     ),
+    accept_roundtrip_missing: bool = typer.Option(
+        False, "--accept-roundtrip-missing",
+        help=(
+            "Operator opt-in: some RUNNABLE classes have no round-trip "
+            "coverage (probe not generated, deployed or passed on both "
+            "sides). Required to GO while any such class remains. Never "
+            "excuses a probe that failed on one side or loaded a different "
+            "type or columns."
+        ),
+    ),
     accept_orchestration_deferred: bool = typer.Option(
         False, "--accept-orchestration-deferred",
         help=(
@@ -975,6 +1021,7 @@ def qual_report(
                 co_upgrade_risks=accept_co_upgrade_risks,
                 synthetic_coverage_missing=accept_synthetic_coverage_missing,
                 orchestration_deferred=accept_orchestration_deferred,
+                roundtrip_missing=accept_roundtrip_missing,
             ),
         )
         publish_verdict(
@@ -1051,9 +1098,10 @@ def qual_synthetic(
       3. Write the bundle to BOTH the registry and a local directory
          the operator pulls from.
 
-    The probe deployment + run-through-Q2 + verdict-coverage-counting is
-    the natural follow-up; v1 stops at generation so operators can start
-    integrating the probe location into their test deployment.
+    Each RUNNABLE class that has an IO manager (and is not dbt) also gets
+    a round-trip probe module `roundtrip_<short>.py`, which `qual run`
+    launches after the representative pass to load that run's output back
+    through the real IO manager. Classes that get none are listed.
     """
     from .synthetic import (
         default_local_probes_dir,
@@ -1252,6 +1300,13 @@ def _print_probes_status_table(report) -> None:
         if not c.downstream_loaded:
             bits.append("downstream missing")
         typer.echo(f"  PARTIAL:    {c.class_hash}  ({', '.join(bits)})")
+    if report.expected_roundtrip_count:
+        typer.echo(
+            f"  roundtrip: expected={report.expected_roundtrip_count}  "
+            f"missing={len(report.roundtrip_missing_class_hashes)}"
+        )
+    for ch in report.roundtrip_missing_class_hashes:
+        typer.echo(f"  MISSING (roundtrip): {ch}")
     for ak in report.unexpected_probe_asset_keys:
         typer.echo(f"  UNEXPECTED: {'/'.join(ak)}")
 
@@ -1289,6 +1344,17 @@ def _print_synthetic_table(bundle, *, written_path: Optional[Path], published: b
         )
     for ch in m.skipped_class_hashes:
         typer.echo(f"  SKIPPED: {ch}")
+    typer.echo(
+        f"  round-trip probes={len(m.roundtrip_probes)}  "
+        f"not_applicable={len(m.roundtrip_not_applicable)}"
+    )
+    for rp in m.roundtrip_probes:
+        typer.echo(
+            f"  - {rp.class_hash}  {rp.module_name}  "
+            f"io_manager={rp.io_manager_class or '(none)'}"
+        )
+    for na in m.roundtrip_not_applicable:
+        typer.echo(f"  NOT APPLICABLE: {na.class_hash}  {na.reason}")
 
 
 # ---------------------------------------------------------------------------

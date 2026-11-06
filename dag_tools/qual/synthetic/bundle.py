@@ -25,7 +25,17 @@ from ..classes import ClassMatrix, Runnability
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry
 from .generator import generate_probe_module
-from .schema import ProbeManifest, ProbeModule
+from .roundtrip import (
+    first_runnable_rep,
+    generate_roundtrip_module,
+    not_applicable_entry,
+)
+from .schema import (
+    ProbeManifest,
+    ProbeModule,
+    RoundTripNotApplicable,
+    RoundTripProbe,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -57,11 +67,26 @@ def generate_bundle(
     probes: List[ProbeModule] = []
     sources: dict[str, str] = {}
     skipped: List[str] = []
+    roundtrips: List[RoundTripProbe] = []
+    roundtrip_sources: dict[str, str] = {}
+    not_applicable: List[RoundTripNotApplicable] = []
 
     synthetic_total = 0
     for cls in matrix.classes:
         if not cls.representatives:
             continue
+        # Q2 round-trip: one probe per class, from its first RUNNABLE rep.
+        if first_runnable_rep(cls) is not None:
+            rt_probe, rt_source_or_reason = generate_roundtrip_module(
+                cls, qual_id=qual_id, probe_settings=qual_manifest.probes,
+            )
+            if rt_probe is not None:
+                roundtrips.append(rt_probe)
+                roundtrip_sources[cls.class_hash] = rt_source_or_reason
+            else:
+                entry = not_applicable_entry(cls)
+                if entry is not None:
+                    not_applicable.append(entry)
         if cls.representatives[0].runnability != Runnability.SYNTHETIC_REQUIRED:
             continue
         synthetic_total += 1
@@ -85,8 +110,11 @@ def generate_bundle(
             synthetic_class_count=synthetic_total,
             probes=probes,
             skipped_class_hashes=skipped,
+            roundtrip_probes=roundtrips,
+            roundtrip_not_applicable=not_applicable,
         ),
         sources=sources,
+        roundtrip_sources=roundtrip_sources,
     )
 
 
@@ -96,9 +124,15 @@ class GeneratedBundle:
     Holds the manifest plus the ``class_hash -> source`` map so publishers
     don't re-derive the source text. Not a pydantic model — pure transport."""
 
-    def __init__(self, manifest: ProbeManifest, sources: dict[str, str]):
+    def __init__(
+        self,
+        manifest: ProbeManifest,
+        sources: dict[str, str],
+        roundtrip_sources: Optional[dict[str, str]] = None,
+    ):
         self.manifest = manifest
         self.sources = sources
+        self.roundtrip_sources = roundtrip_sources or {}
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +167,20 @@ def publish_bundle(
             allow_overwrite=allow_overwrite,
         )
 
+    for rt in bundle.manifest.roundtrip_probes:
+        rt_source = bundle.roundtrip_sources.get(rt.class_hash)
+        if rt_source is None:
+            raise RuntimeError(
+                f"publish_bundle: missing round-trip source for class "
+                f"{rt.class_hash!r} -- bundle is internally inconsistent"
+            )
+        registry.put_roundtrip_source(
+            bundle.manifest.qual_id,
+            rt.module_name,
+            rt_source,
+            allow_overwrite=allow_overwrite,
+        )
+
     registry.put_probe_manifest(
         qual_id=bundle.manifest.qual_id,
         body=bundle.manifest.model_dump_json(indent=2).encode("utf-8"),
@@ -158,6 +206,11 @@ def write_local_bundle(
         if source is None:
             continue
         (local_path / f"{probe.class_hash}.py").write_text(source, encoding="utf-8")
+    for rt in bundle.manifest.roundtrip_probes:
+        rt_source = bundle.roundtrip_sources.get(rt.class_hash)
+        if rt_source is None:
+            continue
+        (local_path / f"{rt.module_name}.py").write_text(rt_source, encoding="utf-8")
     (local_path / "probe_manifest.json").write_bytes(
         bundle.manifest.model_dump_json(indent=2).encode("utf-8")
     )

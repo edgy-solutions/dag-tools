@@ -12,6 +12,18 @@ it back are named.
 
 ## Unreleased
 
+### Behaviour change
+
+- **A RUNNABLE class with no round-trip coverage now blocks GO in `dagtools qual report`.**
+  Previously Q6 gated only on the Q2 run and synthetic probes. It now also requires the Q2
+  IO round-trip probe (below) to have PASSED on both sides with the same loaded type and
+  columns. Existing qualifications that were GO will report NO_GO until the probes are
+  generated and run. To get the old verdict back, pass `--accept-roundtrip-missing`, which
+  excuses missing coverage only; a probe that failed on one side or loaded a different shape
+  blocks regardless. To clear it: `dagtools qual synthetic`, deploy `dag-tools-probes`, then
+  re-run `dagtools qual run` per side. Classes with no IO manager class, and dbt classes, are
+  listed as not applicable and never block. Verdict schema 2 -> 3 (additive).
+
 ### Added
 
 - **Contract mapping — `ContractMappingComponent`.** A data contract plus a source schema in,
@@ -53,6 +65,12 @@ it back are named.
 
   Verified on `dagster==1.10.19` as well as current — the whole test module set runs identically
   on both, same plan hash, and the example loads and materializes on both.
+
+- **Q2 IO round-trip probe.** `dagtools qual synthetic` generates a probe per RUNNABLE
+  class; `dagtools qual run` runs it after the Q2 pass, loading the representative's output
+  through its real IO manager and recording type and columns. It writes nothing. New
+  `RunRecord.partition_key` / `probe_metadata` and `ProbeManifest.roundtrip_probes`
+  (additive; schema bumps). `qual probes status` counts missing round-trip assets.
 
 - **Tagged warehouse resource — `TaggedWarehouseComponent`.** A warehouse resource that
   sets a query tag of `{principal, asset_key, run_id}` on every query it sends, so the read

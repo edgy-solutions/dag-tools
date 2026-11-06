@@ -581,6 +581,72 @@ class InventoryRegistry:
             layout.qualification_side_probe_run_key(qual_id, side, class_hash, run_id)
         )
 
+    # --- Q2 round-trip source / state / records -------------------------------
+
+    def put_roundtrip_source(
+        self,
+        qual_id: str,
+        module_name: str,
+        source: str,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        """Write one round-trip module's source under ``probes/<module_name>.py``."""
+        key = layout.qualification_roundtrip_source_key(qual_id, module_name)
+        body = source.encode("utf-8")
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="text/x-python")
+        else:
+            self.storage.put_immutable(key, body, content_type="text/x-python")
+
+    def read_roundtrip_source(
+        self, qual_id: str, module_name: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_roundtrip_source_key(qual_id, module_name)
+        )
+
+    def put_roundtrip_state(self, qual_id: str, side: str, body: bytes) -> None:
+        """Write ``<side>/roundtrip/state.json`` (mutable, saved after every
+        transition)."""
+        self.storage.put_mutable(
+            layout.qualification_side_roundtrip_state_key(qual_id, side),
+            body,
+            content_type="application/json",
+        )
+
+    def read_roundtrip_state(self, qual_id: str, side: str) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_roundtrip_state_key(qual_id, side)
+        )
+
+    def put_roundtrip_run_record(
+        self,
+        qual_id: str,
+        side: str,
+        class_hash: str,
+        run_id: str,
+        body: bytes,
+        *,
+        allow_overwrite: bool = False,
+    ) -> None:
+        key = layout.qualification_side_roundtrip_run_key(
+            qual_id, side, class_hash, run_id
+        )
+        if allow_overwrite:
+            self.storage.put_mutable(key, body, content_type="application/json")
+        else:
+            self.storage.put_immutable(key, body, content_type="application/json")
+
+    def read_roundtrip_run_record(
+        self, qual_id: str, side: str, class_hash: str, run_id: str
+    ) -> Optional[bytes]:
+        return self.storage.get_optional(
+            layout.qualification_side_roundtrip_run_key(
+                qual_id, side, class_hash, run_id
+            )
+        )
+
     def put_probes_summary(
         self,
         qual_id: str,

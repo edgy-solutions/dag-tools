@@ -176,6 +176,34 @@ def qualification_side_probes_summary_key(qual_id: str, side: str) -> str:
     return f"{qualification_prefix(qual_id)}{side}/probes/summary.json"
 
 
+def qualification_roundtrip_source_key(qual_id: str, module_name: str) -> str:
+    """``qualifications/<qual_id>/probes/<module_name>.py`` -- the generated
+    round-trip probe module source (``module_name`` is ``roundtrip_<short>``)."""
+    return f"{qualification_prefix(qual_id)}probes/{module_name}.py"
+
+
+# --- Q2 round-trip state (its own slot, apart from reps and probes) --------
+
+def qualification_side_roundtrip_state_key(qual_id: str, side: str) -> str:
+    """``qualifications/<qual_id>/<side>/roundtrip/state.json`` -- mutable
+    per-side round-trip state. Its own slot, so it can never clobber the
+    representative state or the synthetic probe state."""
+    _validate_side(side)
+    return f"{qualification_prefix(qual_id)}{side}/roundtrip/state.json"
+
+
+def qualification_side_roundtrip_run_key(
+    qual_id: str, side: str, class_hash: str, run_id: str
+) -> str:
+    """``qualifications/<qual_id>/<side>/roundtrip/runs/<class_hash>/<run_id>.json``
+    -- one persisted round-trip run record."""
+    _validate_side(side)
+    return (
+        f"{qualification_prefix(qual_id)}{side}/roundtrip/runs/"
+        f"{class_hash}/{run_id}.json"
+    )
+
+
 # --- Stage runner state (separate slot from reps and probes) ----------------
 
 def qualification_side_stage_state_key(qual_id: str, side: str) -> str:

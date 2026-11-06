@@ -99,6 +99,13 @@ class ProbesStatusReport(BaseModel):
     (``probe_<hex>_(upstream|downstream)``) but absent from the current
     manifest — usually stale files from a prior bundle."""
 
+    expected_roundtrip_count: int = 0
+    """Q2 round-trip probes in the manifest. Each is ONE asset
+    (``dagtools_roundtrip_<short>``), counted as expected, never as
+    unexpected. The representative's external stand-in spec that rides in
+    the same module is not a probe asset and is not counted."""
+    roundtrip_missing_class_hashes: List[str] = Field(default_factory=list)
+
     @property
     def all_loaded(self) -> bool:
         return (
@@ -106,6 +113,7 @@ class ProbesStatusReport(BaseModel):
             and self.fully_loaded_class_count == self.expected_class_count
             and not self.partially_loaded
             and not self.missing_class_hashes
+            and not self.roundtrip_missing_class_hashes
         )
 
 
@@ -256,8 +264,16 @@ def _build_report(
         if m.group(1) not in expected_shorts:
             unexpected.append(ak)
 
+    roundtrip_missing = sorted(
+        rt.class_hash
+        for rt in probe_manifest.roundtrip_probes
+        if tuple(rt.probe_asset_key) not in loaded_asset_set
+    )
+
     return ProbesStatusReport(
         qual_id=qual_id,
+        expected_roundtrip_count=len(probe_manifest.roundtrip_probes),
+        roundtrip_missing_class_hashes=roundtrip_missing,
         location_name=PROBES_LOCATION_NAME,
         location_load_status=location_status,
         location_error=location_error,

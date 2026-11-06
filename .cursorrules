@@ -41,6 +41,16 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4l. Classification (ADR-0064 steps 3-5; nothing reads this yet)
+- **Never ship a classification file in dag-tools.** Read the deployment's copy: env `DAGTOOLS_CLASSIFICATION_LEVELS`, default path `/etc/dagtools/classification/levels.yaml` (the mount is unchanged by the dimensions amendment), top-level key `classification_dimensions`.
+- **Exactly one dimension is `hierarchical`, and the file says which.** Discover it from the flag; never name it in code. Zero or two must fail the load.
+- **Within a dimension, order is list position, least restrictive first. A clearance is a CEILING on the hierarchical dimension** — never an exact match. On every other dimension a label's values are conjunctive: the reader must hold them all.
+- **An absent or empty file means most restrictive in every dimension** — deny by default, which with nothing declared means nothing is served. A missing mount must never read as "unclassified, therefore readable".
+- **Never write a dimension id or a value string in code, as a default, or in a comment.** Validate every configured label against the mounted file and fail the load on anything it does not declare.
+- **A column label is `{dimension: values}` with the hierarchical dimension required** — not a bare `level`. Hierarchical takes exactly one value; a label that omits it fails the load, while a column with no label at all is most restrictive.
+- **Propagate per dimension: `max` on the hierarchical one, union on the rest.** A downgrade names the dimension, the value, a reason and a steward.
+- **Use the physical platform's dataset URN as the asset of record, never a `dagster` platform URN.** The catalog registers under the physical platform; the Dagster asset is lineage.
+
 ## 4k. Contract mapping (`dag_tools.contract_mapping` + `ContractMappingComponent`)
 - **The engine is pure.** No Dagster, no dbt, no dlt imports and no IO in `dag_tools/contract_mapping/`: documents in as dicts, a `MappingPlan` out. The component, the row route and the tests all share it, which is what makes the mapping semantics testable with no warehouse and no dbt project.
 - **Refuse what would be WRONG; note what is merely unproven.** A mapping that reads a column the source does not have, drops a column a governed read selects, or disagrees with the contract about write cadence fails the code-location load. A test that could not be written (the contract names its period calendar instead of listing it; no `warehouse_types`; no `non_finite_predicate`) is a `note` — the model is correct, there is just less proof of it. Do not promote a note to a refusal or demote a refusal to a note without the test that says which it is.
