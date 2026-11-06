@@ -41,6 +41,13 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Layer Caching**: When using `uv` with a local package, use the "metadata trick" (creating dummy `__init__.py` and `README.md`) to cache dependencies.
 - **Shadowing Prevention**: ALWAYS `rm -rf` dummy metadata directories/files (created for caching) immediately before the final `uv pip install -e .` step. Failing to do so will cause the empty dummy directory to shadow the real package in the container's working directory, leading to `ModuleNotFoundError`.
 
+## 4k. Classification (ADR-0064 steps 3-5; nothing reads this yet)
+- **Never ship a levels file in dag-tools.** Read the deployment's copy: env `DAGTOOLS_CLASSIFICATION_LEVELS`, default path `/etc/dagtools/classification/levels.yaml`, top-level key `classification_levels`.
+- **Order is list position, least restrictive first. A clearance is a ceiling** — it implies every less restrictive level. Never match a level exactly.
+- **An absent or empty file means most restrictive for every column** — deny by default. A missing mount must never read as "unclassified, therefore readable".
+- **Never write a level string in code, as a default, or in a comment.** Validate a configured level against the mounted file and fail the load if the file does not list it.
+- **Use the physical platform's dataset URN as the asset of record, never a `dagster` platform URN.** The catalog registers under the physical platform; the Dagster asset is lineage.
+
 ## 4j. Read audit and the tagged warehouse (`dag_tools.audit` + `ReadAuditComponent` + `TaggedWarehouseComponent`)
 - **Component first, CLI second.** The YAML surface is primary; `dagtools audit` is a thin wrapper over the same pure engine for operators with an export and no deployment. Never add behaviour the component cannot express.
 - **No name, not even a default.** No relation, column, level or identity literal in `dag_tools.audit` — `HistoryColumns` has five required fields and no fallbacks. A wrong default would audit the wrong column and report an empty window as a clean audit.
