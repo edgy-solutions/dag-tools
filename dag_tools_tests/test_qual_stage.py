@@ -633,7 +633,7 @@ def _put_stage(registry, side: str, status: StageStatus):
         allow_overwrite=True)
 
 
-_GAPS = GapAcceptance(orchestration_deferred=True)
+_GAPS = GapAcceptance(orchestration_deferred=True, roundtrip_missing=True)
 
 
 def _comparable(v) -> Dict[str, Any]:

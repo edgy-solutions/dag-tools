@@ -430,3 +430,24 @@ def test_a_run_that_no_longer_exists_fails_so_the_next_pass_relaunches(setup):
                      client_factory=_factory(client), sleep=lambda _: None)
     (rep,) = first.state.reps.values()
     assert rep.status == RepStatus.FAILED
+
+
+def test_run_record_carries_the_partition_key_it_launched(setup):
+    """The round-trip pass must load the partition the Q2 run wrote, so the
+    record keeps the launch's own partition tag (never a recomputed one)."""
+    registry, _ = setup
+    qual_id = _seed_qual(registry)
+
+    client = _fake_client()
+    client.get_run_tags.return_value = {"dagster/partition": "2026-02-01"}
+    outcome = run_side(
+        qual_id, "baseline",
+        registry=registry,
+        client_factory=_factory(client),
+        poll_interval_seconds=0,
+        sleep=lambda _: None,
+    )
+    rep = next(iter(outcome.state.reps.values()))
+    rec = json.loads(registry.read_run_record(qual_id, "baseline", rep.class_hash, "run-1"))
+    assert rec["partition_key"] == "2026-02-01"
+    client.get_run_tags.assert_called_with("run-1")

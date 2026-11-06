@@ -128,7 +128,8 @@ def test_dagtools_qual_run_success(home_override, monkeypatch):
             ],
         )
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        # stdout is the JSON document; the round-trip pass adds one stderr line after it.
+        payload, _ = json.JSONDecoder().raw_decode(result.output)
         assert payload["passed"] == 1
         assert payload["failed"] == 0
 

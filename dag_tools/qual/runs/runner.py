@@ -47,7 +47,12 @@ from ..graphql import (
 )
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry
-from .launcher import build_run_record, is_launchable, launch_representative
+from .launcher import (
+    build_run_record,
+    is_launchable,
+    launch_representative,
+    launched_partition_key,
+)
 from .staging import resolve_staging_overrides, storage_fetch
 from .records import RunRecord
 from .state import (
@@ -481,6 +486,7 @@ def _reconcile_or_finalize(
     record = build_run_record(
         qual_id=qual_id, side=side, class_hash=rep_state.class_hash,
         rep=rep, run_status=info, events=events,
+        partition_key=launched_partition_key(client, rep_state.run_id),
     )
     registry.put_run_record(
         qual_id=qual_id, side=side,

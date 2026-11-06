@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SCHEMA_VERSION_PROBE_MANIFEST = 3
+SCHEMA_VERSION_PROBE_MANIFEST = 4
 
 
 class ProbeStatus(str, Enum):
@@ -91,6 +91,34 @@ class ProbeModule(BaseModel):
     status: ProbeStatus = Field(default=ProbeStatus.GENERATED)
 
 
+class RoundTripProbe(BaseModel):
+    """One generated Q2 round-trip probe (one per RUNNABLE class)."""
+    model_config = ConfigDict(extra="ignore")
+
+    class_hash: str
+    rep_id: str
+    """``<class_hash>:<asset key joined by '/'>`` of the representative whose
+    output the probe loads (the class's first RUNNABLE representative)."""
+    asset_key: List[str]
+    module_name: str
+    """``roundtrip_<short>``; the file is ``<module_name>.py``."""
+    probe_asset_key: List[str]
+    partitions_def_name: Optional[str] = None
+    """Name of the dynamic stand-in partitions def; None when unpartitioned."""
+    io_manager_class: Optional[str] = None
+    io_manager_config_keys: List[str] = Field(default_factory=list)
+    """Constructor kwarg NAMES only; values never reach the manifest."""
+    notes: List[str] = Field(default_factory=list)
+
+
+class RoundTripNotApplicable(BaseModel):
+    """A RUNNABLE class that gets no round-trip probe, and why."""
+    model_config = ConfigDict(extra="ignore")
+
+    class_hash: str
+    reason: str
+
+
 class ProbeManifest(BaseModel):
     """The aggregate index — what was generated, when, for which qual_id."""
     model_config = ConfigDict(extra="ignore")
@@ -109,3 +137,10 @@ class ProbeManifest(BaseModel):
     """Classes the generator was unable to produce a probe for (e.g. no
     representatives, no IO manager class to bind to). Surfaced so the
     operator sees the gap rather than silently missing coverage."""
+
+    roundtrip_probes: List[RoundTripProbe] = Field(default_factory=list)
+    """Q2 round-trip probes (additive in schema 4)."""
+
+    roundtrip_not_applicable: List[RoundTripNotApplicable] = Field(default_factory=list)
+    """RUNNABLE classes with no round-trip probe by design (no IO manager
+    class, or dbt). Listed so the gap is visible; they never block Q6."""

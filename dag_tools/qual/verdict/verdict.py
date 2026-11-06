@@ -34,7 +34,14 @@ from ..probes.state import ProbeRepState, ProbeRepStatus, ProbeRunState
 from ..qualify import QualificationManifest
 from ..registry import InventoryRegistry, layout
 from ..runs.records import RunRecord
+from ..runs.roundtrip import RoundTripRunState, RoundTripStatus
 from ..runs.state import QualRunState, RepStatus
+from ..synthetic.location import PROBES_LOCATION_NAME
+from ..synthetic.roundtrip import (
+    first_runnable_rep,
+    roundtrip_not_applicable_reason,
+    roundtrip_probe_asset_key,
+)
 from ..stage.state import StageState, StageStatus, TERMINAL as _STAGE_TERMINAL
 from .diff import ClassVerdict, RepDiff, build_class_verdicts, diff_rep
 
@@ -42,7 +49,7 @@ from .diff import ClassVerdict, RepDiff, build_class_verdicts, diff_rep
 logger = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class VerdictStatus(str, Enum):
@@ -66,6 +73,13 @@ class GapAcceptance(BaseModel):
     orchestration_deferred: bool = False
     """When False (default), the absence of orchestration snapshots
     blocks GO. v1 doesn't run orchestration."""
+
+    roundtrip_missing: bool = False
+    """When False (default), RUNNABLE classes without round-trip coverage
+    (no probe generated or deployed, not run, SKIPPED, or FAILED on both
+    sides) block GO. Excuses missing coverage only: a class whose probe
+    loaded different shapes on the two sides, or passed on one side
+    and failed on the other, is red and blocks GO regardless."""
 
 
 class StageSideSummary(BaseModel):
@@ -113,6 +127,19 @@ class Verdict(BaseModel):
     candidate. Unlike "no probe deployed yet" (which is opt-out-able),
     a probe that ran-and-failed is a real regression signal and blocks
     GO regardless of acceptance flags."""
+    roundtrip_classes_covered: int = 0
+    """RUNNABLE classes whose round-trip probe PASSED on both sides with
+    the same loaded type and columns."""
+    roundtrip_classes_red: List[str] = Field(default_factory=list)
+    """RUNNABLE classes whose round-trip probe passed on one side and
+    failed on the other, or passed on both but loaded a different type
+    or columns. Blocks GO with no opt-out."""
+    roundtrip_classes_uncovered: int = 0
+    """RUNNABLE classes with an applicable probe but no usable result.
+    Excused by ``--accept-roundtrip-missing``."""
+    roundtrip_not_applicable: List[Dict[str, str]] = Field(default_factory=list)
+    """RUNNABLE classes with no round-trip probe by design (no IO manager
+    class, or dbt): ``{class_hash, reason}``. Listed, never blocking."""
     observe_only_classes_total: int = 0
     orchestration_status: str = "deferred"
     """"deferred" until orchestration snapshot support lands."""
@@ -235,11 +262,18 @@ def build_verdict(
         len(synthetic_classes) - len(synthetic_green) - len(synthetic_red)
     )
 
+    # --- Q2 IO round-trip coverage ----------------------------------------
+    (
+        roundtrip_covered, roundtrip_red, roundtrip_uncovered,
+        roundtrip_na, roundtrip_diff_by_class_hash,
+    ) = _roundtrip_rollup(registry, qual_id, matrix)
+
     # Rebuild class_verdicts now that we have probe diffs to attach.
     class_verdicts = build_class_verdicts(
         matrix,
         diff_by_rep_id=diff_by_rep_id,
         probe_diff_by_class_hash=probe_diff_by_class_hash,
+        roundtrip_diff_by_class_hash=roundtrip_diff_by_class_hash,
     )
     # Recompute synthetic_classes against the updated verdict list so
     # both downstream consumers see the same objects.
@@ -296,6 +330,23 @@ def build_verdict(
             "`dagtools qual probes run --side baseline|candidate`); "
             "pass --accept-synthetic-coverage-missing to ignore"
         )
+    if roundtrip_red:
+        # Not opt-out-able: the probe loaded a different shape on the two
+        # sides, or passed on one and failed on the other. Excusing it
+        # would excuse a real regression.
+        blocking.append(
+            f"{len(roundtrip_red)} class(es) had failing round-trip probes "
+            "(failed on one side or loaded a different shape): "
+            + ", ".join(roundtrip_red[:5])
+            + ("..." if len(roundtrip_red) > 5 else "")
+        )
+    if roundtrip_uncovered > 0 and not gaps.roundtrip_missing:
+        blocking.append(
+            f"{roundtrip_uncovered} class(es) have no round-trip coverage "
+            "(generate via `dagtools qual synthetic`, deploy, re-run "
+            "`dagtools qual run --side baseline|candidate`); "
+            "pass --accept-roundtrip-missing to ignore"
+        )
     if not gaps.orchestration_deferred:
         blocking.append(
             "orchestration snapshots are not produced yet; "
@@ -327,6 +378,10 @@ def build_verdict(
         synthetic_classes_total=len(synthetic_classes),
         synthetic_classes_with_probe_coverage=len(synthetic_green),
         synthetic_classes_red=synthetic_red,
+        roundtrip_classes_covered=roundtrip_covered,
+        roundtrip_classes_red=roundtrip_red,
+        roundtrip_classes_uncovered=roundtrip_uncovered,
+        roundtrip_not_applicable=roundtrip_na,
         observe_only_classes_total=len(observe_classes),
         orchestration_status="deferred",
         co_upgrade_risks_total=len(manifest.co_upgrade_risks),
@@ -528,6 +583,27 @@ def render_markdown(verdict: Verdict) -> str:
                     lines.append(f"  - {note}")
             lines.append("")
 
+    if verdict.roundtrip_classes_red:
+        lines.append("## Failing round-trip probes")
+        lines.append("")
+        red_set = set(verdict.roundtrip_classes_red)
+        for cls in verdict.class_verdicts:
+            if cls.class_hash not in red_set:
+                continue
+            lines.append(f"### `{cls.class_hash}`")
+            lines.append("")
+            rd = cls.roundtrip_diff
+            if rd is None:
+                lines.append("- round-trip probe FAILED on exactly one side")
+            else:
+                lines.append(
+                    f"- baseline run `{rd.baseline_run_id or '-'}` "
+                    f"vs candidate run `{rd.candidate_run_id or '-'}`"
+                )
+                for note in rd.notes:
+                    lines.append(f"  - {note}")
+            lines.append("")
+
     lines.append("## All classes")
     lines.append("")
     lines.append("| Class | Runnability | Members | Reps | Verdict |")
@@ -610,6 +686,96 @@ def _load_probe_run_state(
         logger.warning("_load_probe_run_state: invalid state for %s/%s: %s", qual_id, side, e)
         return {}
     return dict(state.probes)
+
+
+def _load_roundtrip_state(
+    registry: InventoryRegistry, qual_id: str, side: str
+) -> Dict[str, Any]:
+    """``class_hash -> RoundTripState`` for the side; empty when the pass has
+    not recorded anything (no probes, probes location absent, not run)."""
+    body = registry.read_roundtrip_state(qual_id, side)
+    if not body:
+        return {}
+    try:
+        return dict(RoundTripRunState.model_validate_json(body).probes)
+    except Exception as e:
+        logger.warning("_load_roundtrip_state: invalid state for %s/%s: %s", qual_id, side, e)
+        return {}
+
+
+def _load_roundtrip_record(
+    registry: InventoryRegistry, qual_id: str, side: str, rt_state
+) -> Optional[RunRecord]:
+    if rt_state is None or rt_state.run_id is None:
+        return None
+    body = registry.read_roundtrip_run_record(
+        qual_id, side, rt_state.class_hash, rt_state.run_id,
+    )
+    if body is None:
+        return None
+    try:
+        return RunRecord.model_validate_json(body)
+    except Exception as e:
+        logger.warning("_load_roundtrip_record: invalid record for %s/%s: %s", qual_id, side, e)
+        return None
+
+
+def _roundtrip_rollup(registry: InventoryRegistry, qual_id: str, matrix: ClassMatrix):
+    """Bucket every RUNNABLE class: covered / red / uncovered / not applicable.
+
+    Classification uses ``probe_shape_parity`` (loaded type and columns),
+    not the whole diff's ``is_pass``: the probe's optional ``loaded_len``
+    must never turn a class red, and a record lost after both sides PASSED
+    degrades to covered, as for synthetic probes.
+    """
+    from ..classes import Representative
+
+    b_state = _load_roundtrip_state(registry, qual_id, "baseline")
+    c_state = _load_roundtrip_state(registry, qual_id, "candidate")
+    covered = 0
+    red: List[str] = []
+    uncovered = 0
+    not_applicable: List[Dict[str, str]] = []
+    diffs: Dict[str, RepDiff] = {}
+    for cls in matrix.classes:
+        # Same selection the generator uses, so every class with a probe
+        # module is bucketed and no class without one is.
+        if first_runnable_rep(cls) is None:
+            continue
+        reason = roundtrip_not_applicable_reason(cls)
+        if reason is not None:
+            not_applicable.append({"class_hash": cls.class_hash, "reason": reason})
+            continue
+        ch = cls.class_hash
+        b = b_state.get(ch)
+        c = c_state.get(ch)
+        b_rec = _load_roundtrip_record(registry, qual_id, "baseline", b)
+        c_rec = _load_roundtrip_record(registry, qual_id, "candidate", c)
+        diff = None
+        if b_rec is not None or c_rec is not None:
+            pseudo = Representative(
+                repo=PROBES_LOCATION_NAME, git_sha=ch[:12],
+                asset_key=roundtrip_probe_asset_key(ch),
+                runnability=Runnability.RUNNABLE, runnability_reason="round-trip probe",
+            )
+            diff = diff_rep(rep=pseudo, class_hash=ch, baseline=b_rec, candidate=c_rec)
+            diffs[ch] = diff
+        b_status = b.status if b else None
+        c_status = c.status if c else None
+        statuses = {b_status, c_status}
+        if statuses == {RoundTripStatus.FAILED, RoundTripStatus.PASSED}:
+            # Red only when the two sides RAN and disagree. A FAILED side
+            # opposite a side that never ran (SKIPPED, PENDING, missing) is
+            # missing coverage, not a regression: nothing ran to compare.
+            red.append(ch)
+        elif statuses == {RoundTripStatus.PASSED}:
+            if diff is not None and diff.probe_shape_parity is False:
+                red.append(ch)
+            else:
+                covered += 1
+        else:
+            uncovered += 1
+    return covered, red, uncovered, not_applicable, diffs
 
 
 def _load_probe_record(

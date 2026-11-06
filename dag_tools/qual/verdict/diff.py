@@ -58,6 +58,9 @@ class RepDiff(BaseModel):
     materialization_asset_keys_parity: Optional[bool] = None
     metadata_keys_parity: Optional[bool] = None
     asset_check_parity: Optional[bool] = None
+    probe_shape_parity: Optional[bool] = None
+    """Round-trip probes only: the loaded value's type and columns match.
+    None when neither record carries the probe's shape metadata."""
 
     baseline_duration_s: Optional[float] = None
     candidate_duration_s: Optional[float] = None
@@ -82,7 +85,15 @@ def diff_rep(
     baseline: Optional[RunRecord],
     candidate: Optional[RunRecord],
 ) -> RepDiff:
-    """Compute a :class:`RepDiff` for one representative."""
+    """Compute a :class:`RepDiff` for one representative.
+
+    Metadata parity is KEY-set only, with one deliberate exception: when a
+    record carries the round-trip probe's own output (``dagtools/loaded_type``
+    and ``dagtools/loaded_columns``), their VALUES are compared as
+    ``probe_shape_parity``. Those are the probe's measurement of what the IO
+    manager loaded, not asset metadata, so a value difference is a real
+    finding. No other metadata value is ever compared.
+    """
     diff = RepDiff(
         class_hash=class_hash,
         asset_key=list(rep.asset_key),
@@ -173,6 +184,16 @@ def diff_rep(
             f"asset-check parity broke: baseline={sorted(b_checks)} candidate={sorted(c_checks)}"
         )
 
+    # --- 6. Round-trip probe shape (values of the probe's own output) -----
+    b_shape = _probe_shape(baseline)
+    c_shape = _probe_shape(candidate)
+    if b_shape is not None or c_shape is not None:
+        diff.probe_shape_parity = b_shape == c_shape
+        if not diff.probe_shape_parity:
+            diff.notes.append(
+                f"round-trip shape differs: baseline={b_shape} candidate={c_shape}"
+            )
+
     # --- Overall verdict ---------------------------------------------------
     parity_fields = (
         diff.success_parity,
@@ -181,9 +202,22 @@ def diff_rep(
         diff.metadata_keys_parity,
         diff.asset_check_parity,
     )
-    diff.is_pass = all(p is True for p in parity_fields)
+    diff.is_pass = all(p is True for p in parity_fields) and (
+        diff.probe_shape_parity is not False
+    )
 
     return diff
+
+
+PROBE_SHAPE_KEYS = ("dagtools/loaded_type", "dagtools/loaded_columns")
+
+
+def _probe_shape(record: RunRecord):
+    """The round-trip probe's (type, columns) output, or None if absent."""
+    meta = record.probe_metadata or {}
+    if not any(k in meta for k in PROBE_SHAPE_KEYS):
+        return None
+    return tuple(meta.get(k) for k in PROBE_SHAPE_KEYS)
 
 
 def _check_signature(results) -> set:
@@ -225,6 +259,10 @@ class ClassVerdict(BaseModel):
     means the probe ran on both sides but the run records diverged — a
     real regression signal that blocks GO."""
 
+    roundtrip_diff: Optional[RepDiff] = None
+    """Per-class diff of the Q2 IO round-trip probe records (RUNNABLE classes
+    that have a probe). ``probe_shape_parity`` carries the verdict signal."""
+
     is_green: bool
     """True iff EVERY RUNNABLE representative's RepDiff has ``is_pass=True``.
     Non-runnable classes (SYNTHETIC_REQUIRED, OBSERVE_ONLY) are reported
@@ -240,6 +278,7 @@ def build_class_verdicts(
     *,
     diff_by_rep_id: Dict[str, RepDiff],
     probe_diff_by_class_hash: Optional[Dict[str, RepDiff]] = None,
+    roundtrip_diff_by_class_hash: Optional[Dict[str, RepDiff]] = None,
 ) -> List[ClassVerdict]:
     """Roll RepDiffs up into per-class verdicts.
 
@@ -252,6 +291,7 @@ def build_class_verdicts(
     decides whether a probe diff failure blocks GO.
     """
     probe_diff_by_class_hash = probe_diff_by_class_hash or {}
+    roundtrip_diff_by_class_hash = roundtrip_diff_by_class_hash or {}
     verdicts: List[ClassVerdict] = []
     for cls in matrix.classes:
         per_class: List[RepDiff] = []
@@ -299,6 +339,7 @@ def build_class_verdicts(
             rep_count=len(cls.representatives),
             rep_diffs=per_class,
             probe_diff=probe_diff,
+            roundtrip_diff=roundtrip_diff_by_class_hash.get(cls.class_hash),
             is_green=is_green,
             failure_summary=failure_summary,
         ))
