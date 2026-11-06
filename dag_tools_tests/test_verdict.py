@@ -231,7 +231,7 @@ def test_verdict_go_when_all_gates_pass_and_known_gaps_accepted(setup):
 
     verdict = build_verdict(
         "q-test", registry=registry,
-        gaps=GapAcceptance(orchestration_deferred=True),
+        gaps=GapAcceptance(orchestration_deferred=True, roundtrip_missing=True),
     )
     assert verdict.status == VerdictStatus.GO
     assert verdict.blocking_issues == []
@@ -357,7 +357,8 @@ def test_verdict_go_when_co_upgrade_risks_accepted(setup):
 
     verdict = build_verdict(
         "q-test", registry=registry,
-        gaps=GapAcceptance(orchestration_deferred=True, co_upgrade_risks=True),
+        gaps=GapAcceptance(orchestration_deferred=True, co_upgrade_risks=True,
+                        roundtrip_missing=True),
     )
     assert verdict.status == VerdictStatus.GO
 

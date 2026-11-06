@@ -23,11 +23,19 @@ from .bundle import (
     write_local_bundle,
 )
 from .generator import generate_probe_module, generate_probe_source
+from .roundtrip import (
+    generate_roundtrip_module,
+    generate_roundtrip_source,
+    roundtrip_not_applicable_reason,
+    roundtrip_probe_asset_key,
+)
 from .schema import (
     SCHEMA_VERSION_PROBE_MANIFEST,
     ProbeManifest,
     ProbeModule,
     ProbeStatus,
+    RoundTripNotApplicable,
+    RoundTripProbe,
 )
 
 __all__ = [
@@ -36,6 +44,13 @@ __all__ = [
     "ProbeManifest",
     "ProbeModule",
     "ProbeStatus",
+    "RoundTripProbe",
+    "RoundTripNotApplicable",
+    # round-trip generator
+    "generate_roundtrip_module",
+    "generate_roundtrip_source",
+    "roundtrip_not_applicable_reason",
+    "roundtrip_probe_asset_key",
     # generator
     "generate_probe_module",
     "generate_probe_source",
