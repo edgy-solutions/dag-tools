@@ -1084,6 +1084,58 @@ them, you're probably violating a recipe rule. Read carefully first.
 
 ---
 
+## OTel → API sync: concurrency and Restate's timeouts
+
+`api.max_concurrency` (mapping.yaml or component.yaml, the component wins)
+limits requests in flight per worker process, per `base_url`. Unset means
+no limit beyond the worker's thread pool, as before. One hypercorn process
+serves a worker pod, so the limit at the API is
+
+    effective concurrency = max_concurrency × restateWorker.replicas
+
+**Why the wait lives inside the step.** The permit is acquired inside the
+`ctx.run` action, not around `await ctx.run(...)`. The SDK calls the action
+only when it executes the step; a replay returns the journaled result
+without calling it, so replays never wait for a permit. Waiting outside the
+step does not escape Restate's timers (the attempt is just as idle to the
+server), would repeat on every replay, and a suspension would be noticed
+only at the next context call. The permit is held until the HTTP thread
+finishes, not until the coroutine ends: the SDK cancels the action's task
+when an attempt ends, and cancelling a task awaiting an executor future
+leaves the thread running, so the permit is released from the future's
+done-callback.
+
+**Restate's timeouts, measured** with Restate 1.6.2 and 1.8.1, SDK 0.14.2,
+timeouts shortened to inactivity 3 s / abort 6 s:
+
+| action | what Restate did | requests at the API |
+|---|---|---|
+| waits 1 s, sends | normal | 1 |
+| waits 5 s (past inactivity), sends | asks to suspend; the action keeps running and is journaled | 1 |
+| waits 15 s (past inactivity + abort) | aborts the attempt; the task is cancelled, it never sends; every retry repeats | 0, never completes |
+| sends at once, request takes 15 s | aborts mid-request; the abandoned request completes and each retry sends again | 5+ (duplicates) |
+
+Crossing the inactivity timeout alone is harmless. The bound is
+inactivity + abort (60 s + 600 s by default; the chart sets the abort
+timeout to 3600 s). A request in flight when the abort fires is the
+duplicate, so the action never starts a request it cannot finish: it waits
+for a permit at most `inactivity + abort − timeout_seconds − margin`
+(margin `max(5 s, 10 %)`) and otherwise raises a retryable error before
+sending. Set the timeouts through `API_CALL_PLAN_INACTIVITY_TIMEOUT_SECONDS`
+and `API_CALL_PLAN_ABORT_TIMEOUT_SECONDS` (chart:
+`restateWorker.apiCallPlan.*`), not in Restate's server config, which the
+guard cannot see.
+
+Sizing rule:
+
+    groups in flight × per-call latency ÷ (max_concurrency × replicas)
+        < inactivity + abort − timeout_seconds
+
+Above it, calls are refused before sending and retried (no duplicates), but
+sustained overload ends in Restate's `Pause` after 70 attempts. The fix is
+a larger `abortTimeoutSeconds` or a higher cap. `max_attempts` /
+`max_retry_seconds` bound the retry: exhaustion halts the plan as `FAILED`.
+
 ## Known limitations
 
 - **Dagster exposes no git sha.** `WorkspaceLocationEntry` carries no

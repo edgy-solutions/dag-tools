@@ -64,6 +64,29 @@ class ApiSpec(BaseModel):
         default_factory=lambda: list(DEFAULT_RETRY_STATUSES),
         description="Statuses the handler raises on, so Restate retries with backoff.",
     )
+    max_concurrency: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Cap on calls in flight to this API, per Restate worker process "
+            "(effective limit = max_concurrency x worker replicas). Unset means "
+            "no cap. Needs a worker image that reads it; an older worker ignores "
+            "it silently."
+        ),
+    )
+    max_attempts: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Bound on Restate's attempts per call. Unset means unbounded. When "
+            "exhausted the plan halts and is recorded FAILED."
+        ),
+    )
+    max_retry_seconds: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="Bound on the total time Restate keeps retrying one call. Unset means unbounded.",
+    )
 
     @model_validator(mode="after")
     def _require_a_base_url(self) -> "ApiSpec":

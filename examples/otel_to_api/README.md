@@ -214,6 +214,15 @@ ClickHouse directly in the dispatch asset — lighter, but it gives up the
 replayable staged copy, the incremental cursor, and the SQL ledger
 (which falls back to Dagster asset metadata).
 
+### Limiting concurrency
+
+`api.max_concurrency` (component.yaml's `api:` block wins over mapping.yaml's) caps requests in flight at the API per worker process, so the effective cap is `max_concurrency x restateWorker.replicas`. Leave it unset to send as fast as the worker's thread pool allows. To choose a value, sweep 1, 2, 5, 10 against your group count and keep the lowest that finishes in time; start low. Keep this inequality true or calls are refused before sending and retried until Restate pauses them:
+
+    groups in flight x per-call latency / (max_concurrency x replicas)
+        < inactivity + abort - timeout_seconds
+
+Raise `restateWorker.apiCallPlan.abortTimeoutSeconds` or the cap when it is not. Needs the new worker image.
+
 ### Where configuration lives
 
 API configuration is deliberately split three ways:

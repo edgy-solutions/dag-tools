@@ -46,10 +46,14 @@ failures must be read from object state, never inferred from
 """
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
 import os
 import re
-from typing import Any, Dict, List, Tuple
+import threading
+from datetime import timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import restate
 
@@ -61,7 +65,49 @@ from dag_tools.otel_api_sync.plan import PLAN_FORMAT_VERSION, set_path
 
 logger = logging.getLogger(__name__)
 
-service = restate.VirtualObject(name="ApiCallPlanService")
+_INACTIVITY_ENV = "API_CALL_PLAN_INACTIVITY_TIMEOUT_SECONDS"
+_ABORT_ENV = "API_CALL_PLAN_ABORT_TIMEOUT_SECONDS"
+
+# Restate's server defaults, used by the permit-wait guard when the env vars
+# above are unset (so the worker assumes the server is running its defaults).
+_DEFAULT_INACTIVITY_SECONDS = 60.0
+_DEFAULT_ABORT_SECONDS = 600.0
+
+
+def _env_seconds(name: str) -> Optional[float]:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("ignoring %s=%r: not a number of seconds", name, raw)
+        return None
+    if value <= 0:
+        logger.warning("ignoring %s=%r: must be positive", name, raw)
+        return None
+    return value
+
+
+def _service_options() -> Dict[str, Any]:
+    """Service-level timeouts from the worker env, or nothing.
+
+    Unset means the kwarg is not passed at all. SDK 0.14 still negotiates
+    discovery v2, and ``compute_discovery_json`` raises ``ValueError`` for
+    these fields at v2, which would fail registration and leave the worker
+    serving nothing. So the default path must stay byte-identical.
+    """
+    options: Dict[str, Any] = {}
+    inactivity = _env_seconds(_INACTIVITY_ENV)
+    if inactivity is not None:
+        options["inactivity_timeout"] = timedelta(seconds=inactivity)
+    abort = _env_seconds(_ABORT_ENV)
+    if abort is not None:
+        options["abort_timeout"] = timedelta(seconds=abort)
+    return options
+
+
+service = restate.VirtualObject(name="ApiCallPlanService", **_service_options())
 
 # Durable state keys on the group-keyed object.
 _COMPLETED_KEY = "completed_plan_hashes"
@@ -136,6 +182,148 @@ def _resolve_api(
     return base_url.rstrip("/"), headers, timeout, retry_statuses, idempotency_header
 
 
+def _resolve_limits(plan: Dict[str, Any]) -> Tuple[Optional[int], Dict[str, Any]]:
+    """Optional concurrency cap and retry bound carried by the plan.
+
+    Every field is optional and unset means today's behaviour: no cap and
+    an unbounded ``ctx.run`` retry.
+    """
+    api = plan.get("api") or {}
+    cap = api.get("max_concurrency")
+    cap = int(cap) if cap else None
+    if cap is not None and cap < 1:
+        cap = None
+    run_options: Dict[str, Any] = {}
+    if api.get("max_attempts"):
+        run_options["max_attempts"] = int(api["max_attempts"])
+    if api.get("max_retry_seconds"):
+        run_options["max_retry_duration"] = timedelta(seconds=float(api["max_retry_seconds"]))
+    return cap, run_options
+
+
+# --- connection pool: one Session per executor thread -----------------------
+
+_thread_local = threading.local()
+
+
+def _new_session(pool_maxsize: int):
+    """Build the Session a worker thread keeps for its lifetime.
+
+    ``Session.request`` still merges environment settings (``trust_env``),
+    so ``REQUESTS_CA_BUNDLE`` keeps applying -- the private-CA invariant
+    rests on that.
+    """
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=4, pool_maxsize=max(10, int(pool_maxsize)))
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+def _thread_session(pool_maxsize: int):
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = _new_session(pool_maxsize)
+        _thread_local.session = session
+    return session
+
+
+# --- per-API concurrency cap -------------------------------------------------
+
+_DEFAULT_POOL_SIZE = min(32, (os.cpu_count() or 1) + 4)
+_runtime_lock = threading.Lock()
+_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_executor_size = 0
+# base_url -> (cap, loop, semaphore). A semaphore is bound to the loop it
+# first contends on, so an entry is rebuilt if the running loop changes.
+_semaphores: Dict[str, Tuple[int, Any, asyncio.Semaphore]] = {}
+_warned_deadline: set = set()
+
+
+def _reset_runtime() -> None:
+    """Drop the executor, semaphores and warning memory (tests)."""
+    global _executor, _executor_size
+    with _runtime_lock:
+        if _executor is not None:
+            _executor.shutdown(wait=False)
+        _executor = None
+        _executor_size = 0
+        _semaphores.clear()
+        _warned_deadline.clear()
+    _thread_local.__dict__.clear()
+
+
+def _get_executor(cap: Optional[int]) -> concurrent.futures.ThreadPoolExecutor:
+    """The module's own pool, sized to the largest cap seen.
+
+    The floor is the default pool's size, so API calls neither shrink below
+    what they had nor compete with other handlers' sync actions, and a cap
+    above 32 is real.
+    """
+    global _executor, _executor_size
+    wanted = max(_DEFAULT_POOL_SIZE, cap or 0)
+    with _runtime_lock:
+        if _executor is None or wanted > _executor_size:
+            old = _executor
+            _executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=wanted, thread_name_prefix="api-call-plan"
+            )
+            _executor_size = wanted
+            if old is not None:
+                old.shutdown(wait=False)  # queued and running work drains
+        return _executor
+
+
+def _get_semaphore(base_url: str, cap: int) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    with _runtime_lock:
+        entry = _semaphores.get(base_url)
+        if entry is None or entry[0] != cap or entry[1] is not loop:
+            # A different cap replaces the semaphore for new acquirers;
+            # calls holding the old one drain, so the overshoot is bounded
+            # by the old value and transient.
+            entry = (cap, loop, asyncio.Semaphore(cap))
+            _semaphores[base_url] = entry
+        return entry[2]
+
+
+def _permit_deadline_seconds(base_url: str, timeout: float) -> float:
+    """How long the action may wait for a permit and still finish its request.
+
+    ``inactivity + abort - timeout_seconds - margin``. The action must never
+    *start* a request it cannot finish before Restate aborts the attempt:
+    the abandoned thread's request would complete anyway and the retry
+    would send it again. A non-positive result is treated as "no wait",
+    never as "no deadline".
+    """
+    inactivity = _env_seconds(_INACTIVITY_ENV) or _DEFAULT_INACTIVITY_SECONDS
+    abort = _env_seconds(_ABORT_ENV) or _DEFAULT_ABORT_SECONDS
+    bound = inactivity + abort
+    margin = max(5.0, 0.1 * bound)
+    deadline = bound - timeout - margin
+    if deadline <= 0:
+        if base_url not in _warned_deadline:
+            _warned_deadline.add(base_url)
+            logger.warning(
+                "api_call_plan: timeout_seconds=%s leaves no permit-wait budget inside "
+                "inactivity+abort=%ss for %s; calls that cannot start at once are "
+                "refused and retried. Raise %s or lower timeout_seconds.",
+                timeout,
+                bound,
+                base_url,
+                _ABORT_ENV,
+            )
+        return 0.0
+    return deadline
+
+
+class PermitWaitExpired(RuntimeError):
+    """Raised (retryable) before sending when no permit arrived in time."""
+
+
 def _make_request(
     method: str,
     url: str,
@@ -143,23 +331,29 @@ def _make_request(
     headers: Dict[str, str],
     timeout: float,
     retry_statuses: List[int],
+    base_url: str = "",
+    max_concurrency: Optional[int] = None,
 ):
-    """Build the closure handed to ``ctx.run``.
+    """Build the async action handed to ``ctx.run``.
 
     Returns ``{"status": int, "body": Any}`` for anything the plan might
     want to branch on; raises only for conditions a retry could fix, so
     Restate's backoff does the right thing.
+
+    The permit wait is inside the action: the SDK calls it only when the
+    step actually executes, so a replay returns the journaled result
+    without ever waiting. The permit is released when the HTTP *thread*
+    finishes (its future's done-callback), not when this coroutine ends:
+    the SDK cancels the task when an attempt ends, and cancelling a task
+    awaiting ``run_in_executor`` does not stop the thread.
     """
 
     def _execute() -> Dict[str, Any]:
-        import requests
-
-        response = requests.request(
-            method, url, json=body, headers=headers, timeout=timeout
-        )
+        session = _thread_session(max_concurrency or 0)
+        response = session.request(method, url, json=body, headers=headers, timeout=timeout)
 
         if response.status_code in retry_statuses:
-            # Raising hands control back to Restate's retry policy —
+            # Raising hands control back to Restate's retry policy --
             # correct for transient server errors and throttling.
             raise RuntimeError(
                 f"{method} {url} -> {response.status_code} (retryable): "
@@ -173,7 +367,65 @@ def _make_request(
 
         return {"status": response.status_code, "body": parsed}
 
-    return _execute
+    async def _action() -> Dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        semaphore: Optional[asyncio.Semaphore] = None
+        if max_concurrency:
+            semaphore = _get_semaphore(base_url, max_concurrency)
+            deadline = _permit_deadline_seconds(base_url, timeout)
+            started = loop.time()
+            # Not asyncio.wait_for: before 3.12 it returns the inner result and
+            # drops an outer cancel that lands in the tick the permit is granted,
+            # so an abandoned attempt would go on to send a request its retry
+            # sends again.
+            acquiring = asyncio.ensure_future(semaphore.acquire())
+            try:
+                done, _ = await asyncio.wait({acquiring}, timeout=deadline)
+            except asyncio.CancelledError:
+                if acquiring.done() and not acquiring.cancelled():
+                    semaphore.release()
+                else:
+                    acquiring.cancel()
+                raise
+            if not done:
+                acquiring.cancel()
+                try:
+                    await acquiring
+                except asyncio.CancelledError:
+                    pass
+                else:  # granted while cancelling
+                    semaphore.release()
+                raise PermitWaitExpired(
+                    f"no permit for {base_url} within {deadline:.0f}s (cap {max_concurrency}); "
+                    "refused before sending so the attempt cannot overrun Restate's abort "
+                    "timeout. Retrying."
+                )
+            logger.info(
+                "api_call_plan permit_wait base_url=%s seconds=%.3f",
+                base_url,
+                loop.time() - started,
+            )
+
+        try:
+            future = _get_executor(max_concurrency).submit(_execute)
+        except BaseException:
+            if semaphore is not None:
+                semaphore.release()
+            raise
+
+        if semaphore is not None:
+            held = semaphore
+
+            def _release(_done: "concurrent.futures.Future") -> None:
+                try:
+                    loop.call_soon_threadsafe(held.release)
+                except RuntimeError:  # loop already closed; nothing waits any more
+                    pass
+
+            future.add_done_callback(_release)
+        return await asyncio.wrap_future(future)
+
+    return _action
 
 
 def _is_success(status: int) -> bool:
@@ -190,12 +442,17 @@ async def _run_call(
     headers: Dict[str, str],
     timeout: float,
     retry_statuses: List[int],
+    max_concurrency: Optional[int] = None,
+    run_options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     url = f"{base_url}{path if str(path).startswith('/') else '/' + str(path)}"
     logger.info("plan step %s: %s %s", step_name, method, url)
     return await ctx.run(
         step_name,
-        _make_request(method, url, body, headers, timeout, retry_statuses),
+        _make_request(
+            method, url, body, headers, timeout, retry_statuses, base_url, max_concurrency
+        ),
+        **(run_options or {}),
     )
 
 
@@ -258,6 +515,28 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
         ctx.set(_LAST_RESULT_KEY, summary)
         return summary
 
+    max_concurrency, run_options = _resolve_limits(plan)
+
+    def _call_failed_terminally(exc: "restate.TerminalError", step_id: str, item: str,
+                                phase: str) -> Dict[str, Any]:
+        # The call ended terminally: usually the retry bound
+        # (api.max_attempts / max_retry_seconds) ran out, but an operator
+        # cancelling the invocation or a terminal raised from the closure
+        # lands here too. A raise here would roll back object state, so it is recorded and the
+        # plan halts through the same path as any other unrecoverable call.
+        logger.error(
+            "group %s step '%s' item '%s': call ended terminally (%s); halting plan %s",
+            group_key, step_id, item, exc, plan_hash,
+        )
+        return {
+            "step": step_id,
+            "item": item,
+            "status": 0,
+            "phase": phase,
+            "error": str(exc),
+            "body": None,
+        }
+
     delivered: List[str] = (await ctx.get(_COMPLETED_CALLS_KEY)) or []
     delivered_set = set(delivered)
     newly_delivered: List[str] = []
@@ -303,17 +582,24 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
                 # recognises the retry instead of appending a duplicate.
                 headers[idempotency_header] = f"{plan_hash}-{call_key}"
 
-            result = await _run_call(
-                ctx,
-                step_name,
-                str(call.get("method") or "POST"),
-                base_url,
-                call.get("path") or "/",
-                call.get("body"),
-                headers,
-                timeout,
-                retry_statuses,
-            )
+            try:
+                result = await _run_call(
+                    ctx,
+                    step_name,
+                    str(call.get("method") or "POST"),
+                    base_url,
+                    call.get("path") or "/",
+                    call.get("body"),
+                    headers,
+                    timeout,
+                    retry_statuses,
+                    max_concurrency,
+                    run_options,
+                )
+            except restate.TerminalError as exc:
+                failures.append(_call_failed_terminally(exc, step_id, item_key, "call"))
+                halted = True
+                break
             executed += 1
             status = int(result.get("status", 0))
 
@@ -341,17 +627,26 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
                 )
                 if idempotency_header and call_key:
                     fb_headers[idempotency_header] = f"{plan_hash}-{call_key}-fb{status}"
-                fb_result = await _run_call(
-                    ctx,
-                    f"{step_name}-fallback-{status}",
-                    str(fallback.get("method") or "POST"),
-                    base_url,
-                    fallback.get("path") or "/",
-                    fallback.get("body"),
-                    fb_headers,
-                    timeout,
-                    retry_statuses,
-                )
+                try:
+                    fb_result = await _run_call(
+                        ctx,
+                        f"{step_name}-fallback-{status}",
+                        str(fallback.get("method") or "POST"),
+                        base_url,
+                        fallback.get("path") or "/",
+                        fallback.get("body"),
+                        fb_headers,
+                        timeout,
+                        retry_statuses,
+                        max_concurrency,
+                        run_options,
+                    )
+                except restate.TerminalError as exc:
+                    failures.append(
+                        _call_failed_terminally(exc, step_id, item_key, "fallback")
+                    )
+                    halted = True
+                    break
                 fallbacks_run += 1
                 fb_status = int(fb_result.get("status", 0))
                 if _is_success(fb_status):
@@ -404,17 +699,28 @@ async def execute_plan(ctx: restate.ObjectContext, plan: Dict[str, Any]) -> Dict
                 agg_headers[idempotency_header] = (
                     f"{plan_hash}-{step_id}-aggregate-{status}"
                 )
-            agg_result = await _run_call(
-                ctx,
-                f"{step_index:02d}-{step_id}-aggregate-{status}",
-                str(aggregate.get("method") or "POST"),
-                base_url,
-                aggregate.get("path") or "/",
-                body,
-                agg_headers,
-                timeout,
-                retry_statuses,
-            )
+            try:
+                agg_result = await _run_call(
+                    ctx,
+                    f"{step_index:02d}-{step_id}-aggregate-{status}",
+                    str(aggregate.get("method") or "POST"),
+                    base_url,
+                    aggregate.get("path") or "/",
+                    body,
+                    agg_headers,
+                    timeout,
+                    retry_statuses,
+                    max_concurrency,
+                    run_options,
+                )
+            except restate.TerminalError as exc:
+                failures.append(
+                    _call_failed_terminally(
+                        exc, step_id, f"aggregate-{status}", "aggregate_fallback"
+                    )
+                )
+                halted = True
+                break
             fallbacks_run += 1
             agg_status = int(agg_result.get("status", 0))
             if _is_success(agg_status):

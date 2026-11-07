@@ -88,6 +88,26 @@ restateWorker:
   # KEY: VALUE pairs (for non-secret) or use envFrom for Secrets/ConfigMaps.
   env: {}
   #   ORACLE_DSN: "oracle:1521/FREEPDB1"
+  # Restate's timeouts for the api_call_plan service (the OTel -> API sync
+  # executor). Rendered into the worker env only when set; the worker then
+  # registers them with the service. They need a Restate server that
+  # negotiates discovery protocol 3 or later (measured on 1.6.2 and 1.8.1);
+  # against an older server a set value fails registration, so unset it.
+  #
+  # What the numbers mean (measured on Restate 1.6.2 and 1.8.1): crossing the
+  # inactivity timeout alone is harmless, since Restate asks the invocation
+  # to suspend and the in-flight step still completes and is journaled. The
+  # bound that matters is inactivity + abort (60 s + 600 s by default). An
+  # attempt that is still running past it is aborted, and a request in
+  # flight at that moment is sent again by the retry. The worker therefore
+  # refuses to start a request it could not finish inside that bound
+  # (api.max_concurrency permit wait), and retries it with backoff instead.
+  # Sizing rule: groups in flight x per-call latency /
+  # (api.max_concurrency x replicas) < inactivity + abort - timeout_seconds.
+  # Unset restores Restate's own defaults.
+  apiCallPlan:
+    inactivityTimeoutSeconds: null   # unset: Restate's 60 s
+    abortTimeoutSeconds: 3600
   envFrom: []
   # - secretRef:
   #     name: dag-tools-worker-secrets

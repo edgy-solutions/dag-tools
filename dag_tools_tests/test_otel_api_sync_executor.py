@@ -6,7 +6,9 @@ fallback logic that sits *around* ``ctx.run``, which is exactly where a
 plausible implementation goes wrong.
 """
 import asyncio
+import inspect
 import json
+import threading
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -27,6 +29,7 @@ class StubContext:
         self._key = key
         self.state: Dict[str, Any] = dict(state or {})
         self.step_names: List[str] = []
+        self.run_kwargs: List[Dict[str, Any]] = []
 
     def key(self) -> str:
         return self._key
@@ -39,7 +42,12 @@ class StubContext:
 
     async def run(self, name: str, action, **kwargs):
         self.step_names.append(name)
-        return action()
+        self.run_kwargs.append(kwargs)
+        result = action()
+        # The real SDK awaits an async action; a sync one is run for us.
+        if inspect.isawaitable(result):
+            result = await result
+        return result
 
 
 class FakeHttp:
@@ -49,13 +57,29 @@ class FakeHttp:
         self.responses = responses
         self.default = default
         self.calls: List[Dict[str, Any]] = []
+        # Called from executor threads, so the counters are locked.
+        self._lock = threading.Lock()
+        self.in_flight = 0
+        self.max_in_flight = 0
+        # Optional hook run while the "request" is in flight (inside the thread).
+        self.during: Any = None
 
     def request(self, method, url, json=None, headers=None, timeout=None):
-        path = url.split("https://api.test", 1)[-1]
+        base = url.split("/", 3)
+        path = "/" + (base[3] if len(base) > 3 else "")
         status = self.responses.get(f"{method} {path}", self.default)
-        self.calls.append(
-            {"method": method, "url": url, "path": path, "body": json, "headers": headers or {}}
-        )
+        with self._lock:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+            self.calls.append(
+                {"method": method, "url": url, "path": path, "body": json, "headers": headers or {}}
+            )
+        try:
+            if self.during is not None:
+                self.during(method, url, json)
+        finally:
+            with self._lock:
+                self.in_flight -= 1
         return FakeResponse(status)
 
 
@@ -69,17 +93,24 @@ class FakeResponse:
         return self._payload
 
 
+@pytest.fixture(autouse=True)
+def _fresh_runtime():
+    """Each test gets its own executor, semaphores and per-thread sessions."""
+    api_call_plan._reset_runtime()
+    yield
+    api_call_plan._reset_runtime()
+
+
+def patch_session(monkeypatch, fake):
+    """Route the handler's HTTP through ``fake`` (the session factory)."""
+    monkeypatch.setattr(api_call_plan, "_new_session", lambda pool_maxsize: fake)
+    return fake
+
+
 @pytest.fixture
 def http(monkeypatch):
-    holder: Dict[str, FakeHttp] = {}
-
     def install(responses=None, default=200):
-        fake = FakeHttp(responses or {}, default)
-        holder["fake"] = fake
-        import requests
-
-        monkeypatch.setattr(requests, "request", fake.request)
-        return fake
+        return patch_session(monkeypatch, FakeHttp(responses or {}, default))
 
     return install
 
