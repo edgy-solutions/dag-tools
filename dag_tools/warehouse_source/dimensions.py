@@ -546,7 +546,7 @@ class DimensionSet:
         resolved: Dict[str, Tuple[str, ...]] = {}
         for dimension_id, raw in label.items():
             dimension = self.get(str(dimension_id))
-            values = _as_values(raw, dimension_id=dimension.id, where=where)
+            values = _as_values(raw, dimension=dimension, where=where)
             if dimension.hierarchical and len(values) != 1:
                 raise DimensionsError(
                     f"{where} gives {len(values)} values on the hierarchical "
@@ -601,7 +601,8 @@ class DimensionSet:
         )
 
 
-def _as_values(raw: Any, *, dimension_id: str, where: str) -> Tuple[str, ...]:
+def _as_values(raw: Any, *, dimension: Dimension, where: str) -> Tuple[str, ...]:
+    dimension_id = dimension.id
     if isinstance(raw, str):
         candidates: Sequence[Any] = (raw,)
     elif isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray)):
@@ -612,10 +613,18 @@ def _as_values(raw: Any, *, dimension_id: str, where: str) -> Tuple[str, ...]:
             "a label's values are one value or a list of them"
         )
     if not candidates:
-        raise DimensionsError(
-            f"{where} gives no value for dimension {dimension_id!r}; an empty "
-            "list is not 'unrestricted', so it is refused rather than dropped"
-        )
+        # An empty set is a value, and what it MEANS is the dimension type's
+        # own business: no reader at all on a permissive dimension (which is
+        # therefore its most restrictive label, and what deny-by-default
+        # resolves to), no obligation on a restrictive one, nothing excluded
+        # on an exclusionary one. It is allowed here rather than refused for
+        # two reasons: a defaulted label this engine PUBLISHES carries one and
+        # has to parse back, and a declared label -- a downgrade rule's --
+        # has no other way to clear a dimension. An empty set is still not
+        # the same as an absent dimension, and `Label.declares` is what keeps
+        # those apart. The ladder is the exception, and the arity check in
+        # `validate_label` is where it is refused.
+        return ()
     values: List[str] = []
     for candidate in candidates:
         if not isinstance(candidate, str) or not candidate.strip():

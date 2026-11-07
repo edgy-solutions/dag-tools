@@ -69,6 +69,7 @@ from .propagate import (
 from .spec import (
     ACCESS_MODES,
     LABEL_ORIGINS,
+    REFUSED_PLATFORM,
     ColumnLabel,
     LabelledSource,
     ResolvedLabels,
@@ -120,6 +121,7 @@ __all__ = [
     "PERMISSIVE_SET",
     "plan_observation",
     "platform_of",
+    "REFUSED_PLATFORM",
     "propagate",
     "Propagation",
     "PropagationError",

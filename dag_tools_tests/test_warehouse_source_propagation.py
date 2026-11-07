@@ -639,3 +639,69 @@ def test_the_propagation_serializes_to_what_the_catalog_publishes():
     assert rows[0]["downgrade"]["rule"] == "rule_one"
     assert "downgrade" not in rows[1]
     assert result.labels["out_two"].values_for("ladder") == ("rung_mid",)
+
+
+def test_an_empty_set_means_whatever_its_dimension_type_says_it_means():
+    """One shape, three meanings, and none of them is "absent".
+
+    A reader needs at least one value of a permissive dimension, so the empty
+    set there releases to NOBODY -- it is that dimension's most restrictive
+    label and what deny-by-default resolves to. On a restrictive set it is no
+    obligation and on an exclusionary one nothing excluded, both of which are
+    the least restrictive end. An empty set is a value the engine publishes
+    and has to parse back, and on a declared label it is the only way to
+    clear a dimension, so it is accepted everywhere except the ladder -- where
+    it is zero values on a dimension that takes exactly one.
+    """
+    dimensions = _dimensions()
+
+    for dimension in ("held_one_of", "held_all_of", "held_none_of"):
+        label = dimensions.validate_label({"ladder": "rung_low", dimension: []})
+        assert label.values_for(dimension) == ()
+        # Not the same as never mentioning it: an overlay distinguishes the
+        # two, so the engine has to as well.
+        assert label.declares(dimension)
+
+    with pytest.raises(DimensionsError, match="exactly one"):
+        dimensions.validate_label({"ladder": []})
+
+
+def test_the_deny_by_default_label_round_trips_through_validation():
+    """What step 4a publishes, step 4b has to be able to read back.
+
+    An unlabelled column publishes `most_restrictive_label()`, and on a
+    document carrying a permissive dimension that label holds an empty set.
+    Propagation reads a source's published labels back through
+    `validate_label`, so a label this engine emits and then refuses would
+    fail every defaulted column -- found by running it, not by review.
+    """
+    dimensions = _dimensions()
+    defaulted = dimensions.most_restrictive_label()
+
+    assert defaulted.values_for("held_one_of") == ()
+    assert dimensions.validate_label(defaulted.as_dict()) == defaulted
+
+
+def test_a_rule_can_clear_a_set_dimension_and_not_only_lower_the_ladder():
+    """The empty set is what makes a downgrade expressible on a set dimension.
+
+    A rule says nothing about the dimensions it omits, so omitting the set
+    keeps the obligation the data derived. Declaring it empty is the operator
+    saying the published column carries none -- which is the whole shape of a
+    downgrade on anything but the ladder, and was unreachable while an empty
+    list was refused.
+    """
+    rule = DowngradeRule(
+        id="rule_clear",
+        owner="example-board",
+        reason="an aggregate carries none of the row-level obligations",
+        label={"ladder": "rung_low", "held_all_of": []},
+        columns=("out_one",),
+    )
+    result = _propagate_with(rule)
+    decision = result.columns[0]
+
+    assert decision.derived.values_for("held_all_of") == ("all_of_a",)
+    assert decision.label.values_for("held_all_of") == ()
+    assert decision.label.declares("held_all_of")
+    assert decision.downgrade.rule == "rule_clear"

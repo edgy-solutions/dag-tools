@@ -18,6 +18,7 @@ _module_lookup = {
     "DltPipelineComponent": "dag_tools.components.dlt_pipeline.component",
     "CustomDbtProjectComponent": "dag_tools.components.dbt_project.component",
     "ContractMappingComponent": "dag_tools.components.contract_mapping.component",
+    "ClassificationPropagationComponent": "dag_tools.components.classification_propagation.component",
     "DatahubLineageComponent": "dag_tools.components.datahub_lineage.component",
     "OtelApiSyncComponent": "dag_tools.components.otel_api_sync.component",
     "ReadAuditComponent": "dag_tools.components.read_audit.component",
