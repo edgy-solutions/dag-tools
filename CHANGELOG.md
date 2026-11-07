@@ -183,6 +183,34 @@ it back are named.
   identically on both, and the component file deliberately stays inside `type:` + `attributes:`
   to keep it that way.
 
+- **The earned-value fixture carries `status_period` and `eac_reported`.** (contract #275)
+  `status_period` is a program figure like `program_bac`: the period the program is reported
+  through, repeated identically on every row, so a reader takes it once per program. It is the
+  column an as-of read selects on, and it is one of the periods the rows actually carry — a
+  status period outside that calendar would make every as-of computation select nothing and the
+  read would look empty rather than wrong.
+
+  `eac_reported` is the estimate as it was stated at each period's status, and it is the one
+  money column that belongs to the `(work_package, period)` row rather than to the work package.
+  **It is a stock, not an amount**: it adds across work packages at one period and never across
+  periods. Summed over the work packages at one period it is the program's estimate as reported
+  then; summed over every row it comes to nothing meaningful while still reading as a plausible
+  total. It is a column of its own rather than a time-phased `eac` precisely because `eac` must
+  stay constant per work package for the readers that take it once per path — so `eac_reported`
+  **varies down a work package's rows where `eac` cannot**, and a reader that takes it once per
+  path is wrong. No invariant is written over it (none can be), so the fixture's own tests are
+  what would catch a source holding it flat; at the status period it equals that work package's
+  `eac`, and no reported estimate is below the cost booked through its period. `Int64`, like the
+  other two completion figures.
+
+  `bcws`, `bcwp` and `acwp` remain the only per-row amounts and the only ones a reader may sum.
+  The fixture's other columns and types are unchanged. **An existing materialization does not
+  gain the columns** — re-materialize `ev_fixture` to pick them up.
+
+  `examples/contract_mapping` maps both (the contract declared them forward with
+  `produced_since: null`; that is now set), so the mapping example again produces every column
+  the fixture ships and the plan writes a constant-within test over `status_period`.
+
 ## 0.11.0 — 2026-11-04
 
 **Tag repaired 2026-11-05 (UTC).** `v0.11.0` was first pushed at `cc915a5`, which is

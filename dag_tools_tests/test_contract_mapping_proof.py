@@ -221,7 +221,11 @@ def test_every_emitted_test_fails_under_a_rule_the_contract_declares(plan):
         if not test.declared_in_contract
     ]
     assert undeclared == []
-    assert len(plan.tests) == 11
+    # One per constant-within pair, plus one each of the other six kinds. The
+    # count is pinned so a test the plan stops emitting is a failure rather
+    # than a smaller list that still satisfies every assertion above.
+    assert len(plan.tests) == 12
+    assert [test.kind for test in plan.tests].count("constant_within") == 6
 
 
 def test_the_example_mapping_leaves_the_plan_with_nothing_to_report(plan):
@@ -234,14 +238,41 @@ def test_the_example_mapping_leaves_the_plan_with_nothing_to_report(plan):
     assert plan.notes == []
 
 
-def test_the_contracts_forward_declared_columns_are_reported_not_demanded(plan):
-    """A column declared but not yet produced is not a mapping error.
+def test_the_example_produces_every_column_its_contract_declares(plan):
+    """Nothing is left forward-declared once the fixture carries it.
 
-    The contract declares columns ahead of anything producing them so readers
-    can be written against them. The plan has to let a mapping omit those
-    while still making the forward edge visible.
+    `status_period` and `eac_reported` were declared ahead of the fixture and
+    are now in it, so the example maps them and this list is empty. An empty
+    list proves nothing about the forward-declaration path itself -- that is
+    `test_contract_mapping_plan.py`'s synthetic contract, where a column can
+    be held unproduced on purpose. What it does prove is the other direction,
+    which only a real document can: the vendored contract has no column the
+    one worked mapping cannot produce.
     """
-    assert plan.unmapped_declared == ["status_period", "eac_reported"]
+    assert plan.unmapped_declared == []
+
+
+def test_every_column_the_fixture_carries_is_recorded_as_produced():
+    """The fixture and the contract's `produced_since` agree.
+
+    This is the edge the fixture gaining a column walks straight off: the rows
+    carry it, the contract still says nothing produces it, and a reader that
+    believed the contract would decline to select a column that is right
+    there. Read off the CSV header rather than the asset's tuples, because the
+    file is what ships and what a reader's producer reads.
+    """
+    contract = load_contract(yaml.safe_load(CONTRACT_FILE.read_text(encoding="utf-8")))
+    with FIXTURE_CSV.open(newline="", encoding="utf-8") as handle:
+        shipped = next(csv.reader(handle))
+
+    forward_declared = [
+        name
+        for name in shipped
+        if (column := contract.column(name)) is not None
+        and column.declared_not_produced
+    ]
+    assert forward_declared == []
+    assert set(shipped) == set(contract.column_names)
 
 
 def test_the_rendered_model_selects_the_columns_in_contract_order(plan):

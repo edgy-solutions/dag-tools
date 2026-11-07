@@ -43,6 +43,8 @@ source:
     ACWP: float
     BAC_CENTS: integer
     EAC_CENTS: integer
+    EAC_REPORTED_CENTS: integer
+    STATUS_PERIOD: string
 
 period:
   key: period
@@ -117,11 +119,22 @@ columns:
     transform: scale
     factor: "0.01"
 
-  # `status_period` and `eac_reported` are deliberately absent. The contract
-  # declares them with `produced_since: null` -- declared so readers can be
-  # written against them, not yet produced by anything -- so a mapping is not
-  # wrong for leaving them unmapped. The plan lists them under
-  # `unmapped_declared` so the contract's forward edge is visible.
+  # The period the program is reported through. One value for the program, so
+  # the raw table repeats it on every row and the plan writes a
+  # constant-within test over it -- which is the only thing that would catch a
+  # source restating it per work package.
+  status_period:
+    from: STATUS_PERIOD
+
+  # The estimate as stated at each period's status. Cents like the other two
+  # money columns, and scaled the same way, but NOT constant within the work
+  # package: this is the one money column that legitimately varies down a work
+  # package's rows, so no invariant is written over it and nothing would catch
+  # a source that mistakenly held it flat. The fixture's own tests do that.
+  eac_reported:
+    from: EAC_REPORTED_CENTS
+    transform: scale
+    factor: "0.01"
 
 # Contract type -> this adapter's type name. There is no default: this
 # library does not know what your warehouse calls a string, and a wrong guess

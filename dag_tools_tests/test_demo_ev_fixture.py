@@ -70,6 +70,8 @@ def test_the_types_a_reader_gets(frame):
         "bcws": pl.Int64,
         "bcwp": pl.Float64,
         "acwp": pl.Float64,
+        "status_period": pl.String,
+        "eac_reported": pl.Int64,
     }
 
 
@@ -121,7 +123,7 @@ def test_a_completion_figure_is_the_same_on_every_row_of_its_work_package(frame,
     assert per_package["values"].to_list() == [1] * per_package.height
 
 
-@pytest.mark.parametrize("column", COMPLETION_FIGURES)
+@pytest.mark.parametrize("column", COMPLETION_FIGURES + ("eac_reported",))
 def test_a_completion_figure_cannot_be_non_finite(frame, column):
     """Integers, so no arithmetic a reader does with them can produce a NaN or an
     infinity. The schema test above pins the type; this one says what the type buys."""
@@ -161,6 +163,105 @@ def test_no_completion_estimate_is_below_the_cost_already_booked(frame):
     )
     below = per_package.filter(pl.col("eac") < pl.col("booked"))
     assert below.height == 0, below.to_dicts()
+
+
+# ---------------------------------------------------------------------------
+# The status period and the reported estimate. ``status_period`` is a program
+# figure like ``program_bac``. ``eac_reported`` is the one money column that
+# belongs to the (work_package, period) row rather than to the work package --
+# the estimate as stated at that period's status -- which is the whole reason
+# it is not a time-phased ``eac``.
+# ---------------------------------------------------------------------------
+
+
+def test_the_program_is_reported_through_one_period_of_its_own_calendar(frame):
+    """One value for the program, and a period the rows actually carry.
+
+    A status period outside the rows' calendar would make every as-of
+    computation select nothing, and the read would look empty rather than
+    wrong.
+    """
+    per_program = frame.group_by("program_id").agg(
+        pl.col("status_period").n_unique().alias("values")
+    )
+    assert per_program["values"].to_list() == [1] * per_program.height
+
+    status = frame["status_period"].unique().item()
+    assert status in frame["period"].unique().to_list()
+
+
+def test_the_reported_estimate_varies_down_a_work_packages_rows(frame):
+    """The column's entire reason to exist, so the fixture has to exercise it.
+
+    ``eac`` is one value per work package and a reader takes it once per path.
+    If every work package here held ``eac_reported`` flat as well, the fixture
+    would teach a reader that the two columns are interchangeable and the
+    once-per-path reading would survive every test in this file.
+    """
+    per_package = frame.group_by("work_package").agg(
+        pl.col("eac_reported").n_unique().alias("values")
+    )
+    assert any(v > 1 for v in per_package["values"].to_list()), (
+        "no work package restates its estimate, so this fixture cannot tell a "
+        "reader that eac_reported is not eac"
+    )
+
+
+def test_the_estimate_reported_at_the_status_period_is_the_work_packages_estimate(frame):
+    """The series ends where ``eac`` is: the latest restatement IS the estimate.
+
+    A fixture whose last reported figure disagreed with ``eac`` would be
+    telling a reader that one of the two is stale, and nothing in the contract
+    says which.
+    """
+    status = frame["status_period"].unique().item()
+    at_status = frame.filter(pl.col("period") == status)
+    per_package = at_status.group_by("work_package").agg(
+        pl.col("eac").first(), pl.col("eac_reported").first()
+    )
+    assert (per_package["eac"] == per_package["eac_reported"]).all()
+
+
+def test_the_reported_estimate_adds_across_work_packages_at_one_period(frame):
+    """Its additive axis, and the fact that the other axis still looks like money.
+
+    Summed over the work packages at one period it is the program's estimate as
+    reported then: at the first period nothing has been restated yet, so it
+    comes to the program budget, and at the status period it comes to the sum
+    of the work packages' current estimates. Summed over every row instead it
+    comes to neither, while still reading as a plausible total -- which is why
+    the axis is part of the contract rather than a detail.
+    """
+    periods = sorted(frame["period"].unique().to_list())
+    status = frame["status_period"].unique().item()
+    program_bac = frame["program_bac"].unique().item()
+
+    at_first = frame.filter(pl.col("period") == periods[0])["eac_reported"].sum()
+    assert at_first == program_bac
+
+    at_status = frame.filter(pl.col("period") == status)["eac_reported"].sum()
+    current = frame.group_by("work_package").agg(pl.col("eac").first())["eac"].sum()
+    assert at_status == current
+
+    assert frame["eac_reported"].sum() not in (program_bac, current)
+
+
+def test_no_reported_estimate_is_below_the_cost_booked_through_its_period(frame):
+    """The same incoherence as ``eac``, one period at a time.
+
+    An estimate stated at a period's status for less than the work package had
+    spent by that period would send a reader's remaining cost negative at that
+    period even though the final figures reconcile.
+    """
+    booked = (
+        frame.sort("period")
+        .with_columns(
+            pl.col("acwp").cum_sum().over("work_package").alias("booked")
+        )
+        .filter(pl.col("eac_reported") < pl.col("booked"))
+        .select("work_package", "period", "eac_reported", "booked")
+    )
+    assert booked.height == 0, booked.to_dicts()
 
 
 def test_the_csv_ships_inside_the_package():

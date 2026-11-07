@@ -116,16 +116,24 @@ def mesh_demo_customers(context):
 # its inputs prints ``12000000.0`` for a float budget and the audit strings would
 # then differ from the seed's though no figure does.
 #
-# Three levels of figure share the one row, and which level a figure belongs to
+# Four levels of figure share the one row, and which level a figure belongs to
 # is the whole of its rule. ``program_bac`` is a program figure and is the same
-# on every row of the program. The completion figures are work-package figures
+# on every row of the program, as is ``status_period`` -- the period the
+# program is reported through. The completion figures are work-package figures
 # and are the same on every row of the work package -- a status-date estimate,
 # not a period amount -- so a reader that sums one of them over a work
 # package's periods gets its value once per period. ``bcws``/``bcwp``/``acwp``
 # are the only per-row amounts, and the only ones a reader may sum.
 #
-# Both completion figures are integers, so a difference taken between them
-# cannot be non-finite whatever a reader does with it.
+# ``eac_reported`` is the fourth level and the one with no neighbour: the
+# estimate as it was stated at each period's status, so it varies down a work
+# package's rows where ``eac`` cannot. It is a stock, not an amount -- it adds
+# across work packages at one period and never across periods -- which is why
+# it is a column of its own rather than a time-phased ``eac``: the rows that
+# take ``eac`` once per path need it to stay constant.
+#
+# Every completion figure is an integer, so a difference taken between any two
+# of them cannot be non-finite whatever a reader does with it.
 EV_FIXTURE_CSV = Path(__file__).parent / "demo_data" / "ev_fixture.csv"
 EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
     "program_id",
@@ -133,11 +141,13 @@ EV_FIXTURE_STRING_COLUMNS: Tuple[str, ...] = (
     "control_account",
     "work_package",
     "period",
+    "status_period",
 )
 EV_FIXTURE_INTEGER_COLUMNS: Tuple[str, ...] = (
     "program_bac",
     "bac",
     "eac",
+    "eac_reported",
     "bcws",
 )
 EV_FIXTURE_FLOAT_COLUMNS: Tuple[str, ...] = (
