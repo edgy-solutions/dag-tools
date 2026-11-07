@@ -4,6 +4,7 @@ import importlib
 if TYPE_CHECKING:
     from dag_tools.components.dlt_pipeline import DltPipelineComponent
     from dag_tools.components.dbt_project import CustomDbtProjectComponent
+    from dag_tools.components.contract_mapping import ContractMappingComponent
     from dag_tools.components.datahub_lineage import DatahubLineageComponent
     from dag_tools.components.otel_api_sync import OtelApiSyncComponent
     from dag_tools.components.read_audit import ReadAuditComponent
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 _module_lookup = {
     "DltPipelineComponent": "dag_tools.components.dlt_pipeline.component",
     "CustomDbtProjectComponent": "dag_tools.components.dbt_project.component",
+    "ContractMappingComponent": "dag_tools.components.contract_mapping.component",
     "DatahubLineageComponent": "dag_tools.components.datahub_lineage.component",
     "OtelApiSyncComponent": "dag_tools.components.otel_api_sync.component",
     "ReadAuditComponent": "dag_tools.components.read_audit.component",

@@ -1,0 +1,75 @@
+type: dag_tools.ContractMappingComponent
+
+attributes:
+  # The mapping: this source's columns onto the contract's. Relative to this
+  # directory.
+  mapping_file: mapping.yaml
+
+  contract:
+    # A file, so the whole plan is built at the CODE LOCATION LOAD: a mapping
+    # that reads a column the source does not have, or fails to produce a
+    # column a governed read selects, fails here rather than in a run an hour
+    # later.
+    #
+    # To take the contract from iagent instead, replace the block with:
+    #
+    #   contract:
+    #     url: "{{ env('CONTRACT_URL') }}"
+    #     headers:
+    #       Authorization: "Bearer {{ env('CONTRACT_TOKEN') }}"
+    #     expect_contract_id: ev_fixture
+    #
+    # That moves the fetch to materialization -- a code location must not
+    # fail to load because a service is down -- and the asset says so in its
+    # notes rather than implying the load-time check ran. Set
+    # `expect_contract_id` there: what arrives is not under the operator's
+    # control, and a service that starts serving a different contract would
+    # otherwise silently re-point the mapping.
+    path: ../../../contracts/ev_fixture.yaml
+    expect_contract_id: ev_fixture
+
+  source_schema:
+    # The mapping declares the source's columns, which is what makes the
+    # load-time check possible.
+    from_mapping: true
+
+    # To read the real schema from the catalog as well, by the mapping's
+    # `source.dataset_urn` (the physical platform's URN, which is the object
+    # a broker authorizes a read of):
+    #
+    #   source_schema:
+    #     from_mapping: true
+    #     datahub: true
+    #     datahub_config:
+    #       server: "{{ env('DATAHUB_GMS_URL') }}"
+    #
+    # The catalog wins where it has a schema, and any disagreement with the
+    # mapping is reported rather than quietly resolved. A PAT is required
+    # whenever the GMS runs with METADATA_SERVICE_AUTH_ENABLED=true; it is
+    # taken from the standard DATAHUB_TOKEN env var unless `token` is set.
+    datahub: false
+
+  emit:
+    # This example renders and writes nothing, so it runs with no dbt project
+    # and no warehouse. The rendered bytes go on the materialization, which
+    # is also the usual way to review a mapping change before it reaches a
+    # project.
+    #
+    # To write the model and its tests into a dbt project:
+    #
+    #   emit:
+    #     dbt_project_dir: ../../../dbt_project
+    #     models_subdir: models/contracts
+    #     tests_subdir: tests/contracts
+    #
+    # `prune: true` additionally deletes generated tests this plan no longer
+    # emits. It is off by default because this component writes into a
+    # directory it does not own, and deleting a test an operator wrote by
+    # hand is worse than leaving a stale one; only files named
+    # `<model>__...` are ever considered.
+    dry_run: true
+
+  asset_name: ev_fixture_contract_mapping
+  group_name: contracts
+  tags:
+    moves_data: "false"

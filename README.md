@@ -20,6 +20,7 @@ This library follows a **Dagster-first** configuration approach.
 - **[Local dev loops: docs/local-dev-loops.md](docs/local-dev-loops.md)** — iterating on dbt and dlt without the Dagster UI: `dagtools dlt run --destination ./dev.duckdb`, `--extract-only`, `dagtools dlt env`, and how to do it without copying credentials onto a laptop.
 - `dag_tools/components/`: Dagster 1.12 GA Declarative Components using the `Component, Resolvable, Model` pattern (e.g., `DltPipelineComponent`, `CustomDbtProjectComponent`, `GristIngestComponent`) that allow users to deploy complex workloads via YAML.
 - `dag_tools/audit/`: The **read audit** — a pure (Dagster-free) engine that turns a warehouse's query history into a report of which asset read which object, and which reads nothing explains. Builds the SELECT and returns SQL plus bound parameters; a resource runs it. Names no relation, column or identity, not even as a default. Surfaced as `ReadAuditComponent` (YAML) and `dagtools audit` (CLI).
+- `dag_tools/contract_mapping/`: The **contract mapping** engine — pure (no Dagster, no dbt) — that reconciles a data contract against a source schema and renders the dbt model that satisfies it plus the tests that prove it still does. The same plan also runs over Python rows, which is how a mapping is proven with no warehouse. Refuses at code-location load anything that would emit a wrong artifact, notes anything it merely could not test, and guesses no warehouse type, cast or predicate. Surfaced as `ContractMappingComponent`.
 - `dag_tools/warehouse_source/`: The **warehouse source** engine — a pure (Dagster-free, DataHub-free) package that reads the deployment's mounted classification dimensions document, validates each column's `{dimension: values}` label against it, plans an observation that moves no data, and builds the catalog payload. Surfaced as `WarehouseSourceComponent`, which publishes one source dataset as an observable source asset under the PHYSICAL platform's dataset URN and attaches the Dagster asset as lineage. Names no database, schema, table, column, dimension or value, not even as a default.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers.
 - `dag_tools/resources/`: Reusable resources and API/Database clients, including the **tagged warehouse** resource (`TaggedWarehouseComponent`) — every query it sends carries which asset the read was for, and a query it cannot attribute is not sent.
@@ -566,6 +567,63 @@ It drops in under section 12 unchanged: same `fetch_rows(statement,
 parameters)` seam, named by `resource_key`. Runnable example, sqlite, no
 credentials: [`examples/tagged_warehouse`](examples/tagged_warehouse).
 
+### 14. Contract Mapping (`ContractMappingComponent`)
+
+A data contract on one side, a raw source table on the other, and a YAML file
+saying which source column feeds which contract column. The component renders
+the dbt model that satisfies the contract, plus the tests that prove it still
+does.
+
+```yaml
+# components/contract_mapping/component.yaml
+type: dag_tools.ContractMappingComponent
+attributes:
+  mapping_file: mapping.yaml
+  contract:
+    path: ../../../contracts/my_contract.yaml   # reconciled at LOAD
+    expect_contract_id: my_contract
+    # url: "{{ env('CONTRACT_URL') }}"          # ...or served, fetched at run
+  source_schema:
+    from_mapping: true          # the mapping declares the source's columns
+    datahub: false              # ...or read the real schema from the catalog
+  emit:
+    dbt_project_dir: ../../../dbt_project
+    models_subdir: models/contracts
+    tests_subdir: tests/contracts
+    # dry_run: true             # render into metadata, write nothing
+  asset_name: my_contract_mapping
+  group_name: contracts
+```
+
+The mapping file names the source's platform URN and table, the period key,
+the write cadence, and one entry per contract column — `copy`, `trim`,
+`upper`, `lower`, `concat`, `coalesce`, `constant` or `scale`. It also carries
+the three things this library will not guess: the contract type → warehouse
+type map, a cast template per type that needs one, and the predicate that is
+true for a non-finite value.
+
+**With a file contract the whole plan is built at the code location load.** A
+mapping that reads a column the source does not have, drops a column a
+governed read selects, or disagrees with the contract about write cadence
+fails there — not in a run an hour later. A served contract is fetched at
+materialization instead, because a code location must not fail to load because
+a service is down.
+
+The split between a refusal and a note is whether the emitted artifact would
+be **wrong**. A test that could not be written — the contract names its period
+calendar rather than listing it, or no warehouse type is declared — is a note
+on the materialization. Nothing is guessed to fill a gap: a cast this library
+invented, or a non-finite predicate that silently matches nothing, is worse
+than a note saying the test was not written.
+
+The **asset of record is the physical platform's dataset URN**, from the
+contract — never a `dagster` platform URN. That is the object a governed read
+is served from and the object a broker authorizes; the raw table's URN and the
+Dagster asset attach as lineage.
+
+Runnable example — no warehouse, no dbt project, no credentials, and it proves
+the mapping reproduces a shipped fixture exactly, types included:
+[`examples/contract_mapping`](examples/contract_mapping).
 ### 15. Warehouse Source (`WarehouseSourceComponent`)
 
 One labelled source dataset, **observed rather than moved**. The component

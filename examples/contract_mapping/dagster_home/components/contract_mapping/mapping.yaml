@@ -1,0 +1,156 @@
+# A MAPPING, as a deployment supplies one: this source's columns onto that
+# contract's. The contract is `../../../contracts/ev_fixture.yaml`; this file
+# says where each of its columns comes from.
+#
+# The source here is synthetic -- a raw landing table for the earned-value
+# fixture dag-tools ships for the sandbox, written the way a raw table
+# usually is: upper-cased names, padded strings, amounts in cents, and one
+# column that is sometimes null with a fallback beside it. Every transform
+# below exists because the raw table disagrees with the contract about one of
+# those, which is the only reason a mapping file exists at all.
+#
+# `dag_tools_tests/test_contract_mapping_proof.py` runs this mapping over
+# rows derived from the shipped fixture and asserts it reproduces the fixture
+# exactly, types included.
+
+contract: ev_fixture
+
+source:
+  # The source's own PHYSICAL platform URN. Carried into the emitted catalog
+  # entry as lineage, so the mapped model points at where its rows came from.
+  dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:s3,ev_raw,PROD)"
+
+  # Written into the FROM clause verbatim, so a `{{ source(...) }}` call
+  # resolves through dbt and gets the dependency edge. A plain
+  # `db.schema.table` works too; this library does no quoting, because what
+  # needs quoting is a property of your adapter.
+  table: "{{ source('ev_raw', 'wp_period') }}"
+
+  # The source's schema. Declared here so a mapping that reads a column the
+  # source does not have fails the CODE LOCATION LOAD rather than a
+  # materialization an hour later. Leave it out to take the schema from the
+  # catalog at materialization instead; the cost is exactly that.
+  columns:
+    PROGRAM_ID: string
+    PROGRAM_NAME: string
+    PROGRAM_NAME_LONG: string
+    PROGRAM_BAC: integer
+    CONTROL_ACCOUNT: string
+    WP: string
+    FISCAL_PERIOD: string
+    BCWS: integer
+    BCWP: float
+    ACWP: float
+    BAC_CENTS: integer
+    EAC_CENTS: integer
+
+period:
+  key: period
+  # The contract NAMES its calendar (`vocabulary: FISCAL_PERIODS`) rather than
+  # listing it, and a name cannot be tested against. Listing the values here
+  # is what gets a period-membership test written; leave it out and the plan
+  # reports that the test was not written, rather than emitting one that
+  # passes without checking anything.
+  values:
+    - FY26-01
+    - FY26-02
+    - FY26-03
+    - FY26-04
+    - FY26-05
+    - FY26-06
+    - FY26-07
+    - FY26-08
+    - FY26-09
+    - FY26-10
+    - FY26-11
+    - FY26-12
+
+cadence:
+  # Checked against the contract's. A mapping that writes incrementally
+  # against a contract declaring whole-table is refused: a reader expecting
+  # one and served the other sees stale rows or duplicates, not an error.
+  write: whole_table
+  set_by: producer
+
+columns:
+  program_id:
+    from: PROGRAM_ID
+    transform: trim
+
+  # Sometimes null in the raw table, with a short form beside it.
+  program_name:
+    from: [PROGRAM_NAME_LONG, PROGRAM_NAME]
+    transform: coalesce
+
+  program_bac:
+    from: PROGRAM_BAC
+
+  # The contract declares this a string on purpose; the raw table pads it.
+  control_account:
+    from: CONTROL_ACCOUNT
+    transform: trim
+
+  work_package:
+    from: WP
+    transform: upper
+
+  period:
+    from: FISCAL_PERIOD
+
+  bcws:
+    from: BCWS
+  bcwp:
+    from: BCWP
+  acwp:
+    from: ACWP
+
+  # Cents in the raw table. `factor` is read as a decimal, not a float: a
+  # unit conversion of money through a binary float is how a total stops
+  # reconciling. The contract declares these integer, so a scaled value that
+  # is not whole is refused rather than rounded.
+  bac:
+    from: BAC_CENTS
+    transform: scale
+    factor: "0.01"
+  eac:
+    from: EAC_CENTS
+    transform: scale
+    factor: "0.01"
+
+  # `status_period` and `eac_reported` are deliberately absent. The contract
+  # declares them with `produced_since: null` -- declared so readers can be
+  # written against them, not yet produced by anything -- so a mapping is not
+  # wrong for leaving them unmapped. The plan lists them under
+  # `unmapped_declared` so the contract's forward edge is visible.
+
+# Contract type -> this adapter's type name. There is no default: this
+# library does not know what your warehouse calls a string, and a wrong guess
+# would emit a model contract that fails for a reason that has nothing to do
+# with your data. Omit the block entirely and no model contract is enforced,
+# which the plan reports.
+warehouse_types:
+  string: varchar
+  integer: bigint
+  numeric: "numeric(38, 6)"
+  float: double precision
+  boolean: boolean
+
+# Contract type -> SQL that casts to it, with `{expr}` substituted.
+#
+# Needed here because `bac` and `eac` are scaled, and `BAC_CENTS * 0.01`
+# widens to a fractional type in most dialects while the contract declares
+# the column integer -- so an enforced model contract would refuse the model
+# for a reason that has nothing to do with the data. The cast wraps the whole
+# expression, because what needs correcting is the type the transform
+# produced, not the type the source stored. Omit an entry and the plan names
+# the columns that need one rather than emitting SQL that fails at the
+# warehouse.
+cast_templates:
+  integer: "cast({expr} as bigint)"
+
+# True for a non-finite value, with `{column}` substituted. `x != x` is the
+# portable NaN test; an infinity test is spelled differently by every
+# adapter, so add yours here. Omit the field and no non-finite test is
+# written -- which the plan reports, rather than this library guessing a
+# predicate that silently matches nothing.
+non_finite_predicate: "{column} != {column}"

@@ -1,0 +1,105 @@
+# CONTRACT AS DATA (ADR-0066, provisional number): the first one. What an asset must carry for
+# engine-fin's governed read to accept it, stated as a row a deployment supplies rather than as
+# prose in a packet. Transcribed from fin's asset-contract packet of 2026-11-03 and checked rule by
+# rule against agent_fleet/finance_agent/asset_inputs.py; tests/finance/test_the_ev_contract_agrees_with_the_reader.py
+# keeps the two in agreement until the reader reads this file instead of its own constants.
+#
+# A SAMPLE, NOT A CUSTOMER'S SHAPE: the synthetic earned-value fixture dag-tools ships for the
+# sandbox. A deployment's own contract is its own file; nothing in engine code names this one.
+# Lane 1 registers it.
+contract_id: ev_fixture
+version: "1.0.0"
+status: sample
+ratified_by: owner
+
+dataset:
+  # DERIVED, never typed: materialize, then read what the broker registered or the catalog shows.
+  urn: "urn:li:dataset:(urn:li:dataPlatform:s3,ev_fixture,PROD)"
+  producer: {repo: dag-tools, asset: ev_fixture}
+  # File-backed (parquet). A table-backed asset runs SELECT * before the frame exists.
+  storage: file
+  banner: "SYNTHETIC earned-value fixture, not a real program."
+
+# One row per grain tuple; a read filters to one scope value and holds no other.
+grain: [work_package, period]
+scope: program_id
+
+period:
+  column: period
+  # The engine's vocabulary (agent_fleet/finance_agent/entities.py), FY26-01..FY26-12. FY26 only
+  # today, so a real source's FY27 row is refused: a fork listed for the architect on 2026-11-03.
+  vocabulary: FISCAL_PERIODS
+# The period the program is reported through. Named here so a time-phased row can mark it from
+# data; never a constant in a measure row.
+status_period: status_period
+
+# `required`: every governed read selects it (the reader's fixed set). Otherwise a column is read
+# only when a measure row names it.
+# `produced_since`: the dag-tools release whose fixture carries it; null = declared, not yet
+# produced (a reader naming it gets `missing_column` until it is).
+# `constant_within`: the columns inside which every row carries one value.
+# `additive_over`: the axes along which summing the column is meaningful. An amount repeated on
+# a path's rows is taken once per path before it is added (a measure row's `per_path: once`).
+columns:
+  - {name: program_id, type: string, required: true, produced_since: "0.11.0"}
+  - {name: program_name, type: string, required: true, produced_since: "0.11.0",
+     constant_within: [program_id]}
+  - {name: program_bac, type: numeric, unit: USD, required: true, produced_since: "0.11.0",
+     constant_within: [program_id], additive_over: []}
+  # Declared as a string: `1.1` infers as a float.
+  - {name: control_account, type: string, required: true, produced_since: "0.11.0",
+     constant_within: [work_package]}
+  - {name: work_package, type: string, required: true, produced_since: "0.11.0"}
+  - {name: period, type: string, required: true, produced_since: "0.11.0"}
+  # Period amounts, never cumulative. A cumulative series is computed by a measure, not stored.
+  - {name: bcws, type: numeric, unit: USD, required: true, produced_since: "0.11.0",
+     additive_over: [work_package, period]}
+  - {name: bcwp, type: numeric, unit: USD, required: true, produced_since: "0.11.0",
+     additive_over: [work_package, period]}
+  - {name: acwp, type: numeric, unit: USD, required: true, produced_since: "0.11.0",
+     additive_over: [work_package, period]}
+  # Completion figures (dag-tools #11, ruling (a)): one per work package, repeated on each of its
+  # period rows, so a sum over its rows overcounts by the number of periods.
+  - {name: bac, type: integer, unit: USD, required: false, produced_since: "0.11.0",
+     constant_within: [work_package], additive_over: [work_package]}
+  - {name: eac, type: integer, unit: USD, required: false, produced_since: "0.11.0",
+     constant_within: [work_package], additive_over: [work_package]}
+  # Ruled 2026-11-05 (ADR-0065/0066 dispatch); not yet in the fixture.
+  - {name: status_period, type: string, required: false, produced_since: null,
+     constant_within: [program_id]}
+  # The EAC as stated at each period's status: a stock, so it adds across work packages at one
+  # period and never across periods. A new column, because `eac` must stay constant per work
+  # package for the rows that read it once per path.
+  - {name: eac_reported, type: integer, unit: USD, required: false, produced_since: null,
+     additive_over: [work_package]}
+
+# Every rule the reader refuses on, by the id its 502 `asset_contract_violation` names. A broken
+# rule refuses the whole answer, and its message names the rule and the column, never a value.
+rules:
+  missing_column: "a required column, or a column a measure row names, is absent"
+  wrong_type: "a string column is not a string, or a numeric column is not numeric"
+  null_value: "a null in a column that is read"
+  non_finite: "a NaN or infinity in a numeric column that is read"
+  other_program_rows: "a read holds rows of another program (the asset may; a read that kept them forgot its filter)"
+  program_name_not_unique: "more than one program_name for the program"
+  program_bac_not_unique: "program_bac differs between the program's rows"
+  work_package_in_two_accounts: "a work_package appears under more than one control_account"
+  duplicate_work_package_period: "more than one row for a (work_package, period)"
+  period_outside_calendar: "a period outside the vocabulary"
+  varies_within_path: "under `per_path: once`, a path's rows carry different amounts"
+
+limits:
+  # Counted on the rows read, after the scope and window filter: a 422 `asset_too_large`.
+  max_rows: {env: FIN_ASSET_MAX_ROWS, default: 100000}
+
+cadence:
+  # The engine sets none and caches nothing: the next read after a materialization sees it.
+  set_by: producer
+  # The IO manager writes overwrite_or_ignore; a smaller rewrite can leave an old part file,
+  # which reads as duplicate rows and a refusal.
+  write: whole_table
+
+tags:
+  required: []
+  # The broker takes `datahub/urn` over the derived URN, so it is set only to the true one.
+  datahub/urn: only_if_true
