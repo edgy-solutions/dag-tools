@@ -26,6 +26,46 @@ it back are named.
 
 ### Added
 
+- **Contract mapping — `ContractMappingComponent`.** A data contract plus a source schema in,
+  the dbt model that satisfies the contract and the tests that prove it still does out. New pure
+  module `dag_tools.contract_mapping` (no Dagster, no dbt, no IO: documents in as dicts, a
+  `MappingPlan` out), new export `dag_tools.ContractMappingComponent`. The same plan also runs
+  over Python rows (`apply_to_rows` / `check_rows`), which is how a mapping is proven with no
+  warehouse. Runnable example with no warehouse, no dbt project and no credentials:
+  `examples/contract_mapping`.
+
+  **With a file contract the whole plan is built at the code location load.** A mapping that
+  reads a column the source does not have, drops a column a governed read selects (required,
+  grain or scope), or disagrees with the contract about write cadence fails there — not in a run
+  an hour later. A **served** contract (iagent's JSON) is fetched at materialization instead,
+  because a code location must not fail to load because a service is down; set
+  `expect_contract_id` there, since what arrives is not under the operator's control and a
+  service that starts serving a different document would otherwise silently re-point the
+  mapping.
+
+  The line between a refusal and a note is whether the emitted artifact would be **wrong**. A
+  test that could not be written — the contract names its period calendar rather than listing
+  it, no `warehouse_types`, no `non_finite_predicate` — is a note on the materialization, and
+  **nothing is guessed to fill the gap**: no default warehouse type, no default cast, no default
+  non-finite predicate, no inferred calendar. `config.contract.enforced` is emitted only when
+  every column has a declared type.
+
+  The **asset of record is the physical platform's dataset URN**, from the contract, never a
+  `dagster` platform URN; the source table's URN and the Dagster asset attach as lineage.
+
+  One hazard worth knowing before shipping a scaled integer column: the row route **refuses** a
+  scaled value that is not whole, while a SQL `cast` to an integer type **rounds** in most
+  dialects. The cast is your own SQL from `cast_templates` and this library owns no dialect, so
+  this is documented rather than papered over — if silent rounding is unacceptable, the cast is
+  where the check goes.
+
+  `prune` is off by default: the component writes into a directory it does not own, and deleting
+  a test someone wrote by hand is worse than leaving a stale one. With `prune: true` only files
+  named `<model>__...` are ever removed.
+
+  Verified on `dagster==1.10.19` as well as current — the whole test module set runs identically
+  on both, same plan hash, and the example loads and materializes on both.
+
 - **Q2 IO round-trip probe.** `dagtools qual synthetic` generates a probe per RUNNABLE
   class; `dagtools qual run` runs it after the Q2 pass, loading the representative's output
   through its real IO manager and recording type and columns. It writes nothing. New
