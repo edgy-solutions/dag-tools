@@ -54,6 +54,31 @@ DOCUMENT_KEY = "classification_dimensions"
 #: inside come from the document.
 TERM_URN_PREFIX = "urn:li:glossaryTerm:"
 
+#: The one dimension whose values form a ladder: a label carries exactly one
+#: of them, a reader cleared at a value is cleared at every less restrictive
+#: one, and composition takes the most restrictive of its inputs.
+HIERARCHICAL = "hierarchical"
+
+#: A set a reader needs *one* of. More values released to more readers, so
+#: the most restrictive combination of two is their INTERSECTION -- and an
+#: empty one releases to nobody rather than to everybody.
+PERMISSIVE_SET = "permissive_set"
+
+#: A set a reader needs *all* of. More values admit fewer readers, so the
+#: most restrictive combination is their UNION, and an empty one adds no
+#: restriction of its own.
+RESTRICTIVE_SET = "restrictive_set"
+
+#: A set a reader must hold *none* of. Same direction as a restrictive set --
+#: more values admit fewer readers -- so composition unions, and an empty one
+#: adds no restriction.
+EXCLUSIONARY = "exclusionary"
+
+#: Every type a dimension may declare. A document naming anything else is
+#: refused: a type this library does not know is a composition rule it would
+#: have to guess, and guessing it is how a column gets released by accident.
+DIMENSION_TYPES = (HIERARCHICAL, PERMISSIVE_SET, RESTRICTIVE_SET, EXCLUSIONARY)
+
 
 class DimensionsError(ValueError):
     """The mounted document cannot be used, or a label disagrees with it."""
@@ -113,6 +138,16 @@ class Dimension(BaseModel):
             "least restrictive first. Exactly one dimension sets it."
         ),
     )
+    type: Optional[str] = Field(
+        default=None,
+        description=(
+            "How a reader is checked against this dimension, and so how two "
+            "labels compose: one of `hierarchical`, `permissive_set` (holds "
+            "one of), `restrictive_set` (holds all of), `exclusionary` "
+            "(holds none of). Left out, a dimension is a restrictive set -- "
+            "which is what every untyped dimension already meant."
+        ),
+    )
     values: List[DimensionValue] = Field(
         default_factory=list,
         description=(
@@ -121,6 +156,38 @@ class Dimension(BaseModel):
             "ratified -- which makes the document unusable, not permissive."
         ),
     )
+
+    @model_validator(mode="after")
+    def _type_agrees_with_the_flag(self) -> "Dimension":
+        """Reconcile `type:` with the older `hierarchical:` flag.
+
+        Both spellings stay readable because the document is governance's,
+        not ours, and the ladder was declared by a flag before the other
+        three types existed. They may not disagree: a row saying both
+        `hierarchical: true` and `type: permissive_set` has no reading a
+        library should pick, and the one it picked would decide who gets
+        served.
+        """
+        if self.type is not None:
+            declared = str(self.type).strip()
+            if declared not in DIMENSION_TYPES:
+                raise ValueError(
+                    f"dimension {self.id!r} declares type {self.type!r}; the "
+                    f"types are {list(DIMENSION_TYPES)}. A type this library "
+                    "does not know is a composition rule it would have to "
+                    "guess"
+                )
+            if declared == HIERARCHICAL:
+                self.hierarchical = True
+            elif self.hierarchical:
+                raise ValueError(
+                    f"dimension {self.id!r} sets `hierarchical: true` and "
+                    f"`type: {declared}`; the two disagree about how a reader "
+                    "is checked against it, and which one wins would decide "
+                    "who gets served"
+                )
+            self.type = declared
+        return self
 
     @model_validator(mode="after")
     def _ids_are_present_and_distinct(self) -> "Dimension":
@@ -154,22 +221,122 @@ class Dimension(BaseModel):
     def value(self, value_id: str) -> DimensionValue:
         return self.values[self.rank(value_id)]
 
+    @property
+    def kind(self) -> str:
+        """The declared type, or what an undeclared one has always meant.
+
+        A row that declares nothing is a restrictive set, which is exactly
+        the conjunctive reading every untyped dimension carried before the
+        four types were named -- so a document already mounted means today
+        what it meant yesterday.
+        """
+        if self.type:
+            return self.type
+        return HIERARCHICAL if self.hierarchical else RESTRICTIVE_SET
+
     def most_restrictive(self) -> Tuple[str, ...]:
         """The most restrictive label this dimension can carry.
 
-        On the ladder that is its last row. On an unordered dimension it is
-        *every* value: a label's values are conjunctive, so requiring them
-        all is the narrowest a column can be -- and the deny-by-default
-        reading of a column nobody labelled.
+        On the ladder, its last row. On a restrictive or exclusionary set,
+        *every* value: a reader must hold all of them (or none of them), so
+        naming them all is the narrowest a column can be. On a permissive
+        set, *none*: a reader needs one of the set, so the empty set releases
+        to nobody -- which makes empty the floor there and the ceiling
+        everywhere else.
+
+        That inversion is the one place the four types do not line up, and it
+        is why this is a method on the dimension rather than a branch at each
+        call site. It is also the deny-by-default reading of a column nobody
+        labelled.
         """
         if not self.values:
             raise DimensionsError(
                 f"dimension {self.id!r} declares no values, so it has no most "
                 "restrictive one; the mounted document cannot be used"
             )
-        if self.hierarchical:
+        kind = self.kind
+        if kind == HIERARCHICAL:
             return (self.value_ids[-1],)
+        if kind == PERMISSIVE_SET:
+            return ()
         return self.value_ids
+
+    def least_restrictive(self) -> Tuple[str, ...]:
+        """The widest label this dimension can carry. The mirror of above."""
+        if not self.values:
+            raise DimensionsError(
+                f"dimension {self.id!r} declares no values, so it has no "
+                "least restrictive one; the mounted document cannot be used"
+            )
+        kind = self.kind
+        if kind == HIERARCHICAL:
+            return (self.value_ids[0],)
+        if kind == PERMISSIVE_SET:
+            return self.value_ids
+        return ()
+
+    def ordered(self, values: Sequence[str]) -> Tuple[str, ...]:
+        """`values` deduplicated and put in the document's own order.
+
+        Every label this module hands out is ordered this way, so two
+        operators who wrote the same label in a different order publish the
+        same bytes -- and a derived label can be compared to a declared one
+        by equality.
+        """
+        ranked = sorted({value: self.rank(value) for value in values}.items(),
+                        key=lambda item: item[1])
+        return tuple(value for value, _ in ranked)
+
+    def at_most_as_restrictive_as(
+        self, values: Sequence[str], other: Sequence[str]
+    ) -> bool:
+        """Does `values` admit at least every reader `other` admits?
+
+        The partial order every other rule here derives from. The question is
+        the same in all four types, which is what lets composition be one
+        function rather than a branch per type -- only the direction the set
+        operators point changes.
+        """
+        mine, theirs = set(values), set(other)
+        kind = self.kind
+        if kind == HIERARCHICAL:
+            return max((self.rank(v) for v in mine), default=-1) <= max(
+                (self.rank(v) for v in theirs), default=-1
+            )
+        if kind == PERMISSIVE_SET:
+            # A reader needs one of the set, so a wider set admits more.
+            return mine >= theirs
+        # Needs all of them, or none of them: a wider set admits fewer.
+        return mine <= theirs
+
+    def most_restrictive_of(self, sets: Sequence[Sequence[str]]) -> Tuple[str, ...]:
+        """Compose: the narrowest label admitting only readers every input admits.
+
+        The join of `at_most_as_restrictive_as`, which works out as the
+        maximum on the ladder, the INTERSECTION on a permissive set, and the
+        UNION on a restrictive or exclusionary one. Composing nothing gives
+        this dimension's least restrictive label -- the identity of the join,
+        so a dimension no input declares adds no restriction. A caller with
+        no inputs *at all* is a different problem, and `propagate` refuses it
+        there rather than letting an empty product look like a decision.
+        """
+        kind = self.kind
+        if not sets:
+            return self.least_restrictive()
+        if kind == HIERARCHICAL:
+            ranked = [max(self.rank(v) for v in values) for values in sets if values]
+            if not ranked:
+                return ()
+            return (self.value_ids[max(ranked)],)
+        if kind == PERMISSIVE_SET:
+            combined = set(sets[0])
+            for values in sets[1:]:
+                combined &= set(values)
+        else:
+            combined = set()
+            for values in sets:
+                combined |= set(values)
+        return self.ordered(combined)
 
 
 @dataclass(frozen=True)
@@ -191,6 +358,17 @@ class Label:
             if dimension == dimension_id:
                 return values
         return ()
+
+    def declares(self, dimension_id: str) -> bool:
+        """Is the dimension in the label at all?
+
+        Worth asking separately from `values_for`, which answers `()` both
+        for a dimension the label leaves out and for one it carries with no
+        values. On a permissive set those mean opposite things -- no
+        restriction, and nobody -- so no caller may tell them apart by
+        truthiness.
+        """
+        return any(dimension == dimension_id for dimension, _ in self.pairs)
 
     def __bool__(self) -> bool:
         return bool(self.pairs)
@@ -376,9 +554,7 @@ class DimensionSet:
                     "on a ladder is ambiguous -- a range, or a maximum? -- so "
                     "it is refused rather than interpreted"
                 )
-            ranked = sorted({value: dimension.rank(value) for value in values}.items(),
-                            key=lambda item: item[1])
-            resolved[dimension.id] = tuple(value for value, _ in ranked)
+            resolved[dimension.id] = dimension.ordered(values)
         ladder = self.hierarchical
         if ladder.id not in resolved:
             raise DimensionsError(

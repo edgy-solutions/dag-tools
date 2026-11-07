@@ -7,15 +7,23 @@
 # deliberately shaped like placeholders -- `rung_*`, `facet_*` -- so that
 # nothing here can be mistaken for a real policy's words.
 #
-# Two things about the shape are load-bearing:
+# Three things about the shape are load-bearing:
 #
 #   * EXACTLY ONE dimension sets `hierarchical: true`. That is the ladder:
 #     its values are ordered least restrictive FIRST, a label takes exactly
 #     one of them, and a reader's clearance is a ceiling on it.
-#   * Every other dimension is unordered, and a label's values on it are
-#     CONJUNCTIVE -- a reader must hold all of them. Which is why the most
-#     restrictive label on an unordered dimension is every value at once,
-#     and why an unlabelled column (deny by default) comes out that way.
+#   * Every other dimension declares HOW a reader is checked against it,
+#     with `type:` -- `restrictive_set` (the reader holds all of a label's
+#     values), `permissive_set` (holds at least one) or `exclusionary`
+#     (holds none). Leaving it out means `restrictive_set`, which is what
+#     every unordered dimension meant before the types were named.
+#   * The type is also how two labels compose downstream, and the three do
+#     not all point the same way: a restrictive or exclusionary set unions,
+#     a permissive one INTERSECTS, because a wider permissive set admits
+#     MORE readers. For the same reason the most restrictive label is every
+#     value of a restrictive or exclusionary dimension and NO value of a
+#     permissive one -- which is what an unlabelled column (deny by
+#     default) comes out as.
 classification_dimensions:
   - id: example_ladder
     hierarchical: true
@@ -31,6 +39,9 @@ classification_dimensions:
         ratified_by: example-board
 
   - id: example_facet
+    # Spelled out although it is the default, because a reader of this file
+    # should not have to know what an omitted type means.
+    type: restrictive_set
     values:
       - id: facet_x
         reason: A handling obligation a reader must hold.

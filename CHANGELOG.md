@@ -12,6 +12,30 @@ it back are named.
 
 ## Unreleased
 
+### Added
+
+- **Classification propagation (ADR-0064 steps 4b/4c), as a pure engine.**
+  `dag_tools.warehouse_source.propagate` composes a derived column's label
+  from the source columns it read: column lineage in, one decision per output
+  column out, with no Dagster, no catalog and no warehouse. A column with no
+  declared lineage falls back to the table max rather than to nothing.
+- **The classification dimensions document declares a `type:` per dimension**
+  — `hierarchical`, `permissive_set` (a reader holds at least one of the
+  label's values), `restrictive_set` (holds all of them) or `exclusionary`
+  (holds none) — following ADR-0064's 2026-11-06 amendment aligning it to
+  OpenDDIL ADR-0055. Composition is each type's own: `max` on the ladder,
+  union on a restrictive or exclusionary set, and **intersection** on a
+  permissive one, since a wider permissive set admits more readers. A
+  dimension that declares no type is a restrictive set, which is exactly what
+  every unordered dimension already meant, so a document already mounted
+  means today what it meant yesterday.
+- **Downgrade declarations.** No downgrade is automatic: a standing one is a
+  declared rule carrying a named owner and a reason, and each application
+  records the rule, the owner, the reason and both the derived and the
+  published label. A rule that names no owner, gives no reason, aims at a
+  column the asset does not produce, tightens any dimension or changes
+  nothing is refused rather than recorded.
+
 ### Behaviour change
 
 - **A RUNNABLE class with no round-trip coverage now blocks GO in `dagtools qual report`.**
