@@ -1,0 +1,17 @@
+type: dag_tools.TaggedWarehouseComponent
+
+# Unchanged from the step-2 example. It is here because the observation reads
+# through it: a schema observation is a read, and one that arrived untagged
+# would be counted as unexplained by step 1's audit.
+attributes:
+  tag:
+    placement: comment
+
+  principal:
+    pipeline_name: warehouse_source_demo
+
+  connection:
+    drivername: sqlite
+    database: "{{ env('WAREHOUSE_SOURCE_DB') }}"
+
+  resource_key: warehouse
