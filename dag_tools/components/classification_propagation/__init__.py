@@ -1,0 +1,43 @@
+from dag_tools.components.classification_propagation.component import (
+    ClassificationPropagationComponent,
+    build_propagation_sensor,
+    classification_document,
+    declared_lineage,
+    emit_propagation,
+    failure_metadata,
+    mcps_for,
+    observation_metadata,
+    output_columns,
+    propagate_dataset,
+    propagation_properties,
+    published_labels,
+    rules_for,
+    vocabulary_terms,
+)
+from dag_tools.components.classification_propagation.schema import (
+    ClassificationPropagationSpec,
+    DatasetBlock,
+    DowngradeBlock,
+    PropagationCatalogBlock,
+)
+
+__all__ = [
+    "ClassificationPropagationComponent",
+    "ClassificationPropagationSpec",
+    "DatasetBlock",
+    "DowngradeBlock",
+    "PropagationCatalogBlock",
+    "build_propagation_sensor",
+    "classification_document",
+    "declared_lineage",
+    "emit_propagation",
+    "failure_metadata",
+    "mcps_for",
+    "observation_metadata",
+    "output_columns",
+    "propagate_dataset",
+    "propagation_properties",
+    "published_labels",
+    "rules_for",
+    "vocabulary_terms",
+]

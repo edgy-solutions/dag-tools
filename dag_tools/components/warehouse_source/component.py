@@ -131,7 +131,23 @@ def dimensions_for(
     against no document would instead claim a classification nobody ratified.
     So the materialization fails with the path named.
     """
-    configured = spec.classification.dimensions_file
+    return dimensions_from(
+        spec.classification.dimensions_file, component_dir, required=required
+    )
+
+
+def dimensions_from(
+    configured: Optional[str],
+    component_dir: Optional[str],
+    *,
+    required: bool,
+) -> Optional[DimensionSet]:
+    """The same resolution, from the path alone.
+
+    Step 4b/4c reads the same document through the same block, and two
+    resolutions of one operator intent would eventually differ -- in which
+    path wins, or in what an absent mount does.
+    """
     explicit = (
         _resolve_path(configured, component_dir) if configured else None
     )

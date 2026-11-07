@@ -12,6 +12,58 @@ it back are named.
 
 ## Unreleased
 
+### Added
+
+- **Classification propagation (ADR-0064 steps 4b/4c), as a pure engine.**
+  `dag_tools.warehouse_source.propagate` composes a derived column's label
+  from the source columns it read: column lineage in, one decision per output
+  column out, with no Dagster, no catalog and no warehouse. A column with no
+  declared lineage falls back to the table max rather than to nothing.
+- **`ClassificationPropagationComponent`** — the YAML surface over that
+  engine, and a new export `dag_tools.ClassificationPropagationComponent`. It
+  builds **one sensor and no assets**: for each derived dataset it watches,
+  every new materialization is read for its `dagster/column_lineage`, each
+  output column's label is composed from the source columns that column came
+  from, and the result is published to the catalog against the dataset's own
+  physical URN (a `dagster` one is refused) and recorded against the asset as
+  an observation. What *builds* the derived table is the deployment's own
+  business; this component neither owns nor materializes it. Published as two
+  **patch** aspects — `datasetProperties` and `editableSchemaMetadata`, the
+  latter removing every vocabulary term it does not set, since add-only would
+  leave a stricter term behind and void a downgrade. The sensor ships
+  **stopped**, re-reads the dimensions document every tick, isolates one
+  dataset's failure from the others, and retries a failing dataset on later
+  ticks without re-materializing it. `dry_run` composes and records everything
+  and emits nothing. Chained propagation — a derived dataset as another's
+  source — is not supported. Which upstreams carry labels is declared per
+  dataset, not inferred from the asset graph.
+- **Source-side label lookups read the observation log as well as the
+  materialization log.** A step-4a source is an observable source asset, so
+  observing it emits an `AssetObservation` and never a materialization: a
+  materializations-only lookup refused every real 4a source with "publishes no
+  label set", a wiring failure wearing a labelling failure's words. Found by
+  building the example, not by review.
+- **`examples/warehouse_source` now runs both halves end to end** against
+  sqlite with no catalog and no credentials: the labelled source, plus a
+  derived table whose three columns show composition from column lineage,
+  composition followed by a declared downgrade, and the table-max fallback.
+- **The classification dimensions document declares a `type:` per dimension**
+  — `hierarchical`, `permissive_set` (a reader holds at least one of the
+  label's values), `restrictive_set` (holds all of them) or `exclusionary`
+  (holds none) — following ADR-0064's 2026-11-06 amendment aligning it to
+  OpenDDIL ADR-0055. Composition is each type's own: `max` on the ladder,
+  union on a restrictive or exclusionary set, and **intersection** on a
+  permissive one, since a wider permissive set admits more readers. A
+  dimension that declares no type is a restrictive set, which is exactly what
+  every unordered dimension already meant, so a document already mounted
+  means today what it meant yesterday.
+- **Downgrade declarations.** No downgrade is automatic: a standing one is a
+  declared rule carrying a named owner and a reason, and each application
+  records the rule, the owner, the reason and both the derived and the
+  published label. A rule that names no owner, gives no reason, aims at a
+  column the asset does not produce, tightens any dimension or changes
+  nothing is refused rather than recorded.
+
 ### Behaviour change
 
 - **A RUNNABLE class with no round-trip coverage now blocks GO in `dagtools qual report`.**

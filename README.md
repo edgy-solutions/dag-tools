@@ -698,6 +698,95 @@ broker will answer unlabelled.
 Runnable example, sqlite, no credentials, no catalog:
 [`examples/warehouse_source`](examples/warehouse_source).
 
+### 16. Classification Propagation (`ClassificationPropagationComponent`)
+
+Section 15 labels a source, where a human decided what the labels **are**.
+This labels everything downstream of it, where nobody decides anything: the
+label of a derived column is a consequence of what it read.
+
+The component builds **one sensor** and no assets. For each derived dataset it
+watches, every new materialization is read for its `dagster/column_lineage`,
+each output column's label is composed from the source columns that column
+came from, and the result is published against the dataset's own URN and
+recorded against the asset. What *builds* the derived table — dbt, dlt, a
+Python asset — is the deployment's business and this component neither owns
+nor materializes it.
+
+```yaml
+# components/propagation/component.yaml
+type: dag_tools.ClassificationPropagationComponent
+attributes:
+  datasets:
+    - asset_key: marts/party_exposure         # key parts joined by '/'
+      # Where the DERIVED data lives: the physical platform's URN, never a
+      # `dagster` one -- refused at the load, same as section 15.
+      dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:sqlite,party_exposure,DEV)"
+      # DECLARED, not read off the asset graph: which upstreams carry labels
+      # is a policy fact. A lineage dep naming an unlisted source is refused.
+      sources: [party_extract]
+      downgrades:
+        - id: state_total_is_not_a_party
+          owner: example-board                 # all three are required
+          reason: "A state-level sum does not identify a party."
+          columns: [exposure_total]
+          label:
+            example_ladder: rung_internal      # lower on the ladder
+            example_facet: []                  # and the set is CLEARED
+  classification:
+    require_ratified: false
+  catalog:
+    server: "{{ env('DATAHUB_GMS_URL') }}"
+    token: "{{ env('DATAHUB_TOKEN') }}"
+  default_status: STOPPED                      # the default, deliberately
+```
+
+**Composition only ever tightens, and the directions differ.** The
+hierarchical dimension takes the highest rung of its inputs. A restrictive or
+exclusionary set **unions**. A permissive set **intersects** — a wider
+permissive set admits more readers, so composing two of them keeps only what
+both allow. The dimension types come off the mounted document (`type:
+restrictive_set | permissive_set | exclusionary`, defaulting to
+`restrictive_set`), and this library still names no dimension and no value.
+
+**A column with no lineage entry publishes the table's ceiling** — the
+composition of every labelled column of every source the asset read, which
+includes any column published deny-by-default. The decision records which
+basis it used (`column_lineage` or `table_max`) and the exact source columns,
+so a coarse label is visible as a coarse label rather than as a wrong one.
+Composing *no* labels at all is refused: a source that has published no label
+set fails the dataset rather than contributing nothing, because an unlabelled
+source is not an unrestricted one.
+
+**Nothing is ever widened except by a declared rule.** A `downgrades` entry is
+the only thing that can publish a column wider than it derives, so `id`,
+`owner` and `reason` are required and the id travels on the published
+decision. Two rules reaching one column are refused rather than ordered —
+which one the record credits decides who is accountable — and a rule that
+would make any dimension *more* restrictive is refused as a re-label. A
+dimension the rule omits keeps what the data derived; an empty set **clears**
+that dimension, because an empty set is a value and not an omission.
+
+Published as **two patch aspects**, never a replace: `datasetProperties`
+(`classification`, `classification_origin: propagated`, the sources, the
+document's digest) and `editableSchemaMetadata` (a glossary term per column
+per label value, *plus a remove for every other term in the vocabulary* — add-
+only would leave a stricter term behind and void the downgrade). A patch
+rather than a full aspect so a crawler's own metadata survives.
+
+The sensor is **stopped by default**, the document is re-read **every tick**
+(a ConfigMap can move between a deploy and a tick), one dataset's failure
+never stops the others, and a failing dataset is retried on later ticks
+without re-materializing it — so a fixed rule publishes on the next tick. Set
+`dry_run: true` to compose and record the whole decision and emit nothing.
+
+Limitation: a derived dataset cannot yet be another's source. The component
+records its decisions as observations and reads its sources' published label
+sets, so chained propagation is not supported.
+
+The same runnable example carries it, with one derived table whose three
+columns show the two bases and one downgrade:
+[`examples/warehouse_source`](examples/warehouse_source).
+
 ## Setup & Development
 
 This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. We use `uv` for all dependency management.

@@ -1,10 +1,19 @@
-# A classified source dataset, observed rather than moved
+# A classified source, and everything downstream of it
 
-A runnable example of `WarehouseSourceComponent`: one source dataset, declared
-in YAML with a classification label on each column, published to the catalog
-under the dataset's own URN — and **observed, not copied**. Materializing it
-counts the rows, names the columns and records an as-of. No row of the source
-reaches Dagster, the catalog, or the process.
+A runnable example of two components, and the pair is the point.
+
+`WarehouseSourceComponent` labels a **source**: one dataset, declared in YAML
+with a classification label on each column, published to the catalog under the
+dataset's own URN — and **observed, not copied**. Materializing it counts the
+rows, names the columns and records an as-of. No row of the source reaches
+Dagster, the catalog, or the process.
+
+`ClassificationPropagationComponent` labels everything **downstream**. Nobody
+declares those labels: the label of a derived column is a consequence of what
+it read. It builds one sensor, reads each derived asset's own column lineage,
+composes every output column's label from the source columns it came from, and
+publishes the result — with a declared downgrade where a human decided the
+aggregate is not the thing it was computed from.
 
 It runs with no warehouse, no catalog, no credentials and no extra dependency.
 **sqlite stands in for the warehouse**, `seed.py` creates the source relation,
@@ -24,7 +33,12 @@ cd dagster_home && dagster dev
 Then **Observe** `party_extract` — it is a source asset, so the button says
 observe, not materialize, and a job that wants it has to name it in its
 selection (`AssetSelection.assets(...)`; `AssetSelection.all()` does not
-include source assets). The observation's metadata is the whole result:
+include source assets). Then **Materialize** `marts/party_exposure`, and turn
+on the `classification_propagation` sensor — it ships stopped, because
+publishing classifications is not something a deployment should start doing
+because a code location loaded.
+
+The observation's metadata is the whole result:
 
 | | |
 |---|---|
@@ -103,6 +117,79 @@ outage into a silent embargo.
 
 To see what would be published without publishing it, set `dry_run: true`. The
 metadata is identical; `catalog_proposals` stays 0.
+
+## What a derived column publishes
+
+`marts/party_exposure` aggregates the source by state. It is **not** a
+dag-tools asset — `dagster_home/derived.py` is ordinary Python, and what builds
+a derived table is the deployment's own business: dbt, dlt, a Python asset.
+All the propagation needs from it is the `dagster/column_lineage` Dagster
+already carries.
+
+Its three columns are the three outcomes:
+
+| column | basis | publishes | why |
+|---|---|---|---|
+| `state` | `column_lineage` | `rung_open` | reads the source's `state`, which is labelled openly |
+| `exposure_total` | `column_lineage` | `rung_internal`, facet cleared | reads `exposure` (`rung_restricted` + `facet_x`), then a **declared downgrade** applies |
+| `party_count` | `table_max` | `rung_restricted`, `[facet_x, facet_y]` | declares no lineage, so it publishes the whole table's ceiling |
+
+`party_count` is the fallback working. With no lineage entry, a column
+publishes the composition of *every* labelled column of every source it read —
+which here includes the unlabelled `loaded_at`, published deny-by-default. It
+is correct and it is coarse, and declaring one more lineage entry is what buys
+the difference.
+
+**Composition only ever tightens.** The hierarchical dimension takes the
+highest rung of its inputs; a restrictive or exclusionary set unions; a
+*permissive* set **intersects**, because a wider permissive set admits more
+readers. Nothing is widened except by a rule.
+
+### The downgrade is declared, with a name on it
+
+```yaml
+downgrades:
+  - id: state_total_is_not_a_party
+    owner: example-board
+    reason: >-
+      A state-level sum does not identify a party, so the aggregate is not
+      the party-level exposure it was computed from.
+    columns: [exposure_total]
+    label:
+      example_ladder: rung_internal
+      example_facet: []
+```
+
+`id`, `owner` and `reason` are all required, because this rule is the only
+thing in the system that can publish a column wider than it derives. The id
+travels on the published decision, so *which rule widened this column, and who
+stood behind it* has an answer that survives the YAML being reorganized. Two
+rules reaching one column are refused rather than ordered — which one the
+record credits decides who is accountable.
+
+The empty `example_facet: []` **clears** that dimension: an empty set is a
+value, not an omission. A dimension the rule says nothing about keeps whatever
+the data derived, which is what `example_facet` would do if that line were
+deleted. A rule that would make any dimension *more* restrictive is refused:
+that is a re-label, not a downgrade.
+
+### The sources are declared, not inferred
+
+```yaml
+sources:
+  - party_extract
+```
+
+Which upstreams carry labels is a policy fact, not a graph fact — not every dep
+publishes a label set. Inferred, an upstream that publishes none would look
+like nothing to propagate from, the ceiling would be composed from a subset of
+the inputs, and the answer would look exactly as correct as the real one. So a
+lineage dep naming a source that is not listed here is **refused**, and so is
+a listed source that has published no label set.
+
+A derived dataset cannot yet be another's source: this component records its
+decisions as observations against the derived asset, and reads its sources'
+published label sets. Chaining propagation is not supported.
 
 ## Nothing here is dag-tools' vocabulary
 
