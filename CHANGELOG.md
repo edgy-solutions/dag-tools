@@ -26,6 +26,21 @@ it back are named.
 
 ### Added
 
+- **OTel -> API sync: a concurrency cap and a bounded retry.** New optional `api:` fields
+  `max_concurrency`, `max_attempts` and `max_retry_seconds` (mapping.yaml or component.yaml;
+  the component wins). `max_concurrency` limits in-flight requests per worker process, per
+  `base_url`, so the effective cap is `max_concurrency x worker replicas`. The wait for a permit
+  is inside the durable step, so a replay never waits. The retry bound turns an exhausted call
+  into a recorded `FAILED` plan (plan hash withheld, delivered calls banked) rather than an
+  invocation that retries forever. Each worker thread now keeps one `requests.Session`, so
+  connections are reused. **The cap and the bound need the new worker image**; an older worker
+  ignores the fields and behaves as before. **No default changed** for the library: with none of
+  the fields set, requests and retries behave exactly as they did. **One chart default
+  changed:** `restateWorker.apiCallPlan.abortTimeoutSeconds` is now `3600` (Restate's own
+  default is 600), exported as `API_CALL_PLAN_ABORT_TIMEOUT_SECONDS`. To get the old behaviour
+  back, set it to `null`. `restateWorker.apiCallPlan.inactivityTimeoutSeconds` defaults to
+  `null` (Restate's default). Setting either needs Restate 1.6 or later (discovery v3).
+
 - **Contract mapping — `ContractMappingComponent`.** A data contract plus a source schema in,
   the dbt model that satisfies the contract and the tests that prove it still does out. New pure
   module `dag_tools.contract_mapping` (no Dagster, no dbt, no IO: documents in as dicts, a
