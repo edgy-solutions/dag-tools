@@ -14,6 +14,32 @@ it back are named.
 
 ### Added
 
+- **The deployment now carries rows a governed read is supposed to REJECT.** The demo surface
+  gains `dag_tools.user_deployment.demo_ev_refusal` — three assets holding one planted error
+  per rule the shipped EV contract declares, each addressed by its own synthetic program, plus
+  a clean control program in the same asset. **No existing signature, export or default
+  changes**; `mesh_demo_assets.build_mesh_demo_io_manager()` is a new export that holds the
+  IO-manager construction `build_demo_defs()` was already doing inline, and the new surface is
+  merged only under `DAG_TOOLS_DEMO_MODE`, so a deployment with the toggle off is byte-for-byte
+  what it was.
+
+  The existing `ev_fixture` is what a read should *accept*. Nothing deployed was what it should
+  *refuse*, which meant every refusal path a governed read has existed only in the reader's own
+  unit tests, over frames that reader had built itself — a reader could agree with itself about
+  a defect no producer is able to emit, and a refusal that fires for the wrong rule looks
+  exactly like one that fires for the right one. The planted rows travel the real
+  CSV -> polars -> parquet -> IO-manager path, so a planted null arrives as a null and a planted
+  NaN as a NaN, and each case is isolated to one rule: a frame carrying two violations proves
+  nothing, because a reader refusing on the first never reaches the second.
+
+  Two of the rules cannot be planted in a program's rows at all — a column's absence and a
+  column's type are properties of the frame, not of a row — so those get an asset each. One is
+  not a producer defect in the first place: the contract says the dataset may hold other
+  programs' rows and that a read which kept them forgot its filter, so that case is the asset
+  holding every program at once. The checks live in `dag_tools_tests/test_demo_ev_refusal.py`
+  and are driven off the contract document, so a rule added there fails the fixture until a
+  case for it is planted.
+
 - **A routing ticket now says which read it is, and over what version of the data.**
   Every ticket the broker issues carries `ticket_id`, `issued_at`, `as_of` and
   `as_of_source`; `dag_tools.cortex_data.client.CortexDataClient` gains

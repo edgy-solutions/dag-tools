@@ -245,9 +245,20 @@ def _build_combined_defs() -> Definitions:
         # project will not parse.
         from dag_tools.user_deployment.demo_dbt_assets import build_demo_dbt_defs
 
+        # The refusal fixture rides the same switch, and must: it produces rows
+        # that are *meant* to be rejected, one planted error per contract rule,
+        # which is the one thing no production deployment should ever carry.
+        # It is also the only deployed exercise of a governed read's refusal
+        # paths — before it, every one of them existed only in a reader's own
+        # unit tests over frames that reader built itself.
+        from dag_tools.user_deployment.demo_ev_refusal import build_refusal_defs
+
         demo = build_demo_defs()
         base = Definitions.merge(
-            demo, build_demo_dbt_defs(), _build_singleton_defs()
+            demo,
+            build_demo_dbt_defs(),
+            build_refusal_defs(),
+            _build_singleton_defs(),
         )
     else:
         base = _build_singleton_defs()

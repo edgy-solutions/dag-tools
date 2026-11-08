@@ -98,6 +98,13 @@ contract does not declare cannot be acted on by anyone reading the contract, so
 uniqueness id is derived from the contract's own grain rather than written down
 in this library.
 
+No row in the shipped fixture trips any of the nine — it is the accepted case,
+and a test suite that has only ever been run over rows that pass it has not been
+run. `dag_tools/user_deployment/demo_ev_refusal.py` is the other half: a
+demo-gated surface carrying one planted error per rule this contract declares,
+each in its own synthetic program so a refusal has an address, alongside a clean
+control program. Nothing in it is a real program's figures either.
+
 ## Writing into a dbt project
 
 Replace the `emit:` block with a project directory, as the comments in
