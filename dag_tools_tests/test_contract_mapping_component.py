@@ -102,6 +102,16 @@ def _mapping(components_dir: Path) -> Path:
     return components_dir / "contract_mapping" / "mapping.yaml"
 
 
+def _contract(components_dir: Path) -> Path:
+    """The contract the component file reaches by a relative path.
+
+    Outside the components directory on purpose: a contract is the reader's
+    document and the mapping is the producer's, and the example keeps them
+    apart so neither looks like the other's detail.
+    """
+    return components_dir.parents[1] / "contracts" / "ev_fixture.yaml"
+
+
 def _edit(path: Path, old: str, new: str) -> None:
     """Replace an anchor that occurs exactly once.
 
@@ -171,19 +181,53 @@ def test_the_materialization_records_the_physical_platform_as_the_asset_of_recor
     assert metadata["asset_of_record"].value != metadata["source_dataset"].value
 
 
-def test_the_example_reports_the_contracts_forward_edge_rather_than_hiding_it(example):
-    """Two declared-not-produced columns, itemised rather than counted.
+def test_the_examples_forward_edge_report_is_published_EMPTY_not_omitted(example):
+    """The example closed its forward edge, and the report says so EMPTILY.
 
-    A count tells an operator a number; the names tell them what a reader can
-    be written against next.
+    The fixture now ships `status_period` and `eac_reported`, so the example
+    mapping produces them and this report is empty -- which is a passing
+    assertion for the wrong reason unless the empty case is published as an
+    empty report rather than omitted. An operator who finds no
+    `declared_not_produced` key cannot tell "nothing is forward-declared" from
+    "this plan does not track it". The test below re-opens the edge and proves
+    the names arrive when there are any.
     """
     defs = _load(example)
     result = dg.materialize(list(defs.assets or []))
     metadata = result.asset_materializations_for_node(ASSET)[0].metadata
-    assert metadata["declared_not_produced"].value["shown"] == [
-        "status_period",
-        "eac_reported",
-    ]
+    assert metadata["declared_not_produced"].value == {"count": 0, "shown": []}
+
+
+def test_a_forward_declared_column_is_reported_by_NAME_rather_than_hiding_it(example):
+    """A column the contract declares and the producer does not serve yet.
+
+    Reached by un-setting one `produced_since` on the copy, because the
+    shipped example has no forward edge left to show. A count tells an
+    operator a number; the name tells them what a reader can be written
+    against next.
+    """
+    _edit(
+        _contract(example),
+        'name: eac_reported, type: integer, unit: USD, required: false, produced_since: "0.13.0"',
+        "name: eac_reported, type: integer, unit: USD, required: false, produced_since: null",
+    )
+    _edit(
+        _mapping(example),
+        """  eac_reported:
+    from: EAC_REPORTED_CENTS
+    transform: scale
+    factor: "0.01"
+""",
+        "",
+    )
+
+    defs = _load(example)
+    result = dg.materialize(list(defs.assets or []))
+    metadata = result.asset_materializations_for_node(ASSET)[0].metadata
+    assert metadata["declared_not_produced"].value == {
+        "count": 1,
+        "shown": ["eac_reported"],
+    }
 
 
 def test_the_notes_themselves_are_published_not_just_how_many(example):
@@ -440,12 +484,17 @@ def test_the_files_land_where_the_emit_block_says(example, tmp_path):
     models = sorted(p.name for p in (project / "models" / "contracts").iterdir())
     tests = sorted(p.name for p in (project / "tests" / "contracts").iterdir())
     assert models == ["ev_fixture.sql", "ev_fixture.yml"]
-    assert len(tests) == 8
+    # One file per singular test the plan emits: one per constant-within pair
+    # and one of each other kind. Pinned so a test the plan stops emitting is a
+    # failure here rather than a shorter list that still starts with the prefix.
+    assert len(tests) == 9
     assert all(name.startswith("ev_fixture__") for name in tests)
 
     metadata = result.asset_materializations_for_node(ASSET)[0].metadata
     assert metadata["dry_run"].value is False
-    assert metadata["files_written"].value["count"] == 10
+    # Counted off the disk, not restated: a metadata count that drifts from
+    # what landed is the one thing this assertion is for.
+    assert metadata["files_written"].value["count"] == len(models) + len(tests)
 
 
 def test_a_dbt_project_directory_that_is_not_there_is_refused(example, tmp_path):

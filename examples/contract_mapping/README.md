@@ -22,12 +22,12 @@ Materialize `ev_fixture_contract_mapping`. The metadata is the report:
 | `contract_id` / `contract_version` | `ev_fixture` / `1.0.0` |
 | `asset_of_record` | the contract's own dataset URN |
 | `source_dataset` | the raw table's URN, attached as lineage |
-| `columns_produced` | 11 |
-| `tests_emitted` | 11 |
+| `columns_produced` | 13 |
+| `tests_emitted` | 12 |
 | `tests_under_undeclared_rules` | 0 |
-| `declared_not_produced` | 2 |
-| `plan_hash` | `0d042688311f` |
-| `rendered` | 10 files, in full |
+| `declared_not_produced` | 0 |
+| `plan_hash` | `5ad849ac21f5` |
+| `rendered` | 11 files, in full |
 | `files_written` | 0 — this example is a dry run |
 
 ## The two URNs, and why they are different
@@ -56,11 +56,16 @@ the contract about one thing:
   a decimal, never a float — a unit conversion of money through a binary float
   is how a total stops reconciling. The contract declares those columns integer,
   so a scaled value that is not whole is refused rather than rounded.
-* **Two columns the contract declares and nothing produces yet**
-  (`produced_since: null`), so the mapping leaves them out and the plan reports
-  them under `declared_not_produced`. A contract declares columns ahead of their
-  producer so readers can be written against them; a mapping is not wrong for
-  not having them yet, but the forward edge has to stay visible.
+
+And one thing that is not a disagreement: a contract can declare a column
+**ahead of its producer** (`produced_since: null`), so readers can be written
+against it before anything serves it. A mapping is not wrong for leaving such a
+column out; the plan reports it under `declared_not_produced` by name, so the
+forward edge stays visible rather than looking like an omission. This contract
+had two of them — `status_period` and `eac_reported` — and the fixture now
+ships both, so the report is empty here. It is published as an empty report
+rather than left out: an operator who finds no `declared_not_produced` cannot
+tell "nothing is forward-declared" from "this plan does not track it".
 
 ## What the plan refuses, and what it only reports
 
@@ -77,7 +82,7 @@ cast, no default non-finite predicate, and no inferred period calendar, because
 a wrong guess at any of them emits SQL that fails at the warehouse for a reason
 that has nothing to do with the data.
 
-## The 11 tests
+## The 12 tests
 
 Three of them are the model contract itself — column presence, declared types
 and not-null — rendered into `ev_fixture.yml` under `config.contract.enforced`,
@@ -85,7 +90,7 @@ which dbt checks before the model lands rather than after. `enforced: true` is
 only emitted when **every** column has a declared warehouse type; a half-typed
 contract is not a contract.
 
-The other eight are singular tests under `tests/`, each named
+The other nine are singular tests under `tests/`, each named
 `<model>__<rule_id>__<columns>.sql` and each carrying the rule id it fails
 under, in a comment and as a selected column. A failure that names an id the
 contract does not declare cannot be acted on by anyone reading the contract, so
@@ -130,6 +135,13 @@ checkout — which makes drift possible, so the canary in
 on the machine. Point `DAGTOOLS_UPSTREAM_EV_CONTRACT` at a path, or keep an
 `invincible-agent` checkout beside this one. With neither it **skips**: a canary
 that silently passes when it cannot find its target is worse than no canary.
+
+**`produced_since` is the one field dag-tools' own release moves**, because it
+names the dag-tools release whose fixture carries the column — so when the
+fixture gained `status_period` and `eac_reported`, their stamps went from `null`
+to a version here. That is a change to a governed document and the upstream copy
+needs the same two tokens; until it has them the canary above is what will say
+so. Nothing else in this file is ever edited on this side.
 
 Every object name in this example belongs to that fixture. In a deployment the
 names are the operator's own, in the operator's own YAML, with no default
