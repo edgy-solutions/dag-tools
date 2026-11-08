@@ -208,7 +208,7 @@ def test_a_forward_declared_column_is_reported_by_NAME_rather_than_hiding_it(exa
     """
     _edit(
         _contract(example),
-        'name: eac_reported, type: integer, unit: USD, required: false, produced_since: "0.13.0"',
+        'name: eac_reported, type: integer, unit: USD, required: false, produced_since: "0.12.0"',
         "name: eac_reported, type: integer, unit: USD, required: false, produced_since: null",
     )
     _edit(

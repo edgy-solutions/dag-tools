@@ -65,12 +65,12 @@ columns:
   - {name: eac, type: integer, unit: USD, required: false, produced_since: "0.11.0",
      constant_within: [work_package], additive_over: [work_package]}
   # Ruled 2026-11-05 (ADR-0065/0066 dispatch).
-  - {name: status_period, type: string, required: false, produced_since: "0.13.0",
+  - {name: status_period, type: string, required: false, produced_since: "0.12.0",
      constant_within: [program_id]}
   # The EAC as stated at each period's status: a stock, so it adds across work packages at one
   # period and never across periods. A new column, because `eac` must stay constant per work
   # package for the rows that read it once per path.
-  - {name: eac_reported, type: integer, unit: USD, required: false, produced_since: "0.13.0",
+  - {name: eac_reported, type: integer, unit: USD, required: false, produced_since: "0.12.0",
      additive_over: [work_package]}
 
 # Every rule the reader refuses on, by the id its 502 `asset_contract_violation` names. A broken
