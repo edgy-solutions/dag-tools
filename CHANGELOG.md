@@ -10,7 +10,7 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.12.0 — 2026-11-07
 
 ### Added
 
@@ -63,20 +63,6 @@ it back are named.
   published label. A rule that names no owner, gives no reason, aims at a
   column the asset does not produce, tightens any dimension or changes
   nothing is refused rather than recorded.
-
-### Behaviour change
-
-- **A RUNNABLE class with no round-trip coverage now blocks GO in `dagtools qual report`.**
-  Previously Q6 gated only on the Q2 run and synthetic probes. It now also requires the Q2
-  IO round-trip probe (below) to have PASSED on both sides with the same loaded type and
-  columns. Existing qualifications that were GO will report NO_GO until the probes are
-  generated and run. To get the old verdict back, pass `--accept-roundtrip-missing`, which
-  excuses missing coverage only; a probe that failed on one side or loaded a different shape
-  blocks regardless. To clear it: `dagtools qual synthetic`, deploy `dag-tools-probes`, then
-  re-run `dagtools qual run` per side. Classes with no IO manager class, and dbt classes, are
-  listed as not applicable and never block. Verdict schema 2 -> 3 (additive).
-
-### Added
 
 - **OTel -> API sync: a concurrency cap and a bounded retry.** New optional `api:` fields
   `max_concurrency`, `max_attempts` and `max_retry_seconds` (mapping.yaml or component.yaml;
@@ -277,6 +263,32 @@ it back are named.
   `examples/contract_mapping` maps both (the contract declared them forward with
   `produced_since: null`; that is now set), so the mapping example again produces every column
   the fixture ships and the plan writes a constant-within test over `status_period`.
+
+### Changed
+
+- **A release tag now RENAMES the commit's image build instead of rebuilding it.** (#16)
+  `v<X.Y.Z>` no longer runs the container build a second time: the tag job GETs the
+  `:sha-<short>` manifest the branch build already pushed and PUTs **its own bytes** under
+  `X.Y.Z` (and `X.Y`), so the release tag and the commit tag resolve to **one digest**.
+  Before this, one commit had two digests and a deployment pinning the release pinned bytes no
+  commit tag named — measured on `v0.11.0` against `sha-4924235`: different config blob and
+  most layer blobs different. Nothing in this build is reproducible (every run resolves
+  dependencies fresh), so a second build of one commit could never be the same image.
+  **`:latest` is a master pointer and a tag no longer moves it.** A tag on a commit master
+  never built now fails loudly rather than falling back to a build. This is the first release
+  cut through that path.
+
+### Behaviour change
+
+- **A RUNNABLE class with no round-trip coverage now blocks GO in `dagtools qual report`.**
+  Previously Q6 gated only on the Q2 run and synthetic probes. It now also requires the Q2
+  IO round-trip probe (above) to have PASSED on both sides with the same loaded type and
+  columns. Existing qualifications that were GO will report NO_GO until the probes are
+  generated and run. To get the old verdict back, pass `--accept-roundtrip-missing`, which
+  excuses missing coverage only; a probe that failed on one side or loaded a different shape
+  blocks regardless. To clear it: `dagtools qual synthetic`, deploy `dag-tools-probes`, then
+  re-run `dagtools qual run` per side. Classes with no IO manager class, and dbt classes, are
+  listed as not applicable and never block. Verdict schema 2 -> 3 (additive).
 
 ## 0.11.0 — 2026-11-04
 
