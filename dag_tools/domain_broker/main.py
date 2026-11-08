@@ -5,6 +5,7 @@ import httpx
 import boto3
 
 from dag_tools.central_gateway import internal_door
+from dag_tools.domain_broker import ticket_identity
 from dag_tools.domain_broker.sql_minting import (
     mint_clickhouse as _mint_clickhouse,
     mint_postgres as _mint_postgres,
@@ -75,6 +76,16 @@ UNPROTECTED_SOURCE_TYPES: Dict[str, int] = {}
 """source_type -> asset count still advertising a producer credential because
 no minter exists for that backend yet. Not a warning to be grepped for: it is
 surfaced on /health so the remaining exposure is a reported number."""
+
+AS_OF_ABSENT: Dict[str, int] = {}
+"""source_type -> count of issued tickets carrying no as-of.
+
+A ticket with no as-of is issued, not refused: the consumer can still read
+the data, they just cannot cite which version of it they read. So the
+exposure is a NUMBER PER BACKEND rather than a warning in a log — the same
+posture as ``unprotected_source_types``, and for the same reason. A backend
+that stays in this dict across a full cycle is one that needs a row in
+``ticket_identity.AS_OF_READERS``, and this is how anyone would know."""
 
 UNADVERTISED_ASSETS: Dict[str, int] = {}
 """reason -> count of assets this deployment did NOT advertise.
@@ -1123,6 +1134,11 @@ async def health():
             "unprotected_source_types": dict(UNPROTECTED_SOURCE_TYPES),
             "non_fqdn_hosts": dict(NON_FQDN_HOSTS),
         },
+        # Which backends issue tickets a consumer cannot pin to a version.
+        # Counted, not logged, for the same reason as the line above it.
+        "ticket_identity": {
+            "as_of_absent_by_source_type": dict(AS_OF_ABSENT),
+        },
     }
 
 
@@ -1157,6 +1173,27 @@ async def ready():
 async def resolve_asset(request: ResolveRequest):
     """
     Called ONLY by the Central Gateway to resolve a DataHub URN into a physical routing ticket.
+
+    THE ONE SEAM EVERY TICKET LEAVES THROUGH. The resolution below has four
+    return paths — a minted protocol ticket, an unminted one for a backend with
+    no minter, and two legacy coordinate routes — and the identity is stamped
+    here rather than on each of them, because the paths that matter most are
+    the ones nobody remembers to update. ADR-0044 was exactly that shape: the
+    minting was present and one newer path returned in front of it.
+    """
+    ticket = await _resolve_ticket(request)
+    stamped = ticket_identity.stamp(ticket)
+    if stamped.get("as_of") is None:
+        source_type = str(stamped.get("source_type") or "unknown")
+        AS_OF_ABSENT[source_type] = AS_OF_ABSENT.get(source_type, 0) + 1
+    return stamped
+
+
+async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
+    """Coordinates and, where a minter exists for the backend, a credential.
+
+    Returns the ticket WITHOUT its identity; ``resolve_asset`` stamps it. Kept
+    separate so no future path can return around the stamp.
     """
     urn = request.urn
 

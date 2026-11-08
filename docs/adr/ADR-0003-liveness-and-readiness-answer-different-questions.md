@@ -40,7 +40,9 @@ ambiguous on its own — "no mesh assets" and "the import blew up" look identica
 `definitions_error` is what separates them.
 
 **`/health` carries posture as numbers, not prose.** `adr0044.echoed_credentials_dropped`,
-`unprotected_source_types`, `non_fqdn_hosts`, `unadvertised`. A WARNING in a stream nobody
+`unprotected_source_types`, `non_fqdn_hosts`, `unadvertised`, and
+`ticket_identity.as_of_absent_by_source_type` — how often this broker issues a ticket a
+consumer cannot pin to a version of the data, per backend. A WARNING in a stream nobody
 reads is the failure mode this repo has hit most; a field an operator can poll is not.
 
 ## Consequences

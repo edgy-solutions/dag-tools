@@ -10,6 +10,57 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Added
+
+- **A routing ticket now says which read it is, and over what version of the data.**
+  Every ticket the broker issues carries `ticket_id`, `issued_at`, `as_of` and
+  `as_of_source`; `dag_tools.cortex_data.client.CortexDataClient` gains
+  `get_dataframe_with_ticket(urn)`, which returns the frame **and** a receipt for the read;
+  and the gateway logs a `TICKET_ISSUED` line naming the ticket id against the principal it
+  authorized for. **No existing signature, export or default changes** — `get_dataframe(urn)`
+  still returns a bare `LazyFrame` and now delegates to the new method, and a consumer that
+  ignores the new keys is unaffected.
+
+  Two things were impossible before. A read could not be **referred to**: the gateway logged
+  its decision and the broker logged its minting, and nothing joined either to the frame a
+  consumer ended up holding, so "which read was this?" — the question an audit, a complaint
+  and a bill all begin with — had no answer. And a frame could not be **pinned to a version**:
+  two agents reading a dataset that is being rewritten underneath them legitimately disagree,
+  and neither could say which version it read.
+
+  **`as_of` is the data's version; `issued_at` is the time we looked.** They are never the same
+  field, and an absent `as_of` is never filled in with the issue time — the tempting
+  substitution, because it makes every ticket look complete, and the one that would make the
+  field worthless: a reader could no longer tell a version from a clock reading, and would have
+  to assume the worst of every ticket including the ones carrying a real version. An absent
+  `as_of` instead carries `as_of_unavailable` (a reason) and is **counted per backend on
+  `/health`**, beside the ADR-0044 exposure numbers and for the same reason. The same house
+  rule as `warehouse_source.observe.read_as_of`: a version is carried exactly as the source
+  wrote it, because reformatting makes two equal watermarks look different.
+
+  `as_of_source` distinguishes a version read **at authorize** from one the producer
+  **advertised at load**. The distinction is load-bearing rather than decorative: advertised
+  coordinates are read once at broker startup and live in `LOCAL_ASSETS` for the process
+  lifetime, so an advertised version describes the dataset as it was when that pod booted.
+  `ticket_identity.AS_OF_READERS` is the per-backend table that reads a current version, and it
+  **ships empty** — reading a Delta or Iceberg version means real IO against a real store,
+  which nothing here can exercise yet — so until a backend gets a row, `as_of` comes only from
+  what a producer advertised, labelled as such and counted when absent. Registering a reader is
+  `ticket_identity.register_as_of_reader(source_type, reader)`; a reader that raises degrades to
+  an absent `as_of` and never fails a ticket, because an as-of is metadata about the read while
+  a credential **is** the read.
+
+  The consumer's receipt is an **allowlist** (`client.TICKET_RECEIPT_FIELDS`), not "the ticket
+  minus credentials": it is meant to be kept, printed beside an answer and pasted into a ticket,
+  so a denylist would start publishing the day a ticket gains a secret-shaped field.
+  `physical_uri` is deliberately left off it — a presigned URI is a credential wearing a path.
+
+  Both halves are additive across a rollout: the identity is the broker's to mint, so a gateway
+  talking to a broker that has not been upgraded logs `ticket_id=-` and serves the read, and the
+  client's receipt keeps one shape (the keys present, as `None`) whatever it is talking to.
+
 ## 0.12.0 — 2026-11-07
 
 ### Added

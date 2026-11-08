@@ -1,7 +1,7 @@
 import os
 import httpx
 import polars as pl
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from .identity import (
     Caller,
@@ -12,6 +12,49 @@ from .identity import (
     classify_response,
     resolve_authz_id,
 )
+
+# What a caller is handed back about their own read. An ALLOWLIST, not
+# "the ticket minus credentials": a receipt is meant to be kept, printed beside
+# an answer and pasted into a ticket, so the day a ticket gains a secret-shaped
+# field is the day a denylist starts publishing it. `physical_uri` is left out
+# for exactly that reason -- a presigned URI is a credential wearing a path.
+#
+# Adding a field here is a deliberate act, which is the point.
+TICKET_RECEIPT_FIELDS: Tuple[str, ...] = (
+    "ticket_id",
+    "issued_at",
+    "as_of",
+    "as_of_source",
+    "as_of_unavailable",
+    "source_type",
+    "allowed_columns",
+    "row_filters",
+)
+
+# Always on a receipt, as None when the broker stamped none, so a caller reads
+# ONE shape whatever it is talking to. A key that appears only sometimes gets
+# read with `.get()` and is then indistinguishable from one misspelled.
+_TICKET_RECEIPT_ALWAYS: Tuple[str, ...] = (
+    "ticket_id",
+    "issued_at",
+    "as_of",
+    "as_of_source",
+)
+
+
+def ticket_receipt(urn: str, ticket: Dict[str, Any]) -> Dict[str, Any]:
+    """The citable part of a ticket: which read this was, and over what version.
+
+    Carries no credential and never will -- see TICKET_RECEIPT_FIELDS.
+    """
+    receipt: Dict[str, Any] = {"urn": urn}
+    for key in _TICKET_RECEIPT_ALWAYS:
+        receipt[key] = ticket.get(key)
+    for key in TICKET_RECEIPT_FIELDS:
+        if key in ticket and key not in receipt:
+            receipt[key] = ticket[key]
+    return receipt
+
 
 class CortexDataClient:
     """
@@ -119,6 +162,28 @@ class CortexDataClient:
         """
         Retrieves a Polars LazyFrame for the requested asset by first obtaining
         a routing ticket from the Central Gateway.
+
+        The frame alone. Unchanged on purpose: notebooks, IO managers and agents
+        all call this, and a return type that grew a tuple would break every one
+        of them. Call ``get_dataframe_with_ticket`` for the receipt as well.
+        """
+        frame, _ = self.get_dataframe_with_ticket(urn)
+        return frame
+
+    def get_dataframe_with_ticket(
+        self, urn: str
+    ) -> Tuple[pl.LazyFrame, Dict[str, Any]]:
+        """The frame, and a receipt for the read that produced it.
+
+        A frame on its own cannot be cited: two agents answering the same
+        question minutes apart over a dataset being rewritten underneath them
+        legitimately disagree, and without the receipt neither can say which
+        version it read or point at the authorization that let it. The receipt
+        answers both -- ``ticket_id`` ties it to the gateway's TICKET_ISSUED
+        line and the broker's record, ``as_of`` names the version.
+
+        The receipt is built from the ticket by allowlist and carries NO
+        credential, because the whole point of it is to be kept and quoted.
         """
         # 1. HTTP POST to the Central Gateway's /authorize endpoint using the JWT.
         headers = {
@@ -299,5 +364,5 @@ class CortexDataClient:
                 
             if row_filters:
                 lf = lf.filter(pl.sql_expr(row_filters))
-                
-        return lf
+
+        return lf, ticket_receipt(urn, ticket)
