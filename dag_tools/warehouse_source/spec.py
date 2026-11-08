@@ -100,8 +100,10 @@ class ColumnLabel(BaseModel):
         description=(
             "The label as {dimension: values}. The hierarchical dimension is "
             "required and takes exactly one value; every other dimension "
-            "takes one value or a list, and a list is conjunctive -- a reader "
-            "must hold all of them."
+            "takes one value or a list, read as the document's `type:` for "
+            "that dimension says -- a reader holds all of a restrictive "
+            "set, at least one of a permissive set, none of an exclusionary "
+            "one."
         )
     )
     cell_predicate: Optional[str] = Field(

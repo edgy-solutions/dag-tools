@@ -1,0 +1,107 @@
+type: dag_tools.ClassificationPropagationComponent
+
+# The third component, and the only new one. Steps 4a and 4b are deliberately
+# separate: 4a labels a source, where a human decided what the labels ARE;
+# 4b labels everything downstream of it, where nobody decides anything --
+# the label of a derived column is a consequence of what it read.
+#
+# This component builds ONE sensor and no assets. It watches the derived
+# assets named below, and on every new materialization reads that run's
+# `dagster/column_lineage` to work out, per output column, which source
+# columns it came from -- then composes their labels and publishes the result.
+# It does not materialize anything, which is why the derived table is an
+# ordinary asset of this example's own (see ../../derived.py).
+attributes:
+  datasets:
+    - # The asset something else builds. Key parts joined by '/'.
+      asset_key: marts/party_exposure
+
+      # Where the derived data physically lives. The PHYSICAL platform's
+      # dataset URN, never a `dagster` one -- the component refuses one, for
+      # the same reason step 4a does: the catalog would describe one object
+      # while a broker asked to authorize a read of the other found no
+      # labels on it.
+      dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:sqlite,party_exposure,DEV)"
+
+      # The upstreams whose PUBLISHED label sets this dataset composes from.
+      #
+      # DECLARED, not read off the asset graph, and that is the one thing in
+      # this file worth pausing on. Which upstreams carry labels is a policy
+      # fact: not every dep publishes a label set. If the component inferred
+      # the list, an upstream that publishes none would look like nothing to
+      # propagate from, the ceiling would be composed out of a subset of the
+      # inputs, and the answer would look exactly as correct as the real one.
+      # So a lineage dep naming a source that is NOT listed here is refused.
+      sources:
+        - party_extract
+
+      description: >-
+        State-level exposure, labelled from what its columns read.
+
+      # Standing permission to publish one column WIDER than it derives.
+      # Nothing is downgraded automatically; absent a rule, a column
+      # publishes what it composed, and composition only ever tightens.
+      #
+      # `id`, `owner` and `reason` are all required, because this rule is the
+      # only thing in the system that can make a published label less
+      # restrictive than its inputs. The id travels on the published
+      # decision, so "which rule widened this column, and who stood behind
+      # it" has an answer that survives this file being reorganized.
+      downgrades:
+        - id: state_total_is_not_a_party
+          owner: example-board
+          reason: >-
+            A state-level sum does not identify a party, so the aggregate is
+            not the party-level exposure it was computed from.
+          columns:
+            - exposure_total
+          label:
+            # Lower on the ladder than `rung_restricted`, which is what
+            # `exposure` is labelled and therefore what this column would
+            # otherwise publish.
+            example_ladder: rung_internal
+
+            # And the empty set CLEARS the restrictive dimension: the
+            # handling obligation `exposure` carries does not survive the
+            # aggregate. An empty set is a value here, not an omission -- a
+            # dimension the rule says nothing about keeps whatever the data
+            # derived, which is how `example_facet` would behave if this line
+            # were deleted.
+            example_facet: []
+
+  classification:
+    # Same block as step 4a's, and the same document: a derived label is
+    # validated against the mounted document exactly like a declared one, so
+    # a downgrade rule cannot name a value policy never declared. Normally
+    # unset -- the default is the deployment's mount, overridden by
+    # DAGTOOLS_CLASSIFICATION_LEVELS, which is how this example points at its
+    # own stand-in.
+    #
+    #   dimensions_file: /etc/dagtools/classification/dimensions.yaml
+    require_ratified: false
+
+  # catalog: omitted entirely, so this example emits nothing and every
+  # decision is recorded on the derived asset instead -- which is how to read
+  # a propagated label set before a catalog ever hears about it. Point it at a
+  # GMS and it publishes:
+  #
+  #   catalog:
+  #     server: "{{ env('DATAHUB_GMS_URL') }}"
+  #     token: "{{ env('DATAHUB_TOKEN') }}"
+  #
+  # Omit the KEY, not just its contents: a `catalog:` with nothing under it is
+  # null rather than empty, and the loader refuses it. The description belongs
+  # to the dataset, above -- one catalog serves every dataset here.
+
+  sensor_name: classification_propagation
+
+  # STOPPED is the default, deliberately. A sensor that starts itself would
+  # publish labels into a catalog the moment this code location loads, which
+  # is not a thing to discover afterwards. Turn it on in the UI, or set
+  # RUNNING here once you mean it to run unattended.
+  default_status: STOPPED
+
+  # Compose and record every decision, emit nothing. Independent of the
+  # catalog block: `dry_run` with a server configured is how to see what WOULD
+  # be published against a real catalog.
+  dry_run: false
