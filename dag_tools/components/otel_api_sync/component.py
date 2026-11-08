@@ -277,7 +277,34 @@ def _reconcile_dispatch_completion(
 
 
 class OtelApiSyncComponent(Component, Resolvable, Model):
-    """Push any ClickHouse telemetry to any ordered set of API endpoints."""
+    """Push any ClickHouse telemetry to any ordered set of API endpoints.
+
+    **Capping load on the target API.** ``pipelines.<key>.api.max_concurrency``
+    (component.yaml wins over mapping.yaml, like ``timeout_seconds``) caps
+    calls in flight to one API. The cap is enforced **per Restate worker
+    process**, so the limit the API sees is::
+
+        effective concurrency = max_concurrency x restateWorker.replicas
+
+    Unset means no cap. Choose it by sweeping (1, 2, 5, 10) and keeping the
+    fastest; start low. The sizing rule, which must hold or calls are
+    refused before sending and retried (never duplicated) until Restate
+    pauses them after its default 70 attempts::
+
+        groups in flight x per-call latency / (max_concurrency x replicas)
+            < inactivity + abort - timeout_seconds
+
+    ``inactivity`` and ``abort`` are Restate's per-service timeouts. Set
+    them through the worker env vars ``API_CALL_PLAN_INACTIVITY_TIMEOUT_SECONDS``
+    and ``API_CALL_PLAN_ABORT_TIMEOUT_SECONDS`` (chart:
+    ``restateWorker.apiCallPlan.*``), not server-wide: the permit-wait guard
+    reads the worker's env and is blind to a server-side change. Unset, the
+    guard assumes Restate's 60 s / 600 s. ``api.max_attempts`` and
+    ``api.max_retry_seconds`` optionally bound Restate's retries; an
+    exhausted bound halts the plan and records it FAILED. The cap and the
+    bounds need a worker image that reads them; an older worker ignores
+    them silently.
+    """
 
     source_config: Dict[str, Any]
     """ClickHouse connection configuration."""
@@ -353,6 +380,11 @@ class OtelApiSyncComponent(Component, Resolvable, Model):
         timeout_seconds = override.get("timeout_seconds")
         if timeout_seconds is not None:
             api["timeout_seconds"] = timeout_seconds
+
+        for field in ("max_concurrency", "max_attempts", "max_retry_seconds"):
+            value = override.get(field)
+            if value is not None:
+                api[field] = value
 
         headers = dict(api.get("headers") or {})
         headers.update(override.get("headers") or {})

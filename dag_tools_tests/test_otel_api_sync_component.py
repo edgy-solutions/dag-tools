@@ -466,6 +466,50 @@ def test_mapping_headers_survive_with_component_headers_layered_on_top(rows, ing
     assert headers["X-From-Component"] == "c"
 
 
+def test_component_max_concurrency_overrides_the_mapping(rows, ingress):
+    """The component's cap wins over the mapping's, like timeout_seconds."""
+    component = _component(
+        mapping=_minimal_mapping({"base_url": "https://api.test", "max_concurrency": 8}),
+        api={"base_url": "https://api.test", "max_concurrency": 2, "max_attempts": 4},
+    )
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(component), {}, instance)
+    api = ingress.posts[0]["json"]["api"]
+    assert api["max_concurrency"] == 2
+    assert api["max_attempts"] == 4
+
+
+def test_mapping_max_concurrency_applies_when_the_component_sets_none(rows, ingress):
+    component = _component(
+        mapping=_minimal_mapping({"base_url": "https://api.test", "max_concurrency": 8}),
+        api={"base_url": "https://api.test"},
+    )
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(component), {}, instance)
+    assert ingress.posts[0]["json"]["api"]["max_concurrency"] == 8
+
+
+def test_dry_run_plan_carries_max_concurrency(rows, ingress):
+    component = _component(
+        mapping=_minimal_mapping({"base_url": "https://api.test"}),
+        api={"base_url": "https://api.test", "max_concurrency": 3, "max_retry_seconds": 120},
+    )
+    with DagsterInstance.ephemeral() as instance:
+        result = _materialize(_dispatch_asset(component), {"dry_run": True}, instance)
+        metadata = result.asset_materializations_for_node("ci_dispatch")[0].metadata
+    assert ingress.posts == []
+    assert metadata["plans"].value[0]["api"]["max_concurrency"] == 3
+    assert metadata["plans"].value[0]["api"]["max_retry_seconds"] == 120
+
+
+def test_no_cap_renders_as_unset(rows, ingress):
+    with DagsterInstance.ephemeral() as instance:
+        _materialize(_dispatch_asset(_component()), {}, instance)
+    api = ingress.posts[0]["json"]["api"]
+    assert api["max_concurrency"] is None
+    assert api["max_attempts"] is None
+
+
 # --- completion check (`restate_plans_completed`) ---------------------------
 
 

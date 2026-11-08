@@ -15,7 +15,12 @@ import yaml
 from dag_tools.otel_api_sync import build_plan, group_rows, load_spec
 from dag_tools.restate_handlers.api_call_plan import execute_plan
 
-from dag_tools_tests.test_otel_api_sync_executor import FakeHttp, StubContext
+from dag_tools_tests.test_otel_api_sync_executor import (
+    FakeHttp,
+    StubContext,
+    _fresh_runtime,  # noqa: F401  (autouse fixture)
+    patch_session,
+)
 
 MAPPING_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -173,9 +178,7 @@ def test_example_404_fallback_creates_only_the_missing_entity(spec, monkeypatch)
     monkeypatch.setenv("TARGET_API_TOKEN", "token-value")
 
     fake = FakeHttp({"PATCH /api/EntityMaintenance/entity_2": 404})
-    import requests
-
-    monkeypatch.setattr(requests, "request", fake.request)
+    patch_session(monkeypatch, fake)
 
     plan = build_plan("run-42", SPANS, spec)
     result = asyncio.run(execute_plan(StubContext(key="run-42"), plan))
@@ -198,9 +201,7 @@ def test_example_full_plan_executes_in_endpoint_order(spec, monkeypatch):
     monkeypatch.setenv("TARGET_API_BASE_URL", "https://api.test")
     monkeypatch.setenv("TARGET_API_TOKEN", "token-value")
     fake = FakeHttp({})
-    import requests
-
-    monkeypatch.setattr(requests, "request", fake.request)
+    patch_session(monkeypatch, fake)
 
     asyncio.run(execute_plan(StubContext(key="run-42"), build_plan("run-42", SPANS, spec)))
 

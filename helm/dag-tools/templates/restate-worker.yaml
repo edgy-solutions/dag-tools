@@ -54,6 +54,16 @@ spec:
               value: {{ include "dag-tools.workerAdvertisedUri" . | quote }}
             - name: RESTATE_BIND
               value: "0.0.0.0:{{ .Values.restateWorker.port }}"
+            {{- with .Values.restateWorker.apiCallPlan }}
+            {{- if .inactivityTimeoutSeconds }}
+            - name: API_CALL_PLAN_INACTIVITY_TIMEOUT_SECONDS
+              value: {{ .inactivityTimeoutSeconds | quote }}
+            {{- end }}
+            {{- if .abortTimeoutSeconds }}
+            - name: API_CALL_PLAN_ABORT_TIMEOUT_SECONDS
+              value: {{ .abortTimeoutSeconds | quote }}
+            {{- end }}
+            {{- end }}
             {{- range $k, $v := .Values.restateWorker.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
