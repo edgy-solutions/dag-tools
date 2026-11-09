@@ -458,11 +458,16 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             # and ROW POLICY and the DATABASE enforces them. An older broker
             # ignores the extra fields (pydantic), so this is safe to deploy
             # ahead of one.
+            # ONE expression, read twice: the subject the broker authorizes
+            # for is the subject the issue log names. Deriving the log's
+            # principal separately is how an audit trail quietly starts
+            # describing someone other than the decision did.
+            subject = verified.subject if verified is not None else originator_email
             payload = {
                 "urn": urn,
                 "allowed_columns": allowed_columns,
                 "row_filters": row_filters,
-                "subject": verified.subject if verified is not None else originator_email,
+                "subject": subject,
             }
             # The broker's resolve door wants this service's own token (no-op `{}` until the
             # MESH_SERVICE_* settings are present).
@@ -478,6 +483,26 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
                 
             # Return the BrokerTicketResponse directly to the client
             ticket = response.json()
+
+            # TICKET_ISSUED — the line that ties a principal to the frame they
+            # are about to hold. Until this existed, the decision was logged
+            # here and the minting was logged on the broker, with nothing
+            # joining the two to a consumer's actual read: "which read was
+            # this?" had no answer, and that answer is where an audit and a
+            # complaint both start.
+            #
+            # The ticket's identity is the BROKER's to mint, so a broker that
+            # has not been upgraded stamps none and this logs "-" rather than
+            # failing a read over a missing audit field. NO CREDENTIAL IS NAMED
+            # HERE, and none may be added: this line goes wherever logs go.
+            logger.info(
+                "TICKET_ISSUED ticket_id=%s subject=%s urn=%s as_of=%s as_of_source=%s",
+                ticket.get("ticket_id") or "-",
+                subject or "-",
+                urn,
+                ticket.get("as_of") or "-",
+                ticket.get("as_of_source") or "-",
+            )
             if allowed_columns is not None:
                 ticket["allowed_columns"] = allowed_columns
             if row_filters is not None:

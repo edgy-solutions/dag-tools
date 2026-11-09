@@ -180,8 +180,12 @@ that is correct.
 3. It looks up `mesh_route:{urn}` in Redis to find the owning domain
    broker. **404** if no broker currently advertises that URN.
 4. It proxies to that broker's `/api/v1/internal/resolve`, which returns a
-   *routing ticket*: `source_type`, `physical_uri`, `credentials`, plus any
-   `allowed_columns` / `row_filters` the gateway grafts on from Topaz.
+   *routing ticket*: `source_type`, `physical_uri`, `credentials`, the read's
+   own identity (`ticket_id`, `issued_at`, `as_of`, `as_of_source` — see
+   [Citing a read](#citing-a-read-get_dataframe_with_ticketurn)), plus any
+   `allowed_columns` / `row_filters` the gateway grafts on from Topaz. The
+   gateway logs a `TICKET_ISSUED` line naming `ticket_id` and the principal
+   it authorized for.
 5. The client dispatches on `source_type` and builds the LazyFrame.
 
 The important consequence of step 3: **a URN is only readable while a
@@ -207,6 +211,85 @@ until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
 
 Both HTTP calls use a 10-second timeout and there is no retry. Treat
 `get_dataframe` as a call that can fail transiently.
+
+---
+
+## Citing a read: `get_dataframe_with_ticket(urn)`
+
+`get_dataframe` hands back a frame and nothing else, which leaves two
+questions unanswerable. **Which read was this?** — the question an audit, a
+complaint and a bill all start with. And **what version of the data is this?**
+Two agents reading a dataset that is being rewritten underneath them
+legitimately disagree, and with the frame alone neither can say so.
+
+```python
+frame, receipt = client.get_dataframe_with_ticket(urn)
+
+receipt["ticket_id"]         # the id the gateway logged for this read
+receipt["issued_at"]         # when the authorization was granted (UTC)
+receipt["as_of"]             # the DATA's version, or None
+receipt["as_of_source"]      # where that version came from, or None
+receipt["allowed_columns"]   # the narrowing that was applied
+```
+
+`get_dataframe(urn)` is unchanged and returns the frame alone; it now
+delegates to this method. Nothing else about reading changes.
+
+### `as_of` is the data's version, not the time of the read
+
+`issued_at` is the time we looked. `as_of` is the dataset's own snapshot,
+watermark or table version. They are never the same field, and **an absent
+`as_of` is never filled in with the issue time** — a reader could then no
+longer tell a version from a clock reading, and would have to distrust every
+ticket including the ones carrying a real version. An absent `as_of` instead
+says why:
+
+| `as_of_unavailable` | Means |
+| --- | --- |
+| `no_reader_for_source_type` | Nothing on this broker knows how to read this backend's version. |
+| `reader_declined` | The reader ran; this dataset has no version yet. |
+| `reader_failed` | The reader raised. The ticket is still issued — see below. |
+| `reader_returned_unusable_value` | The value could not honestly be carried as a version. |
+
+A version is carried **exactly as the source wrote it**: reformatting makes two
+equal watermarks look different.
+
+`as_of_source` says which of two very different things you have:
+
+| `as_of_source` | Means |
+| --- | --- |
+| `read_at_authorize` | Read when this ticket was issued. The dataset's version now. |
+| `advertised_at_load` | What the producer published when **the broker last started**. Possibly stale. |
+
+The second is not a technicality. A broker reads a producer's coordinates once
+at startup and keeps them for its whole lifetime, so a version from that source
+describes the dataset as it was when that pod booted. Treat it as a hint, not a
+pin.
+
+**Today every `as_of` you see is `advertised_at_load` or absent.** Reading a
+current Delta or Iceberg version means real IO against a real store, and no
+backend reader ships yet; the per-backend table
+(`domain_broker.ticket_identity.AS_OF_READERS`) and
+`register_as_of_reader(source_type, reader)` are there for when one does. How
+often `as_of` is missing, per backend, is on the broker's `/health` under
+`ticket_identity.as_of_absent_by_source_type` — the number to watch when
+deciding whether a reader is worth writing.
+
+A reader that fails **never fails your read**: an as-of is metadata about the
+read, while a credential *is* the read. You get the frame and an absent
+`as_of`.
+
+### The receipt carries no credential, by construction
+
+It is built from an allowlist (`TICKET_RECEIPT_FIELDS`), not by removing the
+credential from the ticket — a receipt is meant to be kept, printed beside an
+answer and pasted into a ticket, so a subtractive rule would start publishing
+the day a ticket gains a new secret-shaped field. `physical_uri` is left off
+for the same reason: a presigned URI *is* a credential.
+
+Against a broker that has not been upgraded, the receipt has the same shape
+with `ticket_id`, `issued_at`, `as_of` and `as_of_source` all `None` — so
+`receipt["ticket_id"] is None` means "no broker-side identity", not a typo.
 
 ---
 
