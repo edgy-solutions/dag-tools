@@ -125,6 +125,47 @@ it back are named.
   `RunRecord.partition_key` / `probe_metadata` and `ProbeManifest.roundtrip_probes`
   (additive; schema bumps). `qual probes status` counts missing round-trip assets.
 
+- **`dagtools qual stage` materializes the upstreams Q2 reads, in runs of its own.** (#18)
+  Q2 launches a representative alone, and Dagster treats an unmaterialized upstream as a
+  *loaded input* whose output must already exist in the IO manager — so a representative whose
+  upstreams are computed rather than external had nothing to read. `dag_tools.qual.stage` plans
+  those upstreams, launches them in dependency order (one run per partition group, since a run
+  cannot mix partition definitions), and records the result in a slot of its own at
+  `<side>/stage/`. A failed group skips only the groups that depend on it; a cross-group cycle
+  is reported rather than launched. Staging is per side, so re-run it after the candidate
+  upgrade.
+
+  **Q2 itself is unchanged.** Its selection stays the representative alone, and `StageRecord` is
+  not a `RunRecord`, so Q6's diff has nothing to key it on — Q6 records `stage_by_side` and
+  never compares it. `qual run` warns when required representatives exist and stage has not
+  passed for the current selection hash. Unlike Q2, an empty `launch_info` or a declared but
+  unresolved `staging_overrides` pointer refuses to launch rather than degrading: staged outputs
+  landing in the wrong place would bank a qualification of the wrong deployment.
+
+- **Probe IO managers take constructor config from the manifest.** (#4) A new `probes` block,
+  written by `dagtools qual init --probe-config`, supplies kwargs per IO manager FQN — so a
+  probe for an IO manager that takes arguments can now PASS. Previously only a no-arg IO manager
+  could, which is why synthetic coverage needed `--accept-synthetic-coverage-missing`
+  indefinitely. Keyed by FQN rather than `class_hash`, because class hashes change on every
+  re-survey; `io_manager_config_by_class` is the narrow override and wins. A `{env: VAR}` value
+  renders as `os.environ["VAR"]` in the generated probe and is **never resolved at generation
+  time** — probe source is published to the registry and written under `~/.dagtools/quals/`, so
+  a resolved value would commit a credential to both. The manifest records kwarg names, never
+  values. With no config the generated source is byte-identical to before.
+
+- **A class's other resources can be bound into its probe, opt-in per resource FQN.** (#5)
+  Resource keys now travel key -> FQN on `ClassMember.resource_classes` ->
+  `Representative.resource_classes` (class matrix schema 3); the class key still discards them,
+  so a hash stays stable across repos that name the same resource differently.
+  `probes.resource_config` (keyed by resource FQN, `{}` for a no-arg construct) is the opt-in: a
+  resource with no entry is not bound, and is named in the bundle's notes. Binding everything
+  automatically could regress a probe that passes today — a resource that connects in
+  `setup_for_execution` really connects — and a self-inflicted coverage regression is
+  indistinguishable from a real Q6 finding. Each resource is constructed in its own
+  `try`/`except`, so one that fails is left out of `Definitions` instead of taking the probe
+  location down. The probe proves import, construct and availability on the context, not backend
+  behaviour. With no entries the generated source is byte-identical to before.
+
 - **Warehouse source — `WarehouseSourceComponent`.** One labelled source dataset per
   component instance, published as a Dagster **observable source asset**: no data is moved,
   and the observation records a row count, an order-sensitive schema hash and an optional
@@ -277,6 +318,18 @@ it back are named.
   **`:latest` is a master pointer and a tag no longer moves it.** A tag on a commit master
   never built now fails loudly rather than falling back to a build. This is the first release
   cut through that path.
+
+### Fixed
+
+- **A failed or timed-out poll no longer marks a run FAILED and launches a second one.** (#19)
+  `poll_to_completion` raising — a timeout, a transport error, a non-terminal event-log read —
+  says nothing about the run, which may still be executing. The representative now stays
+  LAUNCHED with the error noted and the next invocation reconciles it. Marking it FAILED, as the
+  runner did, let the next pass launch a second, concurrent run of the same representative. The
+  one permanent case is a run id Dagster no longer has (`DagsterRunNotFoundError`, matched by
+  GraphQL typename): that run will never finish, so it is FAILED and relaunched. Q2, the probe
+  runner and `qual stage` all follow the rule. A probe left LAUNCHED counts as uncovered in Q6,
+  not red, because nothing failed.
 
 ### Behaviour change
 
