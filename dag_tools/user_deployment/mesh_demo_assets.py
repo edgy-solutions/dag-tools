@@ -185,20 +185,15 @@ def ev_fixture(context):
     return df
 
 
-def build_demo_defs() -> Definitions:
-    """Build a Definitions containing the synthetic demo assets and their
-    IO manager.
+def build_mesh_demo_io_manager() -> ConfigurableArrowIOManager:
+    """The producer IO manager every synthetic demo surface writes through.
 
-    The demo asset PRODUCES data, so it uses a producer IO manager —
-    ``ConfigurableArrowIOManager`` (parquet on S3). That manager
-    implements ``physical_coordinates``, so the domain broker can
-    truthfully advertise this asset's location to the central gateway
-    and mesh consumers can read it back.
-
-    (It deliberately does NOT use ``CortexPolarsIOManager``: that one is
-    the mesh's read-only facade — it's bound to assets you *consume*,
-    which may be owned by another deployment, so it must never announce
-    ownership. See that module's docstring.)
+    Shared rather than rebuilt, because the refusal fixture
+    (``demo_ev_refusal``) has to write through the *same* manager to be worth
+    anything: a planted null or NaN that never met this parquet writer would
+    prove nothing about what a reader receives. It takes its own resource key
+    there — ``Definitions.merge`` raises on a conflicting one — but not its own
+    configuration.
 
     All config comes from env vars set by the helm chart's
     ``userDeployments.dag-tools.codeLocation.env`` block:
@@ -218,7 +213,7 @@ def build_demo_defs() -> Definitions:
     prefix = os.getenv("MESH_DEMO_PREFIX", "mesh_demo")
     endpoint = os.getenv("AWS_ENDPOINT_URL", "")
 
-    io_manager = ConfigurableArrowIOManager(
+    return ConfigurableArrowIOManager(
         uri_base=f"s3://{s3_bucket}/{prefix}",
         fs=S3FSConfig(
             common=S3FSCommonConfig(
@@ -232,7 +227,26 @@ def build_demo_defs() -> Definitions:
         ),
     )
 
+
+def build_demo_defs() -> Definitions:
+    """Build a Definitions containing the synthetic demo assets and their
+    IO manager.
+
+    The demo asset PRODUCES data, so it uses a producer IO manager —
+    ``ConfigurableArrowIOManager`` (parquet on S3). That manager
+    implements ``physical_coordinates``, so the domain broker can
+    truthfully advertise this asset's location to the central gateway
+    and mesh consumers can read it back.
+
+    (It deliberately does NOT use ``CortexPolarsIOManager``: that one is
+    the mesh's read-only facade — it's bound to assets you *consume*,
+    which may be owned by another deployment, so it must never announce
+    ownership. See that module's docstring.)
+
+    Its configuration — and the env vars it reads — is
+    ``build_mesh_demo_io_manager``.
+    """
     return Definitions(
         assets=[mesh_demo_customers, ev_fixture],
-        resources={"mesh_demo_io": io_manager},
+        resources={"mesh_demo_io": build_mesh_demo_io_manager()},
     )
