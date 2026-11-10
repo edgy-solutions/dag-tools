@@ -29,6 +29,13 @@ try:
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import subject_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
+# The PRINCIPAL-RECORD gauge: whether the record of a read names who it was authorized for.
+# Reads the subject gauge's output; refuses nothing. Same two-layout rule as above.
+try:
+    from . import principal_gauge  # package layout — the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import principal_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
+
 # The internal doors' service-token guard and the caller side that satisfies it. Same
 # two-layout rule: this module is flat in the gateway image.
 try:
@@ -81,6 +88,7 @@ async def lifespan(app: FastAPI):
     # establishes its own log visibility before making the claim — announcing a posture whose
     # evidence channel is dark is the defect the pairing exists to prevent.
     subject_gauge.announce()
+    principal_gauge.announce()
     identity.announce()
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to Redis.")
@@ -366,8 +374,13 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     #
     # Nothing below may branch on the reading. The moment a request outcome depends on it, it
     # stops being a gauge and becomes an unreviewed enforcement path.
+    #
+    # The reading is KEPT rather than discarded, for the principal-record gauge below. It is
+    # kept as None on failure, so a dark subject gauge reads as unclassifiable there rather
+    # than as clean — the two states an instrument exists to separate.
+    source_reading = None
     try:
-        subject_gauge.observe(
+        source_reading = subject_gauge.observe(
             urn=urn,
             token=token,
             header_subject=originator_email,
@@ -463,6 +476,27 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             # principal separately is how an audit trail quietly starts
             # describing someone other than the decision did.
             subject = verified.subject if verified is not None else originator_email
+
+            # ---- PRINCIPAL-RECORD GAUGE — observe only, refuse nothing ---------------------
+            # The expression above agrees with the log line by construction. What nothing
+            # checked is whether it agrees with the subject the GATE decided on: under
+            # observe the gate falls back to the token's own claim and this expression does
+            # not, so a header-less read is authorized for a principal and recorded against
+            # nobody. Sited here, after the gate allowed, so every reading is about a ticket
+            # that was actually issued.
+            #
+            # Same rule as the gauge above: nothing below may branch on this, and a defect in
+            # it degrades to a warning while the request proceeds exactly as it does today.
+            try:
+                principal_gauge.observe(
+                    urn=urn,
+                    recorded=subject,
+                    source_reading=source_reading,
+                    enforcing=enforcing,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("principal-record gauge failed (%s) — request unaffected", type(exc).__name__)
+
             payload = {
                 "urn": urn,
                 "allowed_columns": allowed_columns,

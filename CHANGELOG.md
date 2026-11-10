@@ -10,6 +10,55 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Added
+
+- **An instrument on the gateway that counts reads recorded against nobody.**
+  `dag_tools.central_gateway.principal_gauge` measures, per issued ticket, whether the subject
+  the read was *recorded* for is the subject the authorization decision was *made* for. **It
+  refuses nothing and changes no request**: no signature, export or default changes, no header
+  is read differently, and a defect in the gauge degrades to a warning while the request
+  proceeds exactly as before.
+
+  It exists because the two subjects are resolved separately and, under the observe posture,
+  disagree. The gate resolves the originator header and falls back to the token's own claim;
+  the recorded subject — the one in the broker payload and in `TICKET_ISSUED`, which agree with
+  each other by construction — resolves the header with no fallback. So a request carrying a
+  subject-bearing token and no `X-Originator-Email` / `on_behalf_of` header is authorized for
+  that principal and recorded as nobody: the broker is handed a null subject and the issue line
+  prints `subject=-`. Under `enforce` both read the verified decision and the question does not
+  arise.
+
+  That shape is not an edge case. It is the subject-source gauge's `token-claim` bucket — the
+  one that gauge documents as the *healthy* shape — so the healthiest way for identity to
+  arrive is the one way the record of the read names nobody, and every other signal on such a
+  request is green. Nothing flagged it.
+
+  It measures rather than fixes because the fix is not free to apply unobserved: the recorded
+  subject is encoded by a `mint-role` backend into a role's GRANTs and ROW POLICY, so sending a
+  subject where `null` went before changes what a credential grants, for callers nobody has
+  enumerated; and the subject available to fall back on is read from an *unverified* token,
+  which is a defensible thing to log and a different thing to authorize a credential against.
+  The gauge produces the population count that makes that one-expression change reviewable.
+
+  Buckets are logged as `principal-record: record=<bucket>`: `named`, `unnamed` (the finding),
+  `divergent` (should be unreachable, and worse than `unnamed` if it ever appears),
+  `undecided`, and `unreadable` — the last being a request the upstream gauge could not read,
+  **never counted as clean**, because zero-because-silent and zero-because-clean are the two
+  states an instrument exists to separate. The gauge announces itself at startup for the same
+  reason. `unnamed`, `divergent` and `unreadable` each also emit a WARNING naming the urn and
+  no principal and no credential; the ticket id is on the `TICKET_ISSUED` line.
+
+### Changed
+
+- `test_the_gateway_does_not_BRANCH_on_the_gauge` now measures what it always stood for.
+  It forbade *assigning* the subject-source gauge's reading, as a proxy for not branching on
+  it; the principal-record gauge is built out of that reading, so the proxy stopped fitting.
+  It now asserts no name bound from the gauge appears in a condition, comparison, `return` or
+  `raise` — which also catches a branch written through an alias, something the old form could
+  never have seen.
+
 ## 0.13.0 — 2026-11-09
 
 ### Added
