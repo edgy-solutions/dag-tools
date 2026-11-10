@@ -10,7 +10,7 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.13.0 — 2026-11-09
 
 ### Added
 
