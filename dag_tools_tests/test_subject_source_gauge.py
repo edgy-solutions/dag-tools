@@ -280,10 +280,26 @@ def test_the_gateway_does_not_BRANCH_on_the_gauge():
     body = m.group(0)
 
     assert "subject_gauge.observe(" in body, "the gauge must be wired into the request path"
-    # A bare statement — no assignment, no branch, nothing reads it back.
-    assert "= subject_gauge.observe" not in body, (
-        "the gateway assigned the gauge reading — the next edit branches on it"
-    )
+
+    # The reading may now be HANDED ON -- the principal-record gauge is built out of it -- so
+    # "never assigned" stopped being able to express the rule it stood for. What it stood for
+    # is that no request outcome depends on the reading, and that is what is measured instead:
+    # a name bound from the gauge may travel as an ARGUMENT and nowhere else. This is the
+    # stronger pin of the two, because the old one could also be satisfied by a branch written
+    # through an alias, which it would never have seen.
+    bound = set(re.findall(r"(\w+)\s*=\s*subject_gauge\.observe\(", body))
+    for name in bound:
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not re.search(rf"\b{name}\b", stripped):
+                continue
+            assert not re.match(rf"(if|elif|while|return|raise|assert)\b", stripped), (
+                f"the gateway made an outcome depend on the gauge reading ({stripped!r}) — "
+                "that is an unreviewed enforcement path"
+            )
+            assert not re.search(rf"\b{name}\b\s*(==|!=|<|>|\bis\b|\bin\b)", stripped), (
+                f"the gateway tested the gauge reading ({stripped!r}) — observe only"
+            )
     assert not re.search(r"if\s+subject_gauge", body), (
         "the gateway BRANCHED on the gauge — that is an unreviewed enforcement path"
     )
