@@ -1,33 +1,40 @@
-"""A read authorized for somebody is recorded against nobody, and nothing said so.
+"""ONE resolution of the principal: the read is recorded against whoever it was authorized for.
 
-THE FINDING, and it is not reachable from either side on its own. The gateway sends the broker
-a `subject` and logs the same expression in `TICKET_ISSUED` -- those two agree by construction,
-deliberately, so an audit trail cannot describe someone other than the decision did. But the
-subject the GATE decides on is resolved separately, and under the observe posture the two
-resolutions differ:
+THE FINDING THIS MODULE MEASURED, now closed. The gateway sends the broker a `subject` and logs
+the same expression in `TICKET_ISSUED` -- those two agree by construction, deliberately, so an
+audit trail cannot describe someone other than the decision did. But the subject the GATE
+decided on was resolved SEPARATELY, and under the observe posture the two resolutions differed:
 
     gate   : header, falling back to the token's own claim
     record : header, with NO fallback
 
-So a request carrying a token that names its subject and no `X-Originator-Email` /
-`on_behalf_of` header is authorized for that principal and recorded as nobody. The broker gets
-``"subject": null`` and the issue line prints ``subject=-``.
+So a request carrying a token that named its subject and no `X-Originator-Email` /
+`on_behalf_of` header was authorized for that principal and recorded as nobody -- the broker got
+``"subject": null`` and the issue line printed ``subject=-``. That is `subject_gauge`'s
+`token-claim` bucket, the one its own documentation calls the HEALTHY shape, which is why
+nothing flagged it: every other signal on such a request is green.
 
-That is `subject_gauge`'s `token-claim` bucket -- the one its own documentation calls the
-HEALTHY shape. The healthiest way for identity to arrive is the one way the record of the read
-names nobody, which is why nothing flagged it: every other signal on that request is green.
+WHAT CLOSED IT. `identity.resolve_principal` is now the one resolution, and the gate and the
+record both read its answer -- there are no longer two resolutions that can disagree. The
+measurement answered the question the fix turned on, too: the subject available to fall back on
+was read from a token nothing had verified, and the third option was the right one. An
+unverified claim names nobody, and a request naming nobody is refused rather than served under
+either subject. So nothing sends a subject where ``null`` went before EXCEPT where the token
+verified, which is the one case where the name was never in doubt.
 
-`test_a_read_authorized_for_the_tokens_own_subject_is_recorded_against_nobody` is the
-load-bearing test here. It drives the real route with the REAL `check_topaz_authz` -- the other
-gateway suites stub that out, which is exactly why they cannot see this -- and asserts on both
-sides at once: the identity Topaz was asked about, and the subject the broker was handed. A
-test that only read the gauge's own arithmetic would pass whatever the gateway did.
+WHAT THESE TESTS ARE NOW. The seal on that, in the shape the measurement was written in: the
+REAL `check_topaz_authz` driven through the real route, asserting both sides of one request at
+once -- the identity Topaz was asked about, and the subject the broker was handed. The other
+gateway suites stub the gate out, which is exactly why they could not see the defect and cannot
+see a regression of it either. A test that read only the gauge's own arithmetic would pass
+whatever the gateway did.
 
-The gauge measures and changes nothing. Under enforce both sides read the verified decision and
-the question does not arise; under observe the fix is one expression, and the reason it is not
-applied here is in `principal_gauge`'s docstring: the recorded subject is encoded into a role's
-GRANTs and ROW POLICY by a `mint-role` backend, so sending one where `null` went before changes
-what a credential grants, for callers nobody has enumerated yet.
+`test_a_read_authorized_for_the_tokens_own_subject_is_recorded_as_that_subject` is the pin that
+was deliberately red: it used to assert ``recorded_subject() is None`` and to say so in its own
+docstring -- that it would fail the day the record gained the gate's fallback, and that a red
+test is where that conversation happens. This is that day. The change is the other way round
+from the one that comment anticipated: neither side has a fallback now, because neither side
+resolves anything.
 """
 from __future__ import annotations
 
@@ -51,6 +58,7 @@ from dag_tools.central_gateway import identity, principal_gauge, subject_gauge  
 from dag_tools.central_gateway import main as gateway  # noqa: E402
 
 ISS = "https://idp.example/realms/mesh"
+AUD = "data-gateway"
 URN = "urn:li:dataset:(urn:li:dataPlatform:s3,bucket/x,PROD)"
 ALICE = "alice@example.com"
 BOB = "bob@example.com"
@@ -75,12 +83,20 @@ def _keypair():
 PRIV, PUB = _keypair()
 
 
-def _tok(email):
-    return jwt.encode(
-        {"sub": "kc-1", "iss": ISS, "exp": int(time.time()) + 300, "email": email},
-        PRIV,
-        algorithm="RS256",
-    )
+OTHER_PRIV, _OTHER_PUB = _keypair()
+
+
+def _tok(email=None, *, key=PRIV, iss=ISS, aud=AUD):
+    """A token this gateway accepts, unless a caller asks for one it does not.
+
+    `email` of None omits the claim entirely: a token that verifies and names nobody, which is
+    a different case from one that names somebody and did not verify, and the two have to stay
+    told apart.
+    """
+    body = {"sub": "kc-1", "iss": iss, "aud": aud, "exp": int(time.time()) + 300}
+    if email is not None:
+        body["email"] = email
+    return jwt.encode(body, key, algorithm="RS256")
 
 
 @pytest.fixture(autouse=True)
@@ -98,6 +114,14 @@ def clean_env(monkeypatch):
     monkeypatch.setattr(identity, "_jwks_client_url", None, raising=False)
     monkeypatch.setattr(subject_gauge, "_jwks_client", None, raising=False)
     monkeypatch.setattr(subject_gauge, "_jwks_failed", False, raising=False)
+    # Then serve the values a token is verified against. Not incidental any more: the token
+    # path is open only for a token this gateway VERIFIED, so a module that configured no
+    # issuer and no audience would be asserting the record's behaviour over a path that
+    # refuses every request -- green, and about nothing.
+    monkeypatch.setenv("GATEWAY_JWT_ISSUERS", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCES", AUD)
+    monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
+    principal_gauge.reset_counts()
 
 
 class _Mesh:
@@ -150,33 +174,73 @@ def _authorize(headers):
     return TestClient(gateway.app).post(f"/api/v1/assets/{URN}/authorize", headers=headers)
 
 
-def _bearer(email, **extra):
+def _bearer(email=ALICE, **extra):
     return {"Authorization": f"Bearer {_tok(email)}", **extra}
 
 
+def _reason(resp):
+    detail = resp.json()["detail"]
+    return detail["error"] if isinstance(detail, dict) else detail
+
+
 # ---------------------------------------------------------------------------
-# The finding
+# The seal: one resolution, read on both sides of one request
 # ---------------------------------------------------------------------------
-def test_a_read_authorized_for_the_tokens_own_subject_is_recorded_against_nobody(
+def test_a_read_authorized_for_the_tokens_own_subject_is_recorded_as_that_subject(
     monkeypatch, caplog
 ):
-    """This pins the behaviour as it is today, and it WILL fail the day the record gains the
-    gate's fallback. That is the point of writing it this way: the change it would break is
-    exactly the one that must not be made quietly, and a red test is where that conversation
-    happens.
+    """The pin that was red on purpose, now green for the right reason.
+
+    A VERIFIED token carrying a subject and no header: admitted, authorized for that subject,
+    and recorded against the same one. Both halves, in one test, on one request -- which is
+    what made the divergence visible and is the only thing that can make its return visible.
     """
     mesh = _Mesh(monkeypatch)
     with caplog.at_level(logging.INFO):
         resp = _authorize(_bearer(ALICE))          # no originator header
 
     assert resp.status_code == 200, resp.text
-    # The decision was made FOR somebody...
     assert mesh.decided_subject() == ALICE
-    # ...and the record of it names nobody. Both halves, in one test, on one request.
-    assert mesh.recorded_subject() is None
-    assert "subject=-" in caplog.text              # the TICKET_ISSUED line
-    assert "PRINCIPAL UNRECORDED" in caplog.text
-    assert "principal-record: record=unnamed" in caplog.text
+    assert mesh.recorded_subject() == ALICE, (
+        "the record named somebody other than the decision was made for -- a second "
+        "resolution has been reintroduced"
+    )
+    assert f"subject={ALICE}" in caplog.text       # the TICKET_ISSUED line
+    assert "PRINCIPAL UNRECORDED" not in caplog.text
+    assert "principal-record: record=named" in caplog.text
+
+
+def test_an_UNVERIFIED_tokens_subject_claim_is_refused_rather_than_recorded(monkeypatch, caplog):
+    """The other half of the answer: the fallback subject was never established.
+
+    Signed by a key this gateway does not accept. Before, its claim became the principal, the
+    read was authorized for `alice@example.com` on the token's own say-so, and the record of it
+    named nobody. Now neither happens: the request names nobody and is refused before the gate.
+    """
+    mesh = _Mesh(monkeypatch)
+    token = _tok(ALICE, key=OTHER_PRIV)
+    with caplog.at_level(logging.INFO):
+        resp = _authorize({"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 401 and _reason(resp) == identity.NO_PRINCIPAL, resp.text
+    assert not mesh.topaz, "an unverified claim must never reach the authorizer"
+    assert not mesh.resolve, "and no ticket is minted for it"
+    assert "principal-record:" not in caplog.text, "nothing was issued, so nothing is measured"
+
+
+def test_a_request_that_names_NOBODY_is_refused_before_the_broker(monkeypatch, caplog):
+    """A token this gateway verified, carrying no subject claim, and no header either.
+
+    Distinct from the case above and it must stay so: here nothing is wrong with the token, it
+    simply does not say who the reader is, and no header does either. A read is never
+    authorized for nobody, so this is refused rather than served with ``subject: null``.
+    """
+    mesh = _Mesh(monkeypatch)
+    with caplog.at_level(logging.INFO):
+        resp = _authorize(_bearer(None))           # verified, no claim, no header
+
+    assert resp.status_code == 401 and _reason(resp) == identity.NO_PRINCIPAL, resp.text
+    assert not mesh.topaz and not mesh.resolve
 
 
 def test_a_header_named_read_is_recorded_as_the_principal_it_was_decided_for(
@@ -251,6 +315,48 @@ def test_nothing_is_measured_for_a_read_that_was_denied(monkeypatch, caplog):
         assert _authorize(_bearer(ALICE)).status_code == 403
     assert not mesh.resolve
     assert "principal-record:" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# The counts: what makes a zero mean something
+# ---------------------------------------------------------------------------
+def test_health_carries_the_counts_and_observed_is_the_discriminator(monkeypatch):
+    """`unnamed=0` is a closed defect when `observed` is large and a dark gauge when it is 0.
+
+    Those are the two states an instrument exists to separate, which is why this is a dict on
+    `/health` rather than one number -- read after a roll, the way `telemetry_misses` is, not
+    grepped for in a log.
+    """
+    _Mesh(monkeypatch)
+    client = TestClient(gateway.app)
+
+    before = client.get("/health").json()["principal_record"]
+    assert before["observed"] == 0 and before["named"] == 0, "the fixture did not reset"
+
+    assert _authorize(_bearer(ALICE)).status_code == 200
+    after = client.get("/health").json()["principal_record"]
+
+    assert after["observed"] == 1, "a served read was not counted"
+    assert after["named"] == 1
+    assert after["unnamed"] == 0 and after["divergent"] == 0
+
+
+def test_every_bucket_is_always_present_even_at_zero():
+    """A key that appears only once it is non-zero gets read with `.get()` and is then
+    indistinguishable from one that was merely misspelled."""
+    keys = set(principal_gauge.counts())
+    assert keys == {"observed", *principal_gauge._BUCKETS}
+
+
+def test_health_still_answers_when_the_counter_misbehaves(monkeypatch):
+    """A readiness probe that 500s because an instrument misbehaved takes the pod out."""
+    _Mesh(monkeypatch)
+    monkeypatch.setattr(
+        principal_gauge, "counts", lambda: (_ for _ in ()).throw(RuntimeError("counter defect"))
+    )
+    resp = TestClient(gateway.app).get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "principal_record": None}
 
 
 # ---------------------------------------------------------------------------
@@ -360,10 +466,19 @@ def test_the_announcement_says_it_refuses_nothing(caplog):
 
 
 def test_the_gateway_REFUSES_NOTHING_on_this_gauges_account():
-    """No refusal may be attributable to the instrument. Every `raise` near it would be one."""
+    """No refusal may be attributable to the instrument. Every `raise` near it would be one.
+
+    The window is cut at the next `def` / route decorator, because a proximity check that runs
+    past the end of the enclosing function stops asking its own question: the gauge's counts
+    are served near the top of `/health`, and the next route down the file is `/ready`, which
+    refuses when Redis is unreachable. That refusal has nothing to do with this instrument, and
+    a pin that reported it would be read as noise and then ignored -- which is how a real one
+    gets ignored with it.
+    """
     import re
 
     for m in re.finditer(r"principal_gauge[^\n]*\n(?:[^\n]*\n){0,12}", _gateway_src()):
-        assert "raise HTTPException" not in m.group(0), (
+        window = re.split(r"\n(?=@app\.|async def |def )", m.group(0))[0]
+        assert "raise HTTPException" not in window, (
             "a refusal appeared next to the gauge — this instrument observes only"
         )

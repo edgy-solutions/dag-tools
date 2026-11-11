@@ -101,20 +101,29 @@ app = FastAPI(lifespan=lifespan, title="Central Gateway")
 security = HTTPBearer()
 
 
-def _enforce_identity(token: str, on_behalf_of, legacy, urn: str):
-    """The `enforce` posture: decide from the VERIFIED token, audit, refuse or return the decision.
+async def _principal(token: str, on_behalf_of, legacy, urn: str) -> "identity.IdentityDecision":
+    """Resolve who this request reads as, ONCE, and refuse here if that is nobody.
 
-    Called before any Topaz call. A refusal raises here and nothing downstream runs.
+    The gate and the record both read what this returns, so there is one resolution and nothing
+    for a second one to disagree with. Called before any Topaz call and long before the broker:
+    a refusal raises here, so no ticket and no role is minted for a request that names nobody.
+
+    Both postures go through it. Under `enforce` the answer is the verified token's; under
+    `observe` a header names the principal, else a VERIFIED claim does, else this refuses. An
+    exception fails CLOSED in both: a gateway that cannot work out who is asking does not get to
+    authorize a read for them.
     """
     try:
-        decision = identity.decide(token, on_behalf_of, legacy, identity.ROUTE_AUTHORIZE)
-    except Exception as exc:  # noqa: BLE001 — fail CLOSED: an enforcing gate that errors refuses
-        logger.error("identity decision failed (%s) — refusing", type(exc).__name__)
+        decision = await asyncio.to_thread(
+            identity.resolve_principal,
+            token, on_behalf_of, legacy, identity.ROUTE_AUTHORIZE, urn,
+        )
+    except Exception as exc:  # noqa: BLE001 — fail CLOSED
+        logger.error("identity resolution failed (%s) — refusing", type(exc).__name__)
         raise HTTPException(
             status_code=503,
             detail={"error": "verification_error", "message": "identity verification failed"},
         )
-    identity.audit(identity.ROUTE_AUTHORIZE, decision, urn)
     if decision.refused:
         raise HTTPException(
             status_code=decision.status,
@@ -124,8 +133,22 @@ def _enforce_identity(token: str, on_behalf_of, legacy, urn: str):
 
 @app.get("/health")
 async def health_check():
-    """Liveness probe: returns 200 as long as the process is running."""
-    return {"status": "ok"}
+    """Liveness probe: returns 200 as long as the process is running.
+
+    It also carries the principal-record gauge's counts, the way `telemetry_misses` rides on the
+    agent's own health body: a number a roll can be read against, rather than a log line someone
+    has to go and grep. `observed` is what separates a quiet gateway from a dark gauge — every
+    other count being 0 means nothing until `observed` is not.
+    """
+    body = {"status": "ok"}
+    # An instrument may never break the thing it measures, /health least of all: a readiness
+    # probe that 500s because a counter misbehaved takes the pod out.
+    try:
+        body["principal_record"] = principal_gauge.counts()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("principal-record counts unavailable (%s)", type(exc).__name__)
+        body["principal_record"] = None
+    return body
 
 @app.get("/ready")
 async def readiness_check():
@@ -163,16 +186,22 @@ async def register_broker(payload: RegisterPayload):
     logger.info(f"Registered {len(payload.asset_urns)} assets for broker {payload.broker_url}")
     return {"status": "success", "registered_assets": len(payload.asset_urns)}
 
-async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str] = None, *, verified: Optional["identity.IdentityDecision"] = None) -> tuple[bool, Optional[List[str]], Optional[str]]:
+async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityDecision") -> tuple[bool, Optional[List[str]], Optional[str]]:
     """
     Calls the Topaz REST API to check authorization.
-    Subject = Keycloak user_id (extracted from JWT)
+    Subject = the resolved principal (`identity.resolve_principal`)
     Resource = {urn}
     Permission = can_read
 
-    `verified` is the `enforce` posture's decision: when given, the subject is exactly
-    `verified.subject` and NOTHING is read from the token unverified (no jwt.decode, no
-    fallback to a claim). Omitted, the legacy behaviour below is unchanged.
+    The subject is exactly `principal.subject` and NOTHING is read from the token here: no
+    `jwt.decode`, no fallback to a claim. This gate used to resolve the subject itself, falling
+    back to an unverified token claim when no header was present, while the record kept only the
+    header -- two resolutions, and a read authorized for somebody and recorded against nobody
+    wherever they differed. There is now one, and it is this argument.
+
+    `principal.subject` is never empty: a request that named nobody was refused before this is
+    called. The check below stays anyway, because a caller reaching this with nobody named is a
+    wiring mistake that must deny rather than send `None` to an authorizer.
     """
     try:
         # Decode JWT. The SUBJECT of the DA-read authz decision is the
@@ -182,12 +211,7 @@ async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str
         # (auth.USER_ENTITLEMENT_CLAIM). Sending the sub here is why the gate
         # was dormant-unverified: it matched no owner and denied everyone,
         # which looks safe and hid the misalignment. Sub is kept for logs.
-        if verified is not None:
-            unverified_claims = {}
-            user_id = verified.token_sub
-        else:
-            unverified_claims = jwt.decode(token, options={"verify_signature": False})
-            user_id = unverified_claims.get("sub")
+        user_id = principal.token_sub
         # The authz SUBJECT is the ORIGINATING USER, threaded via
         # X-Originator-Email (the caller's authz_id / entitlement key —
         # email in sandbox, employee-id at work-deploy). The `token` here
@@ -210,15 +234,11 @@ async def check_topaz_authz(token: str, urn: str, originator_email: Optional[str
         # comment asking two call sites to stay in step. subject_gauge's own
         # docstring already promised to mirror this precedence; now it cannot
         # drift from it.
-        claim = subject_gauge.entitlement_claim()
-        if verified is not None:
-            subject_key = verified.subject
-        else:
-            subject_key = (originator_email or "").strip() or unverified_claims.get(claim)
+        subject_key = principal.subject
         if not subject_key:
             logger.error(
-                "DA-read subject unresolvable — no X-Originator-Email and no "
-                "token %r claim; fail-CLOSED deny (token_sub=%s)", claim, user_id,
+                "DA-read subject unresolvable — the resolved principal names nobody; "
+                "fail-CLOSED deny (token_sub=%s)", user_id or "-",
             )
             return False, None, None
 
@@ -360,9 +380,12 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     on_behalf_of = (request.headers.get("on_behalf_of") or "").strip() or None
     originator_email = on_behalf_of or legacy_header
     enforcing = identity.posture() == identity.POSTURE_ENFORCE
-    verified = None
-    if enforcing:
-        verified = _enforce_identity(token, on_behalf_of, legacy_header, urn)
+
+    # ---- THE ONE RESOLUTION of who this request reads as -----------------------------------
+    # The gate (1.) and the record (3.) both read this and nothing else, so there is nothing
+    # for a second resolution to disagree with. It also emits the posture's evidence line, and
+    # it REFUSES a request that names nobody -- here, before Topaz and before the broker.
+    decision = await _principal(token, on_behalf_of, legacy_header, urn)
 
     # ---- SUBJECT-SOURCE GAUGE — observe only, refuse nothing -------------------------------
     # Sited HERE, on the same two inputs the gate below actually uses, so it reports the subject
@@ -388,20 +411,6 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     except Exception as exc:  # noqa: BLE001
         logger.warning("subject-source gauge failed (%s) — request unaffected", type(exc).__name__)
 
-    # ---- IDENTITY_WOULD — observe posture: say what `enforce` would do, change nothing ----------
-    # Same blanket-except rule as the gauge: a defect here degrades to a warning and the
-    # request proceeds exactly as it does today. Nothing below reads the result.
-    if not enforcing:
-        try:
-            identity.would(
-                await asyncio.to_thread(
-                    identity.decide, token, on_behalf_of, legacy_header, identity.ROUTE_AUTHORIZE
-                ),
-                urn,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("identity would-decide failed (%s) — request unaffected", type(exc).__name__)
-
     # 0. Explicit deny list (sandbox, predates the full Topaz/Rego setup).
     # Checked before Topaz so a known-denied user cannot slip through if
     # Topaz is mock-allowing for the happy path. Originator-Sub header
@@ -414,8 +423,8 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             # vouching for a user (via is set): there it can only ADD a refusal, never remove
             # one. On a user's own token it is ignored, so naming a denied sub cannot deny or
             # free anyone.
-            token_sub = verified.token_sub or ""
-            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if verified.via else ""
+            token_sub = decision.token_sub or ""
+            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if decision.via else ""
         else:
             originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
             try:
@@ -437,7 +446,7 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             )
 
     # 1. Topaz AuthZ
-    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, originator_email, verified=verified)
+    is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, decision)
     if not is_authorized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -471,19 +480,19 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             # and ROW POLICY and the DATABASE enforces them. An older broker
             # ignores the extra fields (pydantic), so this is safe to deploy
             # ahead of one.
-            # ONE expression, read twice: the subject the broker authorizes
-            # for is the subject the issue log names. Deriving the log's
-            # principal separately is how an audit trail quietly starts
-            # describing someone other than the decision did.
-            subject = verified.subject if verified is not None else originator_email
+            # ONE resolution, read everywhere: the subject the GATE decided on is the
+            # subject the broker authorizes for and the subject the issue log names. Deriving
+            # any of the three separately is how an audit trail quietly starts describing
+            # someone other than the decision did.
+            subject = decision.subject
 
             # ---- PRINCIPAL-RECORD GAUGE — observe only, refuse nothing ---------------------
-            # The expression above agrees with the log line by construction. What nothing
-            # checked is whether it agrees with the subject the GATE decided on: under
-            # observe the gate falls back to the token's own claim and this expression does
-            # not, so a header-less read is authorized for a principal and recorded against
-            # nobody. Sited here, after the gate allowed, so every reading is about a ticket
-            # that was actually issued.
+            # The divergence this was built to measure is CLOSED: the gate and the record
+            # read one decision, so `record=divergent` is now a structural impossibility
+            # rather than a daily occurrence. The gauge stays, and its counts go on /health,
+            # because that is the only evidence that it is still true -- a check removed once
+            # it passes measures nothing afterwards. Sited here, after the gate allowed, so
+            # every reading is about a ticket that was actually issued.
             #
             # Same rule as the gauge above: nothing below may branch on this, and a defect in
             # it degrades to a warning while the request proceeds exactly as it does today.

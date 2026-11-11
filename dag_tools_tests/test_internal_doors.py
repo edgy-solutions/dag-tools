@@ -431,8 +431,11 @@ def test_the_gateway_proxy_sends_the_service_token_to_the_broker(monkeypatch, me
         return True, None, None
 
     monkeypatch.setattr(gateway, "check_topaz_authz", allow)
+    # The header names the principal. This module is about the internal DOOR, not about
+    # identity resolution, and a request naming nobody is refused before the proxy is reached.
     resp = TestClient(gateway.app).post(
-        f"/api/v1/assets/{URN}/authorize", headers=bearer(_tok("alice@example.com")))
+        f"/api/v1/assets/{URN}/authorize",
+        headers={**bearer(_tok("alice@example.com")), "on_behalf_of": "alice@example.com"})
     assert resp.status_code == 200, resp.text
     assert seen["auth"] == "Bearer SVC-TOKEN-1"
     assert len(ep.token_calls()) == 1
@@ -457,8 +460,11 @@ def test_the_gateway_proxy_still_calls_when_no_credentials_are_set(monkeypatch):
         return True, None, None
 
     monkeypatch.setattr(gateway, "check_topaz_authz", allow)
+    # The header names the principal. This module is about the internal DOOR, not about
+    # identity resolution, and a request naming nobody is refused before the proxy is reached.
     resp = TestClient(gateway.app).post(
-        f"/api/v1/assets/{URN}/authorize", headers=bearer(_tok("alice@example.com")))
+        f"/api/v1/assets/{URN}/authorize",
+        headers={**bearer(_tok("alice@example.com")), "on_behalf_of": "alice@example.com"})
     assert resp.status_code == 200
     assert seen["auth"] is None
 
