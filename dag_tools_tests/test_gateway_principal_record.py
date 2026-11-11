@@ -86,12 +86,14 @@ def _tok(email):
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for k in (
-        "GATEWAY_IDENTITY_POSTURE", "GATEWAY_JWT_ISSUER", "GATEWAY_JWKS_URL",
+        "GATEWAY_IDENTITY_POSTURE", "GATEWAY_JWT_ISSUER", "GATEWAY_JWT_ISSUERS",
+        "GATEWAY_JWT_AUDIENCE", "GATEWAY_JWT_AUDIENCES", "GATEWAY_JWKS_URL",
         "GATEWAY_JWT_PUBLIC_KEY", "KEYCLOAK_PUBLIC_KEY", "GATEWAY_JWT_ALGORITHMS",
         "USER_ENTITLEMENT_CLAIM", "DENIED_USER_SUBS", "MESH_SERVICE_TOKEN_URL",
         "MESH_SERVICE_CLIENT_ID", "MESH_SERVICE_CLIENT_SECRET",
     ):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(identity, "_unconfigured_said", None, raising=False)
     monkeypatch.setattr(identity, "_jwks_client", None, raising=False)
     monkeypatch.setattr(identity, "_jwks_client_url", None, raising=False)
     monkeypatch.setattr(subject_gauge, "_jwks_client", None, raising=False)

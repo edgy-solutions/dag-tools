@@ -11,6 +11,25 @@ never refuses; this module decides, and under the `enforce` posture the gateway 
 3. The header carries authz_id, not email, and is called `on_behalf_of` on the wire.
    A blank `on_behalf_of` from a listed delegate means the service acts as itself.
 
+## What VERIFIED means here
+
+Signature, then the ISSUER against an accepted LIST, then the AUDIENCE against an accepted list.
+Both lists are read from the deployment's own values, neither has a default, and an EMPTY list
+REFUSES EVERYTHING: a gateway that has not been told which issuers it trusts does not get to
+decide that it trusts the one in front of it. A built-in default would be worse than a wrong
+one, because it would make the empty state unreachable and so make the rule unobservable.
+
+The issuer is a LIST because one identity provider is reachable under more than one name. A
+token minted against the browser-facing URL and presented by a pod inside the cluster carries
+the issuer it was minted with, so the in-cluster name is a second accepted ENTRY rather than a
+rewrite of the first. No issuer and no audience is written down here; the deployment lists them.
+
+The issuer is checked in this module rather than handed to PyJWT. `jwt.decode(issuer=[...])` is
+a newer PyJWT's behaviour -- an older one compares the list to the claim as a string and refuses
+every token, a total outage that reads as a key problem. The AUDIENCE is handed to PyJWT, which
+has resolved the aud-may-be-a-list-on-both-sides intersection for far longer than this code has
+existed, and getting that intersection subtly wrong is how an audience check passes vacuously.
+
 ## Separate from the gauge on purpose
 
 The gauge's `verify_bearer` must stay never-raising and its JWKS failure latches for ever.
@@ -20,8 +39,8 @@ a 503 for THAT request and the next request tries again.
 
 ## Reasons are stable log tokens, not prose
 
-`token_absent`, `token_invalid`, `verification_unconfigured`, `jwks_unavailable`, `no_subject`,
-`on_behalf_of_differs`, `not_a_delegate`, `legacy_header`.
+`token_absent`, `token_invalid`, `verification_unconfigured`, `issuer_not_accepted`,
+`jwks_unavailable`, `no_subject`, `on_behalf_of_differs`, `not_a_delegate`, `legacy_header`.
 
 Every setting is read per call from the environment, never at import.
 """
@@ -55,6 +74,7 @@ JWKS_TIMEOUT_SECONDS = 3
 TOKEN_ABSENT = "token_absent"
 TOKEN_INVALID = "token_invalid"
 UNCONFIGURED = "verification_unconfigured"
+ISSUER_NOT_ACCEPTED = "issuer_not_accepted"
 JWKS_UNAVAILABLE = "jwks_unavailable"
 NO_SUBJECT = "no_subject"
 DIFFERS = "on_behalf_of_differs"
@@ -65,6 +85,7 @@ _STATUS = {
     TOKEN_ABSENT: 401,
     TOKEN_INVALID: 401,
     UNCONFIGURED: 503,
+    ISSUER_NOT_ACCEPTED: 401,
     JWKS_UNAVAILABLE: 503,
     NO_SUBJECT: 403,
     DIFFERS: 403,
@@ -75,7 +96,11 @@ _STATUS = {
 _MESSAGES = {
     TOKEN_ABSENT: "no bearer token was presented",
     TOKEN_INVALID: "the bearer token failed verification",
-    UNCONFIGURED: "the gateway has no key source or no issuer configured to verify tokens",
+    UNCONFIGURED: (
+        "the gateway has no key source, no accepted issuer or no accepted audience configured "
+        "to verify tokens"
+    ),
+    ISSUER_NOT_ACCEPTED: "the token's issuer is not one this gateway accepts",
     JWKS_UNAVAILABLE: "the signing keys could not be fetched; retry",
     NO_SUBJECT: "the verified token carries no subject claim",
     DIFFERS: "on_behalf_of differs from the identity the token proves",
@@ -130,8 +155,59 @@ def entitlement_claim() -> str:
     return os.getenv("USER_ENTITLEMENT_CLAIM", "email")
 
 
-def _issuer() -> str:
-    return (os.getenv("GATEWAY_JWT_ISSUER") or "").strip()
+#: Where each accepted list is read from. The PLURAL name first, the SINGULAR one second: the
+#: singular names predate the list and are kept as one ENTRY of it, so a deployment that set
+#: them keeps working and there is never a second resolution to disagree with the first.
+ISSUERS_ENV = ("GATEWAY_JWT_ISSUERS", "GATEWAY_JWT_ISSUER")
+AUDIENCES_ENV = ("GATEWAY_JWT_AUDIENCES", "GATEWAY_JWT_AUDIENCE")
+
+#: The key source, named here so one list answers "what is unset?" for every caller.
+KEY_ENV = ("GATEWAY_JWKS_URL", "GATEWAY_JWT_PUBLIC_KEY", "KEYCLOAK_PUBLIC_KEY")
+
+
+def _accepted(env_names) -> List[str]:
+    """The values named by `env_names`, comma-separated, in order, de-duplicated.
+
+    No defaults, ever. An empty result is the refuse-everything state and must be reachable.
+    """
+    out: List[str] = []
+    for name in env_names:
+        for part in (os.getenv(name) or "").split(","):
+            value = part.strip()
+            if value and value not in out:
+                out.append(value)
+    return out
+
+
+def accepted_issuers() -> List[str]:
+    """The issuers this gateway accepts. EMPTY REFUSES EVERYTHING; there is no default."""
+    return _accepted(ISSUERS_ENV)
+
+
+def accepted_audiences() -> List[str]:
+    """The audiences this gateway accepts. EMPTY REFUSES EVERYTHING; there is no default."""
+    return _accepted(AUDIENCES_ENV)
+
+
+def enforce_blockers() -> List[str]:
+    """What is unset before `enforce` could admit anything. Empty means it is configurable now.
+
+    Env var NAMES only, never values. This is the question an operator actually asks -- can this
+    deployment turn enforce on? -- answered by the pod itself, so the answer cannot be a sentence
+    in a document that went stale when someone edited a values file.
+    """
+    missing: List[str] = []
+    if not accepted_issuers():
+        missing.append(ISSUERS_ENV[0])
+    if not accepted_audiences():
+        missing.append(AUDIENCES_ENV[0])
+    if not (_jwks_url() or _static_key()):
+        missing.append(" or ".join(KEY_ENV))
+    return missing
+
+
+def _jwks_url() -> str:
+    return (os.getenv("GATEWAY_JWKS_URL") or "").strip()
 
 
 def _static_key() -> Optional[str]:
@@ -206,14 +282,42 @@ def _jwks_signing_key(url: str, token: str):
         raise _JwksUnavailable(type(exc).__name__) from exc
 
 
+_unconfigured_said: Optional[tuple] = None
+
+
+def _say_unconfigured() -> None:
+    """Name what is unset, once per distinct state.
+
+    The refusal's own reason token cannot say WHICH of the three is missing, and a 503 whose
+    cause is not in the log is a morning spent on the wrong suspect. Latched on the state rather
+    than on having spoken once, so a deployment that is fixed and then broken again says so.
+    """
+    global _unconfigured_said
+    missing = tuple(enforce_blockers())
+    if missing == _unconfigured_said:
+        return
+    _unconfigured_said = missing
+    logger.error(
+        "identity: verification is unconfigured, so every token is refused — unset: %s",
+        ", ".join(missing) or "nothing (a key source answered but no token verifies)",
+    )
+
+
 def _verify(token: Optional[str]):
-    """Returns `(claims, None)` on success or `(None, reason)`. Never raises."""
+    """Returns `(claims, None)` on success or `(None, reason)`. Never raises.
+
+    Signature, then audience (PyJWT), then issuer against the accepted list (here). An empty
+    accepted list is `UNCONFIGURED` and refuses: checked BEFORE the decode so the refusal names
+    a cause an operator can act on, rather than arriving as an indistinguishable invalid-token.
+    """
     if not token or not token.strip():
         return None, TOKEN_ABSENT
-    issuer = _issuer()
-    url = (os.getenv("GATEWAY_JWKS_URL") or "").strip()
+    issuers = accepted_issuers()
+    audiences = accepted_audiences()
+    url = _jwks_url()
     static = _static_key()
-    if not issuer or not (url or static):
+    if not issuers or not audiences or not (url or static):
+        _say_unconfigured()
         return None, UNCONFIGURED
     try:
         import jwt
@@ -230,11 +334,20 @@ def _verify(token: Optional[str]):
         claims = jwt.decode(
             token, key,
             algorithms=_algorithms(),
-            issuer=issuer,
-            options={"verify_aud": False, "require": ["exp"]},
+            audience=audiences,
+            options={"verify_aud": True, "require": ["exp", "iss", "aud"]},
         )
     except Exception:  # noqa: BLE001
         return None, TOKEN_INVALID
+    # The issuer is checked HERE, against the list, for the PyJWT-version reason in the module
+    # docstring. `iss` is required above, so this is a proven claim by the time it is read.
+    iss = _clean(claims.get("iss"))
+    if iss not in issuers:
+        logger.warning(
+            "identity: a signature-valid token names an issuer this gateway does not accept "
+            "(%s) — list it in %s to accept it", iss or "-", ISSUERS_ENV[0],
+        )
+        return None, ISSUER_NOT_ACCEPTED
     return claims, None
 
 
@@ -308,7 +421,19 @@ def would(d: IdentityDecision, urn: str) -> None:
 
 
 def announce() -> str:
-    """Startup line: posture and whether an issuer is set. No secret values."""
-    line = "identity: posture=%s issuer=%s" % (posture(), "set" if _issuer() else "unset")
+    """Startup line: posture, how many issuers and audiences are accepted, and whether `enforce`
+    could admit anything at all. COUNTS and env var NAMES, never values.
+
+    The count is the point. `issuers=0` is a gateway that refuses every token, and that is the
+    one state which otherwise looks exactly like a quiet one.
+    """
+    blockers = enforce_blockers()
+    line = "identity: posture=%s issuers=%d audiences=%d enforce_ready=%s%s" % (
+        posture(),
+        len(accepted_issuers()),
+        len(accepted_audiences()),
+        "no" if blockers else "yes",
+        (" unset=" + ",".join(blockers)) if blockers else "",
+    )
     _PKG_LOGGER.info(line)
     return line

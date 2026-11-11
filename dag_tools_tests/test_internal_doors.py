@@ -31,6 +31,7 @@ from dag_tools.central_gateway import main as gateway  # noqa: E402
 from dag_tools.domain_broker import main as broker  # noqa: E402
 
 ISS = "https://idp.example/realms/mesh"
+AUD = "data-gateway"
 URN = "urn:li:dataset:(urn:li:dataPlatform:s3,bucket/x,PROD)"
 
 
@@ -49,9 +50,11 @@ PRIV, PUB = _keypair()
 OTHER_PRIV, _ = _keypair()
 
 
-def _tok(email, *, key=PRIV, exp=300):
-    return jwt.encode({"sub": "kc-1", "iss": ISS, "exp": int(time.time()) + exp, "email": email},
-                      key, algorithm="RS256")
+def _tok(email, *, key=PRIV, exp=300, aud=AUD):
+    # The doors share `identity._verify`, so a service token carries an audience too. ONE
+    # verification, not a per-caller policy -- a second one is the bug class this work closes.
+    return jwt.encode({"sub": "kc-1", "iss": ISS, "aud": aud, "exp": int(time.time()) + exp,
+                       "email": email}, key, algorithm="RS256")
 
 
 SVC_OK = "svc:gateway"
@@ -68,10 +71,12 @@ class _Door(SimpleNamespace):
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for k in ("INTERNAL_DOOR_POSTURE", "BROKER_RESOLVE_CALLERS", "GATEWAY_REGISTER_CALLERS",
-              "GATEWAY_JWT_ISSUER", "GATEWAY_JWKS_URL", "GATEWAY_JWT_PUBLIC_KEY",
+              "GATEWAY_JWT_ISSUER", "GATEWAY_JWT_ISSUERS", "GATEWAY_JWT_AUDIENCE",
+              "GATEWAY_JWT_AUDIENCES", "GATEWAY_JWKS_URL", "GATEWAY_JWT_PUBLIC_KEY",
               "KEYCLOAK_PUBLIC_KEY", "GATEWAY_JWT_ALGORITHMS", "USER_ENTITLEMENT_CLAIM",
               "MESH_SERVICE_TOKEN_URL", "MESH_SERVICE_CLIENT_ID", "MESH_SERVICE_CLIENT_SECRET"):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(identity, "_unconfigured_said", None)
     monkeypatch.setattr(identity, "_jwks_client", None)
     monkeypatch.setattr(identity, "_jwks_client_url", None)
     monkeypatch.setattr(internal_door, "_cache", {"token": None, "fetch_at": 0.0})
@@ -81,6 +86,7 @@ def clean_env(monkeypatch):
 @pytest.fixture
 def verifying(monkeypatch):
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
 
 
@@ -222,6 +228,7 @@ def test_enforce_jwks_outage_is_503_for_that_request_only_no_latch(door, monkeyp
     monkeypatch.setenv("INTERNAL_DOOR_POSTURE", "enforce")
     monkeypatch.setenv(door.env, SVC_OK)
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWKS_URL", "https://idp.example/jwks")
     state = {"down": True}
 

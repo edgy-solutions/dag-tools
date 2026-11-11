@@ -204,10 +204,20 @@ accepts only `svc:` tokens whose service is named in its own list,
 `BROKER_RESOLVE_CALLERS` (broker) and `GATEWAY_REGISTER_CALLERS` (gateway),
 comma-separated; an empty list admits nobody under `enforce`. Callers present
 their own token from `MESH_SERVICE_TOKEN_URL`, `MESH_SERVICE_CLIENT_ID` and
-`MESH_SERVICE_CLIENT_SECRET`, and both doors verify it with the
-`GATEWAY_JWT_ISSUER` and key settings. To turn it on: set the callers'
-credentials, set both lists, read the `internal_door would_refuse` log lines
+`MESH_SERVICE_CLIENT_SECRET`, and both doors verify it with the same issuer,
+audience and key settings as the user-facing route. To turn it on: set the
+callers' credentials, set both lists, read the `internal_door would_refuse` log lines
 until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
+
+Verifying a token means signature, then the issuer against the accepted list
+(`GATEWAY_JWT_ISSUERS`, comma-separated), then the audience against the
+accepted list (`GATEWAY_JWT_AUDIENCES`). Neither list has a default and an
+empty one refuses every token. The doors share that one verification with the
+user-facing route deliberately -- a second verification is a second answer --
+so **the service token needs an `aud` the list accepts**, which with
+`client_credentials` means an audience mapper on the client. The pod says
+whether it is configured at all: its startup line carries
+`enforce_ready=yes|no` and, when `no`, the names of the unset vars.
 
 Both HTTP calls use a 10-second timeout and there is no retry. Treat
 `get_dataframe` as a call that can fail transiently.
