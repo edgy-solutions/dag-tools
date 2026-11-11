@@ -21,13 +21,13 @@ it back are named.
   is read differently, and a defect in the gauge degrades to a warning while the request
   proceeds exactly as before.
 
-  It exists because the two subjects are resolved separately and, under the observe posture,
-  disagree. The gate resolves the originator header and falls back to the token's own claim;
+  It exists because the two subjects *were* resolved separately and, under the observe posture,
+  disagreed. The gate resolved the originator header and fell back to the token's own claim;
   the recorded subject — the one in the broker payload and in `TICKET_ISSUED`, which agree with
-  each other by construction — resolves the header with no fallback. So a request carrying a
-  subject-bearing token and no `X-Originator-Email` / `on_behalf_of` header is authorized for
-  that principal and recorded as nobody: the broker is handed a null subject and the issue line
-  prints `subject=-`. Under `enforce` both read the verified decision and the question does not
+  each other by construction — resolved the header with no fallback. So a request carrying a
+  subject-bearing token and no `X-Originator-Email` / `on_behalf_of` header was authorized for
+  that principal and recorded as nobody: the broker was handed a null subject and the issue line
+  printed `subject=-`. Under `enforce` both read the verified decision and the question did not
   arise.
 
   That shape is not an edge case. It is the subject-source gauge's `token-claim` bucket — the
@@ -35,12 +35,19 @@ it back are named.
   arrive is the one way the record of the read names nobody, and every other signal on such a
   request is green. Nothing flagged it.
 
-  It measures rather than fixes because the fix is not free to apply unobserved: the recorded
-  subject is encoded by a `mint-role` backend into a role's GRANTs and ROW POLICY, so sending a
-  subject where `null` went before changes what a credential grants, for callers nobody has
-  enumerated; and the subject available to fall back on is read from an *unverified* token,
+  **The divergence it measured is closed in this same release** — see the one-resolution entry
+  under *Changed* — and the gauge stays, because its counts are the only standing evidence that
+  the closure holds. `unnamed` and `divergent` are now states nothing on the request path should
+  be able to produce, and an instrument retired the moment its finding is fixed is how the next
+  one arrives unseen.
+
+  The fix was not free to apply unobserved, which is why the measurement shipped first: the
+  recorded subject is encoded by a `mint-role` backend into a role's GRANTs and ROW POLICY, so
+  sending a subject where `null` went before changes what a credential grants, for callers nobody
+  had enumerated; and the subject available to fall back on was read from an *unverified* token,
   which is a defensible thing to log and a different thing to authorize a credential against.
-  The gauge produces the population count that makes that one-expression change reviewable.
+  Both are answered in the same release: the fallback is gone rather than widened, so no
+  credential is minted for a subject nothing established.
 
   Buckets are logged as `principal-record: record=<bucket>`: `named`, `unnamed` (the finding),
   `divergent` (should be unreachable, and worse than `unnamed` if it ever appears),
@@ -49,6 +56,13 @@ it back are named.
   states an instrument exists to separate. The gauge announces itself at startup for the same
   reason. `unnamed`, `divergent` and `unreadable` each also emit a WARNING naming the urn and
   no principal and no credential; the ticket id is on the `TICKET_ISSUED` line.
+
+  The counts are also served on `/health` as `principal_record`, the way `telemetry_misses` is in
+  the agent. Every bucket is always present even at zero, and `observed` rides beside them as the
+  discriminator: a dict of zeros from a gateway nothing has asked to read and one from a gateway
+  serving clean reads are otherwise the same bytes. `/health` still answers if the counter
+  misbehaves — `principal_record` comes back `null`, the status stays `ok`, and a warning names
+  the exception type. **No existing `/health` key changes.**
 
 - **The gateway's `enforce` posture now verifies the issuer against an accepted *list* and the
   audience against one.** Two new env vars, read by `dag_tools.central_gateway.identity`:
@@ -76,6 +90,44 @@ it back are named.
   looks exactly like a quiet one.
 
 ### Changed
+
+- **One function now resolves the principal, and both the authorization decision and the record
+  of the read use its answer.** `identity.resolve_principal` is the single answer to "who does
+  this request read as": `check_topaz_authz` is handed that answer and decodes nothing itself,
+  and the broker payload and the `TICKET_ISSUED` line name the same principal by construction.
+  There were two resolutions before, and they could only agree by coincidence — which they
+  mostly did, which is why the divergence ran unnoticed and had to be measured before it could
+  be believed (the principal-record gauge, above, is what measured it).
+
+  **A token's claim is a principal only if this gateway verified the token** — signature, then
+  the issuer against the accepted list, then the audience, from served values, with an empty list
+  refusing everything. An unverified token names nobody, and **a request that names nobody is now
+  refused `no_principal` (401) before the authorizer and before the broker**: no ticket is minted
+  and no role is minted for a subject nothing established. Previously such a request was
+  authorized for the claim the token asserted and recorded against nobody.
+
+  **This changes `observe`, the default posture, in exactly that one way, and there is no flag
+  back** — a deployment wanting the old reading of those requests does not have one, because the
+  old reading was the defect. The `X-Originator-Email` / `on_behalf_of` header path is untouched:
+  it still wins, is still claim-agnostic, and still does not care whether the token verified,
+  which is the path every reader rides today. A request that names a principal is unaffected
+  under either posture.
+
+  **A defect in the resolution now refuses under `observe` too** (`verification_error`, 503);
+  observe previously warned and served. Failing closed is safe here precisely because the
+  resolution reports its refusals as *reasons* rather than as exceptions — an unconfigured
+  verifier and an unreachable JWKS both come back as a decision an operator can read — so an
+  exception out of it is a defect in the resolution itself, and a resolution that cannot say who
+  a request reads as must not let the read proceed under a guess. The evidence line is the other
+  way round and stays that way: a failure emitting it is swallowed and the request proceeds,
+  because an instrument may not break what it measures.
+
+  The two pins written deliberately red — the gauge module's own, and the matrix arm that pinned
+  `"subject": null` as the behaviour of a token-only request — are flipped in the same change,
+  and a new structural pin asserts the shape rather than the outcome: the gate reads nothing off
+  the token, the route resolves once and emits no evidence line of its own, and one request
+  verifies the token once. The behavioural seal can be satisfied by accident, since two
+  resolutions agree most of the time.
 
 - **Under `enforce`, a token with no `aud` claim, or an `aud` outside the accepted list, is now
   refused** (`token_invalid`, 401), and a gateway with no accepted audience configured refuses

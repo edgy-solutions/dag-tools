@@ -195,10 +195,15 @@ def verify_bearer(token: Optional[str]) -> CallerIdentity:
 def classify(token_subject: Optional[str], header_subject: Optional[str]) -> Dict[str, Optional[str]]:
     """Which source supplied the authorization subject, and did the sources agree?
 
-    Mirrors `central_gateway.check_topaz_authz`'s own precedence — header first, token claim as
-    fallback — so the gauge reports the subject the gate WOULD use, not a subject of its own
-    devising. If that precedence ever changes, this must change with it or the gauge silently
-    starts measuring a different system.
+    Header first, token claim as fallback. That WAS the gate's own precedence, and it is
+    deliberately kept now that the gate's is narrower: `identity.resolve_principal` takes the
+    claim only from a token it VERIFIED, where this reads the claim whatever its signature says.
+
+    Keeping the wider reading is the point of the instrument. The arm where the two differ — an
+    unverified token carrying a subject, alongside a header naming someone else — is the
+    impersonation shape, and it is what `SUBJECT-SOURCE DIVERGENT` warns about. Narrowing this
+    to agree with the gate by construction would leave the gauge measuring nothing: it would
+    report every request as clean precisely because it had stopped looking.
     """
     tok = (token_subject or "").strip() or None
     hdr = (header_subject or "").strip() or None

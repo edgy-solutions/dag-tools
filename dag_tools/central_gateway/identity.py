@@ -30,6 +30,19 @@ every token, a total outage that reads as a key problem. The AUDIENCE is handed 
 has resolved the aud-may-be-a-list-on-both-sides intersection for far longer than this code has
 existed, and getting that intersection subtly wrong is how an audience check passes vacuously.
 
+## Who a request reads as (ONE resolution)
+
+`resolve_principal` is the only answer to that question, and the gate and the record both read
+the one it gives. Two resolutions of the principal is not a tidiness problem: when they
+disagree, the gateway authorizes a read for somebody and records it against somebody else, and
+the record is the only thing anyone can audit afterwards. Under `enforce` the answer IS
+`decide`'s, verbatim. Under `observe` a header names the principal, else a VERIFIED claim does,
+and if nothing does the request is REFUSED -- in both postures, before the broker is called, so
+no ticket and no role is minted for nobody.
+
+An UNVERIFIED token names nobody. A claim nothing has checked is a request's own say-so about
+who it is, and authorizing a read on it is the thing a gate exists to prevent.
+
 ## Separate from the gauge on purpose
 
 The gauge's `verify_bearer` must stay never-raising and its JWKS failure latches for ever.
@@ -40,7 +53,8 @@ a 503 for THAT request and the next request tries again.
 ## Reasons are stable log tokens, not prose
 
 `token_absent`, `token_invalid`, `verification_unconfigured`, `issuer_not_accepted`,
-`jwks_unavailable`, `no_subject`, `on_behalf_of_differs`, `not_a_delegate`, `legacy_header`.
+`jwks_unavailable`, `no_subject`, `on_behalf_of_differs`, `not_a_delegate`, `legacy_header`,
+`no_principal`.
 
 Every setting is read per call from the environment, never at import.
 """
@@ -48,7 +62,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional
 
 # Two layouts, as in main.py: the deployed image is flat `/app` and a bare relative import
@@ -80,6 +94,10 @@ NO_SUBJECT = "no_subject"
 DIFFERS = "on_behalf_of_differs"
 NOT_A_DELEGATE = "not_a_delegate"
 LEGACY_HEADER = "legacy_header"
+#: Nothing names a principal: no header, and no claim this gateway has verified. `observe`
+#: only -- under `enforce` a nameless request has already been refused for whichever reason
+#: it failed verification on, which is the more actionable one.
+NO_PRINCIPAL = "no_principal"
 
 _STATUS = {
     TOKEN_ABSENT: 401,
@@ -91,6 +109,9 @@ _STATUS = {
     DIFFERS: 403,
     NOT_A_DELEGATE: 403,
     LEGACY_HEADER: 403,
+    # 401, not 403: nobody has been named, so the answer is "present credentials", not
+    # "you may not". 403 would send a caller looking for a permission to be granted.
+    NO_PRINCIPAL: 401,
 }
 
 _MESSAGES = {
@@ -106,11 +127,21 @@ _MESSAGES = {
     DIFFERS: "on_behalf_of differs from the identity the token proves",
     NOT_A_DELEGATE: "this service is not a listed delegate for this route",
     LEGACY_HEADER: "a delegate must name the user in on_behalf_of, not the legacy header",
+    NO_PRINCIPAL: (
+        "this request names no principal: no on_behalf_of header, and no claim from a token "
+        "this gateway verified. A read is never authorized for nobody"
+    ),
 }
 
 
 def message_for(reason: str) -> str:
     return _MESSAGES.get(reason, reason)
+
+
+#: Where the principal's name came from. Recorded so an auditor reading one decision can tell
+#: a proven identity from one a header asserted, without re-deriving it from the other fields.
+SOURCE_HEADER = "header"
+SOURCE_VERIFIED_TOKEN = "verified_token"
 
 
 @dataclass(frozen=True)
@@ -120,6 +151,8 @@ class IdentityDecision:
     refused: Optional[str]
     status: Optional[int]
     token_sub: Optional[str]
+    #: Trailing and defaulted, so every existing positional construction still reads the same.
+    source: Optional[str] = None
 
 
 def _refuse(reason: str, token_sub: Optional[str] = None) -> IdentityDecision:
@@ -365,8 +398,25 @@ def decide(
     route: str,
     is_delegate_fn=None,
 ) -> IdentityDecision:
-    """Who this request reads as. Pure apart from reading env and (when configured) JWKS."""
+    """Who this request reads as under `enforce`. Pure apart from env and (when set up) JWKS."""
     claims, reason = _verify(token)
+    return _decided(claims, reason, on_behalf_of, legacy_subject, route, is_delegate_fn)
+
+
+def _decided(
+    claims: Dict[str, Any],
+    reason: Optional[str],
+    on_behalf_of: Optional[str],
+    legacy_subject: Optional[str],
+    route: str,
+    is_delegate_fn=None,
+) -> IdentityDecision:
+    """`decide`'s body, over an ALREADY-verified token.
+
+    Split out so `resolve_principal` verifies once and both of its arms read that one
+    verification. Verifying twice in one request is a second answer waiting to differ from the
+    first -- and with JWKS it is a second fetch as well.
+    """
     if reason:
         return _refuse(reason)
 
@@ -394,6 +444,72 @@ def decide(
     if legacy:
         return _refuse(LEGACY_HEADER, token_sub)
     return IdentityDecision(claim, None, None, None, token_sub)
+
+
+def resolve_principal(
+    token: Optional[str],
+    on_behalf_of: Optional[str],
+    legacy_subject: Optional[str],
+    route: str,
+    urn: str,
+    is_delegate_fn=None,
+) -> IdentityDecision:
+    """THE one resolution of who a request reads as. The gate and the record both read this.
+
+    One verification, one evidence line, one answer:
+
+    * Under `enforce` the answer is `decide`'s, verbatim, and `audit` records it.
+    * Under `observe` a header names the principal, else a claim from a token this gateway
+      VERIFIED does, else nobody does and the refusal is `no_principal`. `would` still records
+      what `enforce` would have done, and still branches on nothing.
+
+    The header keeps winning under `observe` because it is the path every reader rides today;
+    `subject_gauge` measures the divergence that allows and goes on measuring it. What changes
+    is the FALLBACK. An unverified token's claim used to become the principal for the gate while
+    the record kept only the header, so a read was authorized for the subject a token claimed
+    and recorded against nobody. An unverified claim is the request's own say-so about who it
+    is, and it now names nobody in either posture.
+
+    A refusal here is raised by the caller BEFORE the broker is called, so neither a ticket nor
+    a role is ever minted for a request that names nobody.
+    """
+    claims, reason = _verify(token)
+    enforced = _decided(claims, reason, on_behalf_of, legacy_subject, route, is_delegate_fn)
+    enforcing = posture() == POSTURE_ENFORCE
+
+    # The evidence line is emitted here, where the one decision is. It may never change the
+    # answer: a defect in a log line refusing reads would be the instrument breaking the thing
+    # it measures, which is the rule the gauges are built on. The DECISION fails closed; the
+    # line does not.
+    try:
+        if enforcing:
+            audit(route, enforced, urn)
+        else:
+            would(enforced, urn)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "identity evidence line failed (%s) — the decision stands", type(exc).__name__
+        )
+
+    if enforcing:
+        if enforced.refused:
+            return enforced
+        # `via` is set only where a delegate named somebody: there the name came off the header
+        # and the token authorized it. Everywhere else the name IS the proven claim.
+        return replace(
+            enforced,
+            source=SOURCE_HEADER if enforced.via else SOURCE_VERIFIED_TOKEN,
+        )
+
+    token_sub = None if reason else (_clean(claims.get("sub")) or None)
+    header = _clean(on_behalf_of) or _clean(legacy_subject)
+    if header:
+        return IdentityDecision(header, None, None, None, token_sub, SOURCE_HEADER)
+    if not reason:
+        claim = _clean(claims.get(entitlement_claim()))
+        if claim:
+            return IdentityDecision(claim, None, None, None, token_sub, SOURCE_VERIFIED_TOKEN)
+    return _refuse(NO_PRINCIPAL, token_sub)
 
 
 # ---------------------------------------------------------------------------

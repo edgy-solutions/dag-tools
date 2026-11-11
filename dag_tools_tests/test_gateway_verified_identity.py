@@ -1,5 +1,12 @@
 """The gateway decides who a request reads as from a VERIFIED token (`enforce`), and under
-`observe` (the default) changes nothing.
+`observe` (the default) changes nothing a reader relies on.
+
+WHAT OBSERVE NOW REFUSES. One thing, and it is the point of the fix: a request that names
+nobody. The header still wins and is still claim-agnostic and still does not care whether the
+token verified -- that is the path Engine DA and every other reader rides. What changed is the
+FALLBACK: a claim off a token this gateway did not verify is the request's own say-so, so it
+names nobody, and a request naming nobody is refused (401 `no_principal`) before Topaz and
+before the broker. No ticket is minted and no role is minted for a subject nothing established.
 
 THE RULING these pin:
   1. A user token's identity is its verified claim; a header that differs is refused.
@@ -452,16 +459,20 @@ def test_a_token_without_exp_is_not_accepted(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# OBSERVE — outcomes are what today's code yields, header honoured as before
+# OBSERVE — the header wins as before; the token FALLBACK now needs a VERIFIED token
 # ---------------------------------------------------------------------------
 def _observe_tokens():
     return {
-        # kind: (token builder, the claim today's code would fall back to)
+        # kind: (token builder, who a request carrying NO header reads as — or None for
+        #        "this token names nobody", which is now a refusal rather than a fallback)
         "valid_user": (lambda: user_tok("alice@example.com"), "alice@example.com"),
         "valid_service": (lambda: svc_tok("svc:etl"), "svc:etl"),
-        "forged_user": (lambda: user_tok("alice@example.com", key=OTHER_PRIV), "alice@example.com"),
+        # Both of these carry a subject claim and neither was verified: one is signed by a key
+        # this gateway does not accept, the other is symmetrically signed by its own bearer.
+        # A claim nothing checked is the request asserting who it is.
+        "forged_user": (lambda: user_tok("alice@example.com", key=OTHER_PRIV), None),
         "unsigned_hs256": (lambda: jwt.encode({"sub": "k", "email": "alice@example.com"}, "k" * 32, algorithm="HS256"),
-                           "alice@example.com"),
+                           None),
         "no_claim": (lambda: _tok({}), None),
     }
 
@@ -477,7 +488,14 @@ _COMBOS = {
 @pytest.mark.parametrize("combo", sorted(_COMBOS))
 @pytest.mark.parametrize("kind", sorted(_observe_tokens()))
 def test_observe_outcome_is_what_today_yields(kind, combo, world, http, monkeypatch):
-    # Observe is the default; configure a verifier too, so the would-decide path runs for real.
+    """Twenty arms: every token shape against every header shape.
+
+    The `none` column is where the fix lives. It used to assert that the broker was handed
+    ``"subject": null`` for a read Topaz had authorized for somebody — the whole defect, pinned
+    as the behaviour. Now: a verified token's claim IS the principal and is recorded as that same
+    principal on both sides, and a token that verified nothing names nobody and is refused.
+    """
+    # Observe is the default; configure a verifier too, so the decision runs for real.
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
     monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
@@ -486,23 +504,56 @@ def test_observe_outcome_is_what_today_yields(kind, combo, world, http, monkeypa
     want = fallback if want == "FALLBACK" else want
     r = call(http, mk(), **headers)
     if want is None:
-        assert r.status_code == 403 and world.topaz == []
+        # Only reachable in the `none` column: a header always names somebody.
+        assert combo == "none"
+        assert r.status_code == 401 and _reason(r) == identity.NO_PRINCIPAL, r.text
+        assert world.topaz == [], "a request naming nobody is refused BEFORE the authorizer"
+        assert world.broker == [], "and before the broker: no ticket, no role"
     else:
         assert r.status_code == 200, r.text
         assert world.topaz == [want]
-        assert world.broker[0]["subject"] == (None if combo == "none" else want)
+        # ONE resolution: the subject the read was authorized for is the subject it is
+        # recorded against, header or token, with no column where the record goes silent.
+        assert world.broker[0]["subject"] == want
 
 
-def test_observe_logs_what_enforce_would_do_and_a_forged_token_still_passes(world, http, monkeypatch, lines):
+def test_observe_logs_what_enforce_would_do_and_a_forged_token_WITH_A_HEADER_still_passes(
+    world, http, monkeypatch, lines,
+):
+    """The reader's path is untouched: the header names the principal, whatever the token is.
+
+    Engine DA presents a service-account token and names the user in `X-Originator-Email`. If
+    tightening the fallback had also tightened this, every read in the sandbox would stop. The
+    would-line still says enforce would refuse this token, which is exactly what observe is for.
+    """
+    monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
+    monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
+    r = call(http, user_tok("alice@example.com", key=OTHER_PRIV), on_behalf_of="bob@example.com")
+    assert r.status_code == 200, "observe is today's posture for a request that names somebody"
+    assert world.topaz == ["bob@example.com"]
+    would = lines("IDENTITY_WOULD")
+    assert would and "outcome=refuse" in would[-1] and "reason=token_invalid" in would[-1]
+    assert f"urn={URN}" in would[-1]
+    assert not lines("IDENTITY_AUDIT")
+
+
+def test_observe_refuses_a_forged_token_that_names_NOBODY_else(world, http, monkeypatch, lines):
+    """The one behaviour change in observe, stated on its own rather than inside a matrix.
+
+    Before: the forged token's own claim became the principal, the read was authorized for
+    `alice@example.com`, and the record of it named nobody. Now the request is refused and
+    neither the authorizer nor the broker is asked. The posture is still observe — the
+    would-line is emitted and no AUDIT line is — because this is not enforcement of the token;
+    it is the refusal to invent a principal.
+    """
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
     monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     r = call(http, user_tok("alice@example.com", key=OTHER_PRIV))
-    assert r.status_code == 200, "observe is today's posture: a forged token passes through"
-    assert world.topaz == ["alice@example.com"]
-    would = lines("IDENTITY_WOULD")
-    assert would and "outcome=refuse" in would[-1] and "reason=token_invalid" in would[-1]
-    assert f"urn={URN}" in would[-1]
+    assert r.status_code == 401 and _reason(r) == identity.NO_PRINCIPAL, r.text
+    assert world.topaz == [] and world.broker == []
+    assert "reason=token_invalid" in lines("IDENTITY_WOULD")[-1]
     assert not lines("IDENTITY_AUDIT")
 
 
@@ -520,20 +571,49 @@ def test_observe_would_allow_reads_allow(world, http, monkeypatch, lines):
     assert "subject=alice@example.com via=svc:etl" in lines("IDENTITY_WOULD")[-1]
 
 
-def test_a_defect_in_decide_leaves_an_observed_request_unaffected(world, http, monkeypatch):
-    def boom(*a, **k):
-        raise RuntimeError("decide is broken")
+def _broken(*a, **k):
+    raise RuntimeError("the decision is broken")
 
-    monkeypatch.setattr(identity, "decide", boom)
+
+def test_a_defect_in_the_decision_now_refuses_under_OBSERVE_TOO(world, http, monkeypatch):
+    """Observe used to warn and serve when the decision raised. It now fails CLOSED.
+
+    That is a deliberate tightening, and it is safe for the same reason it is correct: the
+    resolution reports its refusals as REASONS, not as exceptions — an unconfigured verifier and
+    an unreachable JWKS both come back as a decision an operator can read. So an exception out
+    of here is a defect in the resolution itself, and a resolution that cannot say who a request
+    reads as must not let the read proceed under a guess. The EVIDENCE line is the other way
+    round and stays that way: a logging failure there is swallowed, because an instrument may
+    not break what it measures.
+
+    Patched at `_decided` rather than `decide`: the route goes through `resolve_principal` now,
+    which is the whole point of the PR, and a test patching a function the route no longer calls
+    would pass while measuring nothing.
+    """
+    monkeypatch.setattr(identity, "_decided", _broken)
     r = call(http, user_tok("alice@example.com"), on_behalf_of="bob@example.com")
-    assert r.status_code == 200
-    assert world.topaz == ["bob@example.com"]
+    assert r.status_code == 503 and _reason(r) == "verification_error", r.text
+    assert world.topaz == [] and world.broker == []
 
 
-def test_a_defect_in_decide_under_enforce_refuses(enforce, world, http, monkeypatch):
-    monkeypatch.setattr(identity, "decide", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+def test_a_defect_in_the_decision_under_enforce_refuses(enforce, world, http, monkeypatch):
+    monkeypatch.setattr(identity, "_decided", _broken)
     r = call(http, user_tok())
     assert r.status_code == 503 and world.topaz == []
+
+
+def test_a_defect_in_the_EVIDENCE_line_does_not_refuse_the_read(world, http, monkeypatch, lines):
+    """The decision fails closed; the instrument around it does not get to.
+
+    `resolve_principal` emits the would/audit line beside the decision it returns. A gauge or a
+    log call that raises must leave the request exactly as it was — the alternative is an
+    outage caused by the thing installed to watch for one.
+    """
+    monkeypatch.setattr(identity, "would", _broken)
+    r = call(http, user_tok("alice@example.com"), on_behalf_of="bob@example.com")
+    assert r.status_code == 200, r.text
+    assert world.topaz == ["bob@example.com"]
+    assert world.broker[0]["subject"] == "bob@example.com"
 
 
 def test_the_gauge_is_fed_the_effective_header_subject(world, http, monkeypatch):
