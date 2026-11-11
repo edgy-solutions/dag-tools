@@ -183,6 +183,37 @@ centralGateway:
   #   REDIS_URL: "redis://redis:6379"
   #   TOPAZ_URL: "https://topaz:8383"
   #   DENIED_USER_SUBS: ""
+  # --------------------------------------------------------------------------
+  # Token verification. Under GATEWAY_IDENTITY_POSTURE=enforce a request reads
+  # as the subject of a VERIFIED token, and verified means: signature, then the
+  # issuer against the accepted list, then the audience against the accepted
+  # list. Both lists are served from here and NEITHER HAS A DEFAULT -- an empty
+  # list refuses every token, which is the state a gateway that has not been
+  # told which issuers it trusts should be in. The pod says which of these is
+  # unset on its own startup line: grep for `identity: posture=` and read
+  # `enforce_ready=` and the `unset=` list after it.
+  #
+  #   GATEWAY_JWT_ISSUERS: "https://idp.example/realms/<realm>"
+  #   GATEWAY_JWT_AUDIENCES: "<client-id-the-tokens-are-minted-for>"
+  #   GATEWAY_JWKS_URL: "https://idp.example/realms/<realm>/protocol/openid-connect/certs"
+  #
+  # Comma-separated, and ONE PROVIDER OFTEN NEEDS TWO ISSUER ENTRIES: a token
+  # carries the issuer it was minted with, so a provider reachable both at its
+  # browser-facing URL and at its in-cluster service name has to be listed
+  # under both spellings. Nothing rewrites a proven claim.
+  #
+  #   GATEWAY_JWT_ISSUERS: "https://idp.example/realms/<realm>,http://<svc>.<ns>.svc.cluster.local/realms/<realm>"
+  #
+  # The singular GATEWAY_JWT_ISSUER / GATEWAY_JWT_AUDIENCE still work and are
+  # read as one entry of the same list, so a deployment that set them keeps
+  # working. GATEWAY_JWT_PUBLIC_KEY (or KEYCLOAK_PUBLIC_KEY) is the static-key
+  # alternative to GATEWAY_JWKS_URL.
+  #
+  # The internal doors (INTERNAL_DOOR_POSTURE) share this one verification, so
+  # the mesh service token needs an audience the list accepts too -- in
+  # Keycloak, an audience mapper on the client_credentials client. There is
+  # deliberately no per-caller exemption: a second verification is a second
+  # answer, and two answers that can disagree is the defect this closes.
   # 2026-07-01: `ALLOW_MOCK_AUTH` was removed as part of ADR-0026
   # step 1. It converted every topaz failure (exception, timeout,
   # non-200) into an allow-by-default fail-open, which meant

@@ -37,6 +37,8 @@ from dag_tools.central_gateway import main as gateway  # noqa: E402
 
 _DEFAULT_SEAM = identity.is_delegate
 ISS = "https://idp.example/realms/mesh"
+IN_CLUSTER_ISS = "http://idp.idp.svc.cluster.local/realms/mesh"
+AUD = "data-gateway"
 URN = "urn:li:dataset:(urn:li:dataPlatform:s3,bucket/x,PROD)"
 AUTHZ = f"/api/v1/assets/{URN}/authorize"
 ROUTE = identity.ROUTE_AUTHORIZE
@@ -57,8 +59,9 @@ PRIV, PUB = _keypair()
 OTHER_PRIV, _OTHER_PUB = _keypair()
 
 
-def _tok(claims=None, *, key=PRIV, iss=ISS, exp=300, alg="RS256", **extra):
-    body = {"sub": "kc-1", "iss": iss, "exp": int(time.time()) + exp, **(claims or {}), **extra}
+def _tok(claims=None, *, key=PRIV, iss=ISS, aud=AUD, exp=300, alg="RS256", **extra):
+    body = {"sub": "kc-1", "iss": iss, "aud": aud, "exp": int(time.time()) + exp,
+            **(claims or {}), **extra}
     return jwt.encode(body, key, algorithm=alg)
 
 
@@ -76,11 +79,13 @@ def svc_tok(name="svc:etl", **kw):
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for k in (
-        "GATEWAY_IDENTITY_POSTURE", "GATEWAY_JWT_ISSUER", "GATEWAY_JWKS_URL",
+        "GATEWAY_IDENTITY_POSTURE", "GATEWAY_JWT_ISSUER", "GATEWAY_JWT_ISSUERS",
+        "GATEWAY_JWT_AUDIENCE", "GATEWAY_JWT_AUDIENCES", "GATEWAY_JWKS_URL",
         "GATEWAY_JWT_PUBLIC_KEY", "KEYCLOAK_PUBLIC_KEY", "GATEWAY_JWT_ALGORITHMS",
         "USER_ENTITLEMENT_CLAIM",
     ):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(identity, "_unconfigured_said", None)
     monkeypatch.setattr(identity, "_jwks_client", None)
     monkeypatch.setattr(identity, "_jwks_client_url", None)
     monkeypatch.setattr(gateway, "DENIED_USER_SUBS", set())
@@ -137,6 +142,7 @@ def call(http, token, **headers):
 def enforce(monkeypatch):
     monkeypatch.setenv("GATEWAY_IDENTITY_POSTURE", "enforce")
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     rail(monkeypatch, {("svc:etl", ROUTE)})
 
@@ -181,7 +187,10 @@ def _refusal_cases():
     return {
         "forged_signature": (lambda: user_tok(key=OTHER_PRIV), {}, {}, 401, "token_invalid"),
         "expired": (lambda: user_tok(exp=-60), {}, {}, 401, "token_invalid"),
-        "wrong_issuer": (lambda: user_tok(iss="https://evil.example/realms/mesh"), {}, {}, 401, "token_invalid"),
+        "wrong_issuer": (lambda: user_tok(iss="https://evil.example/realms/mesh"), {}, {}, 401, "issuer_not_accepted"),
+        "wrong_audience": (lambda: user_tok(aud="some-other-client"), {}, {}, 401, "token_invalid"),
+        "no_audience_claim": (lambda: user_tok(aud=None), {}, {}, 401, "token_invalid"),
+        "no_audience_configured": (lambda: user_tok(), {}, {"GATEWAY_JWT_AUDIENCE": ""}, 503, "verification_unconfigured"),
         "alg_none": (lambda: jwt.encode({"sub": "k", "iss": ISS, "exp": int(time.time()) + 300,
                                          "email": "alice@example.com"}, None, algorithm="none"),
                      {}, {}, 401, "token_invalid"),
@@ -195,6 +204,10 @@ def _refusal_cases():
         "both_headers_differing": (lambda: svc_tok(), {"on_behalf_of": "alice@example.com",
                                                        "X-Originator-Email": "bob@example.com"}, {}, 403, "on_behalf_of_differs"),
         "no_issuer_configured": (lambda: user_tok(), {}, {"GATEWAY_JWT_ISSUER": ""}, 503, "verification_unconfigured"),
+        # An issuer this gateway was not told to accept is refused for THAT reason -- including
+        # the in-cluster name of the very IdP it does accept, which is why that name has to be
+        # listed as a second entry rather than assumed.
+        "in_cluster_issuer_not_listed": (lambda: user_tok(iss=IN_CLUSTER_ISS), {}, {}, 401, "issuer_not_accepted"),
         "no_key_source": (lambda: user_tok(), {}, {"GATEWAY_JWT_PUBLIC_KEY": ""}, 503, "verification_unconfigured"),
         "no_subject_claim": (lambda: _tok({}), {}, {}, 403, "no_subject"),
         "seam_raises_refuses_as_unlisted": (lambda: svc_tok(), {"on_behalf_of": "alice@example.com"},
@@ -422,16 +435,19 @@ def test_an_injected_seam_argument_wins_over_the_module_seam(enforce):
 
 def test_settings_are_read_per_call_not_at_import(monkeypatch):
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     assert identity.decide(user_tok(), None, None, ROUTE).refused is None
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", "https://other.example")
-    assert identity.decide(user_tok(), None, None, ROUTE).refused == "token_invalid"
+    assert identity.decide(user_tok(), None, None, ROUTE).refused == "issuer_not_accepted"
 
 
 def test_a_token_without_exp_is_not_accepted(monkeypatch):
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
-    tok = jwt.encode({"sub": "k", "iss": ISS, "email": "a@example.com"}, PRIV, algorithm="RS256")
+    tok = jwt.encode({"sub": "k", "iss": ISS, "aud": AUD, "email": "a@example.com"},
+                     PRIV, algorithm="RS256")
     assert identity.decide(tok, None, None, ROUTE).refused == "token_invalid"
 
 
@@ -463,6 +479,7 @@ _COMBOS = {
 def test_observe_outcome_is_what_today_yields(kind, combo, world, http, monkeypatch):
     # Observe is the default; configure a verifier too, so the would-decide path runs for real.
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     mk, fallback = _observe_tokens()[kind]
     headers, want = _COMBOS[combo]
@@ -478,6 +495,7 @@ def test_observe_outcome_is_what_today_yields(kind, combo, world, http, monkeypa
 
 def test_observe_logs_what_enforce_would_do_and_a_forged_token_still_passes(world, http, monkeypatch, lines):
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     r = call(http, user_tok("alice@example.com", key=OTHER_PRIV))
     assert r.status_code == 200, "observe is today's posture: a forged token passes through"
@@ -490,6 +508,7 @@ def test_observe_logs_what_enforce_would_do_and_a_forged_token_still_passes(worl
 
 def test_observe_would_allow_reads_allow(world, http, monkeypatch, lines):
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
+    monkeypatch.setenv("GATEWAY_JWT_AUDIENCE", AUD)
     monkeypatch.setenv("GATEWAY_JWT_PUBLIC_KEY", PUB)
     call(http, svc_tok(), on_behalf_of="alice@example.com")
     # Not a listed delegate here: the would-line says refuse, the request is still served.
@@ -537,8 +556,13 @@ def test_announce_states_posture_and_issuer_without_values(monkeypatch):
     monkeypatch.setenv("GATEWAY_IDENTITY_POSTURE", "enforce")
     monkeypatch.setenv("GATEWAY_JWT_ISSUER", ISS)
     line = identity.announce()
-    assert "posture=enforce" in line and "issuer=set" in line and "delegates" not in line
+    assert "posture=enforce" in line and "issuers=1" in line and "delegates" not in line
     assert ISS not in line
+    # Nothing is accepted yet: no audience and no key source. The line says which, BY NAME,
+    # because "can this deployment turn enforce on" is the question an operator asks, and the
+    # pod is the only thing that cannot answer it out of date.
+    assert "enforce_ready=no" in line and identity.AUDIENCES_ENV[0] in line
+    assert AUD not in line and PUB not in line
 
 
 def test_the_gateway_announces_identity_at_startup():

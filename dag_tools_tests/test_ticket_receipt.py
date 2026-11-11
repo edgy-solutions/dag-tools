@@ -364,8 +364,9 @@ def test_the_log_follows_the_VERIFIED_subject_where_it_differs_from_the_header()
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
     ).decode()
     issuer = "https://idp.example/realms/mesh"
+    audience = "data-gateway"
     token = jwt.encode(
-        {"sub": "kc-1", "email": "alice@example.com", "iss": issuer,
+        {"sub": "kc-1", "email": "alice@example.com", "iss": issuer, "aud": audience,
          "exp": int(time.time()) + 300},
         priv,
         algorithm="RS256",
@@ -404,6 +405,7 @@ def test_the_log_follows_the_VERIFIED_subject_where_it_differs_from_the_header()
             patch.dict(os.environ, {
                 "GATEWAY_IDENTITY_POSTURE": "enforce",
                 "GATEWAY_JWT_ISSUER": issuer,
+                "GATEWAY_JWT_AUDIENCE": audience,
                 "GATEWAY_JWT_PUBLIC_KEY": pub,
             }):
         with patch("logging.Logger.info") as logged:

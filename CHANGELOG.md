@@ -50,7 +50,50 @@ it back are named.
   reason. `unnamed`, `divergent` and `unreadable` each also emit a WARNING naming the urn and
   no principal and no credential; the ticket id is on the `TICKET_ISSUED` line.
 
+- **The gateway's `enforce` posture now verifies the issuer against an accepted *list* and the
+  audience against one.** Two new env vars, read by `dag_tools.central_gateway.identity`:
+
+  - `GATEWAY_JWT_ISSUERS` — comma-separated issuers this gateway accepts.
+  - `GATEWAY_JWT_AUDIENCES` — comma-separated audiences this gateway accepts.
+
+  **Neither has a default and an empty list refuses every token**, reported as
+  `verification_unconfigured` (503). That state is reachable on purpose: a built-in value would
+  be worse than a wrong one, because it would make the rule unobservable. The singular
+  `GATEWAY_JWT_ISSUER` / `GATEWAY_JWT_AUDIENCE` still work and are read as **one entry of the
+  same list**, so a deployment that set them keeps working and there is never a second
+  resolution to disagree with the first.
+
+  The issuer is a list because one provider is commonly reachable under more than one name. A
+  token carries the issuer it was minted with, so a provider's in-cluster service name is a
+  second accepted **entry** rather than a rewrite of a proven claim. A signature-valid token
+  naming an unlisted issuer is refused as `issuer_not_accepted` (401) — a distinct reason, with
+  a WARNING naming the rejected issuer and the var to list it in, because `token_invalid` would
+  send an operator looking at keys and clocks when the token is fine.
+
+  `identity.announce()` now reports `issuers=<n> audiences=<n> enforce_ready=yes|no` and, when
+  it is `no`, the names of the unset vars. Counts and env var names only, never values:
+  `issuers=0` is a gateway that refuses every token, and that is the one state which otherwise
+  looks exactly like a quiet one.
+
 ### Changed
+
+- **Under `enforce`, a token with no `aud` claim, or an `aud` outside the accepted list, is now
+  refused** (`token_invalid`, 401), and a gateway with no accepted audience configured refuses
+  every token (`verification_unconfigured`, 503). Previously the audience was not verified at
+  all. **This also reaches the internal doors** (`INTERNAL_DOOR_POSTURE=enforce`), which share
+  the one verification: the mesh service token needs an audience the list accepts — in
+  Keycloak, an audience mapper on the `client_credentials` client. There is deliberately no
+  per-caller exemption, because a second verification is a second answer and two answers that
+  can disagree is the defect being closed. **`observe` (the default posture) is unchanged** and
+  refuses nothing; a deployment not running `enforce` is unaffected.
+
+- A GitHub Release now attaches the wheel and the sdist by name rather than globbing `dist/*`.
+  `uv build` also writes `dist/.gitignore`, a release asset's name may not begin with a dot, so
+  the API renamed it and every release from v0.10.0 to v0.13.0 carries a stray 1-byte
+  `default.gitignore`. Nothing broke; the only reader it misled was a human deciding what to
+  download. Naming the two patterns also makes `fail_on_unmatched_files` mean what it says —
+  against `dist/*` the `.gitignore` alone satisfied it, so a build that produced no sdist would
+  have published a wheel-only release.
 
 - `test_the_gateway_does_not_BRANCH_on_the_gauge` now measures what it always stood for.
   It forbade *assigning* the subject-source gauge's reading, as a proxy for not branching on
