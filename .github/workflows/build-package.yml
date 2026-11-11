@@ -38,7 +38,11 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: dag-tools-dist
-          path: dist/*
+          # Name the distributions rather than globbing the directory: `uv build`
+          # also writes `dist/.gitignore`, and a bare `dist/*` sweeps it up.
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -46,7 +50,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          # Same reason as the upload above, with a visible symptom: a release asset
+          # may not begin with a dot, so GitHub renamed `dist/.gitignore` and every
+          # release from v0.10.0 on carried a stray 1-byte `default.gitignore`.
+          # `fail_on_unmatched_files` now also means a missing sdist fails the tag
+          # instead of quietly publishing a wheel-only release.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
           generate_release_notes: true
           fail_on_unmatched_files: true
 
