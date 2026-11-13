@@ -793,6 +793,21 @@ The same runnable example carries it, with one derived table whose three
 columns show the two bases and one downgrade:
 [`examples/warehouse_source`](examples/warehouse_source).
 
+### 17. SystemLink Test Monitor source (`source_config.type: systemlink_test_monitor`)
+
+A source kind of `DltPipelineComponent` that loads SystemLink Test Monitor results and
+steps read-only into your warehouse, incrementally (it skips results it already holds and
+re-reads one only when its terminal state changed) with a resumable backfill job. Per
+pipeline it yields `<prefix>results`, `<prefix>steps` and `<prefix>ingest_runs`, plus three
+asset checks on the last. The schedule targets `<name>_incremental`; the backfill job
+`<name>_backfill` is selected by the tag `dagtools/systemlink_mode=backfill`, and
+`dagtools/systemlink_restart=true` reads every part again.
+
+`api_key_env` names an environment variable; the key is never written anywhere. `operator`
+is required: `pseudonym` (needs `pseudonym_key_env`), `name` or `drop`. `table_prefix` is
+required. Values the server decides are settings with conservative defaults. Runnable
+example: [`examples/mfg_trace/systemlink`](examples/mfg_trace/systemlink).
+
 ## Setup & Development
 
 This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. We use `uv` for all dependency management.
