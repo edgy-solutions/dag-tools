@@ -10,6 +10,25 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Added
+
+- **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
+  A registered `source_config.type` selects a kind that owns validation, unit preparation,
+  source building and any extra definitions. **No existing YAML changes meaning**: a missing
+  `type`, `sql_database`, `postgres` or `duckdb` resolves silently to the legacy path, which
+  delegates to the unchanged `_prepare_units` / `build_dlt_source`. Any other unregistered value
+  also resolves to legacy, with one WARNING per value. The one new refusal is a near miss of a
+  registered non-legacy kind, and none ships yet. `instantiate_assets` gains a trailing optional
+  `kind=None`; no other signature, export or default changes.
+- **A per-pipeline `schedule:` block** (`cron`, `enabled`, `timezone`). It builds
+  `<pipeline>_job` over exactly that pipeline's asset keys and `<pipeline>_schedule`, which
+  starts **STOPPED** unless `enabled: true` and skips a tick while a run of its job is queued or
+  in progress. A malformed block, or a schedule on a pipeline that produced no assets, fails the
+  load. The skip guard filters by job name, so two code locations defining a pipeline with the
+  same name hold each other's ticks.
+
 ## 0.14.0 — 2026-11-10
 
 ### Added

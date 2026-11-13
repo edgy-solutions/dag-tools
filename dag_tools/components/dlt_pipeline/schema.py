@@ -1,5 +1,13 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class DltPipelineScheduleSchema(BaseModel):
+    """A pipeline's ``schedule:`` block. Created STOPPED unless ``enabled``."""
+    model_config = ConfigDict(extra="forbid")
+    cron: str
+    enabled: bool = False
+    timezone: Optional[str] = None
 
 
 class DltPipelineGroupSchema(BaseModel):
@@ -14,6 +22,7 @@ class DltPipelineGroupSchema(BaseModel):
     select_columns: Dict[str, List[str]] = Field(default_factory=dict)
     limit: int = Field(default=0)
     add_timestamp: bool = Field(default=False)
+    schedule: Optional[DltPipelineScheduleSchema] = None
     sources: List[str] = Field(
         default_factory=list, 
         description="A list of table names this pipeline extracts."
