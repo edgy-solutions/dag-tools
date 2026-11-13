@@ -1,0 +1,31 @@
+type: dag_tools.DltPipelineComponent
+
+attributes:
+  source_config:
+    type: systemlink_test_monitor
+    source_id: sl_example
+    connection:
+      base_url: "{{ env('SYSTEMLINK_BASE_URL') }}"
+      api_key_env: SYSTEMLINK_API_KEY      # the NAME of the variable; the key itself is never written here
+    seed:
+      kind: file
+      path: seed_parts.csv                  # relative to this file
+      column: part_number
+    operator:
+      store: pseudonym
+      pseudonym_key_env: SYSTEMLINK_PSEUDONYM_KEY
+
+  dest_config:
+    type: duckdb
+    drivername: duckdb
+    credentials: "{{ env('SYSTEMLINK_EXAMPLE_DB') }}"
+    database: warehouse
+    schema: raw
+
+  pipelines:
+    sl_example:
+      dest_schema: raw
+      table_prefix: sl_
+      sources: [results, steps]
+      schedule:
+        cron: "*/30 * * * *"
