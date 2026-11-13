@@ -31,6 +31,7 @@ from dag_tools.asset_wrappers.dlt_assets_factory import (
     write_env_vars,
     DltAssetConfig,
 )
+from dag_tools.asset_wrappers.source_kinds import resolve_source_kind
 from dag_tools.asset_wrappers.sources.sql_ct_database import sql_ct_database
 from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
@@ -311,10 +312,12 @@ def instantiate_assets(
     default_pipeline_kwargs: Dict[str, Any],
     defer_table_reflect: bool = True,
     extra_deps: Optional[List[AssetKey]] = None,
+    kind: Optional[Any] = None,
 ) -> AssetsDefinition:
     """Dynamically builds DLT generator source and returns a mapped Dagster `@multi_asset` using GroupConfig."""
-    
-    source = build_dlt_source(
+
+    builder = kind.build_source if kind is not None else build_dlt_source
+    source = builder(
         base, database, schema, query_callback, config, dest_driver,
         defer_table_reflect,
     )
@@ -511,14 +514,17 @@ def build_dlt_runnables(
     exercises the configuration that ships rather than a parallel reading
     of it.
     """
-    _specs, units = _prepare_units(
+    kind = resolve_source_kind(source_config)
+    kind.validate(source_config)
+    _specs, units = kind.prepare_units(
         sources, source_config, dest_config, config,
         staging=staging, staging_config=staging_config,
         destination_override=destination_override,
     )
     runnables = []
     for unit in units:
-        source = build_dlt_source(
+        unit.setdefault("kind", kind)
+        source = unit["kind"].build_source(
             unit["base"], unit["database"], unit["schema"], query_callback,
             config, unit["dest_driver"], defer_table_reflect,
         )
@@ -550,19 +556,25 @@ def create_dlt_assets(
     ``_prepare_units``, so the local dev loop and the deployed asset
     cannot resolve credentials, pipeline names or destinations differently.
     """
-    specs, units = _prepare_units(
+    # Resolved and validated OUTSIDE the try below: a refused source kind
+    # must fail the load, not print and produce zero assets.
+    kind = resolve_source_kind(source_config)
+    kind.validate(source_config)
+    specs, units = kind.prepare_units(
         sources, source_config, dest_config, config,
         staging=staging, staging_config=staging_config,
     )
     _assets: List[Union[AssetsDefinition, AssetSpec]] = list(specs)
 
     for unit in units:
+        unit.setdefault("kind", kind)
         try:
             asset = instantiate_assets(
                 unit["base"], unit["database"], unit["schema"], query_callback,
                 unit["pipeline"], unit["dest_database"], unit["dest_schema"],
                 unit["dest_driver"], unit["kinds"], config,
                 unit["default_pipeline_kwargs"], extra_deps=extra_deps,
+                kind=unit["kind"],
             )
             _assets.append(asset)
         except Exception as e:
