@@ -1,0 +1,285 @@
+# MANUFACTURING TRACEABILITY CURATED CONTRACT -- TEMPLATE, NOT A CUSTOMER'S SHAPE.
+#
+# One YAML document per curated table, each loadable by
+# `dag_tools.contract_mapping.contract.load_contract` unchanged (docs/plans/mfg-trace.md, D6).
+# This template is dag-tools' PUBLISHED INTERFACE (Q1): the columns the derive package reads.
+# The deployment's real contract is registered in iagent as a SUPERSET of it -- columns may be
+# added, never dropped or renamed -- and iagent's CI checks it against this file at a pinned
+# dag-tools sha. Every value below is generic or synthetic.
+#
+# Conventions used in every document:
+#   produced_since: null -- declared, not yet produced by any dag-tools release.
+#   nullable / personal_data / description -- read-side fields; the contract loader ignores
+#     them (extra="ignore") and the iagent reader consumes them. `personal_data` records a
+#     FACT; the classification LEVEL is the deployment's, applied through warehouse_source
+#     against its own dimensions file, never written here (D8).
+#   timestamp (always UTC) / date / array<string> -- contract types added in PR B, and to the
+#     iagent reader in the same change (D10, Q7 answered). Until PR B lands, load_contract
+#     reports them as unknown_types notes.
+#   source_system / cadence.set_by -- carry SOURCE IDS (pdm, mes, test_repo): the role a source
+#     plays here, never the vendor. Adapters, raw tables and the DataHub platform keep the
+#     vendor name, so replacing a vendor changes an adapter and no curated row.
+#   tags.order_by / tags.current_view / tags.projections -- physical layout the engine relies on.
+#   dataset.urn -- DERIVED after the first materialization, never typed.
+---
+contract_id: mfg_trace.dim_part
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: dim_part}, storage: table}
+grain: [part_number, revision]
+scope: part_number
+columns:
+  - {name: part_number, type: string, required: true, produced_since: null, nullable: false, description: "normalized"}
+  - {name: part_number_raw, type: string, produced_since: null, nullable: false}
+  - {name: revision, type: string, required: true, produced_since: null, nullable: false, description: "'' when the source has no revision"}
+  - {name: description, type: string, produced_since: null, nullable: true}
+  - {name: category, type: string, produced_since: null, nullable: true}
+  - {name: serialized, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: uom, type: string, produced_since: null, nullable: true}
+  - {name: lifecycle_state, type: string, produced_since: null, nullable: true}
+  - {name: excluded, type: boolean, required: true, produced_since: null, nullable: false, description: "matched the deployment's exclusion list; never deleted"}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: pdm"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: pdm, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, revision], current_view: dim_part_current}
+---
+contract_id: mfg_trace.bom_edge
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: bom_edge}, storage: table}
+grain: [parent_pn, parent_rev, child_pn, child_rev, find_number, edge_type, effectivity_from]
+scope: parent_pn
+columns:
+  - {name: parent_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: parent_rev, type: string, required: true, produced_since: null, nullable: false}
+  - {name: child_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: child_rev, type: string, required: true, produced_since: null, nullable: false}
+  - {name: quantity, type: numeric, required: true, produced_since: null, nullable: false}
+  - {name: uom, type: string, produced_since: null, nullable: true}
+  - {name: find_number, type: string, required: true, produced_since: null, nullable: false, description: "'' when absent; part of the grain"}
+  - {name: ref_designators, type: "array<string>", produced_since: null, nullable: false, description: "empty array when absent"}
+  - {name: edge_type, type: string, required: true, produced_since: null, nullable: false, description: "child | substitute | alternate"}
+  - {name: effectivity_kind, type: string, produced_since: null, nullable: true, description: "date | serial | lot | null (always effective)"}
+  - {name: effectivity_from, type: string, required: true, produced_since: null, nullable: false, description: "'' when open; typed by effectivity_kind"}
+  - {name: effectivity_to, type: string, produced_since: null, nullable: true, description: "null = open-ended"}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: pdm"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: pdm, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [parent_pn, parent_rev], current_view: bom_edge_current}
+---
+contract_id: mfg_trace.bom_closure
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: bom_closure}, storage: table}
+grain: [ancestor_pn, ancestor_rev, descendant_pn, descendant_rev, path]
+scope: ancestor_pn
+columns:
+  - {name: ancestor_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: ancestor_rev, type: string, required: true, produced_since: null, nullable: false}
+  - {name: descendant_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: descendant_rev, type: string, required: true, produced_since: null, nullable: false}
+  - {name: depth, type: integer, required: true, produced_since: null, nullable: false, description: "1 = direct child; self rows are not stored"}
+  - {name: path, type: "array<string>", required: true, produced_since: null, nullable: false, description: "part numbers from ancestor to descendant inclusive; a part reached by two routes has two rows"}
+  - {name: truncated, type: boolean, required: true, produced_since: null, nullable: false, description: "the walk stopped at max_depth below this row"}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: bom_edge, write: rebuild_per_root}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [ancestor_pn, ancestor_rev, depth], current_view: bom_closure_current}
+---
+contract_id: mfg_trace.serial_unit
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: serial_unit}, storage: table}
+grain: [part_number, serial_number]
+scope: part_number
+columns:
+  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: part_number_raw, type: string, produced_since: null, nullable: false}
+  - {name: revision, type: string, produced_since: null, nullable: true}
+  - {name: serial_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: serial_number_raw, type: string, produced_since: null, nullable: false}
+  - {name: build_started_at, type: timestamp, produced_since: null, nullable: true}
+  - {name: build_completed_at, type: timestamp, produced_since: null, nullable: true, description: "default as-built reference date"}
+  - {name: shipped_at, type: timestamp, produced_since: null, nullable: true}
+  - {name: mes_status, type: string, produced_since: null, nullable: true}
+  - {name: derived_test_status, type: string, required: true, produced_since: null, nullable: false, description: "passed | failed | in_rework | testing | untested (rule: spec 6.6)"}
+  - {name: first_pass, type: boolean, produced_since: null, nullable: true, description: "null when a required program has no result"}
+  - {name: top_level_pn, type: string, required: true, produced_since: null, nullable: false, description: "self when not installed anywhere"}
+  - {name: top_level_serial, type: string, required: true, produced_since: null, nullable: false}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: mes"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: mes, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number], current_view: serial_unit_current}
+---
+contract_id: mfg_trace.as_built_edge
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: as_built_edge}, storage: table}
+grain: [parent_pn, parent_serial, child_pn, child_serial, valid_from]
+scope: parent_pn
+columns:
+  - {name: parent_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: parent_serial, type: string, required: true, produced_since: null, nullable: false}
+  - {name: child_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: child_serial, type: string, required: true, produced_since: null, nullable: false}
+  - {name: position, type: string, produced_since: null, nullable: true}
+  - {name: valid_from, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: valid_to, type: timestamp, produced_since: null, nullable: true, description: "null = still installed"}
+  - {name: is_as_built, type: boolean, required: true, produced_since: null, nullable: false, description: "interval covers the parent's as-built reference date"}
+  - {name: is_current, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: interval_origin, type: string, required: true, produced_since: null, nullable: false, description: "source | observed. observed = the MES keeps no removal history; a removal seen between loads, recorded from the first load on (spec 4.2)"}
+  - {name: valid_to_precision_s, type: integer, produced_since: null, nullable: true, description: "observed only: seconds between the last load that saw the edge and the first that did not; null for source intervals and open ones"}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: mes"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent", interval_overlap: "two intervals for one child unit overlap", orphan_reference: "a parent or child is not a serial_unit"}
+cadence: {set_by: mes, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [parent_pn, parent_serial], projections: {by_child: [child_pn, child_serial]}, current_view: as_built_edge_current}
+---
+contract_id: mfg_trace.as_built_closure
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: as_built_closure}, storage: table}
+grain: [scope, ancestor_pn, ancestor_serial, descendant_pn, descendant_serial]
+scope: ancestor_pn
+columns:
+  - {name: scope, type: string, required: true, produced_since: null, nullable: false, description: "current | as_built"}
+  - {name: ancestor_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: ancestor_serial, type: string, required: true, produced_since: null, nullable: false}
+  - {name: descendant_pn, type: string, required: true, produced_since: null, nullable: false}
+  - {name: descendant_serial, type: string, required: true, produced_since: null, nullable: false}
+  - {name: depth, type: integer, required: true, produced_since: null, nullable: false}
+  - {name: truncated, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: as_built_edge, write: rebuild_per_root}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [ancestor_pn, ancestor_serial], projections: {by_descendant: [descendant_pn, descendant_serial]}, current_view: as_built_closure_current}
+---
+contract_id: mfg_trace.test_result
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: test_result}, storage: table}
+grain: [result_id]
+scope: part_number
+columns:
+  - {name: result_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: part_number_raw, type: string, produced_since: null, nullable: false}
+  - {name: serial_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: serial_number_raw, type: string, produced_since: null, nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: status_type, type: string, required: true, produced_since: null, nullable: false, description: "the source's status enum, verbatim"}
+  - {name: is_terminal, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: started_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: updated_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: duration_s, type: float, produced_since: null, nullable: true}
+  - {name: system_id, type: string, produced_since: null, nullable: true}
+  - {name: host_name, type: string, produced_since: null, nullable: true}
+  - {name: operator_ref, type: string, produced_since: null, nullable: true, personal_data: true, description: "pseudonym (HMAC) by default; the name only where the deployment allows"}
+  - {name: workspace, type: string, produced_since: null, nullable: true}
+  - {name: attempt_seq, type: integer, required: true, produced_since: null, nullable: false, description: "per (part_number, serial_number, program_name) by started_at, then result_id"}
+  - {name: is_latest, type: boolean, required: true, produced_since: null, nullable: false, description: "latest TERMINAL attempt"}
+  - {name: is_first, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: test_repo, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number, started_at], current_view: test_result_current}
+---
+contract_id: mfg_trace.test_measurement
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: test_measurement}, storage: table}
+grain: [result_id, step_id, parameter_index]
+scope: part_number
+columns:
+  - {name: result_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: step_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: parameter_index, type: integer, required: true, produced_since: null, nullable: false, description: "position in the step's parameter list; names may repeat"}
+  - {name: step_path, type: string, required: true, produced_since: null, nullable: false}
+  - {name: step_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: parameter_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: measurement_num, type: float, produced_since: null, nullable: true}
+  - {name: measurement_text, type: string, required: true, produced_since: null, nullable: false, description: "verbatim; '' when absent"}
+  - {name: units, type: string, produced_since: null, nullable: true}
+  - {name: low_limit_num, type: float, produced_since: null, nullable: true}
+  - {name: high_limit_num, type: float, produced_since: null, nullable: true}
+  - {name: limits_text, type: string, produced_since: null, nullable: true, description: "verbatim low/high/comparison as received"}
+  - {name: comparison_type, type: string, produced_since: null, nullable: true}
+  - {name: status, type: string, produced_since: null, nullable: true}
+  - {name: parse_failed, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: started_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: serial_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: is_latest_result, type: boolean, required: true, produced_since: null, nullable: false}
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a test_result"}
+cadence: {set_by: test_repo, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name, started_at], projections: {by_serial: [serial_number, result_id]}, current_view: test_measurement_current}
+---
+contract_id: mfg_trace.test_catalog
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: test_catalog}, storage: table}
+grain: [part_number, program_name, step_path, parameter_name, units]
+scope: part_number
+columns:
+  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: step_path, type: string, required: true, produced_since: null, nullable: false}
+  - {name: parameter_name, type: string, required: true, produced_since: null, nullable: false}
+  - {name: units, type: string, required: true, produced_since: null, nullable: false, description: "'' when absent; part of the grain"}
+  - {name: n_results, type: integer, required: true, produced_since: null, nullable: false}
+  - {name: first_seen, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: last_seen, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: test_measurement, write: rebuild_per_part}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name], current_view: test_catalog_current}
+---
+contract_id: mfg_trace.ingest_status
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: dag-tools, asset: ingest_status}, storage: table}
+grain: [source_system, run_id]
+scope: source_system
+columns:
+  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id of the run: pdm | mes | test_repo"}
+  - {name: run_id, type: string, required: true, produced_since: null, nullable: false, description: "the Dagster run id"}
+  - {name: mode, type: string, produced_since: null, nullable: true, description: "incremental | backfill | full"}
+  - {name: started_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: finished_at, type: timestamp, produced_since: null, nullable: true, description: "null = still running or died"}
+  - {name: records_in, type: integer, required: true, produced_since: null, nullable: false}
+  - {name: records_new, type: integer, required: true, produced_since: null, nullable: false}
+  - {name: records_changed, type: integer, required: true, produced_since: null, nullable: false}
+  - {name: errors_json, type: string, required: true, produced_since: null, nullable: false, description: "event name -> count, plus up to 20 sample events; never a credential"}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: every_source_run, write: append}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [source_system, started_at], current_view: ingest_status_current}
