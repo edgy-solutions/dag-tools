@@ -40,6 +40,7 @@ class DltPipelineComponent(Component, Resolvable, Model):
             "jobs": [], "schedules": [], "sensors": [], "asset_checks": [],
         }
         kind = resolve_source_kind(self.source_config)
+        source_config = kind.localize(self.source_config, context.path)
 
         for pipeline_key, pipeline_attrs in self.pipelines.items():
             
@@ -56,7 +57,7 @@ class DltPipelineComponent(Component, Resolvable, Model):
 
             assets = create_dlt_assets(
                 sources=sources,
-                source_config=self.source_config,
+                source_config=source_config,
                 dest_config=self.dest_config,
                 config=pydantic_config,
                 staging_config=self.staging_config
@@ -68,12 +69,15 @@ class DltPipelineComponent(Component, Resolvable, Model):
             ]
             contributions = [
                 kind.extra_defs(
-                    pydantic_config.name, asset_keys, self.source_config, pydantic_config
+                    pydantic_config.name, asset_keys, source_config, pydantic_config
                 )
             ]
             if schedule is not None:
                 contributions.append(
-                    build_pipeline_schedule(pydantic_config.name, asset_keys, schedule)
+                    build_pipeline_schedule(
+                        pydantic_config.name, asset_keys, schedule,
+                        job_name=kind.schedule_job_name(pydantic_config.name),
+                    )
                 )
             for contribution in contributions:
                 for field, items in (contribution or {}).items():

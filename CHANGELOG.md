@@ -14,6 +14,14 @@ it back are named.
 
 ### Added
 
+- **A `systemlink_test_monitor` source kind** for `DltPipelineComponent`: a read-only, incremental
+  (known-ids) and resumable-backfill load of SystemLink Test Monitor results and steps, with an
+  `ingest_runs` table and three asset checks. Selected only by `source_config.type`; no existing
+  YAML, signature, export or default changes. Its schedule targets `<pipeline>_incremental`.
+  `operator` and `table_prefix` are required for this kind. Settings the server decides
+  (`limits.page_size`, `incremental.order_by`, `limits.step_filter`, ...) ship as conservative
+  defaults pending confirmation. `resolve_platform` gains a `VENDOR_PLATFORMS` table consulted
+  after `SOURCE_TYPE_PLATFORMS`; `PRODUCER_ALIASES` is unchanged.
 - **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
   A registered `source_config.type` selects a kind that owns validation, unit preparation,
   source building and any extra definitions. **No existing YAML changes meaning**: a missing
