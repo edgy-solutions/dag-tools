@@ -56,6 +56,12 @@ PRODUCER_ALIASES: Dict[str, str] = {
     "local": "file",
 }
 
+# Vendor systems dag-tools reads from but does not write to. Kept apart from
+# PRODUCER_ALIASES, which maps other producers' spellings onto DataHub's.
+VENDOR_PLATFORMS: Dict[str, str] = {
+    "systemlink": "systemlink",
+}
+
 # Platforms whose dataset names are laid out as a path rather than a
 # dotted identifier. This has to stay in step with PRODUCER_ALIASES: the
 # name format is chosen by platform, so mapping "abs" to "adlsGen2"
@@ -88,8 +94,9 @@ def resolve_platform(
       1. ``overrides`` — per-deployment configuration, so a new backend
          or a renamed platform can be handled without a code change.
       2. :data:`SOURCE_TYPE_PLATFORMS` — dag-tools' own IO managers.
-      3. :data:`PRODUCER_ALIASES` — other producers' vocabularies.
-      4. The name unchanged, on the assumption it is already one of
+      3. :data:`VENDOR_PLATFORMS` — vendor systems read from, not written to.
+      4. :data:`PRODUCER_ALIASES` — other producers' vocabularies.
+      5. The name unchanged, on the assumption it is already one of
          DataHub's.
 
     Returns ``"unknown"`` only for a genuinely absent name. ``unknown``
@@ -102,7 +109,7 @@ def resolve_platform(
     if not name:
         return UNKNOWN_PLATFORM
 
-    for table in (overrides or {}, SOURCE_TYPE_PLATFORMS, PRODUCER_ALIASES):
+    for table in (overrides or {}, SOURCE_TYPE_PLATFORMS, VENDOR_PLATFORMS, PRODUCER_ALIASES):
         if name in table:
             return table[name]
     return name
