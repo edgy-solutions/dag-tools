@@ -18,7 +18,7 @@ from dagster import (
     multi_asset,
 )
 from dagster._check import inst_param
-from dagster_embedded_elt.dlt import DagsterDltResource, build_dlt_asset_specs
+from dagster_dlt import DagsterDltResource, build_dlt_asset_specs
 
 from dag_tools.asset_wrappers.dlt_assets_factory import (
     CustomDagsterDltTranslator,
