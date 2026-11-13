@@ -110,6 +110,10 @@ There are **three** ways to size a pipeline's k8s resources, all landing on the 
 2. **`{{ env.VAR }}` templating** inside `op_tags` — Dagster's template resolver fills each value from the environment (verified to resolve at any nesting depth).
 3. **`k8s_resource_env_prefix`** (the `env_sized_ingest` example) — name a single prefix; the component resolves `<PREFIX>_CPU_REQUEST` / `_MEM_REQUEST` / `_CPU_LIMIT` / `_MEM_LIMIT` from the code-location environment at defs-load time (limits default to requests). This mirrors the `resolve_k8s_resource_tags(prefix=...)` pattern used on plain `@asset`s elsewhere and is the least verbose for the common case. Explicit `op_tags` are deep-merged **on top**, so you can name a prefix for resources *and* add node selectors / tolerations (or override one value) in the same block.
 
+**Per-pipeline `schedule`.** A pipeline may carry `schedule: {cron: "0 * * * *", enabled: false, timezone: "Europe/Berlin"}` (`cron` required; `enabled` defaults to `false`; `timezone` is passed through only when set; any other key fails the load). The component then emits `<pipeline name>_job` and `<pipeline name>_schedule`. The schedule is created **STOPPED** unless `enabled: true`, and its job selects **explicit asset keys** (exactly that pipeline's assets, never `AssetSelection.all()`). A tick is skipped while a run of the job is still queued or in progress. A `schedule` on a pipeline that produced no assets fails the load. It is built in Python, so it works on the Dagster 1.10.19 floor with no `post_processing`.
+
+`source_config.type` selects a source kind (`dag_tools.asset_wrappers.source_kinds`); a missing or unrecognised value keeps today's `drivername` dispatch.
+
 For Python callers of `create_dlt_assets`, the same helper is available directly: `dag_tools.utils.k8s.resolve_k8s_resource_tags("<PREFIX>")`.
 
 ### 2. DBT Project Component
