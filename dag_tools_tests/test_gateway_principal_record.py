@@ -356,7 +356,14 @@ def test_health_still_answers_when_the_counter_misbehaves(monkeypatch):
     )
     resp = TestClient(gateway.app).get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "principal_record": None}
+    body = resp.json()
+    # This gauge's reading, and only this gauge's: `/health` carries other instruments now, and
+    # whether ONE of them failing takes another's reading off the body is the thing that has to
+    # stay pinned. (The body's whole key set is pinned in `test_gateway_refusal_reasons.py`;
+    # asserting it here too would make every new instrument a two-file edit for no extra cover.)
+    assert body["status"] == "ok"
+    assert body["principal_record"] is None
+    assert body["refusal_reasons"] is not None
 
 
 # ---------------------------------------------------------------------------

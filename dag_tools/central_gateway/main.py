@@ -36,6 +36,13 @@ try:
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import principal_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
+# The REFUSAL-REASON gauge: how many requests each refusal reason accounts for, by name, in two
+# separate populations. Counts; refuses nothing. Same two-layout rule as above.
+try:
+    from . import refusal_gauge  # package layout — the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import refusal_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
+
 # The internal doors' service-token guard and the caller side that satisfies it. Same
 # two-layout rule: this module is flat in the gateway image.
 try:
@@ -89,6 +96,7 @@ async def lifespan(app: FastAPI):
     # evidence channel is dark is the defect the pairing exists to prevent.
     subject_gauge.announce()
     principal_gauge.announce()
+    refusal_gauge.announce()
     identity.announce()
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to Redis.")
@@ -135,10 +143,14 @@ async def _principal(token: str, on_behalf_of, legacy, urn: str) -> "identity.Id
 async def health_check():
     """Liveness probe: returns 200 as long as the process is running.
 
-    It also carries the principal-record gauge's counts, the way `telemetry_misses` rides on the
-    agent's own health body: a number a roll can be read against, rather than a log line someone
-    has to go and grep. `observed` is what separates a quiet gateway from a dark gauge — every
-    other count being 0 means nothing until `observed` is not.
+    It also carries the gauges' counts, the way `telemetry_misses` rides on the agent's own
+    health body: a number a roll can be read against, rather than a log line someone has to go
+    and grep. `observed` is what separates a quiet gateway from a dark gauge — every other count
+    being 0 means nothing until `observed` is not.
+
+    `refusal_reasons` carries two populations and not one number: `would_refuse` is what
+    `enforce` would have refused with the request served anyway, `did_refuse` is what this
+    gateway actually refused. Summing them would report refusals for requests that were served.
     """
     body = {"status": "ok"}
     # An instrument may never break the thing it measures, /health least of all: a readiness
@@ -148,6 +160,13 @@ async def health_check():
     except Exception as exc:  # noqa: BLE001
         logger.warning("principal-record counts unavailable (%s)", type(exc).__name__)
         body["principal_record"] = None
+    # Its OWN block, for the same reason the two counts are two numbers: one gauge failing must
+    # not take the other's reading off the body, or an operator reads a gap in the wrong place.
+    try:
+        body["refusal_reasons"] = refusal_gauge.counts()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("refusal-reason counts unavailable (%s)", type(exc).__name__)
+        body["refusal_reasons"] = None
     return body
 
 @app.get("/ready")
