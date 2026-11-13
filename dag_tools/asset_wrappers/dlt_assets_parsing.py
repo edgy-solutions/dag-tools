@@ -31,7 +31,7 @@ from dag_tools.asset_wrappers.dlt_assets_factory import (
     write_env_vars,
     DltAssetConfig,
 )
-from dag_tools.asset_wrappers.source_kinds import resolve_source_kind
+from dag_tools.asset_wrappers.source_kinds import LEGACY, resolve_source_kind
 from dag_tools.asset_wrappers.sources.sql_ct_database import sql_ct_database
 from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
@@ -323,6 +323,8 @@ def instantiate_assets(
     )
 
     source_keys = base.get("source", {})
+    group_config = config
+    run_kind = kind if kind is not None else LEGACY
 
     translator = CustomDagsterDltTranslator(
         source_keys=source_keys,
@@ -349,7 +351,11 @@ def instantiate_assets(
         extra_deps=extra_deps,
     )
     def dlt_asset(context: AssetExecutionContext, dlt: DagsterDltResource, config: DltAssetConfig):
-        yield from dlt.run(context=context, **default_pipeline_kwargs, **config.pipeline_kwargs)
+        yield from run_kind.execute(
+            context, dlt,
+            base=base, pipeline=dlt_pipeline, config=group_config,
+            run_kwargs={**default_pipeline_kwargs, **config.pipeline_kwargs},
+        )
 
     return dlt_asset
 
@@ -560,6 +566,12 @@ def create_dlt_assets(
     # must fail the load, not print and produce zero assets.
     kind = resolve_source_kind(source_config)
     kind.validate(source_config)
+    if kind is LEGACY and getattr(config, "table_prefix", None):
+        raise ValueError(
+            "table_prefix is set, but this source's kind does not read it "
+            f"(type {source_config.get('type')!r}); an ignored field is a trap. Remove it."
+        )
+    kind.validate_group(config)
     specs, units = kind.prepare_units(
         sources, source_config, dest_config, config,
         staging=staging, staging_config=staging_config,
