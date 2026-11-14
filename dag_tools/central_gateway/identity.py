@@ -72,6 +72,11 @@ try:
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import subject_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
 
+try:
+    from . import refusal_gauge  # package layout — the test suite
+except ImportError:  # pragma: no cover - exercised only by the flattened container layout
+    import refusal_gauge  # type: ignore[no-redef]  # flat /app layout — the deployed image
+
 logger = logging.getLogger(__name__)
 _PKG_LOGGER = logging.getLogger("dag_tools.central_gateway")
 
@@ -113,6 +118,14 @@ _STATUS = {
     # "you may not". 403 would send a caller looking for a permission to be granted.
     NO_PRINCIPAL: 401,
 }
+
+#: Every reason this module can refuse with, derived from the one mapping that has to name each
+#: of them anyway. Nothing lists them a second time: a hand-kept second list is how a reason
+#: ends up with a status code and no count, or a count and no status code.
+REASONS = tuple(_STATUS)
+
+# Counted by name from the moment a reason exists, rather than from the day it is first hit.
+refusal_gauge.install_vocabulary(REASONS)
 
 _MESSAGES = {
     TOKEN_ABSENT: "no bearer token was presented",
@@ -456,12 +469,15 @@ def resolve_principal(
 ) -> IdentityDecision:
     """THE one resolution of who a request reads as. The gate and the record both read this.
 
-    One verification, one evidence line, one answer:
+    One verification, one answer:
 
     * Under `enforce` the answer is `decide`'s, verbatim, and `audit` records it.
     * Under `observe` a header names the principal, else a claim from a token this gateway
       VERIFIED does, else nobody does and the refusal is `no_principal`. `would` still records
-      what `enforce` would have done, and still branches on nothing.
+      what `enforce` would have done, and still branches on nothing. A refusal this posture
+      actually makes gets a line of its OWN (`refused`), because `would` reports `_decided`'s
+      answer and `_decided` cannot produce `no_principal` -- so that refusal used to be named
+      to the caller and to nobody here, while its one line named a different reason.
 
     The header keeps winning under `observe` because it is the path every reader rides today;
     `subject_gauge` measures the divergence that allows and goes on measuring it. What changes
@@ -477,6 +493,17 @@ def resolve_principal(
     enforced = _decided(claims, reason, on_behalf_of, legacy_subject, route, is_delegate_fn)
     enforcing = posture() == POSTURE_ENFORCE
 
+    if enforcing:
+        decision = enforced
+        if not decision.refused:
+            # `via` is set only where a delegate named somebody: there the name came off the
+            # header and the token authorized it. Everywhere else the name IS the proven claim.
+            decision = replace(
+                decision, source=SOURCE_HEADER if decision.via else SOURCE_VERIFIED_TOKEN
+            )
+    else:
+        decision = _observed(claims, reason, on_behalf_of, legacy_subject)
+
     # The evidence line is emitted here, where the one decision is. It may never change the
     # answer: a defect in a log line refusing reads would be the instrument breaking the thing
     # it measures, which is the rule the gauges are built on. The DECISION fails closed; the
@@ -486,21 +513,43 @@ def resolve_principal(
             audit(route, enforced, urn)
         else:
             would(enforced, urn)
+            if decision.refused:
+                refused(decision, urn)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "identity evidence line failed (%s) — the decision stands", type(exc).__name__
         )
 
-    if enforcing:
-        if enforced.refused:
-            return enforced
-        # `via` is set only where a delegate named somebody: there the name came off the header
-        # and the token authorized it. Everywhere else the name IS the proven claim.
-        return replace(
-            enforced,
-            source=SOURCE_HEADER if enforced.via else SOURCE_VERIFIED_TOKEN,
+    # Counted in a block of its OWN, and after the lines, so neither instrument can silence the
+    # other: a broken counter still leaves the greppable line, and a broken line still leaves
+    # the number. One block would make whichever ran first the only one that survives.
+    try:
+        refusal_gauge.observe(
+            urn=urn,
+            would_refused=enforced.refused,
+            did_refused=decision.refused,
+            enforcing=enforcing,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "refusal-reason count failed (%s) — the decision stands", type(exc).__name__
         )
 
+    return decision
+
+
+def _observed(
+    claims: Dict[str, Any],
+    reason: Optional[str],
+    on_behalf_of: Optional[str],
+    legacy_subject: Optional[str],
+) -> IdentityDecision:
+    """Who an `observe`-posture request reads as: the header, else a VERIFIED claim, else nobody.
+
+    Split out of `resolve_principal` so the answer is settled before the evidence is emitted --
+    the `no_principal` refusal has to be a thing the line can name, and it cannot be named by a
+    line emitted on the way to deciding it.
+    """
     token_sub = None if reason else (_clean(claims.get("sub")) or None)
     header = _clean(on_behalf_of) or _clean(legacy_subject)
     if header:
@@ -533,6 +582,28 @@ def would(d: IdentityDecision, urn: str) -> None:
     _PKG_LOGGER.info(
         "IDENTITY_WOULD outcome=%s reason=%s subject=%s via=%s urn=%s",
         _outcome(d), d.refused or "-", d.subject or "-", d.via or "-", urn,
+    )
+
+
+def refused(d: IdentityDecision, urn: str) -> None:
+    """The `observe` line for a refusal this gateway ACTUALLY made. Never carries a token.
+
+    `would` says what `enforce` would have done, and under `observe` that is a different
+    question from what the caller got: a `would`-refused request is served anyway. The two can
+    therefore name different reasons for one request, and that is not a defect.
+
+    This line exists because one reason is reachable only here. `no_principal` is minted by the
+    observe arm of `resolve_principal`, and `_decided` -- whose answer `would` reports -- cannot
+    produce it. So before this line, an observe-posture `no_principal` refusal was visible to the
+    caller in the HTTP body and to nobody on this side, while the same request's `IDENTITY_WOULD`
+    line named some other reason entirely: a log that described a decision that was not made.
+
+    Not emitted under `enforce`, where the refusal is one decision and `audit` already carries it.
+    """
+    subject_gauge.ensure_gauge_visible()
+    _PKG_LOGGER.warning(
+        "IDENTITY_REFUSED posture=%s reason=%s subject=%s via=%s urn=%s",
+        POSTURE_OBSERVE, d.refused or "-", d.subject or "-", d.via or "-", urn,
     )
 
 
