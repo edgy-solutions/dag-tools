@@ -12,7 +12,45 @@ it back are named.
 
 ## Unreleased
 
+### Fixed
+
+- **An `observe`-posture refusal is now logged by the name of the reason it was actually
+  refused for.** `IDENTITY_WOULD` reports what `enforce` *would* have done, which is
+  `_decided`'s answer — and `_decided` cannot produce `no_principal`. That reason is minted by
+  the observe arm of `resolve_principal`, after the line has already been emitted, and the route
+  logs nothing when it refuses (it raises). So a request refused for naming no principal reached
+  the caller as a 401 saying `no_principal` while its one log line named a *different* reason,
+  usually `no_subject`. A log describing a decision that was not made is worse than one with a
+  gap in it: the gap is visible.
+
+  `observe` now emits an additional `IDENTITY_REFUSED` line, at WARNING, naming the refusal that
+  was actually made. `IDENTITY_WOULD`'s contract is **unchanged** — it still answers "what
+  happens when the posture flips", and the two lines naming different reasons for one request is
+  correct, not a disagreement. `enforce` is unaffected: there the refusal is one decision and
+  `IDENTITY_AUDIT` already carries it, so no second line is emitted. No signature, export,
+  default, status code or response body changes.
+
 ### Added
+
+- **Refusals are counted by reason name, in two separate populations**
+  (`dag_tools.central_gateway.refusal_gauge`), served on `/health` under a new
+  `refusal_reasons` key. `would_refuse` is what `enforce` would have refused with the request
+  **served anyway** — the migration-readiness number, broken out by what breaks. `did_refuse` is
+  what the gateway actually refused, where the caller got a 4xx. Under `observe` only
+  `no_principal` can appear in `did_refuse`; under `enforce` the two are one decision, so a
+  refusal counts in both. They are never summed: one number would report refusals for requests
+  that were served, or the reverse.
+
+  Every reason is present at 0 from start-up, and the vocabulary is installed by `identity` from
+  the mapping that already gives each reason its status code (`identity.REASONS`), so a reason
+  added there is counted the day it is added rather than the day it is first hit. `observed`
+  rides beside the counts as the discriminator between a quiet gateway and a dark gauge.
+  Counts are per process and since start-up; nothing persists or aggregates.
+
+  **It refuses nothing.** The counter runs in its own `try/except`, separate from the log line's,
+  so neither instrument can silence the other, and `/health` answers `null` for a misbehaving
+  counter rather than 500ing and taking the pod out. No signature, export or default changes;
+  `/health` gains one key and changes none.
 
 - **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
   A registered `source_config.type` selects a kind that owns validation, unit preparation,
