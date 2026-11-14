@@ -1,8 +1,12 @@
 # SystemLink Test Monitor spike probe
 
 Read-only probe that answers the open questions in `docs/plans/mfg-trace.md` section 3
-against a real server. It writes one JSON file, which is reviewed and then committed
-here as `<server-version>.json`.
+against a real server. It writes one JSON file here as `<server-version>.json`.
+
+**The output is never committed.** The repository is public and the file describes a work
+server. Everything in this directory except this README is git-ignored. The JSON is read
+locally and handed to the dag-tools owner, who sets the A2 defaults from it and commits
+only those defaults.
 
 ## Running it
 
@@ -48,10 +52,10 @@ is ever written into a filter string.
 It can only send `GET <swagger path>` and `POST` to `query-results`, `query-steps` and
 `query-products`; any other route raises before a request is made.
 
-## Before committing
+## Before handing it over
 
 Read the JSON. It should hold structure and counts only. If anything looks like data,
-do not commit it; report it.
+report the line instead of handing over the file.
 
 ## At work, in one paste (PowerShell)
 
@@ -60,7 +64,7 @@ Fill in the three `<...>` values. The probe needs only `httpx` and `pyyaml`, so
 `%TEMP%`, outside the repo, and the key exists only in this shell's environment.
 
 ```powershell
-git fetch origin; git switch docs/mfg-trace-spec-and-spike; git pull --ff-only
+git fetch origin; git switch master; git pull --ff-only
 $env:SYSTEMLINK_BASE_URL = "<https://your-systemlink-host>"
 $env:SYSTEMLINK_API_KEY  = "<api key>"
 $pn = "<a part number that has test results>"
@@ -90,7 +94,7 @@ Select-String -Path $out.FullName -SimpleMatch -Pattern $hostName, $pn, $env:SYS
 - **Workspaces:** if results live in one workspace, add `workspace_id: <id>` under
   `connection:`. The id is never recorded.
 
-**Reading it before committing.**
+**Reading it before handing it over.**
 - The leak check must print nothing.
 - Then open the file. Every value under `observations` should be one of:
   - a route path;
@@ -101,9 +105,10 @@ Select-String -Path $out.FullName -SimpleMatch -Pattern $hostName, $pn, $env:SYS
   - or `null` with a `detail`.
 - `requests` lists only a route name and a status per call.
 - Look for a serial, a result id, a program name, a timestamp or a hostname. If you find one,
-  **don't commit**. Send the line instead.
-- Should the host appear anyway, redact it in the committed copy before `git add`:
-  `[IO.File]::WriteAllText($out.FullName, [IO.File]::ReadAllText($out.FullName).Replace($hostName, "systemlink.example.invalid"))`.
+  send the line instead of the file.
+- `git status` must not list the file. It is ignored; if it shows up, stop and report it.
 
-Then commit just that file:
-`git add $out.FullName; git commit -m "docs(mfg-trace): SystemLink spike output"; git push`.
+Then hand the file to the dag-tools owner locally. Do not commit it, push it, or attach it
+anywhere public. The owner sets the defaults block from it and commits only that, with a
+line saying the defaults were confirmed by a spike on that date. The commit names no server
+version.

@@ -84,3 +84,8 @@ dbt_modules/
 # dlt writes its exported schemas here (export_schema_path) on every run,
 # including test runs. A build artifact, not source.
 schemas/export/
+
+# SystemLink spike output describes a work server and is never committed
+# (mfg-trace third ruling amendment, 2026-11-12). Only the README is tracked.
+/docs/plans/mfg-trace-spike/*
+!/docs/plans/mfg-trace-spike/README.md
