@@ -23,9 +23,10 @@ the spike.** Every value the spike would confirm is a setting with a
 conservative default: `take` 100, the server time filter off, and the steps
 key `(resultId, stepId)` per Q3. The orderBy spelling and the step-batch
 sizes are settings too. The fake server covers both plausible variants
-wherever the spike would decide. When the spike JSON lands, the defaults
-are set from it in a final commit before A2 merges. After A2, a **thin PR
-D** follows: only `test_result`, `test_measurement` and `test_catalog` over
+wherever the spike would decide. **Amended 2026-11-14:** the spike's
+answers are set in the deployment's own YAML, not pinned into the library's
+defaults -- so A2 needs no final commit and merges on green. After A2, a
+**thin PR D** follows: only `test_result`, `test_measurement` and `test_catalog` over
 the SystemLink raw tables, with their contract checks. The rest of D, then
 E, B and C, follow it. A minor release is tagged after A2 merges, so other
 work can pin it.

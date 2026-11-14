@@ -805,7 +805,8 @@ asset checks on the last. The schedule targets `<name>_incremental`; the backfil
 
 `api_key_env` names an environment variable; the key is never written anywhere. `operator`
 is required: `pseudonym` (needs `pseudonym_key_env`), `name` or `drop`. `table_prefix` is
-required. Values the server decides are settings with conservative defaults. Runnable
+required. Values the server decides are settings with conservative defaults; a deployment that
+has measured its own server sets the measured value in its YAML. Runnable
 example: [`examples/mfg_trace/systemlink`](examples/mfg_trace/systemlink).
 
 ## Setup & Development

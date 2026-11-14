@@ -20,7 +20,7 @@ it back are named.
   YAML, signature, export or default changes. Its schedule targets `<pipeline>_incremental`.
   `operator` and `table_prefix` are required for this kind. Settings the server decides
   (`limits.page_size`, `incremental.order_by`, `limits.step_filter`, ...) ship as conservative
-  defaults pending confirmation. `resolve_platform` gains a `VENDOR_PLATFORMS` table consulted
+  defaults a deployment overrides in its own YAML. `resolve_platform` gains a `VENDOR_PLATFORMS` table consulted
   after `SOURCE_TYPE_PLATFORMS`; `PRODUCER_ALIASES` is unchanged.
 - **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
   A registered `source_config.type` selects a kind that owns validation, unit preparation,

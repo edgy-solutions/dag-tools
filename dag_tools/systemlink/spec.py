@@ -8,8 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 KIND_NAME = "systemlink_test_monitor"
 
-#: Conservative defaults, pending confirmation by the spike. Every value it would confirm is a setting.
-#: ALL of them live in this one block.
+#: Every value the server gets to decide is a setting, and its default here is the conservative
+#: reading. ALL of them live in this one block. A deployment that has measured its own server sets
+#: the measured value in its YAML; nothing is ever pinned here from one server's answers, because a
+#: default in this file would be every deployment's answer and only one of them measured it.
 DEFAULTS: Dict[str, Any] = {
     "limits.page_size": 100,
     "incremental.use_server_time_filter": False,
