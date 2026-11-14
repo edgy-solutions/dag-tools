@@ -216,6 +216,19 @@ REFUSAL_CASES: Tuple[RefusalCase, ...] = (
             "take"
         ),
     ),
+    RefusalCase(
+        rule="varies_within_scope",
+        asset=ROW_LEVEL_ASSET,
+        scope=refusal_scope("varies_within_scope"),
+        planted=(
+            "the scope's rows disagree about the period the program is "
+            "reported through -- a column a series row reads once for the "
+            "whole program, so there is no one value to read. Planted in the "
+            "one column constant within the scope that has no rule of its "
+            "own: the program's name and its budget each have theirs, and "
+            "planting it there would trip that rule instead of this one"
+        ),
+    ),
 )
 
 

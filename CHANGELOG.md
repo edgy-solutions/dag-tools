@@ -29,6 +29,16 @@ it back are named.
   load. The skip guard filters by job name, so two code locations defining a pipeline with the
   same name hold each other's ticks.
 
+### Changed
+
+- **The vendored EV contract is re-vendored from its governed copy**
+  (`examples/contract_mapping/contracts/ev_fixture.yaml`), which has gained one rule id:
+  `varies_within_scope`, the scope-level case of a broken `constant_within` that
+  `varies_within_path` states at path level. The refusal fixture
+  (`dag_tools.user_deployment.demo_ev_refusal`) gains the matching planted case and scope, so
+  every rule in the document still has exactly one case. A reader that enumerates the contract's
+  rule ids sees one more id; no signature, export or default changes.
+
 ## 0.14.0 — 2026-11-10
 
 ### Added
