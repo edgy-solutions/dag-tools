@@ -80,17 +80,32 @@ CONTRACT_PATH = (
 )
 
 # Which rule covers a broken `constant_within`, by the column that broke it.
-# Four of the contract's rules are stated over the one mechanism -- an amount
-# that must not vary inside something -- and three of them name their column in
-# their own wording while the fourth is the general case. That split is this
-# file's reading of the wording, so it is checked against the contract in
-# `test_the_constant_within_rules_name_contract_columns_and_contract_rules`.
+# Five of the contract's rules are stated over the one mechanism -- a value that
+# must not vary inside something -- and three of them name their column in their
+# own wording. The remaining two are the general case, and they are told apart
+# by the axis the value is constant within rather than by a list of columns: the
+# contract's scope, which is a value a series row reads once for the whole
+# program, or anything narrower, which is a path. Reading them off the axis is
+# what keeps a column added to either side from needing an edit here. The whole
+# split is this file's reading of the wording, so it is checked against the
+# contract in `test_the_constant_within_rules_name_contract_columns_and_contract_rules`.
 CONSTANT_WITHIN_RULES = {
     "program_name": "program_name_not_unique",
     "program_bac": "program_bac_not_unique",
     "control_account": "work_package_in_two_accounts",
 }
-GENERAL_CONSTANT_WITHIN_RULE = "varies_within_path"
+SCOPE_CONSTANT_WITHIN_RULE = "varies_within_scope"
+PATH_CONSTANT_WITHIN_RULE = "varies_within_path"
+
+
+def _constancy_rule(column, contract: Contract) -> str:
+    """The rule a broken `constant_within` on one column breaks."""
+    named = CONSTANT_WITHIN_RULES.get(column.name)
+    if named is not None:
+        return named
+    if list(column.constant_within) == [contract.scope]:
+        return SCOPE_CONSTANT_WITHIN_RULE
+    return PATH_CONSTANT_WITHIN_RULE
 
 TYPE_CHECKS = {
     "string": lambda dtype: dtype == pl.String,
@@ -178,11 +193,7 @@ def _tripped(frame: pl.DataFrame, contract: Contract, calendar_years: Set[str]) 
                 .max()
             )
             if varies and varies > 1:
-                broken.add(
-                    CONSTANT_WITHIN_RULES.get(
-                        column.name, GENERAL_CONSTANT_WITHIN_RULE
-                    )
-                )
+                broken.add(_constancy_rule(column, contract))
 
     if contract.scope in present and frame[contract.scope].n_unique() > 1:
         broken.add("other_program_rows")
@@ -256,7 +267,23 @@ def test_the_constant_within_rules_name_contract_columns_and_contract_rules(cont
     for column, rule in CONSTANT_WITHIN_RULES.items():
         assert contract.column(column) is not None, f"{column} is not a contract column"
         assert rule in contract.rules, f"{rule} is not a contract rule"
-    assert GENERAL_CONSTANT_WITHIN_RULE in contract.rules
+    assert SCOPE_CONSTANT_WITHIN_RULE in contract.rules
+    assert PATH_CONSTANT_WITHIN_RULE in contract.rules
+    # The two general rules are read off the axis, so the axis has to be a
+    # thing the document states: a scope-level rule read against a contract
+    # with no scope column would quietly fall through to the path rule and
+    # the scope case would then trip the wrong id.
+    assert contract.scope, "the contract declares no scope column"
+    scoped = [
+        column.name
+        for column in contract.columns
+        if list(column.constant_within or ()) == [contract.scope]
+        and column.name not in CONSTANT_WITHIN_RULES
+    ]
+    assert scoped, (
+        "no column is constant within the scope without a rule of its own, so "
+        f"{SCOPE_CONSTANT_WITHIN_RULE} has nothing a plant could use"
+    )
 
 
 # ---------------------------------------------------------------------------
