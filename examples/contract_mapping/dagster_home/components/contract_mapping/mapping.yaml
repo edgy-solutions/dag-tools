@@ -167,3 +167,13 @@ cast_templates:
 # written -- which the plan reports, rather than this library guessing a
 # predicate that silently matches nothing.
 non_finite_predicate: "{column} != {column}"
+
+# Test kind -> the rule id its failure should name, overriding this library's
+# own. The contract calls its key rule after the grain it declares, and this
+# library reaches for one id for every contract (`duplicate_key`), so without
+# this line the key-uniqueness test would fail under an id nobody reading the
+# contract could look up. The contract is governed and vendored byte-identical
+# to upstream, so the reconciliation belongs here, in the mapping, which is
+# exactly what the override is for.
+rule_ids:
+  key_unique: duplicate_work_package_period
