@@ -184,6 +184,15 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - For new IO manager classes, add an explicit entry to `dag_tools/inventory/classifier.py::FAMILY_REGISTRY` (FQN -> family). Do **not** rely on substring matching — it's a logged-at-WARNING last-resort fallback, never the intended path.
 - For introspection that may not exist in older Dagster versions, version-gate it and **fail soft per-field** (record `None` + log WARNING). The extractor must never abort an entire `Definitions` walk because one asset is malformed — per-asset try/except is mandatory.
 
+## 4r. Shipped SQL: the curated slice (`dag_tools.systemlink.measurements` + `.sql`)
+- **The grammar stays pure.** `dag_tools/systemlink/measurements.py` imports no `dagster`, `dbt`, `dlt`, `duckdb`, `sqlalchemy` or `jinja2`. One rule table, read by the Python evaluator and by the SQL generator next door; a rule written in only one of the two is a route that silently disagrees with itself.
+- **Never hand-edit the shipped `.sql`.** Change `sql.py` and regenerate with `write_models()`. Byte identity against `render_models()` is a test, *and so is cross-route agreement over duckdb* — keep both, because byte identity alone passes on a wrong generator and agreement alone passes on a stale file.
+- **Ship package data under `dag_tools/dbt_project_packages/`, never `dbt_packages/`.** The latter is gitignored and hatchling honours VCS ignore files, so the package would be absent from the wheel. Regression: `test_the_shipped_package_is_on_a_path_no_vcs_ignore_rule_matches`.
+- **Declare a default for no dbt variable.** The package requires four (two relations, the adapter's exact numeric type, the deployment's comparator table) and a default for any of them would either name something from below or guess a type. Unset must fail `dbt parse`.
+- **Never cast possibly-non-numeric text with `cast(x as double)`.** `cast('1e999' as double)` is `inf` on duckdb while the Python route answers `None`. Guard with `x * 0 = 0`, which is true of every finite double and false of both infinities and of nan. The exact-decimal path raises instead and that is the stated limit, not something to paper over.
+- **Keep the comparator vocabulary out of the library.** No comparison codes, no operator strings beyond the two words `low` and `high` (named after the curated contract's own limit columns). Match the **whole** operator, never a prefix. An operator the deployment's table omits is kept as text and counted at warning severity — never dropped, never read as a value, and never reported as a parse failure.
+- **Compute a tolerance in the configured exact numeric type, not in doubles**, and keep `is_latest` terminal-only.
+
 ## 5. Dagster Component API Pattern (1.12 GA)
 - **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.
 - **Imports**: `from dagster.components import Component, ComponentLoadContext` and `from dagster.components.resolved.base import Resolvable` and `from dagster.components.resolved.model import Model`.

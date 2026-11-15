@@ -8,10 +8,15 @@
 # dag-tools sha. Every value below is generic or synthetic.
 #
 # Conventions used in every document:
-#   produced_since: null -- declared, not yet produced by any dag-tools release.
+#   produced_since -- null is declared but not yet produced by any dag-tools release; a
+#     version names the release whose derive package (or shipped example mapping) produces
+#     the column. Only a produced column can be demanded of a mapping, so a document whose
+#     columns are all null is a contract looking forward and nothing is refused for it.
 #   scope -- the column a read filters to one value of. A document with none says `scope: none`,
 #     which the loader reads as NO SCOPE, not as a column called `none`; `scope` is the only
-#     field read that way. Every document below names a real column.
+#     field read that way -- a `none` in `period.column` or `status_period` still means that
+#     column. The conformed step-parameter document below is the case: its rows carry no part
+#     number until they are joined to a result, so there is no column a read of it filters to.
 #   nullable / personal_data / description -- read-side fields; the contract loader ignores
 #     them (extra="ignore") and the iagent reader consumes them. `personal_data` records a
 #     FACT; the classification LEVEL is the deployment's, applied through warehouse_source
@@ -175,6 +180,74 @@ rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "
 cadence: {set_by: as_built_edge, write: rebuild_per_root}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [ancestor_pn, ancestor_serial], projections: {by_descendant: [descendant_pn, descendant_serial]}, current_view: as_built_closure_current}
 ---
+# STAGE 1 -- CONFORMED. The two documents below are the slice's own vocabulary, not a source's:
+# the deployment's `contract_mapping` instances map its raw extract onto these, and the derive
+# package reads ONLY these column names. That is what keeps every name from below in the
+# deployment, where it is configurable, while dag-tools still ships real SQL.
+# `test_repo` is the source ID -- the role the source plays here -- never the vendor, as in
+# every other document in this file.
+contract_id: mfg_trace.conf_test_repo_result
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: deployment, asset: conf_test_repo_result}, storage: table}
+grain: [result_id]
+scope: part_number
+columns:
+  - {name: result_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "normalized; the deployment's normalizer decides how"}
+  - {name: part_number_raw, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "as received, so a normalizer change is auditable"}
+  - {name: serial_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: serial_number_raw, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: status_type, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "the source's status enum, verbatim"}
+  - {name: is_terminal, type: boolean, required: true, produced_since: "0.16.0", nullable: false, description: "which status values are terminal is the deployment's mapping to decide, never this file's"}
+  - {name: started_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: updated_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: duration_s, type: float, produced_since: "0.16.0", nullable: true}
+  - {name: system_id, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: host_name, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: operator_ref, type: string, produced_since: "0.16.0", nullable: true, personal_data: true, description: "pseudonym (HMAC) by default; the name only where the deployment allows"}
+  - {name: workspace, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: source_system, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+cadence: {set_by: test_repo, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number, started_at], current_view: conf_test_repo_result_current}
+---
+# `scope: none` -- and it is the reason the loader reads that word as NO SCOPE rather than as a
+# column name. A step-parameter row carries no part number until it is joined to its result, so
+# there is genuinely no column a read of THIS table filters to one value of. Conforming is one
+# mapping per source table and does no join, so the scope arrives downstream, in `test_measurement`.
+contract_id: mfg_trace.conf_test_repo_step_parameter
+version: "0.1.0"
+status: sample
+ratified_by: null
+dataset: {urn: null, producer: {repo: deployment, asset: conf_test_repo_step_parameter}, storage: table}
+grain: [result_id, step_id, parameter_index]
+scope: none
+columns:
+  - {name: result_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: step_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: parameter_index, type: integer, required: true, produced_since: "0.16.0", nullable: false, description: "position in the step's parameter list; names may repeat"}
+  - {name: step_path, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: step_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: parameter_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: measurement_text, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "verbatim; '' when absent. The grammar reads it; it is never pre-parsed here"}
+  - {name: units, type: string, produced_since: "0.16.0", nullable: true, description: "the source's own units column; a unit parsed off the measurement text only fills it when this is absent"}
+  - {name: limits_text, type: string, produced_since: "0.16.0", nullable: true, description: "verbatim low/high/comparison as received, so an inferred comparator stays auditable"}
+  - {name: comparison_type, type: string, produced_since: "0.16.0", nullable: true, description: "where the source states one; it wins over an inferred one"}
+  - {name: status, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: source_system, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a conformed result"}
+cadence: {set_by: test_repo, write: incremental_by_key}
+tags: {engine: ReplacingMergeTree(loaded_at), order_by: [result_id, step_id, parameter_index], current_view: conf_test_repo_step_parameter_current}
+---
 contract_id: mfg_trace.test_result
 version: "0.1.0"
 status: sample
@@ -183,28 +256,28 @@ dataset: {urn: null, producer: {repo: dag-tools, asset: test_result}, storage: t
 grain: [result_id]
 scope: part_number
 columns:
-  - {name: result_id, type: string, required: true, produced_since: null, nullable: false}
-  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
-  - {name: part_number_raw, type: string, produced_since: null, nullable: false}
-  - {name: serial_number, type: string, required: true, produced_since: null, nullable: false}
-  - {name: serial_number_raw, type: string, produced_since: null, nullable: false}
-  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: status_type, type: string, required: true, produced_since: null, nullable: false, description: "the source's status enum, verbatim"}
-  - {name: is_terminal, type: boolean, required: true, produced_since: null, nullable: false}
-  - {name: started_at, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: updated_at, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: duration_s, type: float, produced_since: null, nullable: true}
-  - {name: system_id, type: string, produced_since: null, nullable: true}
-  - {name: host_name, type: string, produced_since: null, nullable: true}
-  - {name: operator_ref, type: string, produced_since: null, nullable: true, personal_data: true, description: "pseudonym (HMAC) by default; the name only where the deployment allows"}
-  - {name: workspace, type: string, produced_since: null, nullable: true}
-  - {name: attempt_seq, type: integer, required: true, produced_since: null, nullable: false, description: "per (part_number, serial_number, program_name) by started_at, then result_id"}
-  - {name: is_latest, type: boolean, required: true, produced_since: null, nullable: false, description: "latest TERMINAL attempt"}
-  - {name: is_first, type: boolean, required: true, produced_since: null, nullable: false}
-  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: test_repo"}
-  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
-  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: result_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: part_number_raw, type: string, produced_since: "0.16.0", nullable: false}
+  - {name: serial_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: serial_number_raw, type: string, produced_since: "0.16.0", nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: status_type, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "the source's status enum, verbatim"}
+  - {name: is_terminal, type: boolean, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: started_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: updated_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: duration_s, type: float, produced_since: "0.16.0", nullable: true}
+  - {name: system_id, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: host_name, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: operator_ref, type: string, produced_since: "0.16.0", nullable: true, personal_data: true, description: "pseudonym (HMAC) by default; the name only where the deployment allows"}
+  - {name: workspace, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: attempt_seq, type: integer, required: true, produced_since: "0.16.0", nullable: false, description: "per (part_number, serial_number, program_name) by started_at, then result_id"}
+  - {name: is_latest, type: boolean, required: true, produced_since: "0.16.0", nullable: false, description: "latest TERMINAL attempt"}
+  - {name: is_first, type: boolean, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: source_system, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
 rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number, started_at], current_view: test_result_current}
@@ -217,30 +290,30 @@ dataset: {urn: null, producer: {repo: dag-tools, asset: test_measurement}, stora
 grain: [result_id, step_id, parameter_index]
 scope: part_number
 columns:
-  - {name: result_id, type: string, required: true, produced_since: null, nullable: false}
-  - {name: step_id, type: string, required: true, produced_since: null, nullable: false}
-  - {name: parameter_index, type: integer, required: true, produced_since: null, nullable: false, description: "position in the step's parameter list; names may repeat"}
-  - {name: step_path, type: string, required: true, produced_since: null, nullable: false}
-  - {name: step_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: parameter_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: measurement_num, type: float, produced_since: null, nullable: true}
-  - {name: measurement_text, type: string, required: true, produced_since: null, nullable: false, description: "verbatim; '' when absent"}
-  - {name: units, type: string, produced_since: null, nullable: true}
-  - {name: low_limit_num, type: float, produced_since: null, nullable: true}
-  - {name: high_limit_num, type: float, produced_since: null, nullable: true}
-  - {name: limits_text, type: string, produced_since: null, nullable: true, description: "verbatim low/high/comparison as received"}
-  - {name: comparison_type, type: string, produced_since: null, nullable: true}
-  - {name: status, type: string, produced_since: null, nullable: true}
-  - {name: parse_failed, type: boolean, required: true, produced_since: null, nullable: false}
-  - {name: started_at, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
-  - {name: serial_number, type: string, required: true, produced_since: null, nullable: false}
-  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: is_latest_result, type: boolean, required: true, produced_since: null, nullable: false}
-  - {name: source_system, type: string, required: true, produced_since: null, nullable: false, description: "source id: test_repo"}
-  - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
-  - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: result_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: step_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: parameter_index, type: integer, required: true, produced_since: "0.16.0", nullable: false, description: "position in the step's parameter list; names may repeat"}
+  - {name: step_path, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: step_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: parameter_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: measurement_num, type: float, produced_since: "0.16.0", nullable: true}
+  - {name: measurement_text, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "verbatim; '' when absent"}
+  - {name: units, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: low_limit_num, type: float, produced_since: "0.16.0", nullable: true}
+  - {name: high_limit_num, type: float, produced_since: "0.16.0", nullable: true}
+  - {name: limits_text, type: string, produced_since: "0.16.0", nullable: true, description: "verbatim low/high/comparison as received"}
+  - {name: comparison_type, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: status, type: string, produced_since: "0.16.0", nullable: true}
+  - {name: parse_failed, type: boolean, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: started_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: serial_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: is_latest_result, type: boolean, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: source_system, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "source id: test_repo"}
+  - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
 rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a test_result"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name, started_at], projections: {by_serial: [serial_number, result_id]}, current_view: test_measurement_current}
@@ -253,15 +326,15 @@ dataset: {urn: null, producer: {repo: dag-tools, asset: test_catalog}, storage: 
 grain: [part_number, program_name, step_path, parameter_name, units]
 scope: part_number
 columns:
-  - {name: part_number, type: string, required: true, produced_since: null, nullable: false}
-  - {name: program_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: step_path, type: string, required: true, produced_since: null, nullable: false}
-  - {name: parameter_name, type: string, required: true, produced_since: null, nullable: false}
-  - {name: units, type: string, required: true, produced_since: null, nullable: false, description: "'' when absent; part of the grain"}
-  - {name: n_results, type: integer, required: true, produced_since: null, nullable: false}
-  - {name: first_seen, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: last_seen, type: timestamp, required: true, produced_since: null, nullable: false}
-  - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
+  - {name: part_number, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: program_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: step_path, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: parameter_name, type: string, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: units, type: string, required: true, produced_since: "0.16.0", nullable: false, description: "'' when absent; part of the grain"}
+  - {name: n_results, type: integer, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: first_seen, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: last_seen, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
+  - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
 rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: test_measurement, write: rebuild_per_part}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name], current_view: test_catalog_current}

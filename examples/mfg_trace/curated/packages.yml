@@ -1,0 +1,16 @@
+# The curated package, installed from the dag-tools distribution.
+#
+# `local:` rather than a registry entry, because the package ships inside the
+# library: there is no version of it that is not the version of dag-tools you
+# have installed, and a `git:` entry would let the two drift.
+#
+# The path below is written for this example, which sits in the dag-tools
+# repository. In a deployment the library is installed, so ask it where the
+# package is rather than guessing at a site-packages path:
+#
+#     python -c "from dag_tools.systemlink import sql; print(sql.PACKAGE_DIR)"
+#
+# That is the same constant the library's own byte-identity test reads, so the
+# path it prints is the package the tests cover.
+packages:
+  - local: ../../../dag_tools/dbt_project_packages/mfg_trace_curated

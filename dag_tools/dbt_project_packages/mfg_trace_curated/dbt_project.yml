@@ -1,0 +1,35 @@
+name: 'mfg_trace_curated'
+version: '0.1.0'
+config-version: 2
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+# Every .sql under models/ and tests/ is GENERATED from the rule table in
+# dag_tools/systemlink/measurements.py by dag_tools/systemlink/sql.py. A test
+# compares the shipped bytes against the generator's output, so an edit here
+# that is not an edit there fails. The two hand-written files are this one and
+# macros/mfg_trace_re_extract.sql.
+#
+# There is deliberately no `vars:` block. This package requires four
+# variables and declares a default for none of them:
+#
+#   mfg_trace_conf_result_relation          the conformed result relation
+#   mfg_trace_conf_step_parameter_relation  the conformed step-parameter one
+#   mfg_trace_decimal_type                  the exact numeric type to do the
+#                                           tolerance arithmetic in
+#   mfg_trace_comparators                   the deployment's comparator table
+#
+# `var('x')` with no default fails the parse, which is the point: an operator
+# learns a variable is missing when the project parses, rather than from SQL
+# that compiled against a guess. A default would also put two relation names
+# and a warehouse type into this library, which owns none of them. The
+# comparator table is a deployment-owned table exactly as the normalizers
+# are: this package ships no comparison codes of its own, and a deployment
+# that declares an empty table covers no operator -- which the SQL answers
+# with a null rather than failing to compile.
+
+models:
+  mfg_trace_curated:
+    +materialized: table
