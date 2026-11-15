@@ -9,11 +9,15 @@
 #
 # Conventions used in every document:
 #   produced_since: null -- declared, not yet produced by any dag-tools release.
+#   scope -- the column a read filters to one value of. A document with none says `scope: none`,
+#     which the loader reads as NO SCOPE, not as a column called `none`; `scope` is the only
+#     field read that way. Every document below names a real column.
 #   nullable / personal_data / description -- read-side fields; the contract loader ignores
 #     them (extra="ignore") and the iagent reader consumes them. `personal_data` records a
 #     FACT; the classification LEVEL is the deployment's, applied through warehouse_source
 #     against its own dimensions file, never written here (D8).
-#   timestamp (always UTC) / date / array<string> -- contract types added in PR B, and to the
+#   timestamp (always UTC -- the sources deliver UTC, so nothing here converts one) / date /
+#     array<string> -- contract types added in PR B, and to the
 #     iagent reader in the same change (D10, Q7 answered). Until PR B lands, load_contract
 #     reports them as unknown_types notes.
 #   source_system / cadence.set_by -- carry SOURCE IDS (pdm, mes, test_repo): the role a source
@@ -43,7 +47,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: pdm, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, revision], current_view: dim_part_current}
 ---
@@ -71,7 +75,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: pdm, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [parent_pn, parent_rev], current_view: bom_edge_current}
 ---
@@ -91,7 +95,7 @@ columns:
   - {name: path, type: "array<string>", required: true, produced_since: null, nullable: false, description: "part numbers from ancestor to descendant inclusive; a part reached by two routes has two rows"}
   - {name: truncated, type: boolean, required: true, produced_since: null, nullable: false, description: "the walk stopped at max_depth below this row"}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: bom_edge, write: rebuild_per_root}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [ancestor_pn, ancestor_rev, depth], current_view: bom_closure_current}
 ---
@@ -120,7 +124,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: mes, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number], current_view: serial_unit_current}
 ---
@@ -147,7 +151,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent", interval_overlap: "two intervals for one child unit overlap", orphan_reference: "a parent or child is not a serial_unit"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", interval_overlap: "two intervals for one child unit overlap", orphan_reference: "a parent or child is not a serial_unit"}
 cadence: {set_by: mes, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [parent_pn, parent_serial], projections: {by_child: [child_pn, child_serial]}, current_view: as_built_edge_current}
 ---
@@ -167,7 +171,7 @@ columns:
   - {name: depth, type: integer, required: true, produced_since: null, nullable: false}
   - {name: truncated, type: boolean, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: as_built_edge, write: rebuild_per_root}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [ancestor_pn, ancestor_serial], projections: {by_descendant: [descendant_pn, descendant_serial]}, current_view: as_built_closure_current}
 ---
@@ -201,7 +205,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number, started_at], current_view: test_result_current}
 ---
@@ -237,7 +241,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: null, nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a test_result"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a test_result"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name, started_at], projections: {by_serial: [serial_number, result_id]}, current_view: test_measurement_current}
 ---
@@ -258,7 +262,7 @@ columns:
   - {name: first_seen, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: last_seen, type: timestamp, required: true, produced_since: null, nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: test_measurement, write: rebuild_per_part}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, parameter_name], current_view: test_catalog_current}
 ---
@@ -280,6 +284,6 @@ columns:
   - {name: records_changed, type: integer, required: true, produced_since: null, nullable: false}
   - {name: errors_json, type: string, required: true, produced_since: null, nullable: false, description: "event name -> count, plus up to 20 sample events; never a credential"}
   - {name: loaded_at, type: timestamp, required: true, produced_since: null, nullable: false}
-rules: {key_not_unique: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
 cadence: {set_by: every_source_run, write: append}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [source_system, started_at], current_view: ingest_status_current}
