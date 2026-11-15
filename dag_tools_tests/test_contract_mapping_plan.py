@@ -196,6 +196,60 @@ def test_an_unproduced_scope_column_is_refused():
     assert any("s_one" in problem and "scope" in problem for problem in problems)
 
 
+def test_a_scope_of_none_is_no_scope_rather_than_a_column_called_none():
+    """`scope: none` says the document has no scope, and YAML agrees with
+    nobody: it reads the word as the string "none", not as a null.
+
+    Read literally it is a column name, so the test above fires and the
+    mapping is refused for not producing a column called `none` -- a refusal
+    naming something the operator never wrote. The two tests belong together:
+    whichever way a future edit reads the word, one of them fails.
+    """
+    contract = copy.deepcopy(CONTRACT)
+    contract["scope"] = "none"
+    columns = dict(MAPPING["columns"])
+    del columns["s_one"]
+    for column in contract["columns"]:
+        if column["name"] == "s_one":
+            column["required"] = False
+    # The scope is gone, so the column that was only there to carry it is too,
+    # and the plan still has nothing to say.
+    contract["columns"] = [c for c in contract["columns"] if c["name"] != "s_one"]
+    contract["rules"].pop("m_one_not_unique", None)
+    for column in contract["columns"]:
+        if column.get("constant_within") == ["s_one"]:
+            column.pop("constant_within")
+    plan = _plan(contract=contract, mapping=_mapping(columns=columns))
+    assert plan.scope is None
+    assert not any("none" in problem for problem in plan.notes)
+
+
+def test_only_the_scope_is_read_that_way():
+    """A `none` elsewhere still means what the document said.
+
+    Widening the reading to every optional column field would silently drop
+    a period a reader filters on. A document naming its period column `none`
+    has said something this library cannot act on, and it fails loudly.
+    """
+    contract = copy.deepcopy(CONTRACT)
+    contract["period"]["column"] = "none"
+    problems = _problems(contract=contract)
+    assert any("none" in problem and "period" in problem for problem in problems)
+
+
+def test_a_blank_scope_is_the_same_absence_as_an_absent_one():
+    """One representation of absence, so `if scope` and `is None` agree."""
+    for blank in ("", "   "):
+        contract = copy.deepcopy(CONTRACT)
+        contract["scope"] = blank
+        assert load_contract(contract).scope is None
+
+
+def test_a_real_scope_column_is_still_read_as_itself():
+    """The control: the reading above must not touch an ordinary name."""
+    assert load_contract(copy.deepcopy(CONTRACT)).scope == "s_one"
+
+
 def test_a_cadence_disagreement_is_refused_because_it_fails_silently():
     """Incremental against a whole-table contract shows up as data, not error.
 

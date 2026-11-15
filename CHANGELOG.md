@@ -10,6 +10,31 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Changed
+
+- **A contract whose `scope` is the word `none` now reads as having no scope, rather than as a
+  column called `none`.** YAML reads that word as a string — only `null`, `~` and an empty value
+  are nulls — so such a document arrived as a column name and the load refused because nothing
+  produces a column called that: a refusal naming something the operator never wrote. The word is
+  read case-insensitively, and a blank scope now reads as absent too, so `None` is the one
+  representation of absence. Deliberately **only** `scope`: a `none` in `period.column` or
+  `status_period` still means what the document said and still fails loudly, because silently
+  dropping a period a reader filters on is worse than a refusal. No existing signature, export or
+  default changes; the only documents whose behaviour changes are ones that previously failed the
+  load. A contract whose scope column is genuinely called `none` can no longer say so.
+
+### Fixed
+
+- **The `mfg_trace` contract template spells its key-uniqueness rule `duplicate_key`**, the word
+  the plan already uses for that refusal kind, instead of `key_not_unique`. Template and planning
+  documents only — no governed contract and no library vocabulary changes. Note that neither
+  spelling is an id this library's key-uniqueness test resolves to (it derives
+  `duplicate_<grain>` and falls back to `duplicate_grain`), so those tests still land under an
+  undeclared rule until a mapping overrides `rule_ids.key_unique` or the document also declares
+  the generic id.
+
 ## 0.15.0 — 2026-11-14
 
 ### Fixed

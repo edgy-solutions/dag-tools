@@ -37,7 +37,7 @@ conform YAML, never here.
 - Engine: `ReplacingMergeTree(loaded_at)` for every table. The newest
   `loaded_at` for a grain wins.
 - `ORDER BY` is the table's main access path (`tags.order_by`), not its grain.
-  The grain is enforced by the `key_not_unique` rule over the `_current` view.
+  The grain is enforced by the `duplicate_key` rule over the `_current` view.
 - **Read through `<table>_current`** (`tags.current_view`). It is a `FINAL`
   view, so a reader never sees a row that a later load has already superseded
   but the merge has not yet removed. Reading the base table directly can
@@ -48,7 +48,8 @@ conform YAML, never here.
 
 **Values.**
 
-- **Types.** `timestamp` is always UTC. `timestamp`, `date` and
+- **Types.** `timestamp` is always UTC — the sources deliver UTC, so no
+  conformance step converts one and none should be added. `timestamp`, `date` and
   `array<string>` are contract types (Q7 answered). They join
   `CONTRACT_TYPES` in spec PR B, and iagent's reader gains them in the same
   change: PR B is released first, then one iagent PR adds them to its reader
@@ -86,12 +87,20 @@ The classification *level* is the deployment's, applied through
 `warehouse_source` against its own dimensions file (D8); no level appears
 here. The only such column is `test_result.operator_ref`.
 
-**Rules.** Every table carries `key_not_unique` and `missing_column`. Two
+**Scope.** Every document here names the column a read filters to one value
+of. A document that genuinely has none says `scope: none`, which the reader
+reads as *no scope* rather than as a column called `none` — YAML reads the
+word as a string, so read literally it would be a column name and the load
+would refuse for not producing it. The word is case-insensitive, and `scope`
+is the only field read that way: a `none` in `period.column` or
+`status_period` still means what it says and still fails loudly.
+
+**Rules.** Every table carries `duplicate_key` and `missing_column`. Two
 further rules appear where they apply:
 
 | Rule | Fails when |
 |---|---|
-| `key_not_unique` | Two rows in `_current` share the grain. |
+| `duplicate_key` | Two rows in `_current` share the grain. |
 | `missing_column` | A declared required column is absent from the relation. |
 | `interval_overlap` | Two `as_built_edge` intervals for the same child serial overlap (a part installed in two places at once). |
 | `orphan_reference` | On `as_built_edge`, the parent or child is not a `serial_unit`; on `test_measurement`, the `result_id` is not a `test_result`. |

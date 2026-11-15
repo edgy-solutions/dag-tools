@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # The type vocabulary a contract column is written in. Not a customer's
 # shape -- these are the kinds a governed read distinguishes, and they are
@@ -42,6 +42,20 @@ from pydantic import BaseModel, ConfigDict, Field
 # see `plan.py`, where coercing one amount column to float was enough to stop
 # a mapping reproducing its fixture byte for byte.
 CONTRACT_TYPES = ("string", "numeric", "integer", "float", "boolean")
+
+# The spelling a contract uses to say it has no scope column at all.
+#
+# YAML reads `none` as the *string* "none", not as a null -- only `null`, `~`
+# and an empty value are nulls -- so a document written that way arrives here
+# as a column name, and the load then refuses because no asset produces a
+# column called that. The refusal names a column nobody meant, which is the
+# worst of the three outcomes: worse than loading with no scope, and worse
+# than refusing for a reason the operator recognises.
+#
+# Read case-insensitively, because a document writing the Python spelling
+# means the same thing. The stated trade: a contract whose scope column is
+# genuinely called `none` cannot say so.
+_NO_SCOPE = "none"
 
 
 class ContractColumn(BaseModel):
@@ -198,6 +212,26 @@ class Contract(BaseModel):
     limits: Dict[str, Any] = Field(default_factory=dict)
     cadence: ContractCadence = Field(default_factory=ContractCadence)
     tags: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("scope", mode="before")
+    @classmethod
+    def _no_scope_is_not_a_column(cls, value: Any) -> Any:
+        """Read a `none` spelling, and a blank, as no scope at all.
+
+        So there is one representation of absence -- `None` -- and every
+        caller's `if contract.scope` and `is None` agree about it.
+
+        Deliberately **only** `scope`. `period.column` and `status_period`
+        keep their literal reading: a document naming one of those `none`
+        has said something this library cannot act on, and failing loudly is
+        better than silently dropping a period a reader filters on.
+        """
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped or stripped.casefold() == _NO_SCOPE:
+            return None
+        return value
 
     # -- derived views, so no caller re-derives them slightly differently --
 
