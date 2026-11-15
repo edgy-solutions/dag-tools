@@ -28,8 +28,12 @@ def build_pipeline_schedule(
     pipeline_name: str,
     asset_keys: List[Any],
     schedule: Dict[str, Any],
+    job_name: Optional[str] = None,
 ) -> Dict[str, List[Any]]:
     """Build ``<pipeline>_job`` and ``<pipeline>_schedule`` for one pipeline.
+
+    With ``job_name`` the schedule targets that existing job (another contribution
+    defines it) and builds none of its own; the skip guard filters by that name.
 
     The job selects exactly ``asset_keys`` (never ``all()``, which would not
     include external source specs and would pass vacuously). The schedule is
@@ -43,8 +47,10 @@ def build_pipeline_schedule(
             "a job over nothing would pass vacuously."
         )
 
-    job_name = f"{pipeline_name}_job"
-    job = define_asset_job(job_name, selection=AssetSelection.assets(*asset_keys))
+    own_job = job_name is None
+    if own_job:
+        job_name = f"{pipeline_name}_job"
+        job = define_asset_job(job_name, selection=AssetSelection.assets(*asset_keys))
 
     def _evaluate(context: ScheduleEvaluationContext):
         records = context.instance.get_run_records(
@@ -60,11 +66,11 @@ def build_pipeline_schedule(
     sched = ScheduleDefinition(
         name=f"{pipeline_name}_schedule",
         cron_schedule=cfg.cron,
-        job=job,
+        **({"job": job} if own_job else {"job_name": job_name}),
         execution_fn=_evaluate,
         default_status=(
             DefaultScheduleStatus.RUNNING if cfg.enabled else DefaultScheduleStatus.STOPPED
         ),
         **kwargs,
     )
-    return {"jobs": [job], "schedules": [sched]}
+    return {"jobs": [job] if own_job else [], "schedules": [sched]}

@@ -42,6 +42,16 @@ that, with a line saying the defaults were confirmed by a spike on that date
 and naming no server version. `docs/plans/mfg-trace-spike/` stays ignored
 apart from its README.
 
+Further amendment (2026-11-14, dag-tools owner). The spike's answers are
+set in the **deployment's own YAML**, not pinned into the library's
+defaults: a default in `dag_tools/systemlink/spec.py` would be every
+deployment's answer while only one of them measured its server. So the
+defaults stay at their conservative reading permanently, no commit sets
+them from a spike, and A2 merges on green. This supersedes the previous
+amendment's "sets the defaults block from it and commits only that"; the
+rest of that amendment, above all that the spike output is never
+committed, stands.
+
 Every name in this document — part numbers, serials, programs, tables,
 columns, hosts — is synthetic (`PN-1000-A`, `SN-0001`, `prog_functional`).
 The deployment's real names live in its own repo's YAML.

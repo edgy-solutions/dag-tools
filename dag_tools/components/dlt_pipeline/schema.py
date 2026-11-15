@@ -23,6 +23,10 @@ class DltPipelineGroupSchema(BaseModel):
     limit: int = Field(default=0)
     add_timestamp: bool = Field(default=False)
     schedule: Optional[DltPipelineScheduleSchema] = None
+    table_prefix: Optional[str] = Field(
+        default=None,
+        description="Prefix for raw table names. Read only by a source kind that declares it; a legacy kind refuses it.",
+    )
     sources: List[str] = Field(
         default_factory=list, 
         description="A list of table names this pipeline extracts."

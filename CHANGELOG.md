@@ -32,6 +32,28 @@ it back are named.
 
 ### Added
 
+- **A `systemlink_test_monitor` source kind** for `DltPipelineComponent`: a read-only, incremental
+  (known-ids) and resumable-backfill load of SystemLink Test Monitor results and steps, with an
+  `ingest_runs` table and three asset checks. Selected only by `source_config.type`; no existing
+  YAML, signature, export or default changes. Its schedule targets `<pipeline>_incremental`.
+  `operator` and `table_prefix` are required for this kind. Settings the server decides
+  (`limits.page_size`, `incremental.order_by`, `limits.step_filter`, ...) ship as conservative
+  defaults a deployment overrides in its own YAML. `resolve_platform` gains a `VENDOR_PLATFORMS` table consulted
+  after `SOURCE_TYPE_PLATFORMS`; `PRODUCER_ALIASES` is unchanged.
+- **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
+  A registered `source_config.type` selects a kind that owns validation, unit preparation,
+  source building and any extra definitions. **No existing YAML changes meaning**: a missing
+  `type`, `sql_database`, `postgres` or `duckdb` resolves silently to the legacy path, which
+  delegates to the unchanged `_prepare_units` / `build_dlt_source`. Any other unregistered value
+  also resolves to legacy, with one WARNING per value. The one new refusal is a near miss of a
+  registered non-legacy kind, and none ships yet. `instantiate_assets` gains a trailing optional
+  `kind=None`; no other signature, export or default changes.
+- **A per-pipeline `schedule:` block** (`cron`, `enabled`, `timezone`). It builds
+  `<pipeline>_job` over exactly that pipeline's asset keys and `<pipeline>_schedule`, which
+  starts **STOPPED** unless `enabled: true` and skips a tick while a run of its job is queued or
+  in progress. A malformed block, or a schedule on a pipeline that produced no assets, fails the
+  load. The skip guard filters by job name, so two code locations defining a pipeline with the
+  same name hold each other's ticks.
 - **Refusals are counted by reason name, in two separate populations**
   (`dag_tools.central_gateway.refusal_gauge`), served on `/health` under a new
   `refusal_reasons` key. `would_refuse` is what `enforce` would have refused with the request
@@ -52,20 +74,6 @@ it back are named.
   counter rather than 500ing and taking the pod out. No signature, export or default changes;
   `/health` gains one key and changes none.
 
-- **A source-kind seam in `DltPipelineComponent`** (`dag_tools.asset_wrappers.source_kinds`).
-  A registered `source_config.type` selects a kind that owns validation, unit preparation,
-  source building and any extra definitions. **No existing YAML changes meaning**: a missing
-  `type`, `sql_database`, `postgres` or `duckdb` resolves silently to the legacy path, which
-  delegates to the unchanged `_prepare_units` / `build_dlt_source`. Any other unregistered value
-  also resolves to legacy, with one WARNING per value. The one new refusal is a near miss of a
-  registered non-legacy kind, and none ships yet. `instantiate_assets` gains a trailing optional
-  `kind=None`; no other signature, export or default changes.
-- **A per-pipeline `schedule:` block** (`cron`, `enabled`, `timezone`). It builds
-  `<pipeline>_job` over exactly that pipeline's asset keys and `<pipeline>_schedule`, which
-  starts **STOPPED** unless `enabled: true` and skips a tick while a run of its job is queued or
-  in progress. A malformed block, or a schedule on a pipeline that produced no assets, fails the
-  load. The skip guard filters by job name, so two code locations defining a pipeline with the
-  same name hold each other's ticks.
 
 ## 0.14.0 — 2026-11-10
 

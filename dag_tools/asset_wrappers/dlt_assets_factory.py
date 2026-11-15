@@ -94,6 +94,14 @@ class DltAssetGroupConfig(BaseModel):
             "          limits:   {cpu: '4000m', memory: '16Gi'}"
         ),
     )
+    table_prefix: Optional[str] = PydanticField(
+        default=None,
+        description=(
+            "Prefix for the raw table names a source kind writes. Only a kind that "
+            "reads it accepts it: a legacy source with this set fails the load, "
+            "because an ignored field is a trap."
+        ),
+    )
     pool: Optional[str] = PydanticField(
         default=None,
         description=(

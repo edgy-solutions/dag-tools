@@ -182,7 +182,9 @@ jobs:
             "pyarrow" "polars" "pandas" "duckdb" "deltalake" \
             "acryl-datahub>=1.3.1,<1.4" \
             "acryl-datahub-dagster-plugin>=1.3.1,<1.4" \
-            "connectorx"
+            "connectorx" \
+            "dlt[clickhouse]" \
+            "dagster-dlt==0.26.19"
 
       # s3fs/botocore are listed because a resolve under this much version
       # pressure once reached back to s3fs 0.4.2 (2020), which fails with a
@@ -200,6 +202,9 @@ jobs:
           V=$(.venv/bin/python -c "import dagster; print(dagster.__version__)")
           echo "dagster == $V"
           test "$V" = "1.10.19" || { echo "::error::expected dagster 1.10.19, got $V"; exit 1; }
+          D=$(.venv/bin/python -c "import importlib.metadata as m; print(m.version('dagster-dlt'))")
+          echo "dagster-dlt == $D"
+          test "$D" = "0.26.19" || { echo "::error::expected dagster-dlt 0.26.19, got $D"; exit 1; }
           # s3fs is asserted too: it silently resolved to 0.4.2 (2020) once
           # already, and the resulting failure named neither s3fs nor a
           # version. Anything pre-calver is wrong.

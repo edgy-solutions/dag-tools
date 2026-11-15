@@ -67,6 +67,36 @@ class SourceKind:
         """Extra ``jobs`` / ``schedules`` / ``sensors`` / ``asset_checks``."""
         return {}
 
+    def validate_group(self, group_config: Any) -> None:
+        """Called at load with the pipeline's ``DltAssetGroupConfig``. Raise to fail the load."""
+
+    def execute(
+        self,
+        context: Any,
+        dlt: Any,
+        *,
+        base: Dict[str, Any],
+        pipeline: Any,
+        config: Any,
+        run_kwargs: Dict[str, Any],
+    ):
+        """The body of the generated asset: yield its events.
+
+        The default is exactly the legacy body, one ``dlt.run``. A kind that must
+        choose its source at RUN time (from a run tag, or from what the destination
+        already holds) overrides this. The kind is a registry singleton shared by
+        every pipeline: keep no per-pipeline state on it; everything arrives here.
+        """
+        yield from dlt.run(context=context, **run_kwargs)
+
+    def localize(self, source_config: Dict[str, Any], component_dir: Any) -> Dict[str, Any]:
+        """Resolve component-relative paths in ``source_config``; the default changes nothing."""
+        return source_config
+
+    def schedule_job_name(self, group_name: str) -> Optional[str]:
+        """Name of the job a ``schedule:`` should target, or None for ``<name>_job``."""
+        return None
+
 
 class LegacyKind(SourceKind):
     """Today's behaviour: dispatch by ``creds.drivername`` inside the originals."""
