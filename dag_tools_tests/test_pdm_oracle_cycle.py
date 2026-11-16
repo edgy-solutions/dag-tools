@@ -27,8 +27,18 @@ from dag_tools.restate_handlers import oracle_ack
 
 
 class FakeContext:
-    """Minimal restate.Context double: runs side-effects inline."""
-    async def run(self, name, fn):
+    """Minimal restate.Context double: runs side-effects inline.
+
+    Records the retry options each step was given, so a test can assert
+    the bound is present without modelling retry; the retry *behaviour*
+    is modelled separately in ``test_restate_db_retry.py``.
+    """
+
+    def __init__(self):
+        self.run_options = {}
+
+    async def run(self, name, fn, **options):
+        self.run_options[name] = options
         return fn()
 
 
@@ -91,13 +101,29 @@ def test_mark_as_processed_rejects_missing_payload_fields(monkeypatch):
 
 
 def test_mark_as_processed_rejects_missing_oracle_credentials(monkeypatch):
+    """Absent credentials are TERMINAL, and the message still says which.
+
+    The raised type changed deliberately: the step is wrapped, so the
+    ``MissingCredentials`` the closure raises arrives at the caller as a
+    ``restate.TerminalError`` and Restate does not retry it. Retrying
+    could not find the variable anyway -- the container's environment is
+    read once, at process start -- and the retry that cannot succeed is
+    the one that sits in the journal looking transient.
+
+    Backwards compatibility (AGENTS §6) is in what the closure raises:
+    ``MissingCredentials`` is a ``ValueError`` subclass, so anything
+    calling the inner function directly still catches what it caught.
+    """
+    import restate
+
     for var in ("ORACLE_DSN", "ORACLE_USER", "ORACLE_PASSWORD"):
         monkeypatch.delenv(var, raising=False)
-    with pytest.raises(ValueError, match="Missing Oracle connection credentials"):
+    with pytest.raises(restate.TerminalError, match="Missing Oracle connection credentials"):
         asyncio.run(oracle_ack.mark_as_processed(
             FakeContext(),
             {"table_name": "PDM_STAGING", "pk_column": "PART_ID", "record_ids": [1]},
         ))
+    assert issubclass(oracle_ack.db_retry.MissingCredentials, ValueError)
 
 
 def test_mark_as_processed_chunks_into_groups_of_1000(monkeypatch):

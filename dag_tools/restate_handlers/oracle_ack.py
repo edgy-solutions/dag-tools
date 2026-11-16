@@ -2,6 +2,8 @@ import os
 import oracledb
 import restate
 
+from . import db_retry
+
 service = restate.Service(name="GenericOracleAckService")
 
 @service.handler()
@@ -31,7 +33,14 @@ async def mark_as_processed(ctx: restate.Context, payload: dict):
         password = os.environ.get("ORACLE_PASSWORD")
 
         if not all([dsn, user, password]):
-            raise ValueError("Missing Oracle connection credentials in environment variables.")
+            # A ValueError subclass, so nothing that caught the old error
+            # stops catching this one. It is terminal rather than retried
+            # because the container's environment is a snapshot taken when
+            # the process started: a variable absent now is absent for the
+            # life of the pod.
+            raise db_retry.MissingCredentials(
+                "Missing Oracle connection credentials in environment variables."
+            )
 
         chunk_size = 1000
         chunks = [record_ids[i:i + chunk_size] for i in range(0, len(record_ids), chunk_size)]
@@ -63,4 +72,12 @@ async def mark_as_processed(ctx: restate.Context, payload: dict):
 
             connection.commit()
 
-    await ctx.run("update_oracle", _execute_oracle_update)
+    # Bounded, and terminal on the first failure for the errors where
+    # retrying is what does the damage: an unbounded retry of a wrong
+    # password spends the account's failed-login budget and locks it out.
+    # See dag_tools.restate_handlers.db_retry.
+    await ctx.run(
+        "update_oracle",
+        db_retry.terminal_on_damage(_execute_oracle_update),
+        **db_retry.run_options(),
+    )
