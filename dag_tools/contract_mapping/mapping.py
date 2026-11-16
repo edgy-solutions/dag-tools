@@ -77,7 +77,11 @@ class ColumnMapping(BaseModel):
     )
     default: Any = Field(
         default=None,
-        description="`coalesce`: used when every source is null. Optional.",
+        description=(
+            "`coalesce`: used when every source is null. Optional, and it "
+            "counts as one of coalesce's arguments -- one source with a "
+            "declared fallback is a coalesce, a bare single source is not."
+        ),
     )
     values: Optional[List[Any]] = Field(
         default=None,
@@ -134,7 +138,27 @@ class ColumnMapping(BaseModel):
             raise ValueError(
                 f"transform {self.transform!r} takes exactly one `from`, got {count}"
             )
-        if wanted == "2+" and count < 2:
+        # `coalesce` counts ARGUMENTS, and a declared `default` is one of
+        # them: one source plus a constant fallback is two arguments, and
+        # both routes already render that shape and agree on it. `concat`
+        # is not relaxed alongside it -- it has no fallback to count, and
+        # `concat(x)` with a separator is a genuine no-op.
+        fallback = 1 if self.transform == "coalesce" and self.default is not None else 0
+        if wanted == "2+" and count + fallback < 2:
+            if self.transform == "coalesce":
+                # The arity `coalesce` wants is two ARGUMENTS, and `default`
+                # is one of them. Saying "add another `from`" here is what
+                # sent operators looking for a second source they do not
+                # have, and got a shipped, working feature written up as an
+                # absent one.
+                raise ValueError(
+                    "transform 'coalesce' takes two or more arguments and got "
+                    f"{count} `from` and "
+                    f"{'a' if fallback else 'no'} `default`; a constant fallback "
+                    "declared as `default` is the second argument, and is how "
+                    "a one-source coalesce is written. Over a single source "
+                    "with no fallback it is a no-op dressed as a transform."
+                )
             raise ValueError(
                 f"transform {self.transform!r} takes two or more `from`, got {count}"
             )

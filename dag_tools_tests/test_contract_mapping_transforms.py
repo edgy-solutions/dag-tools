@@ -1,4 +1,4 @@
-"""`nullif` and `in_set`: two single-source transforms whose two routes must agree.
+"""Transforms whose two routes must agree: `nullif`, `in_set`, and coalesce's arity.
 
 A transform is a row rendering and a SQL rendering of one declaration, and a
 claim asserted on one proves nothing about the other. So every semantic claim
@@ -14,17 +14,29 @@ The failures these prevent are all silent:
   * a bare SQL `in` is NULL for a null column, which a non-nullable contract
     would refuse with a message about nullability, not about the status;
   * a warehouse coerces a text sentinel against an integer column and the row
-    route compares the written form, so the two disagree on the sentinel rows.
+    route compares the written form, so the two disagree on the sentinel rows;
+  * a `coalesce` fallback of a type the contract's column cannot carry is
+    refused by the row route and emitted as a bare literal on the SQL route,
+    where the warehouse refuses it or quietly coerces it.
 
-Every name in these fixtures is synthetic.
+The coalesce-arity section is the other shape of the same hazard: both routes
+rendered one source plus a `default` and agreed on it, while the validator
+forbade reaching it at all -- so the feature read as absent and got documented
+that way. Nobody writes two matching route bodies for a shape they meant to
+refuse.
+
+Every name in these fixtures is synthetic, apart from the one test that reads
+the shipped example to pin its plan hash.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import duckdb
 import pytest
+import yaml
 
 from dag_tools.contract_mapping import (
     MappingPlanError,
@@ -415,3 +427,104 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
     connection.execute("insert into t values ('x')")
     sql_answer = connection.execute(f"select {rendered} from t").fetchone()[0]
     assert sql_answer == row_answer
+
+
+# --- coalesce arity ----------------------------------------------------------
+
+
+def test_one_source_and_a_default_is_two_arguments_and_is_accepted():
+    """One source plus a constant fallback is a coalesce, and both routes
+    already answered it the same way while the validator forbade reaching it.
+
+    Executed on both routes over the null row and the non-null row, because
+    the null row is the only one the fallback is written for and a rendering
+    that dropped the default would still look right on every other row.
+    """
+    plan = _plan("string", transform="coalesce", default="")
+    row, sql, text = _both_routes(plan, "varchar", ["x", None])
+    assert "coalesce(B, '')" in text
+    assert row == ["x", ""]
+    assert sql == row
+
+
+def test_a_lone_source_with_no_default_is_still_refused_as_a_no_op():
+    """The other half of the relaxation. On its own the test above passes on a
+    validator that accepts anything, so this pins what stays refused: a bare
+    `coalesce(x)` is a no-op wearing a transform's name, and so is a `default`
+    with nothing to fall back from."""
+    with pytest.raises(ValueError):
+        ColumnMapping(**{"from": "B", "transform": "coalesce"})
+    with pytest.raises(ValueError):
+        ColumnMapping(**{"from": [], "transform": "coalesce", "default": "x"})
+
+
+def test_the_refusal_names_the_constant_fallback_rather_than_a_missing_source():
+    """The message is the finding, not just the refusal.
+
+    "takes two or more `from`" sends an operator to add a second source they
+    do not have -- which is how a feature both routes already implemented came
+    to be written up as absent for a release. The message has to name the
+    `default` as the second argument.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        ColumnMapping(**{"from": "B", "transform": "coalesce"})
+    message = str(excinfo.value)
+    assert "`default`" in message and "fallback" in message
+    assert "two or more `from`" not in message
+
+
+def test_concat_is_not_relaxed_by_the_coalesce_change():
+    """The symmetrization guard. `concat` and `coalesce` share the `"2+"`
+    spelling in the arity table, and a later edit that reads the relaxation as
+    being about that spelling would let `concat(x)` through -- a genuine no-op,
+    with no fallback to count as a second argument. A `default` buys it
+    nothing, because nothing renders it."""
+    assert TRANSFORMS["concat"]["sources"] == TRANSFORMS["coalesce"]["sources"]
+    with pytest.raises(ValueError, match="two or more `from`"):
+        ColumnMapping(**{"from": "B", "transform": "concat", "separator": "-"})
+    with pytest.raises(ValueError, match="two or more `from`"):
+        ColumnMapping(**{"from": "B", "transform": "concat", "default": "x"})
+
+
+def test_a_default_the_contract_type_cannot_take_fails_the_load():
+    """`default` is `Any`, and the two routes part ways over one the column
+    cannot carry: the row route refuses it at materialization, the SQL route
+    emits it as a bare literal the warehouse refuses or coerces -- and which
+    of those is not this library's to decide. Knowable at the load, so the
+    load is where it is refused, naming the column, the default and the type.
+    """
+    with pytest.raises(MappingPlanError) as excinfo:
+        _plan("integer", source_type="integer", transform="coalesce", default="")
+    message = str(excinfo.value)
+    assert "v_one" in message and "''" in message
+    assert "integer" in message
+    assert "disagree" in message
+
+
+def test_a_default_the_contract_type_takes_agrees_on_both_routes():
+    """The partner, so the refusal above is known to guard a real divergence
+    rather than to be a blanket refusal of defaults over a typed column. The
+    fallback row is the one that exercises it, on both routes."""
+    plan = _plan("integer", source_type="integer", transform="coalesce", default=0)
+    row, sql, text = _both_routes(plan, "integer", [7, None])
+    assert "coalesce(B, 0)" in text
+    assert row == [7, 0]
+    assert sql == row
+
+
+def test_the_shipped_example_plan_hash_does_not_move():
+    """The arity relaxation adds no plan field and changes no rendering, so no
+    existing mapping may hash differently. A moved hash means something leaked
+    into a shared path -- and the example's emitted SQL carries this hash in a
+    comment, so a silent move is a silent rewrite of a shipped artifact."""
+    example = Path(__file__).resolve().parents[1] / "examples" / "contract_mapping"
+    contract = yaml.safe_load(
+        (example / "contracts" / "ev_fixture.yaml").read_text(encoding="utf-8")
+    )
+    mapping = yaml.safe_load(
+        (
+            example / "dagster_home" / "components" / "contract_mapping" / "mapping.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    plan = build_mapping_plan(load_contract(contract), load_mapping(mapping))
+    assert plan.plan_hash == "5ad849ac21f5"

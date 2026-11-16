@@ -279,6 +279,38 @@ def _check_sentinel_type(name, entry, schema, schema_known, problems, notes) -> 
         )
 
 
+def _check_default_type(name, entry, contract_type, problems) -> None:
+    """A `coalesce` fallback has to be a value the contract's column can take.
+
+    `default` is `Any`, and the two routes do different things with one the
+    column cannot carry: the row route hands it to `coerce_value`, which
+    refuses it by name at materialization, while the SQL route emits it as a
+    bare literal the warehouse either refuses or silently coerces -- and
+    which of those it does is not this library's to decide, the same reason
+    it declares no warehouse types. Knowable at the load, so refused there.
+
+    The type read here is the CONTRACT's, which is this library's own
+    vocabulary; no warehouse spelling is involved and none is listed.
+    """
+    # Deferred: `emit` imports this module, so the dependency only runs one
+    # way at import time. `coerce_value` is the row route's own acceptance
+    # test, which is the point -- a second copy of it here would be the
+    # divergence this check exists to prevent.
+    from dag_tools.contract_mapping.emit import CoercionError, coerce_value
+
+    try:
+        coerce_value(entry.default, contract_type, f"column {name!r}", entry.assume_utc)
+    except CoercionError as error:
+        problems.append(
+            f"{name!r} coalesces to default {entry.default!r} "
+            f"({type(entry.default).__name__}), which the contract's "
+            f"{contract_type!r} column cannot take ({error}); the row route "
+            "refuses it and the SQL route emits it as a bare literal the "
+            "warehouse either refuses or coerces, so the two routes would "
+            "disagree at the warehouse"
+        )
+
+
 def build_mapping_plan(
     contract: Contract,
     mapping: Mapping,
@@ -427,6 +459,13 @@ def build_mapping_plan(
             _check_sentinel_type(
                 column.name, entry, schema, schema_known, problems, notes
             )
+
+        if (
+            entry.transform == "coalesce"
+            and entry.default is not None
+            and column.type in CONTRACT_TYPES
+        ):
+            _check_default_type(column.name, entry, column.type, problems)
 
         for source in entry.sources:
             if schema_known and source not in schema:
