@@ -184,6 +184,14 @@ it back are named.
 
 ### Fixed
 
+- **A `duckdb:///absolute/path` dev destination resolves to an absolute path again.**
+  `dag_tools.dlt_dev`'s `--destination` resolution stripped every leading slash, so on
+  POSIX the absolute spelling the refusal message itself offers came back relative: a dev
+  run landed a DuckDB file beside the current directory and reported success against the
+  wrong one. The two meanings of that slash are now told apart -- before a drive letter it
+  is the URL's separator and goes, otherwise it is the first character of the path and
+  stays -- which is why Windows never saw the bug. The existing coverage asserted only
+  that a spec resolved to something, so the path itself is now pinned.
 - **The `mfg_trace` contract template spells its key-uniqueness rule `duplicate_key`**, the word
   the plan already uses for that refusal kind, instead of `key_not_unique`. Template and planning
   documents only — no governed contract and no library vocabulary changes. Note that neither

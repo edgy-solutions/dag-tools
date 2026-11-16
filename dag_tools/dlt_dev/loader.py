@@ -207,7 +207,7 @@ def _destination(spec: Optional[str]):
     import dlt
 
     if spec.startswith("duckdb://"):
-        return dlt.destinations.duckdb(spec.replace("duckdb://", "", 1).lstrip("/"))
+        return dlt.destinations.duckdb(_duckdb_path(spec))
     if spec.endswith(".duckdb") or spec == ":memory:":
         return dlt.destinations.duckdb(spec)
     raise DefsError(
@@ -216,3 +216,30 @@ def _destination(spec: Optional[str]):
         f"destinations come from the defs file so a local run cannot "
         f"accidentally point at one that needs credentials."
     )
+
+
+_WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def _duckdb_path(spec: str) -> str:
+    """The file a ``duckdb://`` spec names, on POSIX as well as on Windows.
+
+    ``lstrip("/")`` cannot do this job, and the way it failed was silent:
+    it turned the absolute ``duckdb:///tmp/dev.duckdb`` -- the spelling
+    ``_destination``'s own docstring offers -- into the relative
+    ``tmp/dev.duckdb``, so a dev run on POSIX landed beside the current
+    directory instead of where it was told and reported success against
+    the wrong file. Windows hid it, because there the leading slash really
+    is the URL's separator before a drive letter.
+
+    So the two meanings of that slash are told apart rather than stripped
+    alike: before a drive letter it is the separator and goes, and
+    otherwise it is the first character of an absolute POSIX path and
+    stays. A spec naming no absolute path at all is left relative, which
+    is what it was before.
+    """
+    rest = spec[len("duckdb://"):]
+    stripped = rest.lstrip("/")
+    if _WINDOWS_DRIVE.match(stripped) or not rest.startswith("/"):
+        return stripped
+    return "/" + stripped

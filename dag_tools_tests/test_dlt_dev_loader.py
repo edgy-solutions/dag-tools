@@ -10,6 +10,8 @@ including the cases where it should REFUSE rather than guess, because a
 config that means one thing locally and another when deployed is a worse
 dev loop than none.
 """
+import re
+
 import pytest
 
 pytest.importorskip("yaml")
@@ -187,6 +189,46 @@ def test_duckdb_forms_are_accepted(spec):
     from dag_tools.dlt_dev.loader import _destination
 
     assert _destination(spec) is not None
+
+
+# The parametrized test above asserts only that a spec resolves to
+# SOMETHING, so it passed while the resolution pointed at the wrong file.
+# These pin the path itself, which is the part this module decides.
+
+
+def test_a_posix_absolute_spec_resolves_to_an_absolute_path():
+    """``lstrip("/")`` stripped every leading slash, so an absolute POSIX
+    path came back RELATIVE and a dev run landed beside the current
+    directory while reporting success against the wrong file."""
+    from dag_tools.dlt_dev.loader import _duckdb_path
+
+    assert _duckdb_path("duckdb:///tmp/dev.duckdb") == "/tmp/dev.duckdb"
+
+
+def test_the_spelling_the_error_message_offers_resolves_absolute():
+    """The refusal in ``_destination`` offers ``duckdb:///tmp/dev.duckdb``
+    as a working form, so that exact spelling has to work."""
+    from dag_tools.dlt_dev.loader import _destination, _duckdb_path
+
+    with pytest.raises(DefsError, match=re.escape("duckdb:///tmp/dev.duckdb")):
+        _destination("postgresql://user:pw@prod/db")
+    assert _duckdb_path("duckdb:///tmp/dev.duckdb").startswith("/")
+
+
+@pytest.mark.parametrize("spec", ["duckdb:///C:/w/d.duckdb", "duckdb://C:/w/d.duckdb"])
+def test_a_drive_letter_loses_the_url_separator(spec):
+    """Before a drive letter the leading slash IS the URL's separator, so
+    it goes -- which is the other meaning of the same character and why
+    the two cases cannot be stripped alike."""
+    from dag_tools.dlt_dev.loader import _duckdb_path
+
+    assert _duckdb_path(spec) == "C:/w/d.duckdb"
+
+
+def test_a_relative_spec_stays_relative():
+    from dag_tools.dlt_dev.loader import _duckdb_path
+
+    assert _duckdb_path("duckdb://dev.duckdb") == "dev.duckdb"
 
 
 def test_no_override_leaves_the_configured_destination():
