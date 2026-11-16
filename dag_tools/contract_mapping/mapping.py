@@ -45,6 +45,77 @@ TRANSFORMS: Dict[str, Dict[str, Any]] = {
 }
 
 
+#: The six row-filter operators. One grammar for a mapping's `where` and the
+#: dlt component's `row_filters`, which calls `validate_where` below.
+WHERE_OPS = ("=", "!=", "in", "not_in", "is_null", "not_null")
+_WHERE_SCALAR = ("=", "!=")
+_WHERE_LIST = ("in", "not_in")
+
+
+def _check_literals(literals: List[Any], who: str, many: bool) -> None:
+    """The literal rules `in_set` and `where` share, written once.
+
+    Text or integer only, one type per list: a bool is an int to Python and
+    a flag to no warehouse, a float is an equality on floats, and a null is
+    never matched by SQL `=`/`in` while Python matches it, so the routes
+    would disagree on exactly the rows the mapping is written for. Binding a
+    value instead of inlining it changes none of this, which is why the dlt
+    component's `row_filters` is held to the same rules.
+    """
+    if many and not literals:
+        raise ValueError(f"{who} requires a non-empty `values`")
+    for v in literals:
+        if isinstance(v, bool) or not isinstance(v, (str, int)):
+            raise ValueError(
+                f"{who} takes text or integer literals only, got "
+                f"{literals!r}; a null is never matched by SQL `in` while "
+                "Python matches it, so the routes would disagree, and a "
+                "boolean or float is not a literal both routes compare alike "
+                "(null is spelled is_null / not_null)"
+            )
+    if len({isinstance(v, str) for v in literals}) > 1:
+        raise ValueError(
+            f"{who} takes all text or all integer literals, "
+            f"got a mix in {literals!r}; a dialect comparing text to an "
+            "integer either errors or coerces, and which is not this "
+            "library's to decide"
+        )
+
+
+def validate_where(flt: Dict[str, Any]) -> None:
+    """Refuse a malformed row filter; the one validator both halves call.
+
+    `flt` is one filter as written: only the keys the author wrote, so a
+    present-but-null `value` is told apart from an absent one. Raises
+    `ValueError` naming the filter. Checks the operator, which of `value` /
+    `values` it takes and that the other is absent, and the literals. It
+    does not check the column against a schema: that is the caller's, since
+    only the caller knows where the schema comes from.
+    """
+    column = flt.get("column")
+    op = flt.get("op")
+    if not isinstance(column, str) or not column.strip():
+        raise ValueError("a filter names no column")
+    who = f"filter on {column!r} (op {op!r})"
+    if op not in WHERE_OPS:
+        raise ValueError(
+            f"{who}: unknown operator; the operators are {', '.join(WHERE_OPS)}"
+        )
+    has_value, has_values = "value" in flt, "values" in flt
+    if op in _WHERE_SCALAR:
+        if not has_value or has_values:
+            raise ValueError(f"{who} takes `value` and no `values`")
+        _check_literals([flt["value"]], f"{who} value", False)
+    elif op in _WHERE_LIST:
+        if not has_values or has_value or flt["values"] is None:
+            raise ValueError(f"{who} takes `values` and no `value`")
+        if not isinstance(flt["values"], list) or not flt["values"]:
+            raise ValueError(f"{who} has an empty `values` list; it needs a non-empty list")
+        _check_literals(flt["values"], f"{who} values", True)
+    elif has_value or has_values:
+        raise ValueError(f"{who} takes neither `value` nor `values`")
+
+
 class ColumnMapping(BaseModel):
     """Where one contract column comes from.
 
@@ -180,23 +251,27 @@ class ColumnMapping(BaseModel):
                     "equality on floats"
                 )
         if self.transform == "in_set":
-            literals = self.values or []
-            if not literals:
-                raise ValueError("transform 'in_set' requires a non-empty `values`")
-            if any(isinstance(v, bool) or not isinstance(v, (str, int)) for v in literals):
-                raise ValueError(
-                    "transform 'in_set' takes text or integer literals only, got "
-                    f"{literals!r}; a null is never matched by SQL `in` while "
-                    "Python matches it, so the routes would disagree, and a "
-                    "boolean or float is not a literal both routes compare alike"
-                )
-            if len({isinstance(v, str) for v in literals}) > 1:
-                raise ValueError(
-                    "transform 'in_set' takes all text or all integer literals, "
-                    f"got a mix in {literals!r}; a dialect comparing text to an "
-                    "integer either errors or coerces, and which is not this "
-                    "library's to decide"
-                )
+            _check_literals(
+                self.values or [], "transform 'in_set'", many=True
+            )
+        return self
+
+
+class RowFilter(BaseModel):
+    """One predicate on the source rows a mapping reads; see `validate_where`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    op: str
+    value: Optional[Any] = None
+    values: Optional[List[Any]] = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> "RowFilter":
+        validate_where(
+            {k: getattr(self, k) for k in self.model_fields_set} | {"column": self.column, "op": self.op}
+        )
         return self
 
 
@@ -230,6 +305,28 @@ class SourceDataset(BaseModel):
             "than at the code location load."
         ),
     )
+    where: List[RowFilter] = Field(
+        default_factory=list,
+        description=(
+            "Which source rows the mapping reads: `[{column, op, value|values}]`, "
+            "ANDed in the order written. A disjunction belongs in a view the "
+            "mapping reads from. An excluded row produces no output row."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _where_names_declared_columns(self) -> "SourceDataset":
+        # An empty `columns` means the schema comes from the catalog at
+        # materialization; the plan notes the filter went unchecked then.
+        if self.columns:
+            for flt in self.where:
+                if flt.column not in self.columns:
+                    raise ValueError(
+                        f"where filter names source column {flt.column!r}, "
+                        f"which `source.columns` does not declare "
+                        f"({sorted(self.columns)})"
+                    )
+        return self
 
 
 class PeriodKey(BaseModel):

@@ -22,42 +22,28 @@ is down. Do not "improve" this into a load-time check. It must still never
 be silent: a filter matching no column would read as a correct extraction
 of an empty table.
 
-Second copy of a grammar. The ``where`` of a contract mapping (B2b) states
-the same six operators and the same literal rules, and this module carries
-its own validator rather than importing it, because that module does not
-exist yet. The two are therefore a duplicated grammar until B2b reconciles
-them; a test comparing them was deliberately NOT shipped, since it could
-only assert against a name that is a guess. The guess, recorded so B2b need
-not re-derive it: ``dag_tools.contract_mapping.mapping.validate_where``,
-taking one filter dict and raising ``ValueError`` / ``TypeError`` on a
-refusal. The cases to reconcile: bool, ``None`` and NaN values refused; an
-empty ``values`` list refused; ``value`` on a set operator and ``values`` on
-a scalar one refused; either on ``is_null`` / ``not_null`` refused.
+One grammar, one validator. The operator set, the shape rules (which of
+``value`` / ``values`` an operator takes) and the literal rules live in
+``dag_tools.contract_mapping.mapping.validate_where``, which a contract
+mapping's ``where`` calls too. This module calls it and keeps only what is
+its own: the renderer, which BINDS values as query parameters where a
+mapping inlines them. The dependency runs one way, ``asset_wrappers`` ->
+``contract_mapping``, which stays a pure engine.
+
+The grammar is shared with no exceptions: floats, mixed-type lists, nulls
+and booleans are refused here exactly as in a mapping, because binding a
+value changes neither the float-equality hazard nor the text-versus-integer
+coercion question the warehouse would answer.
 """
-import math
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from dag_tools.contract_mapping.mapping import validate_where
+
 Op = Literal["=", "!=", "in", "not_in", "is_null", "not_null"]
 OPS = ("=", "!=", "in", "not_in", "is_null", "not_null")
-_NEEDS_VALUE = ("=", "!=")
-_NEEDS_VALUES = ("in", "not_in")
-
-
-def _check_literal(literal: Any, where: str) -> None:
-    # A bool is an int to Python and a flag to nobody; refused rather than
-    # compared as 1. None is spelled is_null / not_null, never as a value.
-    if isinstance(literal, bool) or literal is None or not isinstance(
-        literal, (str, int, float)
-    ):
-        raise ValueError(
-            f"{where}: {literal!r} is not a literal a filter can compare; "
-            f"use a string or a number (null is spelled is_null / not_null)"
-        )
-    if isinstance(literal, float) and not math.isfinite(literal):
-        raise ValueError(f"{where}: {literal!r} is not a finite number")
 
 
 class RowFilter(BaseModel):
@@ -70,23 +56,10 @@ class RowFilter(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self) -> "RowFilter":
-        who = f"filter on {self.column!r} (op {self.op!r})"
-        if not self.column.strip():
-            raise ValueError("a filter names no column")
-        if self.op in _NEEDS_VALUE:
-            if "value" not in self.model_fields_set or self.values is not None:
-                raise ValueError(f"{who} takes `value` and no `values`")
-            _check_literal(self.value, f"{who} value")
-        elif self.op in _NEEDS_VALUES:
-            if self.values is None or "value" in self.model_fields_set:
-                raise ValueError(f"{who} takes `values` and no `value`")
-            if not self.values:
-                raise ValueError(f"{who} has an empty `values` list")
-            for item in self.values:
-                _check_literal(item, f"{who} values")
-        else:
-            if "value" in self.model_fields_set or self.values is not None:
-                raise ValueError(f"{who} takes neither `value` nor `values`")
+        # Only the keys the author wrote: a present `value: null` is a
+        # refusal on `=` and on `is_null`, an absent one is not.
+        written = {k: getattr(self, k) for k in self.model_fields_set}
+        validate_where({**written, "column": self.column, "op": self.op})
         return self
 
 

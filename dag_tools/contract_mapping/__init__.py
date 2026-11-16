@@ -25,15 +25,19 @@ from dag_tools.contract_mapping.emit import (
 )
 from dag_tools.contract_mapping.mapping import (
     TRANSFORMS,
+    WHERE_OPS,
     ColumnMapping,
     Mapping,
+    RowFilter,
     load_mapping,
+    validate_where,
 )
 from dag_tools.contract_mapping.plan import (
     RULE_IDS,
     MappingPlan,
     MappingPlanError,
     PlannedColumn,
+    PlannedFilter,
     PlannedTest,
     build_mapping_plan,
 )
@@ -42,6 +46,7 @@ __all__ = [
     "CONTRACT_TYPES",
     "RULE_IDS",
     "TRANSFORMS",
+    "WHERE_OPS",
     "CheckFailure",
     "CoercionError",
     "ColumnMapping",
@@ -51,8 +56,10 @@ __all__ = [
     "MappingPlan",
     "MappingPlanError",
     "PlannedColumn",
+    "PlannedFilter",
     "PlannedTest",
     "RenderError",
+    "RowFilter",
     "apply_to_rows",
     "build_mapping_plan",
     "check_rows",
@@ -62,4 +69,5 @@ __all__ = [
     "render_model_sql",
     "render_schema_yml",
     "render_singular_tests",
+    "validate_where",
 ]

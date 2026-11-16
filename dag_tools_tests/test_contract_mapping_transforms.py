@@ -528,3 +528,257 @@ def test_the_shipped_example_plan_hash_does_not_move():
     )
     plan = build_mapping_plan(load_contract(contract), load_mapping(mapping))
     assert plan.plan_hash == "5ad849ac21f5"
+
+
+# --- where: which source rows the mapping reads ----------------------------
+#
+# `where` is not a column transform: it decides which rows exist for the
+# mapping at all. Each semantic claim runs the row route (`apply_to_rows`) and
+# executes the model SQL on duckdb, because reading the rendered string would
+# pass on SQL that is wrong.
+
+from dag_tools.contract_mapping import apply_to_rows  # noqa: E402
+from dag_tools.contract_mapping.mapping import WHERE_OPS  # noqa: E402
+
+
+def _where_doc(where):
+    document = _mapping("string")
+    document["source"]["where"] = where
+    return document
+
+
+def _where_plan(where, column_type: str = "string"):
+    return build_mapping_plan(
+        load_contract(_contract(column_type)), load_mapping(_where_doc(where))
+    )
+
+
+def _filtered_keys(plan, rows: List[Dict[str, Any]]):
+    """The `k_one` values each route keeps over `rows`, in key order."""
+    row_keys = sorted(r["k_one"] for r in apply_to_rows(plan, rows))
+    connection = duckdb.connect()
+    connection.execute("create table t_raw (A varchar, B varchar)")
+    for row in rows:
+        connection.execute("insert into t_raw values (?, ?)", [row["A"], row["B"]])
+    sql = render_model_sql(plan)
+    sql_keys = sorted(r[0] for r in connection.execute(f"select k_one from ({sql})").fetchall())
+    return row_keys, sql_keys, sql
+
+
+def _rows(*values: Any) -> List[Dict[str, Any]]:
+    return [{"A": f"k{i}", "B": v} for i, v in enumerate(values)]
+
+
+def test_a_mapping_with_no_filters_renders_exactly_what_it_rendered_before():
+    """Backwards-compatibility canary: an empty filter list must add no `where`
+    line (and not `where true`), or every existing mapping's emitted model
+    changes bytes on upgrade."""
+    sql = render_model_sql(_plan("string"))
+    assert "where" not in sql.lower()
+    assert sql.rstrip().endswith("from t_raw")
+
+
+def test_a_filter_drops_the_row_on_both_routes():
+    """A row the predicate excludes must not exist on either route -- and on the
+    row route it must not survive as a row of nulls, which a non-nullable
+    contract would then refuse for the wrong reason."""
+    plan = _where_plan([{"column": "B", "op": "=", "value": "A"}])
+    rows = _rows("A", "X", "A")
+    kept = apply_to_rows(plan, rows)
+    assert len(kept) == 2 and all(r["v_one"] == "A" for r in kept)
+    row_keys, sql_keys, _ = _filtered_keys(plan, rows)
+    assert row_keys == sql_keys == ["k0", "k2"]
+
+
+def test_filters_are_anded_in_the_order_written():
+    """A filter list that was ORed, or reordered, would admit rows the author
+    excluded; the order is also what a reviewer reads in the model."""
+    plan = _where_plan(
+        [
+            {"column": "B", "op": "!=", "value": "X"},
+            {"column": "A", "op": "in", "values": ["k0", "k1"]},
+        ]
+    )
+    row_keys, sql_keys, sql = _filtered_keys(plan, _rows("X", "Y", "Z"))
+    assert row_keys == sql_keys == ["k1"]
+    assert sql.index("B != ") < sql.index("A in (")
+    assert "\n  and " in sql
+
+
+def test_not_equal_excludes_a_null_on_both_routes():
+    """The load-bearing one. A bare SQL `!=` is NULL for a null and drops the
+    row while Python's `!=` keeps it; the `is not null` guard makes the two
+    agree, on the warehouse's reading."""
+    plan = _where_plan([{"column": "B", "op": "!=", "value": "A"}])
+    row_keys, sql_keys, sql = _filtered_keys(plan, _rows("A", "X", None))
+    assert "B is not null" in sql
+    assert row_keys == sql_keys == ["k1"]
+
+
+def test_not_in_excludes_a_null_on_both_routes():
+    """The list form of the same guard: a bare `not in` is NULL for a null."""
+    plan = _where_plan([{"column": "B", "op": "not_in", "values": ["A", "C"]}])
+    row_keys, sql_keys, sql = _filtered_keys(plan, _rows("A", "X", None, "C"))
+    assert "B is not null" in sql
+    assert row_keys == sql_keys == ["k1"]
+
+
+@pytest.mark.parametrize(
+    "flt, satisfied_by_null",
+    [
+        ({"op": "=", "value": "A"}, False),
+        ({"op": "!=", "value": "A"}, False),
+        ({"op": "in", "values": ["A"]}, False),
+        ({"op": "not_in", "values": ["A"]}, False),
+        ({"op": "is_null"}, True),
+        ({"op": "not_null"}, False),
+    ],
+)
+def test_is_null_is_the_only_operator_a_null_satisfies(flt, satisfied_by_null):
+    """Over all six operators, on both routes: a null source value is kept only
+    by `is_null`. Any other answer means the routes can split on nulls."""
+    assert flt["op"] in WHERE_OPS
+    plan = _where_plan([{"column": "B", **flt}])
+    row_keys, sql_keys, _ = _filtered_keys(plan, _rows(None))
+    assert (row_keys == ["k0"]) is satisfied_by_null
+    assert row_keys == sql_keys
+
+
+def test_a_literal_carrying_a_quote_survives_the_render():
+    """A value with a quote must be matched, not break the statement or match
+    its truncation; asserted by executing."""
+    plan = _where_plan([{"column": "B", "op": "=", "value": "o'x"}])
+    row_keys, sql_keys, _ = _filtered_keys(plan, _rows("o'x", "o", "x"))
+    assert row_keys == sql_keys == ["k0"]
+    plan = _where_plan([{"column": "B", "op": "in", "values": ["o'x", "z"]}])
+    row_keys, sql_keys, _ = _filtered_keys(plan, _rows("o'x", "o"))
+    assert row_keys == sql_keys == ["k0"]
+
+
+@pytest.mark.parametrize("field", [{"value": "A"}, {"values": ["A"]}, {"value": None}])
+@pytest.mark.parametrize("op", ["is_null", "not_null"])
+def test_is_null_carrying_a_value_fails_the_load(op, field):
+    """A value on a nullness test reads as working and is ignored; refused so
+    a knob that says nothing cannot look wired up."""
+    with pytest.raises(ValueError, match="neither"):
+        load_mapping(_where_doc([{"column": "B", "op": op, **field}]))
+
+
+def test_a_scalar_operator_given_a_list_fails_the_load():
+    """`=` with `values` would be read as the first element or as nothing; the
+    converse, a list operator with `value`, as a one-element list or as a text
+    scan. Both are a mistake that reads as working."""
+    for op in ("=", "!="):
+        with pytest.raises(ValueError, match="takes `value`"):
+            load_mapping(_where_doc([{"column": "B", "op": op, "values": ["A"]}]))
+        with pytest.raises(ValueError, match="takes `value`"):
+            load_mapping(_where_doc([{"column": "B", "op": op}]))
+    for op in ("in", "not_in"):
+        with pytest.raises(ValueError, match="takes `values`"):
+            load_mapping(_where_doc([{"column": "B", "op": op, "value": "A"}]))
+        with pytest.raises(ValueError, match="empty"):
+            load_mapping(_where_doc([{"column": "B", "op": op, "values": []}]))
+
+
+def test_a_filter_naming_an_undeclared_source_column_fails_the_load():
+    """A filter on a column the source lacks would drop every row, or none, at
+    the warehouse; with a declared schema it is caught at the load."""
+    with pytest.raises(ValueError, match="does not declare"):
+        load_mapping(_where_doc([{"column": "ZZ", "op": "not_null"}]))
+
+
+def test_an_empty_columns_block_notes_rather_than_refuses():
+    """With no declared schema the column cannot be checked; same stance as the
+    rest of that field: a note, never a refusal."""
+    document = _where_doc([{"column": "ZZ", "op": "not_null"}])
+    document["source"]["columns"] = {}
+    plan = build_mapping_plan(load_contract(_contract("string")), load_mapping(document))
+    assert any("`where` filter" in note for note in plan.notes)
+
+
+def test_an_unknown_operator_fails_the_load_listing_the_six():
+    """`like` and range operators are a dialect's collation; the refusal must
+    name the op and the operators that exist."""
+    with pytest.raises(ValueError) as err:
+        load_mapping(_where_doc([{"column": "B", "op": "like", "value": "A%"}]))
+    text = str(err.value)
+    assert "like" in text and all(op in text for op in WHERE_OPS)
+
+
+@pytest.mark.parametrize(
+    "literals, kind",
+    [
+        ([None], "null"),
+        ([True], "boolean"),
+        ([1.5], "float"),
+        (["a", 1], "all text or all integer"),
+    ],
+)
+def test_the_literal_rules_are_the_same_as_in_set(literals, kind):
+    """`where` and `in_set` share one literal validator; running the refused
+    kinds through both stops it drifting apart from either caller."""
+    with pytest.raises(ValueError, match=kind):
+        ColumnMapping(**{"from": "B", "transform": "in_set", "values": literals})
+    with pytest.raises(ValueError, match=kind):
+        load_mapping(_where_doc([{"column": "B", "op": "in", "values": literals}]))
+    if len(literals) == 1:
+        with pytest.raises(ValueError, match=kind):
+            load_mapping(_where_doc([{"column": "B", "op": "=", "value": literals[0]}]))
+
+
+def test_a_filter_changes_the_plan_hash():
+    """A hash that did not move would let a filter change ship under a
+    reviewed hash; and the empty list must leave it where it was."""
+    none = _where_plan([])
+    one = _where_plan([{"column": "B", "op": "=", "value": "A"}])
+    other = _where_plan([{"column": "B", "op": "=", "value": "C"}])
+    assert len({none.plan_hash, one.plan_hash, other.plan_hash}) == 3
+    assert none.plan_hash == _plan("string").plan_hash
+
+
+def test_the_filters_reach_the_plan_so_a_dry_run_shows_them():
+    """A dry run shows what the plan holds; a filter that never reached it
+    would be applied invisibly."""
+    plan = _where_plan(
+        [{"column": "B", "op": "=", "value": "A"}, {"column": "A", "op": "not_null"}]
+    )
+    assert [(f.column, f.op) for f in plan.row_filters] == [("B", "="), ("A", "not_null")]
+    assert plan.row_filters[0].value == "A"
+
+
+@pytest.mark.parametrize(
+    "literals, kind",
+    [
+        ([None], "null"),
+        ([True], "boolean"),
+        ([1.5], "float"),
+        (["a", 1], "all text or all integer"),
+    ],
+)
+def test_the_dlt_row_filters_are_held_to_the_same_literal_rules(literals, kind):
+    """The dlt component's `row_filters` and a mapping's `where` are one
+    grammar. Binding a value changes neither the float-equality hazard nor the
+    text-versus-integer coercion question, so a later edit relaxing one caller
+    (as the dlt half once was) must fail here."""
+    from dag_tools.asset_wrappers.row_filters import RowFilter as DltRowFilter
+
+    with pytest.raises(ValueError, match=kind):
+        load_mapping(_where_doc([{"column": "B", "op": "in", "values": literals}]))
+    with pytest.raises(ValueError, match=kind):
+        DltRowFilter.model_validate({"column": "B", "op": "in", "values": literals})
+    if len(literals) == 1:
+        with pytest.raises(ValueError, match=kind):
+            DltRowFilter.model_validate({"column": "B", "op": "=", "value": literals[0]})
+
+
+def test_an_explicit_null_values_is_refused_by_both_callers():
+    """`values: null` on a scalar or nullness operator says nothing and must
+    not look wired up, on either half."""
+    from dag_tools.asset_wrappers.row_filters import RowFilter as DltRowFilter
+
+    for op, extra in (("=", {"value": "A"}), ("is_null", {})):
+        flt = {"column": "B", "op": op, "values": None, **extra}
+        with pytest.raises(ValueError):
+            load_mapping(_where_doc([flt]))
+        with pytest.raises(ValueError):
+            DltRowFilter.model_validate(flt)

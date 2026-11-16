@@ -28,7 +28,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from dag_tools.contract_mapping.plan import MappingPlan, PlannedColumn, PlannedTest
+from dag_tools.contract_mapping.plan import (
+    MappingPlan,
+    PlannedColumn,
+    PlannedFilter,
+    PlannedTest,
+)
 
 
 class RenderError(Exception):
@@ -329,7 +334,38 @@ def apply_to_rows(
     return [
         {column.name: apply_column(column, row) for column in plan.columns}
         for row in rows
+        if _row_kept(plan.row_filters, row)
     ]
+
+
+def _filter_holds(flt: PlannedFilter, row: Dict[str, Any]) -> bool:
+    """One `where` predicate over one source row; mirrors `_sql_predicate`.
+
+    A null satisfies `is_null` and nothing else: `!=` and `not_in` are false
+    for it, as the SQL route's `is not null` guard makes them.
+    """
+    if flt.column not in row:
+        raise RenderError(
+            f"where filter reads source column {flt.column!r}, which this "
+            "row does not carry"
+        )
+    value = row[flt.column]
+    if flt.op == "is_null":
+        return value is None
+    if flt.op == "not_null":
+        return value is not None
+    if value is None:
+        return False
+    if flt.op == "=":
+        return _literal_equal(value, flt.value)
+    if flt.op == "!=":
+        return not _literal_equal(value, flt.value)
+    member = any(_literal_equal(value, literal) for literal in flt.values or [])
+    return member if flt.op == "in" else not member
+
+
+def _row_kept(filters: Sequence[PlannedFilter], row: Dict[str, Any]) -> bool:
+    return all(_filter_holds(flt, row) for flt in filters)
 
 
 # --------------------------------------------------------------------------
@@ -593,13 +629,38 @@ def _sql_transform(column: PlannedColumn) -> str:
     raise RenderError(f"no SQL rendering for transform {column.transform!r}")
 
 
+def _sql_predicate(flt: PlannedFilter) -> str:
+    """Three-valued logic written out. The two `is not null` guards make the
+    SQL agree with the row route, which keeps a null for `!=` in Python."""
+    column = flt.column
+    if flt.op == "=":
+        return f"{column} = {_sql_literal(flt.value)}"
+    if flt.op == "!=":
+        return f"({column} is not null and {column} != {_sql_literal(flt.value)})"
+    literals = ", ".join(_sql_literal(v) for v in flt.values or [])
+    if flt.op == "in":
+        return f"{column} in ({literals})"
+    if flt.op == "not_in":
+        return f"({column} is not null and {column} not in ({literals}))"
+    if flt.op == "is_null":
+        return f"{column} is null"
+    if flt.op == "not_null":
+        return f"{column} is not null"
+    raise RenderError(f"no SQL rendering for where operator {flt.op!r}")
+
+
 def render_model_sql(plan: MappingPlan) -> str:
     """Render the dbt model.
 
     `source_table` is written into the FROM clause verbatim, so a mapping may
     put a `{{ source(...) }}` call there and have dbt resolve it -- which is
     the right way to get the dependency edge, and is why this function does
-    no quoting of its own.
+    no quoting of its own -- nor of the `where` columns.
+
+    `where` filters are ANDed in the order written; with none there is no
+    `where` line at all, so a mapping without filters renders as it always
+    did. There is no `or` and no nesting: a disjunction belongs in a view the
+    mapping reads from.
     """
     if not plan.source_table:
         raise RenderError(
@@ -619,6 +680,8 @@ def render_model_sql(plan: MappingPlan) -> str:
     ]
     lines.append(",\n".join(rendered))
     lines.append(f"from {plan.source_table}")
+    for index, flt in enumerate(plan.row_filters):
+        lines.append(("where " if index == 0 else "  and ") + _sql_predicate(flt))
     return "\n".join(lines) + "\n"
 
 

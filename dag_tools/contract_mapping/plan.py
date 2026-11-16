@@ -123,6 +123,17 @@ class PlannedTest(BaseModel):
     declared_in_contract: bool = True
 
 
+class PlannedFilter(BaseModel):
+    """One resolved `where` predicate: which source rows the model reads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    op: str
+    value: Optional[Any] = None
+    values: Optional[List[Any]] = None
+
+
 class MappingPlan(BaseModel):
     """What a mapping, reconciled with its contract, says to emit."""
 
@@ -146,6 +157,13 @@ class MappingPlan(BaseModel):
     scope: Optional[str] = None
     period_column: Optional[str] = None
 
+    row_filters: List[PlannedFilter] = Field(
+        default_factory=list,
+        description=(
+            "The source rows the model reads, ANDed in the order written. "
+            "Part of the plan hash, so a changed filter is a changed plan."
+        ),
+    )
     columns: List[PlannedColumn] = Field(default_factory=list)
     tests: List[PlannedTest] = Field(default_factory=list)
 
@@ -170,8 +188,7 @@ class MappingPlan(BaseModel):
         sentence without the artifact changing. Lets a materialization say
         "same bytes as last time" without diffing files.
         """
-        payload = json.dumps(
-            {
+        document = {
                 "contract_id": self.contract_id,
                 "model_name": self.model_name,
                 # assume_utc joins the payload only where it is set, so a plan
@@ -186,7 +203,15 @@ class MappingPlan(BaseModel):
                     for c in self.columns
                 ],
                 "tests": [t.model_dump(mode="json") for t in self.tests],
-            },
+        }
+        # Joins the payload only where a filter is declared, so a mapping
+        # without one hashes as it did before the field existed.
+        if self.row_filters:
+            document["row_filters"] = [
+                f.model_dump(mode="json", exclude_none=True) for f in self.row_filters
+            ]
+        payload = json.dumps(
+            document,
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -346,6 +371,24 @@ def build_mapping_plan(
             "no source schema available at planning time, so source columns "
             "are unverified until materialization"
         )
+
+    # -- the rows the mapping reads -----------------------------------------
+    row_filters = [
+        PlannedFilter(**f.model_dump(exclude_unset=True)) for f in mapping.source.where
+    ]
+    if row_filters and not schema_known:
+        notes.append(
+            "the mapping declares a `where` filter and no source schema is "
+            "available, so the columns it names cannot be checked; an unknown "
+            "column fails at materialization"
+        )
+    elif row_filters:
+        for f in row_filters:
+            if f.column not in schema:
+                problems.append(
+                    f"where filter names source column {f.column!r}, which the "
+                    f"source does not have"
+                )
 
     # -- every column the mapping names is a column the contract declares --
     for name in mapping.columns:
@@ -674,6 +717,7 @@ def build_mapping_plan(
         grain=list(contract.grain),
         scope=contract.scope,
         period_column=period_column,
+        row_filters=row_filters,
         columns=planned,
         tests=tests,
         unmapped_declared=unmapped_declared,
