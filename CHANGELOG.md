@@ -14,6 +14,18 @@ it back are named.
 
 ### Changed
 
+- **Key uniqueness now resolves to one rule id, `duplicate_key`, instead of a spelling derived
+  from the contract's grain.** The derived id (`duplicate_<grain columns>`, falling back to
+  `duplicate_grain`) reproduced whatever a contract happened to call its own key rule, so the id
+  a failing test named changed from table to table: two contracts over the same data could not be
+  read against each other, and a reader who learned the rule once had to learn it again next door.
+  `constant_within` keeps its per-column derivation — there the column is what the rule is about.
+  **Default change.** A contract that declares the derived spelling and not `duplicate_key` now
+  has its key test counted among the tests under undeclared rules. To keep the old id, set it in
+  the mapping: `rule_ids: {key_unique: <the contract's spelling>}`. The shipped
+  `examples/contract_mapping` mapping does exactly that, because its contract is vendored
+  byte-identical to upstream and is not edited here. No signature or export changes.
+
 - **A contract whose `scope` is the word `none` now reads as having no scope, rather than as a
   column called `none`.** YAML reads that word as a string — only `null`, `~` and an empty value
   are nulls — so such a document arrived as a column name and the load refused because nothing

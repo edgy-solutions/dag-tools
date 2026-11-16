@@ -47,7 +47,7 @@ RULE_IDS: Dict[str, str] = {
     "non_finite": "non_finite",
     "period_in_calendar": "period_outside_calendar",
     "constant_within": "varies_within_path",
-    "key_unique": "duplicate_grain",
+    "key_unique": "duplicate_key",
 }
 
 #: Contract types over which a non-finite value is possible at all.
@@ -436,8 +436,15 @@ def build_mapping_plan(
         )
 
     if contract.grain:
-        derived = "duplicate_" + "_".join(contract.grain)
-        rule_id, declared = _rule_id("key_unique", mapping, contract, derived=derived)
+        # ONE id, never a spelling derived from the grain columns. The
+        # derivation that used to stand here reproduced whatever the contract
+        # happened to call its key rule, which meant the id a failing test
+        # named changed with the grain -- two contracts over the same data
+        # could not be read against each other, and a reader who learned the
+        # rule once had to re-learn it per table. A contract whose own
+        # vocabulary spells it differently says so in the mapping's
+        # `rule_ids`, which is what that override is for.
+        rule_id, declared = _rule_id("key_unique", mapping, contract)
         tests.append(
             PlannedTest(
                 rule_id=rule_id,

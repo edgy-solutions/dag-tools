@@ -56,7 +56,7 @@ CONTRACT: Dict[str, Any] = {
         "missing_column": "a required column is absent",
         "wrong_type": "a column is not the declared type",
         "null_value": "a required column is null",
-        "duplicate_k_one_k_two": "two rows share the stated key",
+        "duplicate_key": "two rows share the stated key",
         "period_outside_calendar": "a period is not in the calendar",
         "m_one_not_unique": "m_one varies inside one k_one",
         "non_finite": "a numeric value is not finite",
@@ -516,10 +516,10 @@ def test_a_test_under_a_rule_the_contract_does_not_declare_is_noted():
     says the id is outside the contract.
     """
     contract = copy.deepcopy(CONTRACT)
-    del contract["rules"]["duplicate_k_one_k_two"]
+    del contract["rules"]["duplicate_key"]
     plan = _plan(contract=contract)
     notes = " | ".join(plan.notes)
-    assert "duplicate_k_one_k_two" in notes
+    assert "duplicate_key" in notes
     test = next(test for test in plan.tests if test.kind == "key_unique")
     assert test.declared_in_contract is False
 
@@ -527,16 +527,48 @@ def test_a_test_under_a_rule_the_contract_does_not_declare_is_noted():
 # --- rule ids --------------------------------------------------------------
 
 
-def test_the_key_uniqueness_id_is_derived_from_the_grain_not_written_down():
-    """So no column name has to appear in this library.
+def test_the_key_uniqueness_id_does_not_change_with_the_grain():
+    """One id for key uniqueness, whatever the key is.
 
-    The contract spells the id after its own grain; the derivation reproduces
-    that spelling from the grain it declares.
+    It used to be derived from the grain columns, which reproduced whatever
+    the contract happened to call its own key rule -- so the id a failing
+    test named changed per table, two contracts over the same data could not
+    be read against each other, and a reader who learned the rule once had to
+    learn it again next door.
+
+    Asserted over two different grains, because that is the thing the
+    derivation made vary; a test over one grain would pass either way.
     """
-    plan = _plan()
+    ids = set()
+    for grain in (["k_one", "k_two"], ["k_one"]):
+        contract = copy.deepcopy(CONTRACT)
+        contract["grain"] = grain
+        plan = _plan(contract=contract)
+        test = next(test for test in plan.tests if test.kind == "key_unique")
+        ids.add(test.rule_id)
+        assert test.declared_in_contract is True
+    assert len(ids) == 1, ids
+
+
+def test_a_contract_in_its_own_key_vocabulary_says_so_in_the_mapping():
+    """The override is how one id stays compatible with a governed contract.
+
+    A contract that already spells its key rule after its own grain cannot be
+    edited -- the shipped EV one is vendored byte-identical to upstream -- so
+    the mapping reconciles it, and the test still fails under an id a reader
+    of that contract can look up.
+    """
+    contract = copy.deepcopy(CONTRACT)
+    contract["rules"]["duplicate_k_one_k_two"] = "two rows share the stated key"
+    del contract["rules"]["duplicate_key"]
+    plan = _plan(
+        contract=contract,
+        mapping=_mapping(rule_ids={"key_unique": "duplicate_k_one_k_two"}),
+    )
     test = next(test for test in plan.tests if test.kind == "key_unique")
     assert test.rule_id == "duplicate_k_one_k_two"
     assert test.declared_in_contract is True
+    assert not [note for note in plan.notes if "duplicate" in note]
 
 
 def test_the_mapping_can_override_a_rule_id_so_the_generic_ids_are_not_binding():
