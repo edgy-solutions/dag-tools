@@ -625,3 +625,43 @@ def test_the_check_opens_no_connection(tmp_path, monkeypatch):
 def test_a_pipeline_with_no_table_config_contributes_no_checks(tmp_path, monkeypatch):
     defs, _ = _load(tmp_path, monkeypatch, {"p": _pipe()})
     assert not list(defs.asset_checks or [])
+
+
+def test_an_uppercase_source_table_still_gets_its_row_count_check(tmp_path, monkeypatch):
+    """Found by running the BW example, not by review.
+
+    The operator writes the source's spelling; dagster-dlt derives asset keys
+    from dlt's normalized identifiers (measured: ``BW_IBASE_COMP`` ->
+    ``bw_ibase_comp``). Matched by exact string, an uppercase source table with
+    a cursorless ``table_config`` entry failed the whole code-location load
+    with "0 asset keys end in it" -- a refusal naming something nobody wrote.
+    BW and Snowflake both hand out uppercase names, so this was not a corner.
+    """
+    defs, _ = _load(tmp_path, monkeypatch, {"p": {
+        "name": "alpha", "dest_schema": "raw", "sources": ["BW_UPPER"],
+        "table_config": {"BW_UPPER": {"primary_key": "id"}},
+    }}, tables=("BW_UPPER",))
+    assert _check_tails(defs) == ["bw_upper"]
+
+
+def test_a_table_matching_no_asset_key_names_BOTH_spellings(tmp_path, monkeypatch):
+    """The refusal has to say what it looked for, or it is the old bug again."""
+    from dag_tools.components.dlt_pipeline.row_count_check import build_row_count_checks
+
+    with pytest.raises(ValueError) as err:
+        build_row_count_checks("alpha", ["NO_SUCH_TABLE"], [dg.AssetKey(["raw", "widgets"])])
+    text = str(err.value)
+    assert "'NO_SUCH_TABLE'" in text and "'no_such_table'" in text
+
+
+def test_two_spellings_of_one_table_are_refused_rather_than_colliding():
+    """Both would claim one check name on one asset; Dagster refuses that later
+    and less clearly, so it is refused here with both names."""
+    from dag_tools.components.dlt_pipeline.row_count_check import build_row_count_checks
+
+    with pytest.raises(ValueError) as err:
+        build_row_count_checks(
+            "alpha", ["widgets", "WIDGETS"], [dg.AssetKey(["raw", "widgets"])]
+        )
+    text = str(err.value)
+    assert "widgets" in text and "WIDGETS" in text

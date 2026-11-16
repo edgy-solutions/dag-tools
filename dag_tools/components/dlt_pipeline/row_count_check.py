@@ -28,11 +28,29 @@ message says no row count was recorded, never "loaded 0 rows": the metadata
 does not carry that number and claiming it sends an operator to debug the
 source when the table may simply never have been normalized.
 """
-from typing import Any, Dict, List
+from functools import lru_cache
+from typing import Any, Callable, Dict, List
 
 from dagster import AssetCheckResult, AssetCheckSeverity, AssetKey, asset_check
 
 CHECK_NAME = "rows_loaded_recorded"
+
+
+@lru_cache(maxsize=1)
+def _normalizer() -> Callable[[str], str]:
+    """dlt's own identifier normalizer, read from dlt rather than reimplemented.
+
+    A deployment can configure another naming convention, so the convention is
+    taken from a dlt schema (which reads that configuration) instead of being
+    hardcoded here. If dlt cannot be imported the identity leaves the exact
+    match as the only one, which is what this module did before.
+    """
+    try:
+        from dlt.common.schema import Schema
+
+        return Schema("row_count_check").naming.normalize_identifier
+    except Exception:  # pragma: no cover - dlt absent
+        return lambda name: name
 
 
 def evaluate(materialization_event: Any) -> AssetCheckResult:
@@ -60,20 +78,46 @@ def evaluate(materialization_event: Any) -> AssetCheckResult:
 def build_row_count_checks(
     pipeline: str, tables: List[str], asset_keys: List[AssetKey]
 ) -> List[Any]:
-    """One non-blocking check per cursorless table, matched by key tail."""
+    """One non-blocking check per cursorless table, matched by key tail.
+
+    The operator writes the SOURCE's spelling in ``table_config``; dagster-dlt
+    derives asset keys from dlt's NORMALIZED identifiers, which lower-case and
+    snake-case. Matching the two by exact string alone meant an uppercase
+    source table -- BW and Snowflake both hand out plenty -- could not be given
+    a row-count check at all: the code location failed to load with
+    ``0 asset keys end in it``, a refusal describing something nobody wrote,
+    and it sent the operator after an asset key when the table name was fine.
+    So a table is looked up by what it says and then by what dlt calls it, and
+    a refusal names both spellings.
+    """
     by_tail: Dict[str, List[AssetKey]] = {}
     for key in asset_keys:
         by_tail.setdefault(key.path[-1], []).append(key)
 
-    checks = []
+    checks: List[Any] = []
+    claimed: Dict[AssetKey, str] = {}
+    normalize = _normalizer()
     for table in tables:
-        matches = by_tail.get(table, [])
+        normalized = normalize(table)
+        matches = by_tail.get(table) or by_tail.get(normalized) or []
         if len(matches) != 1:
+            spellings = (
+                f"'{table}'" if normalized == table
+                else f"'{table}' or '{normalized}'"
+            )
             raise ValueError(
                 f"pipeline '{pipeline}': table '{table}' needs a row-count "
-                f"check but {len(matches)} asset keys end in it: {matches}"
+                f"check but {len(matches)} asset keys end in {spellings}: {matches}"
             )
         key = matches[0]
+        if key in claimed:
+            # Two spellings of one table would attach two checks of the same
+            # name to one asset, which Dagster refuses later and less clearly.
+            raise ValueError(
+                f"pipeline '{pipeline}': tables '{claimed[key]}' and '{table}' "
+                f"both resolve to asset key {key}, so they would claim one check"
+            )
+        claimed[key] = table
 
         def _make(target: AssetKey, label: str):
             @asset_check(

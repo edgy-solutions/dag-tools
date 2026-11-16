@@ -143,6 +143,34 @@ pretends:
 tables are produced by your own models, and the `conf_*` documents are what
 they are checked against — which is the same seam either way.
 
+## The BW-shaped fixture (`bw/`)
+
+A second `DltPipelineComponent` instance, over a synthetic sqlite stand-in
+for a SAP-BW-shaped source: a master-data-shaped table and an as-built-shaped
+table. `python bw/seed.py` builds it (no warehouse, no credentials, no binary
+committed); `seed.apply_second_load()` is what changed in the source before
+the next extraction. `bw/component.yaml` expresses the active-version filter as
+`row_filters` and keeps history on the as-built table with `history: scd2`
+(no cursor: the two are refused together). Every name in it is this example's
+own; dag-tools names none of them, and
+`dag_tools_tests/test_mfg_trace_fixture.py` enforces that in both directions.
+
+Each plant sits on its own key, beside a control key that trips nothing:
+
+| plant | what it proves at the raw layer |
+|---|---|
+| active and inactive versions of one key | the extraction filter drops the inactive row and keeps the active one |
+| an open-ended validity with the `99991231` sentinel | raw carries the sentinel as written, not a null |
+| a blank-key row | the extraction filter does **not** touch it; raw stays a faithful copy |
+| a child absent from the second load | scd2 keeps its open version (the key is a `merge_key`, so a key missing from a load is not retired) |
+| a child replaced at the same position | scd2 closes the old version and opens a new one |
+
+**Deferred, by name.** Two of these plants have their second half in the
+curated layer, which is PR D's and does not exist yet: dropping the blank-key
+row is a curated `where`, and turning the sentinel end date into a null is a
+`nullif`. Both are planted here and asserted to reach raw unchanged; their
+behaviour is proven in `contract_mapping`'s own suites, not against this data.
+
 ## Hazards
 
 - **A SQL cast rounds where the row route refuses.** The casts in a mapping
