@@ -58,7 +58,7 @@ _NUMERIC_TYPES = ("numeric", "float")
 #: a fractional type; `concat` produces text whatever it was given; a
 #: `constant` of `null` is untyped. Under an enforced model contract each
 #: needs a cast, and the plan says so when the mapping declares none.
-_TYPE_CHANGING_TRANSFORMS = ("scale", "concat", "constant")
+_TYPE_CHANGING_TRANSFORMS = ("scale", "concat", "constant", "in_set")
 
 
 class MappingPlanError(Exception):
@@ -93,6 +93,7 @@ class PlannedColumn(BaseModel):
     separator: str = ""
     factor: Optional[Decimal] = None
     default: Any = None
+    values: Optional[List[Any]] = None
     assume_utc: bool = False
 
     required: bool = False
@@ -180,6 +181,7 @@ class MappingPlan(BaseModel):
                         k: v
                         for k, v in c.model_dump(mode="json").items()
                         if not (k == "assume_utc" and v is False)
+                        and not (k == "values" and v is None)
                     }
                     for c in self.columns
                 ],
@@ -221,6 +223,60 @@ def _rule_id(
     # Nothing declared. Prefer the derived spelling when there is one -- it
     # is the more specific thing to put in front of an operator.
     return (derived or generic), False
+
+
+# The type words a `nullif` sentinel can be checked against, and the Python
+# type a sentinel must then be.
+#
+# These are `CONTRACT_TYPES` spellings -- the one type vocabulary this library
+# owns, and the one `source: columns:` is written in throughout the shipped
+# examples. A warehouse's own spelling (`varchar`, `bigint`, `nvarchar`) is
+# deliberately NOT listed, and not because the list would be hard to write:
+# this library declares no warehouse types and no cast templates on purpose,
+# because a guessed one emits SQL that fails for a reason that has nothing to
+# do with the data -- and a table of dialect spellings here would be exactly
+# the thing that rule refuses to own. An unrecognised spelling leaves the
+# sentinel unchecked and says so, which is the stance every other check
+# against this block already takes.
+_SENTINEL_TYPE_FAMILIES = {"integer": int, "string": str}
+
+
+def _check_sentinel_type(name, entry, schema, schema_known, problems, notes) -> None:
+    """A `nullif` sentinel is compared with the source's raw value, so its type
+    must be the declared type of the source column.
+
+    Measured on duckdb: `nullif(<integer column>, '0')` casts the text to an
+    integer and matches, while the row route compares `0 == "0"` and does not.
+    The two routes would disagree on exactly the rows the mapping exists for.
+    """
+    source = entry.sources[0]
+    if not schema_known:
+        notes.append(
+            f"{name!r} uses nullif, and with no source schema its sentinel "
+            f"{entry.value!r} cannot be checked against the type of "
+            f"{source!r}; a type mismatch makes the two routes disagree"
+        )
+        return
+    declared = schema.get(source)
+    if declared is None:
+        return  # reported as an unknown source column
+    family = _SENTINEL_TYPE_FAMILIES.get(declared.strip().lower())
+    if family is None:
+        notes.append(
+            f"{name!r} uses nullif over source column {source!r} of declared "
+            f"type {declared!r}, which is not one of the type words this "
+            f"library reads ({', '.join(sorted(_SENTINEL_TYPE_FAMILIES))}), so "
+            "the sentinel's type is unchecked"
+        )
+        return
+    if not isinstance(entry.value, family):
+        problems.append(
+            f"{name!r} uses nullif with sentinel {entry.value!r} "
+            f"({type(entry.value).__name__}) over source column {source!r} "
+            f"declared {declared!r}; the two routes would disagree on exactly "
+            "the rows the mapping writes it for, because the warehouse coerces "
+            "the literal and the row route compares the written form"
+        )
 
 
 def build_mapping_plan(
@@ -359,6 +415,19 @@ def build_mapping_plan(
                 "timestamp, and a knob that says nothing must not look wired up"
             )
 
+        if entry.transform == "in_set" and column.type != "boolean":
+            problems.append(
+                f"{column.name!r} is produced by in_set but the contract "
+                f"declares it {column.type!r}; a membership test produces a "
+                "boolean, and coercion would otherwise paper over the mistake "
+                "by stringifying True"
+            )
+
+        if entry.transform == "nullif":
+            _check_sentinel_type(
+                column.name, entry, schema, schema_known, problems, notes
+            )
+
         for source in entry.sources:
             if schema_known and source not in schema:
                 problems.append(
@@ -385,6 +454,7 @@ def build_mapping_plan(
                 separator=entry.separator,
                 factor=entry.factor,
                 default=entry.default,
+                values=entry.values,
                 assume_utc=entry.assume_utc,
                 required=column.required,
                 unit=column.unit,

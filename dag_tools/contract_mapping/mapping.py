@@ -40,6 +40,8 @@ TRANSFORMS: Dict[str, Dict[str, Any]] = {
     "concat": {"sources": "2+", "requires": ()},
     "coalesce": {"sources": "2+", "requires": ()},
     "scale": {"sources": 1, "requires": ("factor",)},
+    "nullif": {"sources": 1, "requires": ("value",)},
+    "in_set": {"sources": 1, "requires": ("values",)},
 }
 
 
@@ -76,6 +78,17 @@ class ColumnMapping(BaseModel):
     default: Any = Field(
         default=None,
         description="`coalesce`: used when every source is null. Optional.",
+    )
+    values: Optional[List[Any]] = Field(
+        default=None,
+        description=(
+            "`in_set`: the literals a source value is tested against, all "
+            "text or all integer. Matching is exact -- no case folding, no "
+            "trimming -- because a source whose casing varies is a source "
+            "whose enum is not an enum, and folding here would hide that. "
+            "Not spelled `in`: that is a Python keyword, and `where` already "
+            "names the source-block row filter."
+        ),
     )
 
     description: Optional[str] = Field(
@@ -130,6 +143,35 @@ class ColumnMapping(BaseModel):
             if getattr(self, argument, None) is None:
                 raise ValueError(
                     f"transform {self.transform!r} requires `{argument}`"
+                )
+
+        if self.transform == "nullif":
+            # bool is an int in Python (`0 == False`) and not in a warehouse;
+            # a float sentinel is an equality on floats.
+            if isinstance(self.value, bool) or not isinstance(self.value, (str, int)):
+                raise ValueError(
+                    "transform 'nullif' takes a text or integer `value`, got "
+                    f"{self.value!r}; a boolean would match an integer zero on "
+                    "the row route and not in the warehouse, and a float is an "
+                    "equality on floats"
+                )
+        if self.transform == "in_set":
+            literals = self.values or []
+            if not literals:
+                raise ValueError("transform 'in_set' requires a non-empty `values`")
+            if any(isinstance(v, bool) or not isinstance(v, (str, int)) for v in literals):
+                raise ValueError(
+                    "transform 'in_set' takes text or integer literals only, got "
+                    f"{literals!r}; a null is never matched by SQL `in` while "
+                    "Python matches it, so the routes would disagree, and a "
+                    "boolean or float is not a literal both routes compare alike"
+                )
+            if len({isinstance(v, str) for v in literals}) > 1:
+                raise ValueError(
+                    "transform 'in_set' takes all text or all integer literals, "
+                    f"got a mix in {literals!r}; a dialect comparing text to an "
+                    "integer either errors or coerces, and which is not this "
+                    "library's to decide"
                 )
         return self
 

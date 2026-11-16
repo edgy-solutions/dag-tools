@@ -257,6 +257,13 @@ def coerce_value(
     return number
 
 
+def _literal_equal(value: Any, literal: Any) -> bool:
+    """`0 == False` in Python and not in any warehouse."""
+    if isinstance(value, bool) != isinstance(literal, bool):
+        return False
+    return value == literal
+
+
 def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
     """Compute one output column's value from one source row."""
     where = f"column {column.name!r}"
@@ -295,6 +302,16 @@ def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
                 if isinstance(number, float):
                     number = Decimal(repr(number))
                 raw = Decimal(number) * column.factor
+        elif column.transform == "nullif":
+            # Compared before coercion: what is matched is what the source
+            # wrote, not what the contract widened it to.
+            raw = None if _literal_equal(values[0], column.value) else values[0]
+        elif column.transform == "in_set":
+            # Exact match, no folding or trimming. A null answers False, as
+            # the SQL's coalesce does, rather than staying null.
+            raw = values[0] is not None and any(
+                _literal_equal(values[0], literal) for literal in column.values or []
+            )
         else:  # pragma: no cover - the mapping model refuses anything else
             raise RenderError(f"{where}: no row rendering for {column.transform!r}")
 
@@ -567,6 +584,12 @@ def _sql_transform(column: PlannedColumn) -> str:
         return f"coalesce({', '.join(arguments)})"
     if column.transform == "scale":
         return f"({first} * {column.factor})"
+    if column.transform == "nullif":
+        return f"nullif({first}, {_sql_literal(column.value)})"
+    if column.transform == "in_set":
+        literals = ", ".join(_sql_literal(v) for v in column.values or [])
+        # A bare `in` is NULL for a null column; say False instead.
+        return f"coalesce({first} in ({literals}), false)"
     raise RenderError(f"no SQL rendering for transform {column.transform!r}")
 
 
