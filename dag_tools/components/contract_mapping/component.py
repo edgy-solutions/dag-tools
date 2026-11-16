@@ -51,6 +51,7 @@ from dagster.components.resolved.model import Model
 from dag_tools.contract_mapping.contract import Contract, load_contract
 from dag_tools.contract_mapping.emit import render_dbt_artifacts
 from dag_tools.contract_mapping.mapping import Mapping, load_mapping
+from dag_tools.contract_mapping.normalize import Normalizers, load_normalizers_text
 from dag_tools.contract_mapping.plan import MappingPlan, build_mapping_plan
 
 from .schema import ContractMappingRunConfig, ContractMappingSpec
@@ -115,6 +116,28 @@ def _fetch_contract_document(spec: ContractMappingSpec) -> Dict[str, Any]:
             "contract document"
         )
     return document
+
+
+def _read_normalizers(path: str) -> Normalizers:
+    """Read the normalizer document from a file. Duplicate ids are refused."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise ValueError(f"cannot read the normalizer document at {path}: {exc}") from exc
+    return load_normalizers_text(text)
+
+
+def _fetch_normalizers(spec: ContractMappingSpec) -> Normalizers:
+    """Fetch the served normalizer document (`requests`, as the contract's is)."""
+    import requests
+
+    block = spec.normalizers
+    response = requests.get(
+        block.url, headers=dict(block.headers), timeout=block.timeout_seconds
+    )
+    response.raise_for_status()
+    return load_normalizers_text(response.text)
 
 
 def _check_expected_id(spec: ContractMappingSpec, contract: Contract) -> None:
@@ -291,6 +314,21 @@ def build_contract_mapping_asset(
     mapping_path = _resolve_path(spec.mapping_file, component_dir)
     mapping = load_mapping(_load_document(mapping_path, "mapping"))
 
+    uses_normalize = [n for n, c in mapping.columns.items() if c.transform == "normalize"]
+    if uses_normalize and spec.normalizers is None:
+        raise ValueError(
+            f"the mapping at {mapping_path} references normalizer rules in "
+            f"{', '.join(map(repr, uses_normalize))}, and this component "
+            "configures no `normalizers` (path or url), so there is no "
+            "document to resolve them against"
+        )
+    load_normalizer_doc: Optional[Normalizers] = None
+    if spec.normalizers is not None and spec.normalizers.path:
+        load_normalizer_doc = _read_normalizers(
+            _resolve_path(spec.normalizers.path, component_dir)
+        )
+    normalizers_served = bool(spec.normalizers is not None and spec.normalizers.url)
+
     # Validate as much as can be validated now. A file-backed contract plus a
     # mapping-declared schema is the whole plan, and getting it wrong should
     # fail the code location load rather than a run an hour later.
@@ -300,16 +338,22 @@ def build_contract_mapping_asset(
             _load_document(_resolve_path(spec.contract.path, component_dir), "contract")
         )
         _check_expected_id(spec, contract)
-        if mapping.source.columns and not spec.source_schema.datahub:
+        if (
+            mapping.source.columns
+            and not spec.source_schema.datahub
+            and not (normalizers_served and uses_normalize)
+        ):
             # Built for the exception it raises, not for its value: the plan
             # is rebuilt at materialization against whatever the contract
             # says then. This call is the load-time gate.
-            build_mapping_plan(contract, mapping, dict(mapping.source.columns))
+            build_mapping_plan(
+                contract, mapping, dict(mapping.source.columns), load_normalizer_doc
+            )
         else:
             load_notes.append(
                 "the plan was not built at load time because the source "
-                "schema comes from the catalog, so source columns are "
-                "unverified until this asset runs"
+                "schema comes from the catalog or the normalizers are served, so "
+                "source columns and normalizer references are unverified until this asset runs"
             )
     else:
         load_notes.append(
@@ -358,7 +402,18 @@ def build_contract_mapping_asset(
                 "the source at all"
             )
 
-        plan = build_mapping_plan(run_contract, mapping, source_schema)
+        if spec.normalizers is None:
+            run_normalizers = None
+        elif spec.normalizers.path:
+            run_normalizers = _read_normalizers(
+                _resolve_path(spec.normalizers.path, component_dir)
+            )
+        else:
+            run_normalizers = _fetch_normalizers(spec)
+
+        plan = build_mapping_plan(
+            run_contract, mapping, source_schema, run_normalizers
+        )
         notes.extend(plan.notes)
 
         files = render_dbt_artifacts(plan)
@@ -453,6 +508,11 @@ class ContractMappingComponent(Component, Resolvable, Model):
     contract: Dict[str, Any]
     """Where the contract comes from: exactly one of `path` or `url`."""
 
+    normalizers: Dict[str, Any] = {}
+    """The normalizer document a `normalize` column references: exactly one
+    of `path` or `url`, as the contract. Needed only by a mapping that uses
+    `normalize`."""
+
     source_schema: Dict[str, Any] = {}
     """Where the source dataset's schema comes from: the mapping's own
     `source.columns` (the default, and the only one that can fail the code
@@ -478,6 +538,7 @@ class ContractMappingComponent(Component, Resolvable, Model):
             tags=self.tags,
             mapping_file=self.mapping_file,
             contract=self.contract,
+            normalizers=self.normalizers,
             source_schema=self.source_schema,
             emit=self.emit,
         )

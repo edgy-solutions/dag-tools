@@ -42,6 +42,7 @@ TRANSFORMS: Dict[str, Dict[str, Any]] = {
     "scale": {"sources": 1, "requires": ("factor",)},
     "nullif": {"sources": 1, "requires": ("value",)},
     "in_set": {"sources": 1, "requires": ("values",)},
+    "normalize": {"sources": 1, "requires": ("rules",)},
 }
 
 
@@ -166,6 +167,23 @@ class ColumnMapping(BaseModel):
         ),
     )
 
+    rules: Optional[str] = Field(
+        default=None,
+        description=(
+            "`normalize`: the id of a normalizer in the normalizer document. "
+            "The mapping holds only the reference; every source that "
+            "references one id is conformed identically."
+        ),
+    )
+    part: Optional[str] = Field(
+        default=None,
+        description=(
+            "`normalize`: which named group of the normalizer's "
+            "`split_revision` pattern this column takes. The names are the "
+            "operator's, so this is not a closed pair."
+        ),
+    )
+
     description: Optional[str] = Field(
         default=None,
         description="Carried onto the emitted model's column documentation.",
@@ -250,6 +268,14 @@ class ColumnMapping(BaseModel):
                     "the row route and not in the warehouse, and a float is an "
                     "equality on floats"
                 )
+        if self.transform != "normalize":
+            for knob in ("rules", "part"):
+                if getattr(self, knob) is not None:
+                    raise ValueError(
+                        f"`{knob}` is set on transform {self.transform!r}; it "
+                        "only means something on `normalize`, and a knob that "
+                        "says nothing must not look wired up"
+                    )
         if self.transform == "in_set":
             _check_literals(
                 self.values or [], "transform 'in_set'", many=True
@@ -404,6 +430,17 @@ class Mapping(BaseModel):
             "warehouse."
         ),
     )
+    regex_templates: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "`regex_replace` and `regex_extract`: SQL for a regex replace "
+            "(`{expr}`, `{pattern}`, `{replacement}`) and a positional regex "
+            "extract (`{expr}`, `{pattern}`, `{group}`), as this warehouse "
+            "spells them. Operator-declared, like `cast_templates`, because "
+            "this library names no dialect. Needed only by a normalizer "
+            "using a regex op."
+        ),
+    )
     non_finite_predicate: Optional[str] = Field(
         default=None,
         description=(
@@ -428,6 +465,15 @@ class Mapping(BaseModel):
         default=None,
         description="Name of the emitted dbt model. Defaults to the contract id.",
     )
+
+    @field_validator("regex_templates")
+    @classmethod
+    def _templates_are_well_formed(cls, value: Dict[str, str]) -> Dict[str, str]:
+        from dag_tools.contract_mapping.normalize import check_template
+
+        for key, template in value.items():
+            check_template(key, template)
+        return value
 
 
 def load_mapping(document: Dict[str, Any]) -> Mapping:

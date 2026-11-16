@@ -32,6 +32,13 @@ from dag_tools.contract_mapping.mapping import (
     load_mapping,
     validate_where,
 )
+from dag_tools.contract_mapping.normalize import (
+    NormalizerOp,
+    Normalizers,
+    check_re2,
+    load_normalizers,
+    load_normalizers_text,
+)
 from dag_tools.contract_mapping.plan import (
     RULE_IDS,
     MappingPlan,
@@ -47,6 +54,11 @@ __all__ = [
     "RULE_IDS",
     "TRANSFORMS",
     "WHERE_OPS",
+    "NormalizerOp",
+    "Normalizers",
+    "check_re2",
+    "load_normalizers",
+    "load_normalizers_text",
     "CheckFailure",
     "CoercionError",
     "ColumnMapping",

@@ -143,6 +143,18 @@ def _invert(plan: MappingPlan, rows: List[Dict[str, Any]]) -> List[Dict[str, Any
             elif column.transform == "scale":
                 assert column.factor is not None
                 raw[column.sources[0]] = int(Decimal(str(value)) / column.factor)
+            elif column.transform == "normalize":
+                # The proof builds AN input that yields the expected output,
+                # so what it needs is idempotence on each op's own output:
+                # the expected value fed back in is then a valid inverse.
+                if not column.invertible:
+                    raise AssertionError(
+                        column.name + ": normalizer op "
+                        + repr(column.uninvertible_op)
+                        + " is not idempotent on its own output, so this proof "
+                        "cannot invert the column"
+                    )
+                raw[column.sources[0]] = value
             else:  # pragma: no cover - a transform this proof has not learned
                 raise AssertionError(
                     column.name + ": this proof cannot invert transform "

@@ -28,6 +28,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
+from dag_tools.contract_mapping.normalize import (
+    LSTRIP_ZEROS_PATTERN,
+    apply_ops,
+    part_index,
+)
 from dag_tools.contract_mapping.plan import (
     MappingPlan,
     PlannedColumn,
@@ -317,6 +322,8 @@ def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
             raw = values[0] is not None and any(
                 _literal_equal(values[0], literal) for literal in column.values or []
             )
+        elif column.transform == "normalize":
+            raw = apply_ops(column.ops, column.part, values[0])
         else:  # pragma: no cover - the mapping model refuses anything else
             raise RenderError(f"{where}: no row rendering for {column.transform!r}")
 
@@ -598,6 +605,51 @@ def _sql_expression(column: PlannedColumn) -> str:
     return rendered
 
 
+def _sql_normalize(column: PlannedColumn) -> str:
+    """Nest the normalizer's ops, left to right, around the source column.
+
+    `trim`/`upper`/`lower` use the spellings the standalone transforms do;
+    the regex ops go through the operator's `regex_templates`, with the
+    pattern and replacement as quote-doubled SQL literals and the group as a
+    positional integer. The extract is wrapped in `nullif(..., '')` so a
+    group that did not participate is NULL whatever the dialect answers.
+    """
+    expr = column.sources[0]
+    for op in column.ops:
+        if op.op in ("trim", "upper", "lower"):
+            expr = f"{op.op}({expr})"
+        elif op.op in ("strip", "replace", "lstrip_zeros"):
+            template = column.regex_templates.get("regex_replace")
+            if template is None:
+                raise RenderError(
+                    f"column {column.name!r} uses normalizer op {op.op!r}, "
+                    "which needs the mapping's `regex_templates.regex_replace`"
+                )
+            pattern = LSTRIP_ZEROS_PATTERN if op.op == "lstrip_zeros" else op.pattern
+            replacement = op.replacement if op.op == "replace" else ""
+            expr = template.format(
+                expr=expr,
+                pattern=_sql_literal(pattern),
+                replacement=_sql_literal(replacement),
+            )
+        elif op.op == "split_revision":
+            template = column.regex_templates.get("regex_extract")
+            if template is None:
+                raise RenderError(
+                    f"column {column.name!r} uses normalizer op 'split_revision', "
+                    "which needs the mapping's `regex_templates.regex_extract`"
+                )
+            extracted = template.format(
+                expr=expr,
+                pattern=_sql_literal(op.pattern),
+                group=part_index(op.pattern, column.part),
+            )
+            expr = f"nullif({extracted}, '')"
+        else:  # pragma: no cover - the op model refuses anything else
+            raise RenderError(f"no SQL rendering for normalizer op {op.op!r}")
+    return expr
+
+
 def _sql_transform(column: PlannedColumn) -> str:
     if column.transform == "constant":
         return _sql_literal(column.value)
@@ -622,6 +674,8 @@ def _sql_transform(column: PlannedColumn) -> str:
         return f"({first} * {column.factor})"
     if column.transform == "nullif":
         return f"nullif({first}, {_sql_literal(column.value)})"
+    if column.transform == "normalize":
+        return _sql_normalize(column)
     if column.transform == "in_set":
         literals = ", ".join(_sql_literal(v) for v in column.values or [])
         # A bare `in` is NULL for a null column; say False instead.

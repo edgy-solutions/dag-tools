@@ -40,6 +40,7 @@ import yaml
 
 from dag_tools.contract_mapping import (
     MappingPlanError,
+    NormalizerOp,
     build_mapping_plan,
     load_contract,
     load_mapping,
@@ -402,9 +403,14 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
         "scale": {"from": "B", "factor": "2"},
         "nullif": {"from": "B", "value": "x"},
         "in_set": {"from": "B", "values": ["x"]},
+        "normalize": {"from": "B", "rules": "n_one"},
     }
     assert name in arguments, f"no case for transform {name!r}: add one"
     entry = ColumnMapping(transform=name, **arguments[name])
+    # `normalize`'s ops are resolved from the normalizer document, which this
+    # test deliberately does not build: one `upper` needs no dialect template,
+    # so the case stays about whether each route has a body at all.
+    ops = [NormalizerOp(op="upper")] if name == "normalize" else []
     column = PlannedColumn(
         name="v_one",
         contract_type="boolean" if name == "in_set" else "string",
@@ -415,6 +421,9 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
         factor=entry.factor,
         default=entry.default,
         values=entry.values,
+        rules=entry.rules,
+        part=entry.part,
+        ops=ops,
     )
     rendered = _sql_transform(column)
     assert rendered

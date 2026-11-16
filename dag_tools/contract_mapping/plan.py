@@ -31,6 +31,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dag_tools.contract_mapping.contract import CONTRACT_TYPES, Contract
 from dag_tools.contract_mapping.mapping import Mapping
+from dag_tools.contract_mapping.normalize import (
+    Normalizers,
+    NormalizerOp,
+    part_index,
+)
 
 # The rule ids this library reaches for, by the kind of test it emits.
 #
@@ -59,6 +64,10 @@ _NUMERIC_TYPES = ("numeric", "float")
 #: `constant` of `null` is untyped. Under an enforced model contract each
 #: needs a cast, and the plan says so when the mapping declares none.
 _TYPE_CHANGING_TRANSFORMS = ("scale", "concat", "constant", "in_set")
+
+
+#: Per-column fields derived from others that ARE hashed; never in the hash.
+_DERIVED_COLUMN_FIELDS = ("invertible", "uninvertible_op")
 
 
 class MappingPlanError(Exception):
@@ -95,6 +104,18 @@ class PlannedColumn(BaseModel):
     default: Any = None
     values: Optional[List[Any]] = None
     assume_utc: bool = False
+
+    # `normalize` only. `rules`, `part`, `ops` and `regex_templates` join the
+    # plan hash only where set, so a plan with no normalize column hashes as
+    # it did before they existed. `invertible` and `uninvertible_op` are
+    # DERIVED from `ops` (which is hashed) and stay out of the hash entirely:
+    # an unconditional per-column key would move every mapping's hash.
+    rules: Optional[str] = None
+    part: Optional[str] = None
+    ops: List[NormalizerOp] = Field(default_factory=list)
+    regex_templates: Dict[str, str] = Field(default_factory=dict)
+    invertible: bool = True
+    uninvertible_op: Optional[str] = None
 
     required: bool = False
     unit: Optional[str] = None
@@ -167,6 +188,16 @@ class MappingPlan(BaseModel):
     columns: List[PlannedColumn] = Field(default_factory=list)
     tests: List[PlannedTest] = Field(default_factory=list)
 
+    normalizers: Dict[str, List[NormalizerOp]] = Field(
+        default_factory=dict,
+        description=(
+            "Only the normalizer ids this mapping references, resolved, so a "
+            "dry run shows the ops that will run rather than a name. Not the "
+            "whole document: editing an unrelated normalizer must not make "
+            "every mapping's reviewed hash stale."
+        ),
+    )
+
     unmapped_declared: List[str] = Field(
         default_factory=list,
         description=(
@@ -199,6 +230,9 @@ class MappingPlan(BaseModel):
                         for k, v in c.model_dump(mode="json").items()
                         if not (k == "assume_utc" and v is False)
                         and not (k == "values" and v is None)
+                        and k not in _DERIVED_COLUMN_FIELDS
+                        and not (k in ("rules", "part") and v is None)
+                        and not (k in ("ops", "regex_templates") and not v)
                     }
                     for c in self.columns
                 ],
@@ -210,6 +244,11 @@ class MappingPlan(BaseModel):
             document["row_filters"] = [
                 f.model_dump(mode="json", exclude_none=True) for f in self.row_filters
             ]
+        if self.normalizers:
+            document["normalizers"] = {
+                ident: [op.model_dump(mode="json", exclude_none=True) for op in ops]
+                for ident, ops in self.normalizers.items()
+            }
         payload = json.dumps(
             document,
             sort_keys=True,
@@ -336,10 +375,99 @@ def _check_default_type(name, entry, contract_type, problems) -> None:
         )
 
 
+def _plan_normalize(
+    name: str,
+    entry: Any,
+    mapping: Mapping,
+    normalizers: Optional[Normalizers],
+    resolved: Dict[str, List[NormalizerOp]],
+    problems: List[str],
+    notes: List[str],
+) -> Dict[str, Any]:
+    """Resolve one `normalize` column against the normalizer document.
+
+    Returns the PlannedColumn fields it sets. Every refusal is appended to
+    `problems`, so one reload shows them all.
+    """
+    if normalizers is None:
+        problems.append(
+            f"{name!r} uses normalize with rules {entry.rules!r}, but no "
+            "normalizer document is configured; the mapping holds only the "
+            "reference, so the document it points at has to be supplied"
+        )
+        return {}
+    ops = normalizers.get(entry.rules)
+    if ops is None:
+        problems.append(
+            f"{name!r} references normalizer {entry.rules!r}, which the "
+            f"normalizer document does not declare (it declares "
+            f"{', '.join(normalizers.ids) or 'none'})"
+        )
+        return {}
+
+    split = next((op for op in ops if op.op == "split_revision"), None)
+    if split is None and entry.part is not None:
+        problems.append(
+            f"{name!r} sets part {entry.part!r} but normalizer {entry.rules!r} "
+            "has no split_revision, so the part says nothing and a knob that "
+            "says nothing must not look wired up"
+        )
+    if split is not None:
+        if entry.part is None:
+            problems.append(
+                f"{name!r} uses normalizer {entry.rules!r}, which ends in "
+                "split_revision, with no `part`; which part is produced would "
+                "otherwise be a guess, and both are plausible"
+            )
+        else:
+            try:
+                part_index(split.pattern, entry.part)
+            except ValueError as error:
+                problems.append(f"{name!r}: {error}")
+
+    needed = sorted({op.regex_template for op in ops if op.regex_template})
+    templates = {k: mapping.regex_templates[k] for k in needed if k in mapping.regex_templates}
+    for key in needed:
+        if key in mapping.regex_templates:
+            continue
+        ops_using = ", ".join(sorted({op.op for op in ops if op.regex_template == key}))
+        if mapping.source.table:
+            problems.append(
+                f"{name!r} uses normalizer {entry.rules!r} with op(s) "
+                f"{ops_using}, which need the mapping's `regex_templates."
+                f"{key}`; with a `source.table` the model is rendered as SQL "
+                "and cannot be rendered without it"
+            )
+        else:
+            notes.append(
+                f"{name!r} uses op(s) {ops_using} and the mapping declares no "
+                f"`regex_templates.{key}`; there is no `source.table`, so no "
+                "SQL is rendered and this only matters if one is added"
+            )
+
+    resolved[entry.rules] = list(ops)
+    culprit = next((op.op for op in ops if not op.idempotent), None)
+    if culprit is not None:
+        notes.append(
+            f"{name!r} is not invertible: op {culprit!r} of normalizer "
+            f"{entry.rules!r} is not idempotent on its own output, so a "
+            "proof over this mapping cannot cover this column"
+        )
+    return {
+        "rules": entry.rules,
+        "part": entry.part,
+        "ops": list(ops),
+        "regex_templates": templates,
+        "invertible": culprit is None,
+        "uninvertible_op": culprit,
+    }
+
+
 def build_mapping_plan(
     contract: Contract,
     mapping: Mapping,
     source_schema: Optional[Dict[str, str]] = None,
+    normalizers: Optional[Normalizers] = None,
 ) -> MappingPlan:
     """Reconcile a mapping with its contract and plan the emission.
 
@@ -348,6 +476,9 @@ def build_mapping_plan(
     carries a schema, the source-column checks cannot run and the plan says
     so -- an unknown source column then fails at materialization instead of
     at the code-location load.
+
+    `normalizers` is the normalizer document; a `normalize` column resolves
+    its `rules` against it, and only the ids referenced reach the plan.
     """
     problems: List[str] = []
     notes: List[str] = []
@@ -471,6 +602,7 @@ def build_mapping_plan(
 
     # -- per column -------------------------------------------------------
     planned: List[PlannedColumn] = []
+    resolved_normalizers: Dict[str, List[NormalizerOp]] = {}
     for column in contract.columns:
         entry = mapping.columns.get(column.name)
         if entry is None:
@@ -510,6 +642,13 @@ def build_mapping_plan(
         ):
             _check_default_type(column.name, entry, column.type, problems)
 
+        normalize_fields: Dict[str, Any] = {}
+        if entry.transform == "normalize":
+            normalize_fields = _plan_normalize(
+                column.name, entry, mapping, normalizers,
+                resolved_normalizers, problems, notes,
+            )
+
         for source in entry.sources:
             if schema_known and source not in schema:
                 problems.append(
@@ -542,6 +681,7 @@ def build_mapping_plan(
                 unit=column.unit,
                 description=entry.description,
                 constant_within=list(column.constant_within),
+                **normalize_fields,
             )
         )
 
@@ -719,6 +859,7 @@ def build_mapping_plan(
         period_column=period_column,
         row_filters=row_filters,
         columns=planned,
+        normalizers=resolved_normalizers,
         tests=tests,
         unmapped_declared=unmapped_declared,
         notes=notes,
