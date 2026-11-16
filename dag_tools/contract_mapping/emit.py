@@ -21,6 +21,8 @@ the predicate from its `non_finite_predicate`.
 from __future__ import annotations
 
 import math
+import re
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -60,6 +62,104 @@ def _parse_number(text: str) -> Any:
         raise CoercionError(f"{text!r} is not a number") from exc
 
 
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+_EPOCH_AMBIGUITY = (
+    "epoch seconds and epoch milliseconds cannot be told apart from the value "
+    "alone, and guessing wrong is a factor-of-1000 error that still lands on a "
+    "plausible date; the mapping should produce an ISO-8601 value"
+)
+
+
+def _coerce_timestamp(value: Any, where: str, assume_utc: bool) -> datetime:
+    """Carry a timestamp as UTC; refuse anything that names no instant."""
+    if isinstance(value, bool):
+        raise CoercionError(f"{where}: a boolean is not a timestamp")
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        raise CoercionError(
+            f"{where}: {value!r} is a date, not a timestamp; widening it to "
+            "midnight would invent a time of day"
+        )
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise CoercionError(
+                f"{where}: {value!r} is not an ISO-8601 timestamp"
+            ) from exc
+    elif isinstance(value, (int, float, Decimal)):
+        raise CoercionError(f"{where}: {value!r} is a number; {_EPOCH_AMBIGUITY}")
+    else:
+        raise CoercionError(f"{where}: {value!r} is not a timestamp")
+
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        if not assume_utc:
+            raise CoercionError(
+                f"{where}: {value!r} names no UTC offset, so it names no "
+                "instant; reading it as UTC would shift every row of a "
+                "non-UTC source by hours. Declare `assume_utc: true` on the "
+                "column mapping if the source really is UTC"
+            )
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _coerce_date(value: Any, where: str) -> date:
+    """Carry a calendar date; a timestamp is not one, even at midnight."""
+    if isinstance(value, bool):
+        raise CoercionError(f"{where}: a boolean is not a date")
+    if isinstance(value, datetime):
+        raise CoercionError(
+            f"{where}: {value!r} is a timestamp, not a date; accepting it at "
+            "midnight would pass until the first row carrying a time"
+        )
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            # 3.11's fromisoformat also takes `20240131` and week dates; the
+            # shape is pinned here so the accepted spelling is one.
+            if not _ISO_DATE.fullmatch(value.strip()):
+                raise ValueError(value)
+            return date.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise CoercionError(
+                f"{where}: {value!r} is not YYYY-MM-DD, the only date spelling "
+                "this library reads"
+            ) from exc
+    if isinstance(value, (int, float, Decimal)):
+        raise CoercionError(f"{where}: {value!r} is a number; {_EPOCH_AMBIGUITY}")
+    raise CoercionError(f"{where}: {value!r} is not a date")
+
+
+def _coerce_string_array(value: Any, where: str) -> List[str]:
+    """Carry a list of strings; a bare string is not one."""
+    if isinstance(value, str):
+        raise CoercionError(
+            f"{where}: {value!r} is a bare string, not an array; a string is "
+            "iterable and would explode into its characters. The mapping "
+            "should produce a list"
+        )
+    if not isinstance(value, (list, tuple)):
+        raise CoercionError(
+            f"{where}: a {type(value).__name__} is not an array; only a list "
+            "or tuple has an order that is part of its value"
+        )
+    for index, element in enumerate(value):
+        if element is None:
+            raise CoercionError(
+                f"{where}: element {index} is null, and a null is not a string"
+            )
+        if not isinstance(element, str):
+            raise CoercionError(
+                f"{where}: element {index} is a {type(element).__name__}, not "
+                "a string; converting it would hide a mapping mistake"
+            )
+    return list(value)
+
+
 def _reject_non_finite(value: Any, where: str) -> None:
     if isinstance(value, float) and not math.isfinite(value):
         raise CoercionError(
@@ -71,7 +171,9 @@ def _reject_non_finite(value: Any, where: str) -> None:
         raise CoercionError(f"{where} is {value!r}, which is not finite")
 
 
-def coerce_value(value: Any, contract_type: str, where: str) -> Any:
+def coerce_value(
+    value: Any, contract_type: str, where: str, assume_utc: bool = False
+) -> Any:
     """Carry a value as the type its contract column declares.
 
     `numeric` is the interesting one: it accepts an integer or a fractional
@@ -98,6 +200,13 @@ def coerce_value(value: Any, contract_type: str, where: str) -> Any:
         if isinstance(value, int):
             return bool(value)
         raise CoercionError(f"{where}: {value!r} is not a boolean")
+
+    if contract_type == "timestamp":
+        return _coerce_timestamp(value, where, assume_utc)
+    if contract_type == "date":
+        return _coerce_date(value, where)
+    if contract_type == "array<string>":
+        return _coerce_string_array(value, where)
 
     # Whether the value arrived as text matters for `numeric`, below.
     from_text = isinstance(value, str)
@@ -189,7 +298,7 @@ def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
         else:  # pragma: no cover - the mapping model refuses anything else
             raise RenderError(f"{where}: no row rendering for {column.transform!r}")
 
-    return coerce_value(raw, column.contract_type, where)
+    return coerce_value(raw, column.contract_type, where, column.assume_utc)
 
 
 def apply_to_rows(

@@ -93,6 +93,7 @@ class PlannedColumn(BaseModel):
     separator: str = ""
     factor: Optional[Decimal] = None
     default: Any = None
+    assume_utc: bool = False
 
     required: bool = False
     unit: Optional[str] = None
@@ -172,7 +173,16 @@ class MappingPlan(BaseModel):
             {
                 "contract_id": self.contract_id,
                 "model_name": self.model_name,
-                "columns": [c.model_dump(mode="json") for c in self.columns],
+                # assume_utc joins the payload only where it is set, so a plan
+                # that never uses it hashes as it did before the field existed.
+                "columns": [
+                    {
+                        k: v
+                        for k, v in c.model_dump(mode="json").items()
+                        if not (k == "assume_utc" and v is False)
+                    }
+                    for c in self.columns
+                ],
                 "tests": [t.model_dump(mode="json") for t in self.tests],
             },
             sort_keys=True,
@@ -342,6 +352,13 @@ def build_mapping_plan(
                 f"({', '.join(CONTRACT_TYPES)}); it cannot be rendered or tested"
             )
 
+        if entry.assume_utc and column.type != "timestamp":
+            problems.append(
+                f"{column.name!r} sets assume_utc but the contract declares it "
+                f"{column.type!r}; the knob only means something on a "
+                "timestamp, and a knob that says nothing must not look wired up"
+            )
+
         for source in entry.sources:
             if schema_known and source not in schema:
                 problems.append(
@@ -368,6 +385,7 @@ def build_mapping_plan(
                 separator=entry.separator,
                 factor=entry.factor,
                 default=entry.default,
+                assume_utc=entry.assume_utc,
                 required=column.required,
                 unit=column.unit,
                 description=entry.description,

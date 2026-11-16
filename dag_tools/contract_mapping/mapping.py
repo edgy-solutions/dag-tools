@@ -82,6 +82,15 @@ class ColumnMapping(BaseModel):
         default=None,
         description="Carried onto the emitted model's column documentation.",
     )
+    assume_utc: bool = Field(
+        default=False,
+        description=(
+            "`timestamp` columns only: read a value that names no offset as "
+            "UTC. A declared decision, never a default -- a naive value names "
+            "no instant, and reading it as UTC shifts a non-UTC source by "
+            "hours. Refused at plan time on any other contract type."
+        ),
+    )
 
     @field_validator("sources", mode="before")
     @classmethod
