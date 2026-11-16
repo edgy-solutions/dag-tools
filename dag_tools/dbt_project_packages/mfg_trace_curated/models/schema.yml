@@ -1,0 +1,54 @@
+version: 2
+
+# Model documentation only. Three things are deliberately NOT here:
+#
+# 1. Column lists. The contract documents are the source of record for what
+#    each model produces, and a second copy here would be a third place to
+#    drift. A test compares each model's output columns against its
+#    contract's `must_produce`, which is the check a copy here could not be.
+#
+# 2. The grain and reference tests. They are singular tests under tests/,
+#    generated from the grain each contract declares, and named for the rule
+#    they fail under -- `<model>__duplicate_key`, `<model>__orphan_reference`
+#    -- so a failure names a rule the contract carries. DEVIATION from the
+#    plan, which put them here: three of the four grains are composite, the
+#    built-in `unique` test takes one column, and the generic test for a
+#    composite key lives in an external dbt package. A dependency on one for
+#    a five-line query is a dependency every deployment then has to install.
+#
+# 3. `not_null` tests. There is no null rule in these contracts, and a
+#    failure naming an id outside the contract's `rules:` cannot be acted on
+#    by anyone reading the contract. `missing_column` is a different rule
+#    about a column being absent, which dbt enforces through a model
+#    contract -- and that needs a warehouse type per column, which this
+#    package cannot name. The deployment's `contract_mapping` instance is
+#    what enforces it, from the types declared on its own side.
+
+models:
+  - name: test_result
+    description: >
+      One row per test attempt, carrying the attempt order within a unit and
+      which attempt is the latest. `is_latest` is terminal-only: an attempt
+      that has not reached a terminal state is never the latest, whatever
+      its `attempt_seq`. Reading it as `attempt_seq = max(attempt_seq)`
+      instead would mark an in-flight run as the latest result, so a reader
+      filtering to one row per unit would get a row whose result is not in
+      yet -- which reads as a correct answer.
+
+  - name: test_measurement
+    description: >
+      One row per measured parameter of one attempt, with the measurement
+      grammar applied to the source's measurement and limits texts. A
+      numeric reading, a low and a high bound and a units string are
+      published where the text yields them; the texts themselves are always
+      carried verbatim beside them, so nothing is lost to a parse. What the
+      source supplied for units or comparison type wins over anything parsed
+      out of the text.
+
+  - name: test_catalog
+    description: >
+      What has ever been measured, per part and program: the step path,
+      parameter name and units, with how many attempts measured it and when
+      it was first and last seen. Grouped over test_measurement rather than
+      the raw tables, so the catalog describes exactly what the curated
+      models publish.

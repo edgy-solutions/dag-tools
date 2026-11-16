@@ -65,13 +65,27 @@ def test_every_document_declares_the_same_base_rules():
 
 
 @pytest.mark.parametrize("document", _documents(), ids=lambda d: d["contract_id"])
-def test_every_documents_scope_is_a_column_it_produces(document):
-    """The template's own documents all scope a read, and say which column.
+def test_every_documents_scope_is_a_column_it_produces_or_is_no_scope(document):
+    """A scope either names a column the document declares, or is absent.
 
-    `scope: none` is a legitimate thing for a *deployment's* document to say
-    and reads as no scope at all; none of these say it, and a scope naming a
-    column the document does not declare would be refused at the plan.
+    There is no third state: a scope naming a column the document does not
+    declare is refused at the plan, and `scope: none` reads as *no scope* --
+    not as a column called `none`, which is what YAML hands the reader.
     """
     contract = load_contract(document)
-    assert contract.scope, f"{contract.contract_id} declares no scope"
+    if contract.scope is None:
+        return
     assert contract.scope in contract.column_names
+
+
+def test_the_template_carries_both_scope_cases():
+    """So the test above cannot pass by every document losing its scope.
+
+    One document here genuinely has none -- conformed step parameters carry no
+    part number until they are joined to a result -- and the rest name one.
+    Asserted as counts rather than by contract id, because which document is
+    which is the template's business.
+    """
+    scopes = [load_contract(doc).scope for doc in _documents()]
+    assert sum(scope is None for scope in scopes) >= 1
+    assert sum(scope is not None for scope in scopes) >= 2

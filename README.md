@@ -809,6 +809,55 @@ required. Values the server decides are settings with conservative defaults; a d
 has measured its own server sets the measured value in its YAML. Runnable
 example: [`examples/mfg_trace/systemlink`](examples/mfg_trace/systemlink).
 
+### 18. Curated slice for manufacturing test data (shipped dbt package)
+
+The first thing in this library that ships **SQL** rather than a component. Two conformed
+contract documents are the seam, and the work splits in two:
+
+| stage | lives in | names columns from your source |
+|---|---|---|
+| conform | your deployment's `contract_mapping` YAML | **yes, and only here** |
+| derive | `dag_tools/dbt_project_packages/mfg_trace_curated` | no |
+
+The package derives three curated models — `test_result`, `test_measurement`,
+`test_catalog` — from the two conformed tables, with a grain-uniqueness test per model, a
+reference test, and a count of comparison operators it could not read. Install it with a
+`local:` entry in your `packages.yml`, and ask the library where it is rather than hard-coding
+a path:
+
+```bash
+python -c "from dag_tools.systemlink import sql; print(sql.PACKAGE_DIR)"
+```
+
+```yaml
+# dbt_project.yml
+vars:
+  mfg_trace_conf_result_relation: "{{ ref('your_conformed_result_model') }}"
+  mfg_trace_conf_step_parameter_relation: "{{ ref('your_conformed_step_model') }}"
+  mfg_trace_decimal_type: "decimal(38, 9)"          # your adapter's exact numeric type
+  mfg_trace_comparators:                            # YOUR table; see below
+    - { text: "<",  code: LT,  bound: high }
+    - { text: "<=", code: LTE, bound: high }
+    - { text: ">",  code: GT,  bound: low }
+```
+
+The package declares a **default for none of these four**. Two relations, the exact numeric
+type for the tolerance arithmetic and the comparator table are each a thing this library must
+not guess, so one left unset fails `dbt parse` instead of resolving to something.
+
+**The comparator table is yours**, as the normalizers are. The library ships no comparison
+codes — only the two words `low` and `high`, named after the curated contract's own limit
+columns. Matching is on the **whole** operator, never a prefix: a table carrying `<` does not
+cover `<=`. An operator your table omits is kept as text and **counted** (at warning severity),
+never dropped and never read as a value.
+
+**Stage 1 is not shipped yet.** Three conformed columns need `contract_mapping` transforms that
+do not exist (`normalize`, `where`, `nullif`); until they land, a deployment produces the
+conformed tables with its own models and checks them against the same two documents.
+
+Runnable example, with a sample comparator table and both stages documented:
+[`examples/mfg_trace`](examples/mfg_trace).
+
 ## Setup & Development
 
 This project targets **Dagster 1.12+ (core)** / **0.28+ (libraries)**. We use `uv` for all dependency management.

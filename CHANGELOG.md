@@ -12,6 +12,58 @@ it back are named.
 
 ## Unreleased
 
+### Added
+
+- **A curated slice for manufacturing test data: two conformed contract documents, a pure
+  measurement grammar, and a shipped dbt package that derives three curated models from them.**
+  Nothing here is a new signature or a changed default; it is all additive.
+
+  - `dag_tools/systemlink/measurements.py` — a **pure** grammar (no Dagster, dbt, dlt, duckdb,
+    sqlalchemy or jinja2 import) that reads a measurement's text and its limits text and answers a
+    number, a low or high limit, a comparison code and two flags. One rule table, `RULES`.
+  - `dag_tools/systemlink/sql.py` — a generator that reads the same `RULES` and emits the package's
+    SQL. `PACKAGE_DIR` names the shipped directory, `REQUIRED_VARS` the four variables a deployment
+    must set, `GRAINS` and `ORPHAN_EDGES` the contract tests it generates.
+  - `dag_tools/dbt_project_packages/mfg_trace_curated/` — the package itself: three models
+    (`test_result`, `test_measurement`, `test_catalog`), a grain-uniqueness test per model, one
+    reference test, an uncovered-comparator count, and one hand-written macro. Installed with a
+    `local:` entry in a deployment's `packages.yml`; ask the library for the path
+    (`python -c "from dag_tools.systemlink import sql; print(sql.PACKAGE_DIR)"`).
+  - `examples/mfg_trace/` — the two conformed contract documents, a worked `curated/` dbt project
+    with a **sample comparator table**, and a README covering both stages.
+
+  **The comparator table is the deployment's, as the normalizers are.** The library ships no
+  comparison codes; it ships the two words `low` and `high`, named after the curated contract's own
+  limit columns. A row is `{text, code, bound}` and matching is on the **whole** operator, never a
+  prefix: a table carrying `<` does not cover `<=`, and reading it as `<` would publish the right
+  number on the right side with the wrong strictness. An operator the table does not carry is
+  **kept as text and counted, never dropped and never read as a value** — it publishes no limit,
+  the received text is still there to audit against, and the package's `uncovered_comparator` test
+  reports it at **warning** severity, because a build that refuses to publish over an unfamiliar
+  operator puts the pressure on deleting the row rather than on adding one to the table. It is not
+  a parse failure; that flag says a number was expected and not found.
+
+  **`is_latest` is terminal-only.** A non-terminal attempt is never the latest result, whatever its
+  sequence number, and a unit with no terminal attempt has no latest row. Tolerance arithmetic runs
+  in the warehouse's own exact numeric type, which is one of the four required variables: through
+  binary floats a `1.005 ± 0.005` tolerance gives limits that are both wrong and both display as
+  right.
+
+  **The package declares a default for none of the four variables.** Two relations, the exact
+  numeric type and the comparator table are each a thing this library must not guess, so one left
+  unset fails `dbt parse` rather than resolving to something.
+
+  **Stage 1 — the mapping from a source's raw tables onto the two conformed contracts — is not
+  included yet**, and the example README names exactly why: the normalized identifier columns need
+  a normalizer, the terminal-status flag needs a membership test over the source's status enum, and
+  the empty-string-where-absent columns need a constant fallback. `contract_mapping` ships none of
+  the three (`trim`/`upper`/`lower` are single-step and cannot be composed; `coalesce` takes source
+  columns only). The flag is a required column, so a mapping written today would fail the
+  code-location load, and a `constant` standing in for it would say every attempt is terminal.
+  `normalize`, `where` and `nullif` are queued; the mappings land with them. Until then a deployment
+  produces the conformed tables with its own models, checked against the same two documents — the
+  same seam either way.
+
 ### Changed
 
 - **Key uniqueness now resolves to one rule id, `duplicate_key`, instead of a spelling derived

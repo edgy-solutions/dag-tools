@@ -1,0 +1,97 @@
+# A deployment's own dbt project, installing the curated package.
+#
+# Everything the package needs to know about this deployment arrives as a dbt
+# var. The package declares a default for none of them, so a var left unset
+# fails `dbt parse` -- which is the point: a default would name a relation
+# belonging to whichever deployment wrote it, pick an exact numeric type for a
+# warehouse nobody asked about, or invent comparison codes.
+
+name: mfg_trace_example
+version: "0.1.0"
+config-version: 2
+
+profile: mfg_trace_example
+
+model-paths: ["models"]
+
+vars:
+  # --- Where the conformed tables are ------------------------------------
+  #
+  # The curated models read these two relations and nothing else, and they
+  # read them only through these vars -- which is how a library that is not
+  # allowed to name a database, schema or table ships real SQL.
+  #
+  # What goes here is whatever your warehouse resolves: a `{{ ref(...) }}`
+  # call if the conforming models are in this project (the usual case, and
+  # the one that gets you the dependency edge), a `{{ source(...) }}` call if
+  # they are declared as sources, or a plain `db.schema.table`.
+  #
+  # The columns of what you point at are the two `conf_*` contract documents
+  # in `../contracts/mfg_trace.yaml`. Stage 1 is what makes that true; see
+  # this example's README.
+  mfg_trace_conf_result_relation: "{{ ref('conf_test_repo_result') }}"
+  mfg_trace_conf_step_parameter_relation: "{{ ref('conf_test_repo_step_parameter') }}"
+
+  # --- The exact numeric type the tolerance arithmetic is done in ---------
+  #
+  # A `1.005 +/- 0.005` tolerance through binary floats gives 0.9999999999999999
+  # and 1.0099999999999998: both wrong, and both display as the right answer,
+  # so a limit computed that way rejects a reading that passed and nothing
+  # downstream looks odd. The subtraction and addition are therefore done in
+  # your warehouse's own exact numeric type, named here because the spelling
+  # is the adapter's.
+  #
+  # Pick a scale that covers your tightest tolerance. The published
+  # `low_limit_num` / `high_limit_num` are doubles, as the curated contract
+  # declares -- the exact type is the arithmetic, not the storage.
+  mfg_trace_decimal_type: "decimal(38, 9)"
+
+  # --- The comparator table ----------------------------------------------
+  #
+  # EXAMPLES, not vocabulary dag-tools ships. The library carries no codes of
+  # its own, for the same reason it carries no column names: what a comparison
+  # is called is a decision about your own data, and a code compiled into the
+  # library would turn it into a library release.
+  #
+  # Each row is three things:
+  #   text   the operator exactly as your source writes it, before any
+  #          normalizing. Whitespace around it is trimmed; nothing else is.
+  #   code   what lands in the curated contract's `comparison_type`. Your
+  #          word. It may contain an apostrophe.
+  #   bound  which of the two limit columns the operator bounds: `low` or
+  #          `high`. These two are the library's own words, named after the
+  #          columns the curated contract declares.
+  #
+  # Matching is on the WHOLE operator, never a prefix. A table carrying only
+  # `<` does not cover `<=`: reading it as `<` would publish a bound the
+  # source never stated -- right number, right side, wrong strictness, which
+  # reads as a correct answer. So `<=` needs its own row, as below.
+  #
+  # An operator this table does not carry is kept as text in `limits_text`,
+  # publishes no limit and no `comparison_type`, and is COUNTED: the
+  # package's `uncovered_comparator` test reports it at warning severity, so
+  # a missing row here shows up as a number someone can act on rather than as
+  # a build failure that puts pressure on dropping the row. It is not a
+  # `parse_failed`: that column says a number was expected and not found,
+  # which is a different problem and goes to different people.
+  #
+  # An equality is deliberately absent from this sample: `bound` names one
+  # side, and an equality bounds both. Decide what you want that to mean
+  # before writing a row for it.
+  mfg_trace_comparators:
+    - { text: "<", code: "LT", bound: "high" }
+    - { text: "<=", code: "LTE", bound: "high" }
+    - { text: "≤", code: "LTE", bound: "high" }
+    - { text: ">", code: "GT", bound: "low" }
+    - { text: ">=", code: "GTE", bound: "low" }
+    - { text: "≥", code: "GTE", bound: "low" }
+
+models:
+  mfg_trace_example:
+    +materialized: table
+  # The curated package materializes as tables. Set it here if your
+  # deployment wants something else; the package's own `dbt_project.yml`
+  # carries no `{{ config() }}` in any model, so this is the one place
+  # materialization is decided.
+  mfg_trace_curated:
+    +materialized: table
