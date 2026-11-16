@@ -93,6 +93,71 @@ def _load_document(path: str, what: str) -> Dict[str, Any]:
     return document
 
 
+def _load_contract_file(path: str, expect_id: Optional[str]) -> Dict[str, Any]:
+    """Read a contract from a file, which may be a governed BUNDLE.
+
+    A deployment governs its contracts together: one file, one document per
+    table, separated by `---` (the mfg_trace example's contract file is
+    exactly that, and its own header says each document loads unchanged).
+    `yaml.safe_load` refuses such a stream outright -- so a reader that
+    accepted only a single document could not point at the governed file at
+    all, only at a copy of one of its documents, which is a second governed
+    text needing a drift test to hold it to the first.
+
+    A stream carrying more than one document is therefore selected from by
+    `expect_contract_id` -- the id the operator has already named, rather
+    than a second field saying the same thing and a validator to catch the
+    two disagreeing. A bundle with no id named fails the load listing the
+    ids it holds: taking the first document would map against whichever
+    document happens to be first, and every column name might still line up,
+    which is the failure `expect_contract_id` exists to catch on a mis-edited
+    path. A single-document file behaves exactly as before, and there the id
+    stays a check rather than a selector.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise ValueError(f"cannot read the contract at {path}: {exc}") from exc
+
+    import yaml
+
+    try:
+        documents = [d for d in yaml.safe_load_all(text) if d is not None]
+    except yaml.YAMLError as exc:
+        raise ValueError(f"the contract at {path} does not parse: {exc}") from exc
+
+    if not documents:
+        raise ValueError(f"the contract at {path} holds no document")
+
+    if len(documents) == 1:
+        document = documents[0]
+        if not isinstance(document, dict):
+            raise ValueError(
+                f"the contract at {path} is a "
+                f"{type(document).__name__}, not a mapping"
+            )
+        return document
+
+    ids = [
+        d.get("contract_id") for d in documents if isinstance(d, dict)
+    ]
+    found = ", ".join(repr(i) for i in ids if i) or "none of them carries one"
+    if not expect_id:
+        raise ValueError(
+            f"the contract at {path} holds {len(documents)} documents; set "
+            f"`contract.expect_contract_id` to the one this mapping is for. "
+            f"It holds: {found}"
+        )
+    for document in documents:
+        if isinstance(document, dict) and document.get("contract_id") == expect_id:
+            return document
+    raise ValueError(
+        f"the contract at {path} holds no document with `contract_id` "
+        f"{expect_id!r}. It holds: {found}"
+    )
+
+
 def _fetch_contract_document(spec: ContractMappingSpec) -> Dict[str, Any]:
     """Fetch the served contract.
 
@@ -335,7 +400,10 @@ def build_contract_mapping_asset(
     load_notes: List[str] = []
     if spec.contract.path:
         contract = load_contract(
-            _load_document(_resolve_path(spec.contract.path, component_dir), "contract")
+            _load_contract_file(
+                _resolve_path(spec.contract.path, component_dir),
+                spec.contract.expect_contract_id,
+            )
         )
         _check_expected_id(spec, contract)
         if (
@@ -380,8 +448,9 @@ def build_contract_mapping_asset(
         notes = list(load_notes)
 
         if spec.contract.path:
-            document = _load_document(
-                _resolve_path(spec.contract.path, component_dir), "contract"
+            document = _load_contract_file(
+                _resolve_path(spec.contract.path, component_dir),
+                spec.contract.expect_contract_id,
             )
         else:
             document = _fetch_contract_document(spec)

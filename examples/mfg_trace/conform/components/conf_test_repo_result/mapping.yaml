@@ -1,0 +1,135 @@
+# STAGE 1 for the results table: the raw landing table of the SystemLink kind
+# onto `mfg_trace.conf_test_repo_result`. Each transform below exists because
+# the source disagrees with the contract about exactly one thing, and the
+# comment says which.
+#
+# THE SOURCE SHAPE IS THE EXAMPLE'S OWN DECLARATION. The columns this repo
+# actually names (dag_tools/systemlink/) are: id, updatedAt, status (with
+# statusType inside), programName, operator, workspace, and the kind's five
+# stamps. A part number, a serial number, a start time, a duration, a system
+# id and a host name are fields this repo has never observed, so each is
+# marked "declared" below: confirm every one against YOUR server, and edit this
+# block, before trusting the mapping. `contract_mapping` has no normalization
+# tolerance, so the block names exactly one spelling per column.
+
+contract: mfg_trace.conf_test_repo_result
+
+source:
+  dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:s3,sl_results,PROD)"
+  table: "{{ source('sl_example', 'sl_results') }}"
+
+  # dlt snake-cases on the way in (resultId -> result_id), keeps leading
+  # underscores, and flattens nested dicts to parent__child.
+  columns:
+    id: string                    # observed
+    updated_at: timestamp         # observed (updatedAt)
+    # observed: statusType inside status. The FLATTENED spelling is dlt's
+    # decision (`status` is not in keep_json_columns) and is UNVERIFIED
+    # against a real run -- confirm it.
+    status__status_type: string
+    program_name: string          # observed (programName)
+    operator: string              # observed; already pseudonymised by the kind
+    workspace: string             # observed
+    part_number: string           # declared: the example's shape, confirm it
+    serial_number: string         # declared: the example's shape, confirm it
+    started_at: timestamp         # declared: the example's shape, confirm it
+    duration_s: float             # declared: the example's shape, confirm it
+    system_id: string             # declared: the example's shape, confirm it
+    host_name: string             # declared: the example's shape, confirm it
+    _source_system: string        # observed: the kind's own stamp
+    _extracted_at: timestamp      # observed: the kind's own stamp
+
+cadence:
+  write: incremental_by_key
+  set_by: test_repo
+
+columns:
+  result_id:
+    from: id
+  source_record_id:
+    from: id
+
+  # Normalized, and the raw value kept beside it so a normalizer change is
+  # auditable. The `*_raw` columns are this mapping's to write, never
+  # generated: a plain copy of the same source.
+  part_number:
+    from: part_number
+    transform: normalize
+    rules: identifier
+  part_number_raw:
+    from: part_number
+  serial_number:
+    from: serial_number
+    transform: normalize
+    rules: identifier
+  serial_number_raw:
+    from: serial_number
+
+  program_name:
+    from: program_name
+
+  # The source's status enum, verbatim.
+  status_type:
+    from: status__status_type
+
+  # The contract wants a boolean and the source carries an enum. Which values
+  # are terminal is THIS deployment's decision; the match is exact, so a value
+  # not listed is not terminal.
+  is_terminal:
+    from: status__status_type
+    transform: in_set
+    values: [PASSED, FAILED, ERRORED, TERMINATED, TIMED_OUT, DONE]
+
+  started_at:
+    from: started_at
+  updated_at:
+    from: updated_at
+  duration_s:
+    from: duration_s
+  system_id:
+    from: system_id
+  host_name:
+    from: host_name
+
+  # A copy of the ALREADY-PSEUDONYMISED column: the SystemLink kind applies the
+  # operator policy before anything reaches a table, so there is nothing to
+  # hash here and nothing to withhold. The contract marks it personal_data
+  # all the same.
+  operator_ref:
+    from: operator
+
+  workspace:
+    from: workspace
+
+  # The kind stamps its own source id on every row, so this reads it rather
+  # than restating a constant the table already carries.
+  source_system:
+    from: _source_system
+
+  # When the row was extracted: the source's fact, stamped by the kind.
+  extracted_at:
+    from: _extracted_at
+
+  # When THIS load wrote the row: a different fact, minted by the pipeline.
+  # The contract's engine orders on it (ReplacingMergeTree(loaded_at)).
+  loaded_at:
+    transform: run_timestamp
+
+# Every one of the following is the operator's. There is no default: this
+# library does not know what your warehouse calls a type.
+warehouse_types:
+  string: varchar
+  float: double precision
+  boolean: boolean
+  timestamp: timestamp
+
+# `in_set` changes the type class (text in, boolean out), so the boolean needs
+# a cast.
+cast_templates:
+  boolean: "cast({expr} as boolean)"
+  timestamp: "cast({expr} as timestamp)"
+
+# SQL for the load instant, used verbatim by `loaded_at`.
+run_timestamp_sql: "current_timestamp"
+
+non_finite_predicate: "{column} != {column}"

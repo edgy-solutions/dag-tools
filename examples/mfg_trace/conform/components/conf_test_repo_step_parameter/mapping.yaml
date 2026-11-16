@@ -1,0 +1,106 @@
+# STAGE 1 for the step-parameter table: `mfg_trace.conf_test_repo_step_parameter`.
+# One mapping per source table and no join, which is why this contract says
+# `scope: none` and this file restates no scope.
+#
+# THE SOURCE IS THE STEPS CHILD TABLE dlt unnests (steps__data__parameters,
+# see the SystemLink kind's DEVIATION note), and its shape here is the
+# example's own declaration. Observed names: parameters, name, value, units,
+# measurement, low, high, comparator, resultId, stepId. Everything marked
+# "declared" is the example's shape: confirm it against your server and your
+# dlt run, and edit this block.
+#
+# A dlt child row carries only `_dlt_parent_id`; the parent's result id and
+# step id live on the parent. This example declares them as columns of the
+# source relation, i.e. the operator points `table` at a view that joins the
+# child to its parent step. The spelling of the dlt columns is dlt's.
+
+contract: mfg_trace.conf_test_repo_step_parameter
+
+source:
+  dataset_urn: "urn:li:dataset:(urn:li:dataPlatform:s3,sl_steps__data__parameters,PROD)"
+  table: "{{ source('sl_example', 'sl_steps__data__parameters') }}"
+
+  columns:
+    result_id: string            # observed (resultId) -- on the parent, via the view
+    step_id: string              # observed (stepId) -- on the parent, via the view
+    step_path: string            # declared: the example's shape, confirm it
+    step_name: string            # declared: the example's shape, confirm it (a step's `name` is observed; which table carries it is not)
+    name: string                 # observed: the parameter's name
+    measurement: string          # observed
+    units: string                # observed
+    limits: string               # declared: low/high/comparator as received, assembled in the view
+    comparator: string           # observed
+    status: string               # declared: the example's shape, confirm it
+    _dlt_list_idx: integer       # dlt's own position-in-list column; its spelling is dlt's
+    _dlt_id: string              # dlt's own row id; its spelling is dlt's
+    _source_system: string       # observed stamp, carried through the view
+    _extracted_at: timestamp     # observed stamp, carried through the view
+
+cadence:
+  write: incremental_by_key
+  set_by: test_repo
+
+columns:
+  result_id:
+    from: result_id
+  step_id:
+    from: step_id
+
+  # The position in the step's parameter list, because names may repeat. dlt's
+  # own list-index column is the honest source: nothing else distinguishes two
+  # parameters with one name.
+  parameter_index:
+    from: _dlt_list_idx
+
+  step_path:
+    from: step_path
+  step_name:
+    from: step_name
+  parameter_name:
+    from: name
+
+  # Required and non-nullable, '' when absent -- and the source is sometimes
+  # null. A one-source coalesce with a constant fallback.
+  measurement_text:
+    from: measurement
+    transform: coalesce
+    default: ""
+
+  # Nullable, "null where empty": the source writes an empty string for
+  # "no units", the contract wants null.
+  units:
+    from: units
+    transform: nullif
+    value: ""
+  limits_text:
+    from: limits
+    transform: nullif
+    value: ""
+
+  comparison_type:
+    from: comparator
+  status:
+    from: status
+
+  source_system:
+    from: _source_system
+  source_record_id:
+    from: _dlt_id
+  extracted_at:
+    from: _extracted_at
+  loaded_at:
+    transform: run_timestamp
+
+warehouse_types:
+  string: varchar
+  integer: bigint
+  timestamp: timestamp
+
+# `run_timestamp` renders the operator's SQL, which names no type, so the
+# timestamp needs a cast too.
+cast_templates:
+  timestamp: "cast({expr} as timestamp)"
+
+run_timestamp_sql: "current_timestamp"
+
+non_finite_predicate: "{column} != {column}"

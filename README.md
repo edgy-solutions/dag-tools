@@ -603,10 +603,21 @@ attributes:
 
 The mapping file names the source's platform URN and table, the period key,
 the write cadence, and one entry per contract column — `copy`, `trim`,
-`upper`, `lower`, `concat`, `coalesce`, `constant` or `scale`. It also carries
-the three things this library will not guess: the contract type → warehouse
-type map, a cast template per type that needs one, and the predicate that is
-true for a non-finite value.
+`upper`, `lower`, `concat`, `coalesce`, `constant`, `scale`, `nullif`,
+`in_set`, `normalize` or `run_timestamp`. It also carries the three things
+this library will not guess: the contract type → warehouse type map, a cast
+template per type that needs one, and the predicate that is true for a
+non-finite value.
+
+The `source:` block takes a `where` row filter on the same grammar the dlt
+component's `row_filters` uses. `normalize` reads its rules from a
+**normalizer document** (`normalizers.path` or `normalizers.url`), so the
+identifier grammar is a file an operator edits rather than a library release.
+`in_set` is a membership test over the source's own enum — how a boolean gets
+derived from a status vocabulary this library may not name — and it changes
+the type class, so the mapping declares a cast for the result.
+`run_timestamp` takes one instant for a whole load, not a per-row clock
+reading.
 
 **With a file contract the whole plan is built at the code location load.** A
 mapping that reads a column the source does not have, drops a column a
@@ -851,9 +862,11 @@ columns. Matching is on the **whole** operator, never a prefix: a table carrying
 cover `<=`. An operator your table omits is kept as text and **counted** (at warning severity),
 never dropped and never read as a value.
 
-**Stage 1 is not shipped yet.** Three conformed columns need `contract_mapping` transforms that
-do not exist (`normalize`, `where`, `nullif`); until they land, a deployment produces the
-conformed tables with its own models and checks them against the same two documents.
+**Stage 1 ships too**, in `examples/mfg_trace/conform/`: one `contract_mapping` instance per raw
+table, mapping the SystemLink kind's landing tables onto the two conformed documents. It is the
+one place anything from below is named, and it needed three transforms this library did not have
+— `normalize` with its normalizer document, `in_set` for the terminal-status flag, and a
+`coalesce` that accepts one source plus a declared `default`.
 
 Runnable example, with a sample comparator table and both stages documented:
 [`examples/mfg_trace`](examples/mfg_trace).

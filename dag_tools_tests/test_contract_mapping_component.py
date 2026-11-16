@@ -636,3 +636,119 @@ def test_the_component_is_reachable_by_the_name_the_component_file_uses():
     import dag_tools
 
     assert dag_tools.ContractMappingComponent is component_module.ContractMappingComponent
+
+
+# --- a contract file that holds several documents ---------------------------
+
+_MFG = Path(__file__).resolve().parents[1] / "examples" / "mfg_trace"
+
+
+def _bundle_documents() -> dict:
+    import yaml
+
+    with (_MFG / "contracts" / "mfg_trace.yaml").open(encoding="utf-8") as handle:
+        return {d["contract_id"]: d for d in yaml.safe_load_all(handle) if d}
+
+
+def _conform_tree(tmp_path: Path, monkeypatch, contract_path: Path, expect_id) -> Path:
+    """One conform instance in a tree of its own, pointed at `contract_path`."""
+    import yaml
+
+    source = _MFG / "conform" / "components" / "conf_test_repo_step_parameter"
+    package = "bundle_" + tmp_path.name.replace("-", "_")
+    components = tmp_path / package / "components"
+    target = components / "instance"
+    target.mkdir(parents=True)
+    for init in (tmp_path / package, components, target):
+        (init / "__init__.py").write_text("")
+    shutil.copy(source / "mapping.yaml", target / "mapping.yaml")
+    attributes = yaml.safe_load((source / "component.yaml").read_text(encoding="utf-8"))[
+        "attributes"
+    ]
+    contract = {"path": contract_path.as_posix()}
+    if expect_id:
+        contract["expect_contract_id"] = expect_id
+    attributes["contract"] = contract
+    attributes["normalizers"] = {
+        "path": (_MFG / "conform" / "normalizers.yaml").as_posix()
+    }
+    (target / "component.yaml").write_text(
+        yaml.safe_dump(
+            {"type": "dag_tools.ContractMappingComponent", "attributes": attributes}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    return components
+
+
+def test_a_contract_bundle_is_selected_from_by_the_expected_id(tmp_path, monkeypatch):
+    """The real governed bundle, with the plan built against the NAMED document.
+
+    The assertion is on a column only that document has, read from the
+    documents rather than written here, so a reader that took the first
+    document would map against the wrong one and fail it.
+    """
+    documents = _bundle_documents()
+    wanted = "mfg_trace.conf_test_repo_step_parameter"
+    assert len(documents) > 1 and wanted in documents
+
+    from dag_tools.contract_mapping import load_contract
+
+    def _names(document) -> set:
+        return set(load_contract(document).column_names)
+
+    first = next(iter(documents))
+    assert first != wanted
+    wanted_columns, first_columns = _names(documents[wanted]), _names(documents[first])
+    assert len(wanted_columns) != len(first_columns), "the two documents are indistinguishable by size"
+
+    components = _conform_tree(
+        tmp_path, monkeypatch, _MFG / "contracts" / "mfg_trace.yaml", wanted
+    )
+    defs = _load(components)
+    result = dg.materialize(list(defs.assets or []))
+    assert result.success
+    event = result.get_asset_materialization_events()[0]
+    metadata = event.step_materialization_data.materialization.metadata
+    assert metadata["contract_id"].value == wanted
+    assert metadata["contract_id"].value == wanted
+    # The plan was built from the named document: its own column count, and not
+    # the count of the document that happens to come first in the file.
+    assert metadata["columns_produced"].value == len(wanted_columns)
+    assert metadata["columns_produced"].value != len(first_columns)
+
+
+def test_a_bundle_with_no_expected_id_fails_the_load_listing_the_ids(
+    tmp_path, monkeypatch
+):
+    documents = _bundle_documents()
+    components = _conform_tree(
+        tmp_path, monkeypatch, _MFG / "contracts" / "mfg_trace.yaml", None
+    )
+    with pytest.raises(Exception) as excinfo:
+        build_component_defs(components)
+    _skip_if_the_component_file_is_refused(excinfo.value)
+    text = _chain_text(excinfo.value)
+    named = [i for i in documents if i in text]
+    assert len(named) >= 2, text
+
+
+def test_a_single_document_contract_still_checks_the_id_rather_than_selecting(
+    tmp_path, monkeypatch
+):
+    """With one document the id stays a CHECK. A file holding only the result
+    contract, asked for the step-parameter id, must be refused -- not handed
+    back as though it were the document that was named."""
+    import yaml
+
+    documents = _bundle_documents()
+    held, asked = "mfg_trace.conf_test_repo_result", "mfg_trace.conf_test_repo_step_parameter"
+    single = tmp_path / "single.yaml"
+    single.write_text(yaml.safe_dump(documents[held]), encoding="utf-8")
+    components = _conform_tree(tmp_path, monkeypatch, single, asked)
+    with pytest.raises(Exception) as excinfo:
+        build_component_defs(components)
+    _skip_if_the_component_file_is_refused(excinfo.value)
+    text = _chain_text(excinfo.value)
+    assert asked in text and held in text

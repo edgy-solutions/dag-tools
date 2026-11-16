@@ -213,7 +213,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
-rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", null_value: "a column this document declares non-nullable carries a null", wrong_type: "a value is not of the type this document declares", non_finite: "a numeric column carries a value that is not a finite number"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [part_number, serial_number, started_at], current_view: conf_test_repo_result_current}
 ---
@@ -244,7 +244,7 @@ columns:
   - {name: source_record_id, type: string, required: true, produced_since: "0.16.0", nullable: false}
   - {name: extracted_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
   - {name: loaded_at, type: timestamp, required: true, produced_since: "0.16.0", nullable: false}
-rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", orphan_reference: "result_id is not a conformed result"}
+rules: {duplicate_key: "two current rows share a grain tuple", missing_column: "a required column is absent", null_value: "a column this document declares non-nullable carries a null", wrong_type: "a value is not of the type this document declares", orphan_reference: "result_id is not a conformed result"}
 cadence: {set_by: test_repo, write: incremental_by_key}
 tags: {engine: ReplacingMergeTree(loaded_at), order_by: [result_id, step_id, parameter_index], current_view: conf_test_repo_step_parameter_current}
 ---

@@ -65,7 +65,11 @@ class ContractBlock(BaseModel):
             "Refuse a contract whose `contract_id` is not this. Worth setting "
             "with `url`, where what arrives is not under the operator's "
             "control: a service that starts serving a different contract "
-            "would otherwise silently re-point the mapping."
+            "would otherwise silently re-point the mapping. With a `path` "
+            "holding more than one document -- contracts governed together as "
+            "one file -- this also SELECTS the document, and is required: a "
+            "bundle with no id named fails the load rather than mapping "
+            "against whichever document happens to be first."
         ),
     )
 
