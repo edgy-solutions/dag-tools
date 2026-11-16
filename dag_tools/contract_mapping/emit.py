@@ -274,12 +274,33 @@ def _literal_equal(value: Any, literal: Any) -> bool:
     return value == literal
 
 
-def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
-    """Compute one output column's value from one source row."""
+def apply_column(
+    column: PlannedColumn,
+    row: Dict[str, Any],
+    run_timestamp: Optional[datetime] = None,
+) -> Any:
+    """Compute one output column's value from one source row.
+
+    `run_timestamp` is the load instant a `run_timestamp` column carries. The
+    caller supplies it; this module never reads a clock.
+    """
     where = f"column {column.name!r}"
 
     if column.transform == "constant":
         raw: Any = column.value
+    elif column.transform == "run_timestamp":
+        if run_timestamp is None:
+            raise RenderError(
+                f"{where} is produced by run_timestamp, which needs the "
+                "`run_timestamp` argument; none was given, and a clock is "
+                "never read in its place"
+            )
+        if run_timestamp.tzinfo is None or run_timestamp.utcoffset() is None:
+            raise RenderError(
+                f"{where}: `run_timestamp` is a naive datetime, which names no "
+                "instant; pass a timezone-aware one"
+            )
+        raw = run_timestamp
     else:
         for source in column.sources:
             if source not in row:
@@ -331,15 +352,23 @@ def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
 
 
 def apply_to_rows(
-    plan: MappingPlan, rows: Sequence[Dict[str, Any]]
+    plan: MappingPlan,
+    rows: Sequence[Dict[str, Any]],
+    run_timestamp: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Apply the plan to source rows, producing the contract's columns.
 
     Output column order follows the contract, not the source, so two mappings
     onto one contract produce the same shape.
+
+    `run_timestamp` is one instant for the whole call: every row of one load
+    carries the same value.
     """
     return [
-        {column.name: apply_column(column, row) for column in plan.columns}
+        {
+            column.name: apply_column(column, row, run_timestamp)
+            for column in plan.columns
+        }
         for row in rows
         if _row_kept(plan.row_filters, row)
     ]
@@ -653,6 +682,13 @@ def _sql_normalize(column: PlannedColumn) -> str:
 def _sql_transform(column: PlannedColumn) -> str:
     if column.transform == "constant":
         return _sql_literal(column.value)
+    if column.transform == "run_timestamp":
+        if not column.run_timestamp_sql:
+            raise RenderError(
+                f"column {column.name!r} is produced by run_timestamp, which "
+                "needs the mapping's `run_timestamp_sql`"
+            )
+        return column.run_timestamp_sql
     first = column.sources[0] if column.sources else ""
     if column.transform == "copy":
         return first

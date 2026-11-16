@@ -31,6 +31,7 @@ the shipped example to pin its plan hash.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,7 @@ import pytest
 import yaml
 
 from dag_tools.contract_mapping import (
+    apply_to_rows,
     MappingPlanError,
     NormalizerOp,
     build_mapping_plan,
@@ -387,6 +389,10 @@ def test_a_boolean_literal_never_equals_a_zero_or_a_one():
     assert apply_column(in_set, {"B": True}) is False
 
 
+_RUN_INSTANT = datetime(1999, 1, 1, tzinfo=timezone.utc)
+_RUN_SQL = "cast('1999-01-01 00:00:00+00' as timestamptz)"
+
+
 @pytest.mark.parametrize("name", sorted(TRANSFORMS))
 def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
     """The anti-vacuity test for the whole table: a transform added with no SQL
@@ -404,6 +410,7 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
         "nullif": {"from": "B", "value": "x"},
         "in_set": {"from": "B", "values": ["x"]},
         "normalize": {"from": "B", "rules": "n_one"},
+        "run_timestamp": {},
     }
     assert name in arguments, f"no case for transform {name!r}: add one"
     entry = ColumnMapping(transform=name, **arguments[name])
@@ -413,7 +420,14 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
     ops = [NormalizerOp(op="upper")] if name == "normalize" else []
     column = PlannedColumn(
         name="v_one",
-        contract_type="boolean" if name == "in_set" else "string",
+        contract_type=(
+            "boolean"
+            if name == "in_set"
+            else "timestamp"
+            if name == "run_timestamp"
+            else "string"
+        ),
+        run_timestamp_sql=_RUN_SQL if name == "run_timestamp" else None,
         transform=name,
         sources=list(entry.sources),
         value=entry.value,
@@ -429,7 +443,7 @@ def test_every_transform_the_table_declares_renders_on_both_routes(name: str):
     assert rendered
     if name == "scale":
         return  # a numeric source; the row route's own tests cover its values
-    row_answer = apply_column(column, {"B": "x"})
+    row_answer = apply_column(column, {"B": "x"}, _RUN_INSTANT)
 
     connection = duckdb.connect()
     connection.execute("create table t (B varchar)")
@@ -791,3 +805,124 @@ def test_an_explicit_null_values_is_refused_by_both_callers():
             load_mapping(_where_doc([flt]))
         with pytest.raises(ValueError):
             DltRowFilter.model_validate(flt)
+
+
+# --- run_timestamp -----------------------------------------------------------
+#
+# `run_timestamp` is TYPE-CHANGING (it is in `_TYPE_CHANGING_TRANSFORMS` beside
+# `constant`): a minted instant is whatever the operator's expression returns,
+# so under an enforced contract it needs a cast, same reason a null constant
+# does. The proof module is deliberately untouched: it re-renders without an
+# instant, so a plan using this transform is refused there until a later PR
+# threads one in.
+
+_RUN_DOC = {"run_timestamp_sql": _RUN_SQL}
+
+
+def _run_plan(extra=_RUN_DOC, column_type: str = "timestamp", **column: Any):
+    mapping = _mapping(None, extra=extra)
+    mapping["columns"]["v_one"] = {"transform": "run_timestamp", **column}
+    return build_mapping_plan(
+        load_contract(_contract(column_type)), load_mapping(mapping)
+    )
+
+
+def _run_error(**kwargs) -> str:
+    with pytest.raises((MappingPlanError, ValueError)) as error:
+        _run_plan(**kwargs)
+    return str(error.value)
+
+
+def test_the_instant_comes_from_the_caller_not_a_clock():
+    """Rendered with an instant in 1999: no clock read can answer that."""
+    plan = _run_plan()
+    rows = apply_to_rows(plan, [{"A": "k1"}], _RUN_INSTANT)
+    assert rows[0]["v_one"] == _RUN_INSTANT
+
+
+def test_every_row_of_one_call_carries_the_same_instant():
+    plan = _run_plan()
+    rows = apply_to_rows(plan, [{"A": f"k{i}"} for i in range(5)], _RUN_INSTANT)
+    assert len({row["v_one"] for row in rows}) == 1
+    assert rows[0]["v_one"] == _RUN_INSTANT
+
+
+def test_a_plan_that_needs_an_instant_and_is_given_none_is_refused():
+    plan = _run_plan()
+    with pytest.raises(Exception) as error:
+        apply_to_rows(plan, [{"A": "k1"}])
+    assert "run_timestamp" in str(error.value)
+
+
+def test_a_naive_instant_is_refused_because_it_names_no_instant():
+    plan = _run_plan()
+    with pytest.raises(Exception) as error:
+        apply_to_rows(plan, [{"A": "k1"}], datetime(1999, 1, 1))
+    assert "naive" in str(error.value)
+
+
+def test_the_sql_route_renders_the_operators_expression_verbatim():
+    plan = _run_plan()
+    sql = render_model_sql(plan)
+    connection = duckdb.connect()
+    connection.execute("create table t_raw (A varchar)")
+    connection.execute("insert into t_raw values ('k1'), ('k2')")
+    answers = [
+        r[1]
+        for r in connection.execute(f"select * from ({sql}) order by k_one").fetchall()
+    ]
+    assert len(answers) == 2
+    assert all(a == _RUN_INSTANT for a in answers)
+
+
+def test_a_run_timestamp_column_with_no_sql_expression_fails_the_load():
+    assert "run_timestamp_sql" in _run_error(extra={})
+
+
+def test_run_timestamp_onto_a_non_timestamp_column_fails_the_load():
+    message = _run_error(column_type="string")
+    assert "timestamp" in message and "v_one" in message
+
+
+@pytest.mark.parametrize(
+    "extra", [{"from": "B"}, {"value": "x"}, {"default": "x"}, {"factor": "2"}]
+)
+def test_run_timestamp_refuses_a_declared_source_and_every_unused_knob(extra):
+    """The message must name the knob the mapping set. Asserting only that
+    something raised would pass on a refusal for an unrelated reason, which
+    reads to an operator as the knob being rejected on its merits."""
+    knob = next(iter(extra))
+    message = _run_error(**extra)
+    assert knob in message, f"refused, but the message does not name {knob!r}: {message}"
+
+
+def test_the_plan_hash_moves_when_the_expression_is_set_and_not_when_it_is_absent():
+    """Both directions. Moves: a different expression is a different plan.
+    Absent: a mapping that carries the mapping-level field but has no
+    `run_timestamp` column hashes exactly as one without it."""
+    base = _run_plan()
+    other = _run_plan(extra={"run_timestamp_sql": "cast('2000-01-01' as timestamptz)"})
+    assert base.plan_hash != other.plan_hash
+
+    plain = build_mapping_plan(
+        load_contract(_contract("string")), load_mapping(_mapping())
+    )
+    with_field = build_mapping_plan(
+        load_contract(_contract("string")),
+        load_mapping(_mapping(extra=_RUN_DOC)),
+    )
+    assert plain.plan_hash == with_field.plan_hash
+
+
+def test_the_shipped_example_plan_hash_does_not_move():
+    example = Path(__file__).resolve().parents[1] / "examples" / "contract_mapping"
+    contract = yaml.safe_load(
+        (example / "contracts" / "ev_fixture.yaml").read_text(encoding="utf-8")
+    )
+    shipped = yaml.safe_load(
+        (
+            example / "dagster_home" / "components" / "contract_mapping" / "mapping.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    plan = build_mapping_plan(load_contract(contract), load_mapping(shipped))
+    assert plan.plan_hash == "5ad849ac21f5"

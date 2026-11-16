@@ -63,7 +63,9 @@ _NUMERIC_TYPES = ("numeric", "float")
 #: a fractional type; `concat` produces text whatever it was given; a
 #: `constant` of `null` is untyped. Under an enforced model contract each
 #: needs a cast, and the plan says so when the mapping declares none.
-_TYPE_CHANGING_TRANSFORMS = ("scale", "concat", "constant", "in_set")
+_TYPE_CHANGING_TRANSFORMS = (
+    "scale", "concat", "constant", "in_set", "run_timestamp"
+)
 
 
 #: Per-column fields derived from others that ARE hashed; never in the hash.
@@ -104,6 +106,9 @@ class PlannedColumn(BaseModel):
     default: Any = None
     values: Optional[List[Any]] = None
     assume_utc: bool = False
+    # `run_timestamp` only: the operator's SQL for the load instant. Joins the
+    # plan hash only where set, so no other mapping's hash moves.
+    run_timestamp_sql: Optional[str] = None
 
     # `normalize` only. `rules`, `part`, `ops` and `regex_templates` join the
     # plan hash only where set, so a plan with no normalize column hashes as
@@ -230,6 +235,7 @@ class MappingPlan(BaseModel):
                         for k, v in c.model_dump(mode="json").items()
                         if not (k == "assume_utc" and v is False)
                         and not (k == "values" and v is None)
+                        and not (k == "run_timestamp_sql" and v is None)
                         and k not in _DERIVED_COLUMN_FIELDS
                         and not (k in ("rules", "part") and v is None)
                         and not (k in ("ops", "regex_templates") and not v)
@@ -622,6 +628,20 @@ def build_mapping_plan(
                 "timestamp, and a knob that says nothing must not look wired up"
             )
 
+        if entry.transform == "run_timestamp":
+            if column.type != "timestamp":
+                problems.append(
+                    f"{column.name!r} is produced by run_timestamp but the contract "
+                    f"declares it {column.type!r}; the transform mints an instant "
+                    "and is only meaningful on a timestamp"
+                )
+            if not mapping.run_timestamp_sql:
+                problems.append(
+                    f"{column.name!r} is produced by run_timestamp but the mapping "
+                    "declares no `run_timestamp_sql`; the SQL route would have "
+                    "nothing to render, and this library names no dialect"
+                )
+
         if entry.transform == "in_set" and column.type != "boolean":
             problems.append(
                 f"{column.name!r} is produced by in_set but the contract "
@@ -677,6 +697,11 @@ def build_mapping_plan(
                 default=entry.default,
                 values=entry.values,
                 assume_utc=entry.assume_utc,
+                run_timestamp_sql=(
+                    mapping.run_timestamp_sql
+                    if entry.transform == "run_timestamp"
+                    else None
+                ),
                 required=column.required,
                 unit=column.unit,
                 description=entry.description,

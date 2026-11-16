@@ -43,6 +43,7 @@ TRANSFORMS: Dict[str, Dict[str, Any]] = {
     "nullif": {"sources": 1, "requires": ("value",)},
     "in_set": {"sources": 1, "requires": ("values",)},
     "normalize": {"sources": 1, "requires": ("rules",)},
+    "run_timestamp": {"sources": 0, "requires": ()},
 }
 
 
@@ -276,6 +277,19 @@ class ColumnMapping(BaseModel):
                         "only means something on `normalize`, and a knob that "
                         "says nothing must not look wired up"
                     )
+        if self.transform == "run_timestamp":
+            for knob in ("value", "factor", "default", "values"):
+                if getattr(self, knob) is not None:
+                    raise ValueError(
+                        f"`{knob}` is set on transform 'run_timestamp'; the instant "
+                        "comes from the caller, so the knob says nothing and must "
+                        "not look wired up"
+                    )
+            if self.separator or self.assume_utc:
+                raise ValueError(
+                    "`separator` / `assume_utc` are set on transform "
+                    "'run_timestamp'; neither means anything there"
+                )
         if self.transform == "in_set":
             _check_literals(
                 self.values or [], "transform 'in_set'", many=True
@@ -439,6 +453,15 @@ class Mapping(BaseModel):
             "spells them. Operator-declared, like `cast_templates`, because "
             "this library names no dialect. Needed only by a normalizer "
             "using a regex op."
+        ),
+    )
+    run_timestamp_sql: Optional[str] = Field(
+        default=None,
+        description=(
+            "SQL for the load instant, used verbatim by every `run_timestamp` "
+            "column. Operator-declared, like `cast_templates`, because this "
+            "library names no dialect. Required by a mapping that uses the "
+            "transform: the SQL route has nothing safe to render without it."
         ),
     )
     non_finite_predicate: Optional[str] = Field(
