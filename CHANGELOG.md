@@ -10,7 +10,7 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.16.0 — 2026-11-16
 
 ### Added
 
@@ -129,6 +129,36 @@ it back are named.
 
 ### Changed
 
+- **BREAKING (default removed): `filters.terminal_statuses` is now required on the
+  `systemlink_test_monitor` source kind, and the library ships no default for it.** It was
+  `["PASSED", "FAILED", "ERRORED", "TERMINATED", "TIMED_OUT", "DONE"]` in
+  `dag_tools/systemlink/spec.py`, which made one server's vocabulary every deployment's answer to
+  the question that decides when a result is complete and its steps are fetched. A server that
+  spells any of those differently was reading as a clean extraction that silently collected no
+  step. The `filters:` block is therefore required too, since it carries the field; the refusal
+  names `terminal_statuses` rather than leaving an operator to find out which field inside the
+  block has no default.
+
+  An **empty** list gets its own refusal, because it satisfies a required-field check and means
+  nothing is ever terminal: no step would ever be fetched, every result would be re-read on every
+  run, and nothing would report any of it.
+
+  `filters.failed_statuses` keeps its list but is now required where it is actually read — under
+  `filters.step_detail_for: failed_only`, non-empty. Requiring it unconditionally would force
+  every operator to write a list nothing reads.
+
+  To get the old behaviour back, state the old default in your YAML:
+
+  ```yaml
+  filters:
+    terminal_statuses: [PASSED, FAILED, ERRORED, TERMINATED, TIMED_OUT, DONE]
+  ```
+
+  Read it off your own server first; it is a sample, not a recommendation. Nothing in this
+  repository was deployed on the default. `examples/mfg_trace/systemlink/component.yaml` carries
+  the sample list, and `examples/mfg_trace/README.md` no longer claims the library holds one. No
+  signature or export changed.
+
 - **`coalesce` now counts ARGUMENTS, not source columns, so one source plus a declared `default`
   is accepted.** Such a mapping was refused by the arity table while **both** routes already
   implemented it and agreed on it — the row route falls back to the column's `default` when every
@@ -183,6 +213,82 @@ it back are named.
   load. A contract whose scope column is genuinely called `none` can no longer say so.
 
 ### Fixed
+
+- **`<prefix>ingest_runs.error_digest` on the SystemLink kind digested the wrong exception, so two
+  runs of one identical failure never matched.** The wrapper digested `str(failure)` — the
+  exception dlt hands over, whose message embeds a per-run load id — so the column was different
+  on every run and could not do the one job it exists for: letting two rows recording the same
+  failure be recognised as the same failure. The shared `ingest_runs.error_digest` had already
+  been corrected for this; the SystemLink wrapper kept a local copy of the old form.
+
+  It now digests the exception the row **names**. `error_type` here deliberately reports the
+  engine's own error from the cause chain rather than the innermost one, so the two are derived
+  from one function (`_recorded_error`); deriving them separately is how a row ends up describing
+  two different exceptions. New helper `ingest_runs.message_digest(exc)` digests one chosen
+  exception — additive, and `error_digest(failure)` is unchanged, now expressed through it.
+
+  **Boundary, deliberately accepted:** digests written before this release are not comparable
+  with digests written after it, for the same failure. The table is young and no deployment is
+  grouping on this column yet; the alternative was keeping a column that could never match.
+
+- **A Restate retry of a failed database login no longer locks the account out.**
+  `ctx.run` retries whatever raises, and a failed login is not a free operation: every
+  attempt spends one of the account's failed-login attempts, so an unbounded retry of a
+  wrong password is itself what locks the account — and the lockout then takes down every
+  other consumer of that account, including the ones whose password was right all along.
+  Oracle's `FAILED_LOGIN_ATTEMPTS` defaults to 10, and sites that have tightened it are
+  common.
+
+  New module `dag_tools/restate_handlers/db_retry.py`, applied at the five `ctx.run` steps
+  that open a database connection: `oracle_ack.mark_as_processed`,
+  `oracle_control.write_mei_request` and `.signal_load_complete`, `api_sync.process_record`
+  and `sap_induction`'s local-database update. The HTTP steps beside them are untouched —
+  they connect to nothing and retrying them costs nothing but time.
+
+  Two mechanisms, both needed. **Classification** makes a recognised failure terminal on its
+  *first* attempt, so a wrong password causes one login attempt rather than a loop. **A retry
+  bound** (`max_attempts=3`, under the default threshold with room to spare) is the backstop
+  a code list cannot be: an authentication error nothing recognises would still loop forever
+  without it. The classifier reads `str(exc)` and so imports no driver — `oracledb` and
+  `pyodbc` both put the vendor's code in the exception text, and SQLAlchemy repeats it
+  because it wraps and quotes the DBAPI error.
+
+  **Changed behaviour at the call site:** a classified failure now surfaces as
+  `restate.TerminalError` rather than the driver's own exception, because that is what stops
+  Restate retrying. Its message carries the code and a fixed sentence and **nothing** out of
+  `str(exc)` — a connection error quotes the connect identifier and sometimes the account
+  name, and a `TerminalError`'s message travels into the Restate journal and back to the
+  caller. The original is kept as `__cause__`, where the worker's log already had it. A
+  failure the classifier does not recognise is re-raised unchanged and merely bounded.
+
+  Absent credentials are terminal too, and the new `db_retry.MissingCredentials` replaces the
+  bare `ValueError` the handlers raised for them. It is a **`ValueError` subclass**, so
+  anything catching `ValueError` keeps working. The reason it is terminal is the same reason
+  the `_connect` docstring needed correcting: that docstring claimed reading the environment
+  per call meant "a rotated secret should take effect on the next invocation, not the next
+  pod restart", which is not true of a secret delivered as an environment variable —
+  `os.environ` is populated once, when the process starts. That is how a worker ends up still
+  presenting the old password while the rest of the deployment has the new one, and then
+  retrying it until the account locks. A secret that really updates in place has to arrive as
+  a *mounted file* and be read from that file.
+
+  Tunable without a release: `DAGTOOLS_DB_MAX_ATTEMPTS` and `DAGTOOLS_DB_MAX_RETRY_SECONDS`.
+  A value of zero, a negative number or anything unreadable falls back to the default rather
+  than removing the bound — unbounded is the state this change exists to leave.
+
+- **`oracle_control.build_request_rows` de-duplicates on the whole row, not on the
+  identifier.** **This changes a default.** Two rows sharing an identifier — the same item at
+  two versions — were collapsed to one, and the collapse was silent: no error, no warning and
+  no count, so the first place the loss could be noticed was in the output. Two such rows are
+  two different requests, and dropping the second is not a saving but a wrong answer. The
+  comparison is now over the whole row, and it runs *after* the rows are squared up to a
+  common column set, so a row that merely omits a column the others carry is compared as the
+  row it becomes rather than as a distinct one.
+
+  Uniform input is unaffected: an exact repeat still collapses, which is the saving the old
+  behaviour was reaching for. The old behaviour is not restorable by configuration and
+  deliberately so — a caller that wants one row per identifier should pick which one it wants
+  before calling, rather than have the library drop whichever happened to arrive second.
 
 - **A `duckdb:///absolute/path` dev destination resolves to an absolute path again.**
   `dag_tools.dlt_dev`'s `--destination` resolution stripped every leading slash, so on

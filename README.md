@@ -817,8 +817,16 @@ asset checks on the last. The schedule targets `<name>_incremental`; the backfil
 `api_key_env` names an environment variable; the key is never written anywhere. `operator`
 is required: `pseudonym` (needs `pseudonym_key_env`), `name` or `drop`. `table_prefix` is
 required. Values the server decides are settings with conservative defaults; a deployment that
-has measured its own server sets the measured value in its YAML. Runnable
-example: [`examples/mfg_trace/systemlink`](examples/mfg_trace/systemlink).
+has measured its own server sets the measured value in its YAML.
+
+`filters.terminal_statuses` is **required and has no default**, because which statuses a server
+calls terminal is that server's vocabulary rather than this library's, and it is the setting that
+decides when a result is complete and its steps are fetched. An empty list is refused in its own
+words: it would satisfy a required-field check while meaning nothing is ever terminal, so no step
+would ever be fetched, every result would be re-read on every run, and the extraction would report
+none of it. `filters.failed_statuses` is required exactly where it is read — under
+`filters.step_detail_for: failed_only`. Runnable example, with a sample list:
+[`examples/mfg_trace/systemlink`](examples/mfg_trace/systemlink).
 
 ### 18. Curated slice for manufacturing test data (shipped dbt package)
 

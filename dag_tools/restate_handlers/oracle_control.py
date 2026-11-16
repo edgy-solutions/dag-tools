@@ -29,6 +29,8 @@ from typing import Any, Dict, List, Optional
 import oracledb
 import restate
 
+from . import db_retry
+
 service = restate.Service(name="GenericOracleControlService")
 
 # Oracle rejects an IN list / bulk bind beyond 1000 entries, and the ack
@@ -40,15 +42,29 @@ CHUNK_SIZE = 1000
 def _connect():
     """Open an Oracle connection from environment credentials.
 
-    Deliberately re-read per call rather than cached at import: the worker
-    hosts several services and a rotated secret should take effect on the
-    next invocation, not the next pod restart.
+    Read per call rather than cached at import, because the worker hosts
+    several services and the value should not be frozen in one of them.
+
+    What that does NOT buy, and an earlier version of this docstring
+    claimed it did: a rotated secret taking effect on the next
+    invocation. ``os.environ`` is populated from the container's
+    environment when the process starts, so a secret delivered as an
+    environment variable is a snapshot and only a restart replaces it --
+    which is how a worker ends up still presenting the old password while
+    everything else in the deployment has the new one, and then retrying
+    it until the account locks. A secret that really does update in place
+    has to arrive as a *mounted file* and be read from that file here.
+
+    So a credential this process cannot see now is one it will not see
+    later either, and :class:`db_retry.MissingCredentials` says so to
+    ``ctx.run``: it is a ``ValueError`` subclass, so nothing that caught
+    the old error stops catching this one.
     """
     dsn = os.environ.get("ORACLE_DSN")
     user = os.environ.get("ORACLE_USER")
     password = os.environ.get("ORACLE_PASSWORD")
     if not all([dsn, user, password]):
-        raise ValueError(
+        raise db_retry.MissingCredentials(
             "Missing Oracle connection credentials in environment variables "
             "(ORACLE_DSN, ORACLE_USER, ORACLE_PASSWORD)."
         )
@@ -89,14 +105,25 @@ def build_request_rows(
     missing a column another row has would bind the wrong parameters.
     Missing values become None rather than being dropped.
 
-    De-duplicated on the key when there is one -- a repeated identifier is
-    at best wasted work downstream.
+    De-duplicated on the WHOLE ROW, never on the identifier alone. An
+    identical row really is wasted work, so collapsing it is right; two
+    rows that share an identifier and differ anywhere else are two
+    different requests, and dropping the second one is not a saving but a
+    silent wrong answer -- the request table would carry one of the two
+    and the load downstream would read as a correct extraction of it.
+
+    That it was silent is what made it worth fixing rather than
+    documenting: there was no error, no warning and no count, so the
+    first place the loss could be noticed was in the output.
+
+    Uniform input is unaffected. Bare values under one set of defaults
+    and constants produce identical rows, which collapse exactly as they
+    did before.
     """
     constants = constants or {}
     defaults = defaults or {}
 
     rows: List[Dict[str, Any]] = []
-    seen = set()
     for value in values:
         if isinstance(value, dict):
             row = {**defaults, **value, **constants}
@@ -116,9 +143,6 @@ def build_request_rows(
                     f"entry {value!r} has no value for key_column "
                     f"{key_column!r}."
                 )
-            if key in seen:
-                continue
-            seen.add(key)
         rows.append(row)
 
     if not rows:
@@ -127,7 +151,28 @@ def build_request_rows(
     # One column set across the batch, ordered deterministically so the
     # generated INSERT is stable run to run.
     all_columns = sorted({c for row in rows for c in row})
-    return [{c: row.get(c) for c in all_columns} for row in rows]
+    normalised = [{c: row.get(c) for c in all_columns} for row in rows]
+
+    # De-duplicate here rather than above, on the normalised row: the
+    # comparison has to be over the column set the batch is actually
+    # bound with, or a row that merely omits a column its neighbour
+    # carries would compare unequal to the row it becomes.
+    deduplicated: List[Dict[str, Any]] = []
+    seen = set()
+    for row in normalised:
+        try:
+            fingerprint = tuple(row[c] for c in all_columns)
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+        except TypeError:
+            # An unhashable value cannot be compared this way. Keeping
+            # the row is the only safe direction: a duplicate that
+            # survives is wasted work, and a distinct row that does not
+            # is the silent loss this function stopped doing.
+            pass
+        deduplicated.append(row)
+    return deduplicated
 
 
 @service.handler()
@@ -178,7 +223,13 @@ async def write_mei_request(ctx: restate.Context, payload: dict):
             connection.commit()
         return len(rows)
 
-    return {"rows_written": await ctx.run("write_mei_request", _write)}
+    return {
+        "rows_written": await ctx.run(
+            "write_mei_request",
+            db_retry.terminal_on_damage(_write),
+            **db_retry.run_options(),
+        )
+    }
 
 
 @service.handler()
@@ -233,5 +284,9 @@ async def signal_load_complete(ctx: restate.Context, payload: dict):
                 )
             connection.commit()
 
-    await ctx.run("signal_load_complete", _write)
+    await ctx.run(
+        "signal_load_complete",
+        db_retry.terminal_on_damage(_write),
+        **db_retry.run_options(),
+    )
     return {"status_written": status_value}

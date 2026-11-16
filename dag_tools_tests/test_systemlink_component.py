@@ -140,6 +140,20 @@ def test_a_bad_source_config_fails_the_load_not_the_run(tmp_path, monkeypatch, d
         load_example(tmp_path, monkeypatch, source_overrides={"limits": {"step_filter": "like"}})
 
 
+def test_an_absent_filters_block_fails_the_LOAD_naming_terminal_statuses(tmp_path, monkeypatch, dlt_home):
+    with pytest.raises(Exception) as ei:
+        load_example(tmp_path, monkeypatch, source_drops=("filters",))
+    assert "terminal_statuses" in chain(ei.value)
+
+
+def test_an_empty_terminal_statuses_fails_the_LOAD_too(tmp_path, monkeypatch, dlt_home):
+    # The dangerous one: it satisfies a required-field check, and a run under it collects no step
+    # and reports nothing wrong. It has to be refused where the operator is still looking.
+    with pytest.raises(Exception) as ei:
+        load_example(tmp_path, monkeypatch, source_overrides={"filters": {"terminal_statuses": []}})
+    assert "no result would ever be classified terminal" in chain(ei.value)
+
+
 def test_the_seed_file_is_read_relative_to_the_component_not_the_working_dir(tmp_path, monkeypatch, dlt_home):
     rows, steps = world()
     with FakeSystemLink(rows, steps) as fake:
@@ -318,6 +332,57 @@ def test_a_refused_key_fails_the_run_and_is_recorded_without_the_key(tmp_path, m
         (row,) = table(tmp_path, "sl_ingest_runs", "status,error_type,auth_failed")
         assert row == ("FAILED", "AuthFailed", 1)
         assert TEST_KEY not in all_text(tmp_path)
+
+
+def _ingest_row_for(failure):
+    from types import SimpleNamespace
+
+    from dag_tools.asset_wrappers.sources.systemlink import SystemLinkKind
+
+    events = SimpleNamespace(summary=lambda: {}, requests=0, max_step_batch_sent=0)
+    return SystemLinkKind()._ingest_row(
+        SimpleNamespace(run_id="r"), SimpleNamespace(source_id="s"), None, events,
+        "incremental", "2026-11-16T00:00:00Z", failure,
+    )
+
+
+def test_two_runs_of_one_failure_carry_the_SAME_digest():
+    # The digest exists so two rows recording one failure can be recognised as the same failure.
+    # Digesting the exception dlt hands over defeats exactly that: its message carries a per-run
+    # load id, so the column was different every run and could never match anything.
+    from dag_tools.systemlink.client import AuthFailed
+
+    def wrapped(load_id):
+        root = AuthFailed("/results: HTTP 401; the API key was refused")
+        try:
+            raise RuntimeError(f"extract failed in load package {load_id}") from root
+        except RuntimeError as exc:
+            return exc
+
+    one, two = _ingest_row_for(wrapped("1731")), _ingest_row_for(wrapped("9042"))
+    assert one["error_digest"] == two["error_digest"]
+    assert one["error_type"] == two["error_type"] == "AuthFailed"
+
+
+def test_the_digest_is_of_the_error_the_row_NAMES():
+    # error_type names the engine's own error rather than the innermost one, so the digest has to
+    # be of that same exception or the two columns describe two different exceptions.
+    from dag_tools.asset_wrappers.ingest_runs import message_digest
+    from dag_tools.systemlink.client import AuthFailed
+
+    named = AuthFailed("/results: HTTP 401; the API key was refused")
+    try:
+        try:
+            raise OSError("connection reset")
+        except OSError:
+            raise named from None
+    except AuthFailed as exc:
+        try:
+            raise RuntimeError("extract failed in load package 1731") from exc
+        except RuntimeError as wrapper:
+            row = _ingest_row_for(wrapper)
+    assert row["error_type"] == "AuthFailed"
+    assert row["error_digest"] == message_digest(named)
 
 
 def test_a_missing_key_variable_fails_the_run_naming_the_variable(tmp_path, monkeypatch, dlt_home):

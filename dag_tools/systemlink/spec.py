@@ -68,11 +68,35 @@ class SeedSpec(_Strict):
 
 
 class FiltersSpec(_Strict):
-    terminal_statuses: List[str] = ["PASSED", "FAILED", "ERRORED", "TERMINATED", "TIMED_OUT", "DONE"]
+    # required: which statuses a server calls terminal is that server's vocabulary, and a default
+    # here would be every deployment's answer to a question only one of them measured. An EMPTY
+    # list is refused on its own, because it satisfies a required-field check and means nothing is
+    # ever terminal -- see _stated.
+    terminal_statuses: List[str]
     step_detail_for: Literal["all_terminal", "failed_only"] = "all_terminal"
-    failed_statuses: List[str] = ["FAILED", "ERRORED", "TERMINATED", "TIMED_OUT"]
+    # read only under step_detail_for 'failed_only', so it is required exactly there rather than
+    # unconditionally: demanding a list that nothing reads teaches an operator to write one and
+    # stop meaning it.
+    failed_statuses: List[str] = []
     program_include: List[str] = []
     program_exclude: List[str] = []
+
+    @model_validator(mode="after")
+    def _stated(self):
+        if not self.terminal_statuses:
+            raise ValueError(
+                "filters.terminal_statuses is empty: no result would ever be classified terminal, "
+                "so no steps would ever be fetched and every result would be re-read on every run "
+                "-- and the extraction would report none of it. List the statuses this server "
+                "calls terminal."
+            )
+        if self.step_detail_for == "failed_only" and not self.failed_statuses:
+            raise ValueError(
+                "filters.step_detail_for 'failed_only' requires a non-empty "
+                "filters.failed_statuses: with none, no result would qualify for steps and the "
+                "run would look like a clean extraction that collected no step at all."
+            )
+        return self
 
 
 class LimitsSpec(_Strict):
@@ -127,13 +151,25 @@ class SystemLinkConfig(_Strict):
     source_id: str = Field(min_length=1)
     connection: ConnectionSpec
     seed: SeedSpec
-    filters: FiltersSpec = FiltersSpec()
+    filters: FiltersSpec  # required: it carries terminal_statuses, which has no default
     limits: LimitsSpec = LimitsSpec()
     incremental: IncrementalSpec = IncrementalSpec()
     steps_key: List[str] = Field(default_factory=lambda: list(DEFAULTS["steps_key"]))
     keep_json_columns: List[str] = ["properties", "keywords", "inputs", "outputs"]
     operator: OperatorSpec  # required: where a person's name goes is always a stated decision
     products: ProductsSpec = ProductsSpec()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _filters_are_stated(cls, data):
+        # Pydantic would say only "filters: Field required", which sends an operator to the docs to
+        # find out which field inside it has no default. Name it here instead.
+        if isinstance(data, dict) and "filters" not in data:
+            raise ValueError(
+                "filters is required: filters.terminal_statuses has no default in this library, "
+                "because which statuses a server calls terminal is that server's vocabulary."
+            )
+        return data
 
     @model_validator(mode="after")
     def _steps_key_allowed(self):

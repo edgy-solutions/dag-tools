@@ -3,6 +3,8 @@ import httpx
 import oracledb
 import restate
 
+from . import db_retry
+
 service = restate.Service(name="GenericApiSyncService")
 
 @service.handler()
@@ -50,7 +52,12 @@ async def process_record(ctx: restate.Context, payload: dict):
         
         dsn = os.environ.get("SQLSERVER_DSN")
         if not dsn:
-            raise ValueError("Missing SQLSERVER_DSN connection credentials in environment variables.")
+            # A ValueError subclass, and terminal: the container's
+            # environment is a snapshot taken at process start, so a
+            # variable absent now stays absent for the life of the pod.
+            raise db_retry.MissingCredentials(
+                "Missing SQLSERVER_DSN connection credentials in environment variables."
+            )
 
         with pyodbc.connect(dsn) as connection:
             with connection.cursor() as cursor:
@@ -58,7 +65,14 @@ async def process_record(ctx: restate.Context, payload: dict):
                 cursor.execute(sql, api_id, pk_value)
             connection.commit()
 
-    await ctx.run("update_sqlserver", _execute_sqlserver_ack)
+    # Bounded, and terminal on the first failure for the errors where
+    # retrying is what does the damage. See
+    # dag_tools.restate_handlers.db_retry.
+    await ctx.run(
+        "update_sqlserver",
+        db_retry.terminal_on_damage(_execute_sqlserver_ack),
+        **db_retry.run_options(),
+    )
     
     # Step 3: Embed durability correlation back natively to Restate KV
     ctx.set(f"last_sync_{pk_value}", api_id)

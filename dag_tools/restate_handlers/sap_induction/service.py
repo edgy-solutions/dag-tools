@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 import restate
 import httpx
+from .. import db_retry
 from .config import DatabaseConfig, SapInductionSettings
 from .sap_client import SapODataClient
 from .db_client import SapDbClient
@@ -93,7 +94,15 @@ async def execute_induction(ctx: restate.Context, record: Dict[str, Any]) -> Dic
                 retry_count=retry_count
             )
         
-        await ctx.run(f"local-db-update-{status.lower()}", _exec_local_update)
+        # Bounded, and terminal on the first failure for the errors where
+        # retrying is what does the damage. SQLAlchemy repeats the DBAPI
+        # error's text, so the classifier reads the vendor's code through
+        # the wrapper. See dag_tools.restate_handlers.db_retry.
+        await ctx.run(
+            f"local-db-update-{status.lower()}",
+            db_retry.terminal_on_damage(_exec_local_update),
+            **db_retry.run_options(),
+        )
 
     # Step 1: Resolve Part Number to SAP Material Number
     async def resolve_material():

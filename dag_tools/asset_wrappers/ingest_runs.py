@@ -53,6 +53,16 @@ def root_error_name(failure: BaseException) -> str:
     return type(root_error(failure)).__name__
 
 
+def message_digest(exc: BaseException) -> str:
+    """Digest ONE exception's message, for a caller that has already chosen the exception.
+
+    ``error_digest`` chooses the innermost error; a caller whose ``error_type``
+    column names a different error in the chain must digest *that* one, or the
+    two columns describe two exceptions. This is the seam that lets it.
+    """
+    return hashlib.sha256(str(exc).encode()).hexdigest()[:12]
+
+
 def error_digest(failure: BaseException) -> str:
     """A digest of the ROOT error's message, which is the only stable thing to digest.
 
@@ -64,7 +74,7 @@ def error_digest(failure: BaseException) -> str:
     message is stable across runs, and it is also the error `error_type` already
     names, so the two columns describe one exception rather than two.
     """
-    return hashlib.sha256(str(root_error(failure)).encode()).hexdigest()[:12]
+    return message_digest(root_error(failure))
 
 
 def _row_counts(pipeline: Any) -> Dict[str, int]:

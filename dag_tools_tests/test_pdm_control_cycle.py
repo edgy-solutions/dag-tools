@@ -58,9 +58,18 @@ CONTROL = ControlTableSpec(
 
 
 class FakeContext:
-    """Minimal restate.Context double: runs side-effects inline."""
+    """Minimal restate.Context double: runs side-effects inline.
 
-    async def run(self, name, fn):
+    Records the retry options each step was given, so a test can assert
+    the bound is present without modelling retry; the retry *behaviour*
+    is modelled separately in ``test_restate_db_retry.py``.
+    """
+
+    def __init__(self):
+        self.run_options = {}
+
+    async def run(self, name, fn, **options):
+        self.run_options[name] = options
         return fn()
 
 
@@ -535,7 +544,16 @@ def test_mixed_scalars_and_mappings_are_accepted():
     assert [r["K"] for r in rows] == ["A", "B"]
 
 
-def test_duplicate_keys_collapse():
+def test_identical_rows_collapse():
+    """Named for what it tests, which is not what it used to test.
+
+    These rows are identical, so they collapse under de-duplication on
+    the whole row just as they did under de-duplication on the key. A
+    name saying "duplicate keys" would now describe the behaviour that
+    was removed, and the pair of rows here cannot tell the two apart --
+    ``test_two_versions_of_one_identifier_both_survive`` is the one that
+    can.
+    """
     rows = build_request_rows([{"K": "A"}, {"K": "A"}, {"K": "B"}], key_column="K")
     assert len(rows) == 2
 
@@ -583,3 +601,84 @@ def test_the_legacy_payload_shape_still_works(db):
     assert db.execute(
         "SELECT MEI_NUMBER, REQUESTED_BY FROM PDM_MEI_REQUEST"
     ).fetchone() == ("M-1", "legacy")
+
+
+def test_two_versions_of_one_identifier_both_survive():
+    """The reported loss: de-duplication was on the identifier alone.
+
+    Two rows sharing an identifier are two different requests, and
+    dropping the second is not a saving but a silent wrong answer --
+    there was no error, no warning and no count, so the first place the
+    loss could be noticed was in the output.
+    """
+    rows = build_request_rows(
+        [{"K": "A", "V": "1"}, {"K": "A", "V": "2"}],
+        key_column="K",
+    )
+    assert rows == [{"K": "A", "V": "1"}, {"K": "A", "V": "2"}]
+
+
+def test_an_exact_repeat_still_collapses():
+    """Uniform input is unaffected, which is what keeps this compatible.
+
+    An identical row really is wasted work downstream, so the saving the
+    old behaviour was reaching for is kept.
+    """
+    rows = build_request_rows(
+        [{"K": "A", "V": "1"}, {"K": "A", "V": "1"}],
+        key_column="K",
+    )
+    assert rows == [{"K": "A", "V": "1"}]
+
+
+def test_a_row_that_omits_a_column_is_compared_after_normalisation():
+    """Why the de-duplication runs after the columns are squared up.
+
+    A row that merely leaves out a column the others carry becomes a row
+    with that column set to null. Compared before that, it would look
+    distinct from the row it is about to become, and both copies would
+    be written.
+    """
+    rows = build_request_rows(
+        [{"K": "A"}, {"K": "A", "V": None}],
+        key_column="K",
+    )
+    assert rows == [{"K": "A", "V": None}]
+
+
+def test_de_duplication_does_not_reorder():
+    """Order comes from the caller and must survive the pass."""
+    rows = build_request_rows(
+        [{"K": "B", "V": "1"}, {"K": "A", "V": "1"}, {"K": "B", "V": "1"}],
+        key_column="K",
+    )
+    assert [r["K"] for r in rows] == ["B", "A"]
+
+
+def test_an_unhashable_value_keeps_the_row():
+    """The safe direction when two rows cannot be compared this way.
+
+    A duplicate that survives is wasted work; a distinct row that does
+    not survive is the silent loss this function stopped doing.
+    """
+    rows = build_request_rows(
+        [{"K": "A", "V": ["x"]}, {"K": "A", "V": ["x"]}],
+        key_column="K",
+    )
+    assert len(rows) == 2
+
+
+def test_the_handler_writes_both_versions_of_one_identifier(db):
+    """End to end, through the real handler and a real table."""
+    result = _run(oracle_control.write_mei_request, {
+        "table_name": "PDM_MEI_REQUEST",
+        "key_column": "MEI_NUMBER",
+        "mei_values": [
+            {"MEI_NUMBER": "M-1", "REQUESTED_BY": "first"},
+            {"MEI_NUMBER": "M-1", "REQUESTED_BY": "second"},
+        ],
+    }, db)
+    assert result == {"rows_written": 2}
+    assert db.execute(
+        "SELECT REQUESTED_BY FROM PDM_MEI_REQUEST ORDER BY REQUESTED_BY"
+    ).fetchall() == [("first",), ("second",)]
