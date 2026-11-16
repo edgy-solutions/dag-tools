@@ -92,12 +92,39 @@ def _set_oracle_env(monkeypatch):
 
 
 def test_mark_as_processed_rejects_missing_payload_fields(monkeypatch):
+    """A payload the handler cannot act on is refused INSIDE the step.
+
+    The raised type changed deliberately, and for the same reason as the
+    credentials test below: the refusal now happens inside the wrapped
+    step, so the ``MalformedPayload`` the closure raises arrives at the
+    caller as a ``restate.TerminalError``. That is the whole point of
+    the move. Raised before the step, as this handler used to, a plain
+    ``ValueError`` left every bound behind -- the *invocation* failed,
+    and Restate retries an invocation that failed on a non-terminal
+    error with no ``max_attempts`` anywhere, so a payload with a field
+    missing was retried with backoff for the life of the worker.
+
+    Backwards compatibility (AGENTS §6) is in what the closure raises:
+    ``MalformedPayload`` is a ``ValueError`` subclass, so anything that
+    caught the old error still catches this one.
+
+    The message is asserted to name the fields and no value -- see
+    ``test_restate_payload_refusal.py`` for the rest of the seal.
+    """
+    import restate
+
     _set_oracle_env(monkeypatch)
-    with pytest.raises(ValueError, match="Missing required payload"):
+    with pytest.raises(restate.TerminalError, match="payload cannot be acted on") as caught:
         asyncio.run(oracle_ack.mark_as_processed(
             FakeContext(),
             {"table_name": "PDM_STAGING"},
         ))
+
+    message = str(caught.value)
+    assert "pk_column" in message
+    assert "record_ids" in message
+    assert "PDM_STAGING" not in message
+    assert issubclass(oracle_ack.db_retry.MalformedPayload, ValueError)
 
 
 def test_mark_as_processed_rejects_missing_oracle_credentials(monkeypatch):

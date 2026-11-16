@@ -286,7 +286,7 @@ def test_s3_backend_advertises_a_delta_ticket():
     )
     ticket = iom.physical_coordinates(["sales", "orders"])
     assert ticket["source_type"] == "s3_delta"
-    # ADR-0044: coordinates, not the credential this manager writes with.
+    # invincible-agent ADR-0044: coordinates, not the credential this manager writes with.
     # Previously asserted `credentials["aws_access_key_id"] == "key"`.
     assert "credentials" not in ticket
     assert ticket["mode"] == "mint-sts"

@@ -1,6 +1,6 @@
 """Read-only audits of what the pipelines actually touch.
 
-Step 1 of the classification build (ADR-0064): before any object is labelled,
+Step 1 of the classification build (invincible-agent ADR-0064): before any object is labelled,
 measure which assets read which objects, and how many objects nothing
 explains. The report is the scope number the rest of the build is sized
 against.

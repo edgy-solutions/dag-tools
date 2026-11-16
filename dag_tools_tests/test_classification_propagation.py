@@ -1,6 +1,6 @@
 """`ClassificationPropagationComponent` -- what a derived column publishes.
 
-ADR-0064 steps 4b and 4c as a deployment meets them: the sensor the YAML
+invincible-agent ADR-0064 steps 4b and 4c as a deployment meets them: the sensor the YAML
 builds, the label set it reads back out of its sources' own materializations,
 and the two patches the catalog is told. The composition rules themselves are
 next door in `test_warehouse_source_propagation.py`, against the pure engine;

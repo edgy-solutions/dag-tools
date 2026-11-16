@@ -98,7 +98,7 @@ def test_one_hook_produces_a_complete_ticket():
 
 
 def test_the_mixin_offers_no_way_to_supply_credentials():
-    """Structural, not documentary — ADR-0044 says the broker mints."""
+    """Structural, not documentary — invincible-agent ADR-0044 says the broker mints."""
     ticket = ForeignArrowManager().physical_coordinates(["a", "b"])
     assert "credentials" not in ticket
     assert not any("credential" in h for h in dir(MeshPublishable))

@@ -1,6 +1,10 @@
 """Declarative component: a contract, a source, and the model between them.
 
-ADR-0066 item 1. One asset per component instance. It loads the contract and
+Item 1 of the architect's 2026-11-05 brief. That brief allocated a
+provisional ADR-0066 to this work; no record ever allocated the number, so
+it is not a citation -- see `docs/rulings.md`.
+
+One asset per component instance. It loads the contract and
 the mapping, reconciles them through the pure engine in
 `dag_tools.contract_mapping`, renders the dbt model and the contract tests,
 and writes them into a dbt project -- or, in a dry run, writes nothing and

@@ -188,7 +188,7 @@ def test_advertised_uri_marks_the_directory_with_a_trailing_slash():
 
 
 def test_advertised_ticket_shape_is_client_readable():
-    """ADR-0044 — coordinates the BROKER can mint against, not credentials.
+    """invincible-agent ADR-0044 — coordinates the BROKER can mint against, not credentials.
 
     This test used to assert `creds["aws_access_key_id"] == "key"` — that the
     IO manager advertised the very key it writes with. It passed for as long

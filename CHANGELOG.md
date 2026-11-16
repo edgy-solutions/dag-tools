@@ -10,6 +10,72 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## 0.16.1 — 2026-11-16
+
+### Fixed
+
+- **`GenericOracleAckService` no longer retries a malformed payload for the life of the worker.**
+  The handler read its payload and raised a plain `ValueError` *before* `ctx.run`, so the retry
+  bound added in 0.16.0 never applied to it: the bound bounds the step, and out at the handler
+  Restate retries an invocation that failed on a non-terminal error with no `max_attempts`
+  anywhere. A payload with `table_name`, `pk_column` or `record_ids` missing was retried with
+  backoff indefinitely, and the journal never said what was wrong. Nothing was damaged, which is
+  why it went unnoticed — the invocation simply never ended.
+
+  Payload reading now happens inside the bounded step, and a payload that cannot be acted on is
+  `restate.TerminalError` on the first failure. The refusal names every problem at once and
+  carries **no value** from the payload, because a `TerminalError`'s message travels into the
+  Restate journal and back to the caller, and a payload names a table and a column.
+
+  **One malformed payload used to commit rather than loop.** `record_ids` given as a *string* is
+  truthy, sliceable and iterable, so the presence check accepted it and the chunker bound it one
+  character at a time — an UPDATE that ran, committed, and flipped whatever rows carried those
+  single-character keys. That shape is now refused with its own message.
+
+- **`dag_tools/restate_handlers/db_retry.py` gains `MalformedPayload`** (additive; a `ValueError`
+  subclass, like `MissingCredentials`), the `PAYLOAD_MALFORMED` reason token, and a `classify`
+  verdict of `("payload_malformed", "permanent")`. Permanent, never damaging: retrying a payload
+  spends attempts, not the account's failed-login budget. No signature, export or default changed.
+
+### Documentation
+
+Nothing in this section changes code. Each item corrects something the docs claimed and the
+library does not have, or the reverse.
+
+- **There is no sensor library and no schedule library here, and `llms.txt` said otherwise.**
+  `dag_tools/sensors/__init__.py` is empty, there is no `dag_tools/schedules/` package, and every
+  sensor and schedule in this repository is built by a component from that component's YAML. The
+  old entry also described the S3 sensor as partitioning chronologically from metadata flags; it
+  registers one dynamic partition per object key with the slashes replaced, and *excludes*
+  `metadata.json` rather than reading it. Corrected in `llms.txt`, `README.md` and `.cursorrules`.
+- **`llms.txt` listed 8 of 13 components and 4 of 5 Restate services.** All are now named;
+  `GenericOracleControlService` was the missing one, and `ApiCallPlanService` is marked as the
+  VirtualObject it is.
+- **`README.md` named no IO manager for Snowflake or Databricks, while its YAML examples use an
+  `io_manager_key` of `snowflake_io_manager`.** That key is one a *deployment* binds; this library
+  ships `dlt` destination support for both and no IO manager for either, which the README now says.
+- **The five decisions that existed only in conversation are written down**, in `docs/rulings.md`,
+  each dated with its source and who ruled it.
+- **`docs/adr/README.md` says which decisions are recorded here.** Data-infrastructure decisions
+  are owned and recorded in this repository; governance decisions are owned by `invincible-agent`,
+  stay there, and are cited by repo and commit. No decision is recorded twice. The file previously
+  said the opposite. It also states the citation rule: a bare `ADR-NNNN` means this repository's
+  series, and every citation of another repository's series names that repository.
+- **`AGENTS.md` §4r said the mfg-trace conform stage was deferred; it has landed.** Unbuilt stated
+  as unbuilt is the rule, and built stated as unbuilt is the same error pointing the other way.
+  The transforms it was waiting on (`normalize` against a normalizer document, `in_set`,
+  `coalesce` with a `default`, `nullif`) are shipped, and the two mappings are in
+  `examples/mfg_trace/conform/components/`.
+- **A number announced before its record existed is not a citation, and one had moved.** The
+  provisional `ADR-0066` for this work was never allocated, so the three references to it in
+  `dag_tools/contract_mapping/` are reworded rather than renumbered.
+
+### Known
+
+- `restate_handlers/api_sync.py` and `restate_handlers/oracle_control.py` still validate their
+  payloads outside the step and carry the identical defect. `MalformedPayload` is the mechanism
+  for both and each is a one-line change; they are not converted in this release.
+
 ## 0.16.0 — 2026-11-16
 
 ### Added

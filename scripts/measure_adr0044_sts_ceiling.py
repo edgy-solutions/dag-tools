@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """How many credentials per second can the store actually mint?
 
-ADR-0044 moved minting onto the ticket-issuance hot path: every read now costs
+invincible-agent ADR-0044 moved minting onto the ticket-issuance hot path: every read now costs
 an AssumeRole. Its "indicators for revisiting" says to measure the store's
 limits BEFORE the load arrives, because the mitigation — caching minted
 credentials by (caller, asset, window) — is a deliberate weakening of decision
@@ -79,7 +79,7 @@ def _policy(bucket: str, prefix: str) -> str:
 # botocore's STS model marks RoleArn REQUIRED and validates it client-side, so
 # omitting it fails before a packet leaves the process — which is how the first
 # run of this script recorded 0 successes and no data at all. MinIO ignores the
-# value (verified: ADR-0044's live run accepted the placeholder), but botocore
+# value (verified: invincible-agent ADR-0044's live run accepted the placeholder), but botocore
 # still demands one be present. Same ARN _mint_s3 sends, so this measures the
 # call the broker actually makes.
 _ROLE_ARN = os.getenv("AWS_ASSUME_ROLE_ARN", "arn:aws:iam::123456789012:role/DataAccessRole")

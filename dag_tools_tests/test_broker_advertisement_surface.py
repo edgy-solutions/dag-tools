@@ -146,7 +146,7 @@ def test_factory_returns_a_client_readable_ticket(label, factory):
     }, f"{label}: source_type {ticket['source_type']!r} has no client read path"
     assert ticket["physical_uri"], f"{label}: empty physical_uri"
 
-    # ADR-0044. This assertion used to read:
+    # invincible-agent ADR-0044. This assertion used to read:
     #
     #     assert ticket["credentials"], "no credentials — unreadable by a consumer"
     #
@@ -166,7 +166,7 @@ def test_factory_returns_a_client_readable_ticket(label, factory):
     else:
         assert "credentials" not in ticket, (
             f"{label}: advertised a producer credential. The broker mints per "
-            f"request (ADR-0044); a producer cannot know the caller or window."
+            f"request (invincible-agent ADR-0044); a producer cannot know the caller or window."
         )
         assert ticket.get("scope"), f"{label}: no scope for the broker to mint against"
 

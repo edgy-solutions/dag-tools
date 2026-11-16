@@ -4,7 +4,7 @@
 # dag-tools/dag_tools (collapses to "dagtools", which is taken). The
 # import name is unchanged: `pip install edgy-dag-tools` -> `import dag_tools`.
 name = "edgy-dag-tools"
-version = "0.16.0"
+version = "0.16.1"
 description = "Central library of common Dagster utilities, resources, IO managers, sensors, declarative components, and asset patterns for data tooling projects."
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
@@ -216,7 +216,7 @@ broker = [
     # while adding the subject-source gauge, which leans on PyJWT harder.
     "redis>=5.0",
     "PyJWT>=2.8",
-    # ADR-0044 mint-role: the broker issues short-lived DATABASE roles for
+    # invincible-agent ADR-0044 mint-role: the broker issues short-lived DATABASE roles for
     # postgres/clickhouse, which needs a driver that can execute DDL.
     # clickhouse-connect is already a base dependency; psycopg2 is not, and
     # connectorx (the client's read path) cannot run CREATE ROLE.

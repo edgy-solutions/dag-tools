@@ -1,4 +1,4 @@
-"""ADR-0044 — a routing ticket carries only credentials the broker minted.
+"""invincible-agent ADR-0044 — a routing ticket carries only credentials the broker minted.
 
 WHY THESE TESTS EXIST. The defect they lock down was not a missing feature: the
 scoped-STS minting had been implemented in ``resolve_asset`` since the fallback
@@ -217,7 +217,7 @@ def test_minting_failure_fails_closed():
 
 # ── the broker's own minting identity ──────────────────────────────────────
 #
-# ADR-0044 gave the broker minting authority and did not say where its
+# invincible-agent ADR-0044 gave the broker minting authority and did not say where its
 # credentials come from. The first implementation left boto3 to its default
 # chain, which a domain-broker pod does not populate — it carries S3_ACCESS_KEY
 # / S3_SECRET_KEY, names boto3 has never heard of. Every mint raised

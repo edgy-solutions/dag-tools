@@ -1,6 +1,6 @@
 """Declarative component: one labelled source dataset, observed not moved.
 
-Step 4a of the classification build (ADR-0064). One component instance
+Step 4a of the classification build (invincible-agent ADR-0064). One component instance
 describes one source dataset -- where it physically lives, which columns carry
 which classification labels, who owns it, where the labels came from -- and
 builds one **observable source asset** for it. Materializing that asset moves

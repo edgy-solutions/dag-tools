@@ -362,7 +362,7 @@ def test_single_file_config_advertises_an_object_not_a_directory():
 def test_advertised_ticket_shape_is_client_readable():
     ticket = _s3_iom().physical_coordinates(["mesh_customers"])
     assert ticket["source_type"] == "s3_parquet"
-    # ADR-0044: the writing credential is no longer advertised; the broker
+    # invincible-agent ADR-0044: the writing credential is no longer advertised; the broker
     # mints a scoped, expiring, read-only one per request. Coordinates stay,
     # because a minted credential still needs somewhere to point.
     assert "credentials" not in ticket

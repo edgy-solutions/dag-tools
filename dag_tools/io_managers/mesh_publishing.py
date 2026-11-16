@@ -11,7 +11,7 @@ four times, independently, inside ``arrow``, ``duckdb``, ``sql`` and ``delta``.
 A third party wanting to publish had to read one of those and copy the parts
 that generalise, which is a contract that exists only as an example. That is
 precisely how a newer implementation comes to omit a property nobody wrote
-down: the defect ADR-0044 exists to close was one implementation of an
+down: the defect invincible-agent ADR-0044 exists to close was one implementation of an
 unwritten contract disagreeing with another.
 
 So the contract is stated here, once, and the parts that are genuinely
@@ -30,7 +30,7 @@ per-manager are the only parts a subclass writes.
 That is the whole integration. ``physical_coordinates`` comes from the mixin.
 
 WHAT A SUBCLASS MUST NOT DO — return credentials. It cannot: the mixin does not
-offer a hook for them, on purpose. Per ADR-0044 the BROKER mints, per request,
+offer a hook for them, on purpose. Per invincible-agent ADR-0044 the BROKER mints, per request,
 scoped to the asset and expiring with the access window. An IO manager runs in a
 pipeline pod and knows neither the caller nor the window, and giving every user
 deployment minting authority would spread assume-role privilege across the whole
@@ -157,7 +157,7 @@ class MeshPublishable:
             if region:
                 ticket["region"] = region
         else:
-            # No minter exists for the database backends yet (ADR-0044's
+            # No minter exists for the database backends yet (invincible-agent ADR-0044's
             # capability matrix). Declared as unprotected rather than dressed
             # up as minted, so the broker can count it as live exposure instead
             # of passing it over silently.

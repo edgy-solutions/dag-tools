@@ -229,7 +229,7 @@ def _s3_storage_options(config) -> Dict[str, str]:
 def _s3_coordinates_for_ticket(config) -> Dict[str, str]:
     """The NON-SECRET connection coordinates a ticket carries.
 
-    ADR-0044: this used to be ``_s3_credentials_for_ticket`` and returned
+    invincible-agent ADR-0044: this used to be ``_s3_credentials_for_ticket`` and returned
     ``config.common.access_key_id`` / ``secret_access_key`` — the credential
     this IO manager WRITES Delta tables with, advertised to every authorized
     reader with no scope and no expiry. The broker now mints a read-only,

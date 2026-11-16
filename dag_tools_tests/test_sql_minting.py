@@ -1,4 +1,4 @@
-"""ADR-0044 `mint-role` — PostgreSQL and ClickHouse credentials the SERVER enforces.
+"""invincible-agent ADR-0044 `mint-role` — PostgreSQL and ClickHouse credentials the SERVER enforces.
 
 EACH CLAIM IS PINNED SEPARATELY, on purpose. A minted role can be expiring and
 still reach every table; scoped to one table and still writable; read-only and
@@ -112,7 +112,7 @@ def test_ch_is_readonly_and_that_is_a_SEPARATE_claim(monkeypatch):
 
     read-only is a settings-profile property. A role with correct grants and an
     inherited permissive profile satisfies half the requirement and looks whole
-    — the trap ADR-0044 named before we hit it.
+    — the trap invincible-agent ADR-0044 named before we hit it.
     """
     fake, _ = _ch(monkeypatch)
     create = next(c for c in fake.commands if c.startswith("CREATE USER"))

@@ -1,6 +1,6 @@
 # Next at work — 2026-08-27 handoff
 
-Written at the end of the ADR-0044 session so the state is on disk rather than
+Written at the end of the invincible-agent ADR-0044 session so the state is on disk rather than
 in anyone's memory. Ordered by what unblocks the most people.
 
 ---
@@ -44,7 +44,7 @@ The 73 assets on `io_manager_key='io_manager'` are a separate matter — that ke
 is not in `Definitions(resources=...)` at all, so Dagster uses its local
 filesystem default. There is genuinely nothing to publish; leave them.
 
-The 29 Snowflake ones need ADR-0044 step 6 regardless.
+The 29 Snowflake ones need invincible-agent ADR-0044 step 6 regardless.
 
 ## 2. Set the broker's endpoint to the FQDN
 
@@ -115,7 +115,7 @@ Neither is run. Both are quick, and together they say whether deploying the
 
 Tracked in `invincible-agent/docs/plans/`, visible on `docs/BOARD.md`:
 
-- `broker-advertises-unminted-credential` — ADR-0044. Object-store half done and
+- `broker-advertises-unminted-credential` — invincible-agent ADR-0044. Object-store half done and
   verified on pub-tools at d4. ClickHouse/Postgres minting is step 4/6.
 - `da-sends-no-user-token` — DA passes `jwt_token=None`, so killing the
   gateway's header override takes DA's data access down. Prerequisite for the

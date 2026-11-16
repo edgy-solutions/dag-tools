@@ -1,6 +1,6 @@
 """`mint-role` — per-request database credentials the SERVER enforces.
 
-ADR-0044's capability matrix puts PostgreSQL and ClickHouse in the `mint-role`
+invincible-agent ADR-0044's capability matrix puts PostgreSQL and ClickHouse in the `mint-role`
 column, and this is that column. Where the object-store minter hands out a
 scoped STS credential, these hand out a **short-lived database role**, and the
 difference is worth stating because it is an upgrade rather than a parity fix:
@@ -26,7 +26,7 @@ to prune. When it is written it is HYGIENE, not the security boundary, and this
 sentence should be updated rather than left describing a function that does not
 exist — the failure mode this module was written the same week as.
 
-THE TRAP THIS MODULE IS WRITTEN AROUND (ADR-0044 named it before we hit it):
+THE TRAP THIS MODULE IS WRITTEN AROUND (invincible-agent ADR-0044 named it before we hit it):
 for ClickHouse, read-only is a SETTINGS PROFILE property, separate from table
 grants. A role with perfect grants and an inherited permissive profile
 satisfies half the requirement and looks whole. Both claims are pinned here,

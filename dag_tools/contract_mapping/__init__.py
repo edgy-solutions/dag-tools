@@ -1,4 +1,4 @@
-"""Contract as data: map a source's columns onto a contract's (ADR-0066).
+"""Contract as data: map a source's columns onto a contract's.
 
 A pure engine. No Dagster, no dbt, no IO -- it takes parsed documents and
 returns a plan, so the mapping semantics are testable without a warehouse or

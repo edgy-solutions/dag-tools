@@ -1,6 +1,6 @@
 """Warehouse source: a labelled source dataset, observed rather than moved.
 
-Step 4a of the classification build (ADR-0064). One component instance
+Step 4a of the classification build (invincible-agent ADR-0064). One component instance
 describes one source dataset: where it physically lives, which columns carry
 which classification labels, who owns it and where the labels came from. It
 moves no data -- it observes (row count, schema hash, as-of) and publishes

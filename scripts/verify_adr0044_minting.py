@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Does the broker's minting path actually work against a real store?
 
-ADR-0044 made the mesh-publishing path reach ``_mint_s3``. That code had never
+invincible-agent ADR-0044 made the mesh-publishing path reach ``_mint_s3``. That code had never
 executed against a live store — the protocol path short-circuited past it, so
 it was dead. Unit tests prove the ROUTING (we call it) and the POLICY SHAPE
 (what we ask for). They cannot prove MinIO accepts the call, because the STS
@@ -36,7 +36,7 @@ surprise anyone.
   P3. If a session is issued, GetObject on the asset's prefix SUCCEEDS and
       PutObject to the same prefix is REFUSED. Confidence: high — but this is
       the prediction whose failure would matter most, because a session that
-      can write is the defect ADR-0044 exists to remove, reappearing with a
+      can write is the defect invincible-agent ADR-0044 exists to remove, reappearing with a
       minted credential's clean bill of health.
   P4. GetObject on a DIFFERENT bucket is refused. Confidence: high.
 
@@ -161,7 +161,7 @@ def main() -> int:
     try:
         s3.put_object(Bucket=args.bucket, Key=probe_key, Body=b"should not exist")
         _p("write is refused", False,
-           f"WROTE {probe_key} — the ticket credential CAN WRITE. ADR-0044 is not "
+           f"WROTE {probe_key} — the ticket credential CAN WRITE. invincible-agent ADR-0044 is not "
            f"satisfied. DELETE THIS OBJECT.")
     except ClientError as exc:
         _p("write is refused", True, exc.response["Error"]["Code"])

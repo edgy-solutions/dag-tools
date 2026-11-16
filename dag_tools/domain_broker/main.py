@@ -44,7 +44,7 @@ DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
 
-# ── ADR-0044 — the broker mints; producers advertise coordinates ────────────
+# ── invincible-agent ADR-0044 — the broker mints; producers advertise coordinates ────────────
 #
 # A routing ticket may carry only credentials THIS BROKER minted for THIS
 # request, scoped to the asset, expiring with the access window, unable to
@@ -58,7 +58,7 @@ LOCAL_ASSETS: Dict[str, Any] = {}
 # put assume-role privilege in every user deployment in the fleet — dozens of
 # powerful credentials replacing one.
 #
-# ROLLOUT IS PER BACKEND (ADR-0044's capability matrix), so enforcement is
+# ROLLOUT IS PER BACKEND (invincible-agent ADR-0044's capability matrix), so enforcement is
 # keyed on source_type via _MINTERS below. A backend with a minter gets its
 # echoed credential DROPPED and a fresh one minted per request. A backend
 # without one is still on the old path — counted and reported as UNPROTECTED
@@ -108,7 +108,7 @@ most expensive kind of green."""
 NON_FQDN_HOSTS: Dict[str, int] = {}
 """advertised host -> count. A ticket is consumed somewhere else, so a
 namespace-local hostname is a coordinate that means different things
-depending on where the reader stands (ADR-0044). Reported, not refused —
+depending on where the reader stands (invincible-agent ADR-0044). Reported, not refused —
 refusing would take out cross-namespace reads that work today for consumers
 that happen to share the producer's namespace."""
 
@@ -153,7 +153,7 @@ def _s3_scope_from_uri(physical_uri: str) -> Optional[Dict[str, str]]:
 def _sts_client(coordinates: Dict[str, Any]):
     """The broker's OWN minting identity — resolved explicitly, never ambiently.
 
-    ADR-0044 put minting authority in the broker. It did not say where the
+    invincible-agent ADR-0044 put minting authority in the broker. It did not say where the
     broker's credentials come from, and the first implementation left
     ``boto3.client("sts")`` to the default credential chain — env
     ``AWS_ACCESS_KEY_ID``, ``~/.aws/credentials``, IMDS.
@@ -176,7 +176,7 @@ def _sts_client(coordinates: Dict[str, Any]):
       1. ``BROKER_STS_ACCESS_KEY_ID`` / ``BROKER_STS_SECRET_ACCESS_KEY`` — the
          purpose-named pair. Explicit wins, so a deployment can give the broker
          a minting identity distinct from whatever else the pod holds. That
-         separation is the point of ADR-0044: the credential that writes assets
+         separation is the point of invincible-agent ADR-0044: the credential that writes assets
          and the one used to mint read tickets need not be the same.
       2. ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` — **dag-tools' own
          convention**, and the reason this rung matters most: it is what the IO
@@ -231,7 +231,7 @@ def _mint_s3(
 ) -> Dict[str, Any]:
     """`mint-sts` — a read-only, prefix-scoped, expiring credential.
 
-    This is the construction the fallback path has always used; ADR-0044's fix
+    This is the construction the fallback path has always used; invincible-agent ADR-0044's fix
     is that the protocol path now reaches it instead of short-circuiting past
     it. The policy is built from the TICKET'S OWN SCOPE rather than a broad
     default, and the duration from the access window rather than a fixed hour.
@@ -293,7 +293,7 @@ def _mint_s3(
 # source_type -> (minter, scope-deriver). A backend ABSENT from this table has
 # no minting implementation yet and stays on the producer-credential path,
 # counted in UNPROTECTED_SOURCE_TYPES. Adding a row here is what turns a column
-# of ADR-0044's capability matrix green — and turning it green is what makes
+# of invincible-agent ADR-0044's capability matrix green — and turning it green is what makes
 # per-user notebook access safe for that backend.
 _MINTERS = {
     "s3_parquet": (_mint_s3, _s3_scope_from_uri),
@@ -351,7 +351,7 @@ def _sanitize_ticket(ticket: Dict[str, Any], producer: Optional[str]) -> Dict[st
             key = producer or "unknown"
             ECHOED_CREDENTIALS_DROPPED[key] = ECHOED_CREDENTIALS_DROPPED.get(key, 0) + 1
             logger.warning(
-                "ADR-0044: dropped echoed credential(s) %s advertised by %s for %s. "
+                "invincible-agent ADR-0044: dropped echoed credential(s) %s advertised by %s for %s. "
                 "The broker mints per request; producers should stop returning "
                 "'credentials' from physical_coordinates(). Counted in "
                 "/health.echoed_credentials_dropped — the hard break lands when "
@@ -390,7 +390,7 @@ def _sanitize_ticket(ticket: Dict[str, Any], producer: Optional[str]) -> Dict[st
         if host and not _is_fqdn(authority):
             NON_FQDN_HOSTS[host] = NON_FQDN_HOSTS.get(host, 0) + 1
             logger.warning(
-                "ADR-0044: advertised host %r is not an FQDN. It resolves in this "
+                "invincible-agent ADR-0044: advertised host %r is not an FQDN. It resolves in this "
                 "deployment's namespace and nowhere else, so any consumer in "
                 "another namespace cannot read %s. Set the producer's endpoint to "
                 "the .svc.cluster.local form.",
@@ -427,7 +427,7 @@ class ResolveRequest(BaseModel):
 
     For `mint-role` backends the broker encodes them into the role's GRANTs and
     ROW POLICY, where the database enforces them and a hostile client cannot
-    skip them. That is ADR-0044's promise that "for stores that can enforce, the
+    skip them. That is invincible-agent ADR-0044's promise that "for stores that can enforce, the
     ticket's filters stop being advisory" — a promise the old contract could not
     keep.
 
@@ -475,7 +475,7 @@ def _build_asset_info_from_record(record, io_manager=None) -> Dict[str, Any]:
         try:
             ticket = io_manager.physical_coordinates(list(record.asset_key or []))
             if ticket:
-                # ADR-0044: whatever the producer advertised, no producer
+                # invincible-agent ADR-0044: whatever the producer advertised, no producer
                 # credential is cached. What lands in LOCAL_ASSETS is
                 # coordinates; the credential is minted per request in
                 # /resolve. See _sanitize_ticket for why it cannot be minted
@@ -1123,7 +1123,7 @@ async def health():
     return {
         "status": "ok",
         "assets": len(LOCAL_ASSETS),
-        # ADR-0044 posture, REPORTED AS NUMBERS rather than left in a log
+        # invincible-agent ADR-0044 posture, REPORTED AS NUMBERS rather than left in a log
         # nobody greps. `unprotected_source_types` is live exposure: assets
         # still advertising a producer credential because their backend has no
         # minter yet. `echoed_credentials_dropped` is the retirement counter —
@@ -1178,7 +1178,7 @@ async def resolve_asset(request: ResolveRequest):
     return paths — a minted protocol ticket, an unminted one for a backend with
     no minter, and two legacy coordinate routes — and the identity is stamped
     here rather than on each of them, because the paths that matter most are
-    the ones nobody remembers to update. ADR-0044 was exactly that shape: the
+    the ones nobody remembers to update. invincible-agent ADR-0044 was exactly that shape: the
     minting was present and one newer path returned in front of it.
     """
     ticket = await _resolve_ticket(request)
@@ -1207,7 +1207,7 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
     # the credential is created — per request, scoped to this asset, expiring
     # with this access window.
     #
-    # This used to `return ticket` verbatim, which is the defect ADR-0044
+    # This used to `return ticket` verbatim, which is the defect invincible-agent ADR-0044
     # exists to close: a newer, faster path short-circuiting past the minting
     # the fallback below has always performed. The minting code was never
     # missing; this return statement was in front of it.
@@ -1258,7 +1258,7 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
                     "S3_ACCESS_KEY/S3_SECRET_KEY) on the broker deployment."
                 )
             logger.error(
-                "ADR-0044: minting failed for %s (%s: %s) — refusing the ticket "
+                "invincible-agent ADR-0044: minting failed for %s (%s: %s) — refusing the ticket "
                 "rather than falling back to a producer credential.%s",
                 urn, type(exc).__name__, exc, hint,
             )
@@ -1345,7 +1345,7 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
             # permissions problem from a missing object.
             #
             # It also contradicted the rule the protocol path already follows
-            # (ADR-0044): a minting failure fails the TICKET. Two paths, two
+            # (invincible-agent ADR-0044): a minting failure fails the TICKET. Two paths, two
             # postures, and the fail-open one was the one nobody was looking at.
             logger.error(
                 "Failed to mint STS token for %s: %s — refusing the ticket. "

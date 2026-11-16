@@ -40,6 +40,15 @@ and ``pyodbc`` both put the vendor's code in the text of the exception,
 and SQLAlchemy repeats it because it wraps the DBAPI error and quotes
 it -- so one classifier serves all three call sites and none of those
 libraries has to be installed for this module to import.
+
+One failure here is not a database failure at all. A step handed a
+payload it cannot act on is the *same* question -- retrying it cannot
+succeed, because every attempt is handed the same payload -- and it
+belongs in the one place that answers it, rather than being decided
+again in each handler. :class:`MalformedPayload` is how a handler says
+so. Validation that stays *outside* the step is worse than unbounded:
+a raise there fails the whole invocation, which Restate retries with no
+bound at all and no journal entry to show what was tried.
 """
 import asyncio
 import functools
@@ -63,6 +72,28 @@ class MissingCredentials(ValueError):
     now is absent for the life of the pod. Retrying cannot find it, and
     the retry that cannot succeed is the one that sits in the journal
     looking like a transient problem.
+    """
+
+
+class MalformedPayload(ValueError):
+    """The invocation's payload cannot be acted on.
+
+    A ``ValueError`` subclass for the same reason as
+    :class:`MissingCredentials` (AGENTS section 6: a caller that already
+    catches ``ValueError`` keeps working), and terminal for a reason of
+    the same shape: a retry is handed the same payload, so nothing
+    changes between attempts except the clock.
+
+    Raise it *inside* the step. Raised outside one it leaves the step's
+    guard behind entirely -- the invocation fails, and an invocation
+    that fails on a non-terminal error is retried for the life of the
+    worker.
+
+    The message travels into the ``TerminalError``, because it is ours
+    rather than a driver's -- which makes it the handler's job to name
+    the fields it refused and no value from any of them. A payload names
+    a table and a column, and a ``TerminalError``'s message reaches the
+    journal and the caller.
     """
 
 
@@ -124,6 +155,30 @@ _TIER_EXPLANATION = {
 #: ``as_of_unavailable`` -- it is read by code as well as by a person.
 CREDENTIALS_ABSENT = "credentials_absent_from_environment"
 
+#: The reason reported for a payload the handler cannot act on. The
+#: same kind of token, one step further out: the environment is read
+#: once when the process starts, and the payload is fixed for the
+#: invocation, so neither is something a retry can change.
+PAYLOAD_MALFORMED = "payload_malformed"
+
+#: Our own exceptions, whose messages DO travel into the
+#: ``TerminalError``, with the sentence that says why a retry cannot
+#: help. They travel because they are ours: each names a variable or a
+#: field and carries no value from either, unlike a driver's text, which
+#: quotes the connect identifier and sometimes the account name.
+_OURS: Tuple[Tuple[type, str], ...] = (
+    (
+        MissingCredentials,
+        "This cannot succeed on a retry: the container's environment is "
+        "read once, when the process starts.",
+    ),
+    (
+        MalformedPayload,
+        "This cannot succeed on a retry: every attempt is handed the "
+        "same payload.",
+    ),
+)
+
 #: Attempts allowed for a step that connects. Three, which is under
 #: Oracle's default ``FAILED_LOGIN_ATTEMPTS`` of 10 with room to spare,
 #: and still spans Restate's backoff for long enough to ride out a
@@ -149,6 +204,8 @@ def classify(exc: BaseException) -> Optional[Tuple[str, str]]:
     """
     if isinstance(exc, MissingCredentials):
         return (CREDENTIALS_ABSENT, _PERMANENT)
+    if isinstance(exc, MalformedPayload):
+        return (PAYLOAD_MALFORMED, _PERMANENT)
 
     text = str(exc).upper()
     for code in DAMAGING_ORACLE_CODES:
@@ -168,16 +225,13 @@ def _terminal_for(exc: BaseException) -> Optional[restate.TerminalError]:
     if verdict is None:
         return None
     code, tier = verdict
-    if isinstance(exc, MissingCredentials):
-        # This one message DOES travel, because it is ours rather than a
-        # driver's: it names the environment variables that are missing
-        # and carries no value from any of them. It is also the single
-        # most useful thing to put in front of whoever is reading the
-        # failed invocation, since the fix is one line of deployment.
-        return restate.TerminalError(
-            f"{exc} This cannot succeed on a retry: the container's "
-            "environment is read once, when the process starts."
-        )
+    for kind, sentence in _OURS:
+        if isinstance(exc, kind):
+            # These messages DO travel, because they are ours rather
+            # than a driver's, and each is the single most useful thing
+            # to put in front of whoever reads the failed invocation:
+            # the fix is one line of deployment or one field of payload.
+            return restate.TerminalError(f"{exc} {sentence}")
     # The message carries the code and a fixed sentence and NOTHING out
     # of ``str(exc)``. A driver's connection errors quote the connect
     # identifier, and some quote the account name, and a TerminalError's

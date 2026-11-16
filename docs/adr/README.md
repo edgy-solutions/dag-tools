@@ -22,17 +22,50 @@ against.
 omit.** That is the thesis of this directory. ADR-0001 is that protocol, written
 down.
 
-## Scope — this repo, not the mesh
+## Scope — what is owned here, and what is cited
 
-`dag-tools` is a library. Decisions about the mesh as a whole — authorization
-subjects, credential minting, the two planes — live in `invincible-agent`'s ADR
-series, which is where the cross-component contracts belong. When a decision
-here implements one of those, it links rather than restates. ADR-0044 there
-governs what a routing ticket may carry; ADR-0001 here governs how a producer
-describes one.
+**Decisions about the data infrastructure are owned and recorded here.** How a
+producer advertises a dataset, what identity a catalog registers it under, what a
+probe answers, how the inventory contract evolves, how the registry orders its
+writes: those are this repository's to decide, and this series is the record of
+them. They are not proposals awaiting ratification elsewhere.
+
+**Governance decisions are owned by `invincible-agent` and stay there.** Who may
+read what, how a credential is minted, the classification vocabulary, which plane
+a read crosses: those are decided and recorded in that repository and **cited**
+from here, by repo and commit. A citation is not a copy.
+
+**No decision is recorded twice.** One record, in the repository that owns it.
+Where the two meet, each side records its own half and cites the other's:
+invincible-agent ADR-0044 governs what a routing ticket may carry, and ADR-0001
+here governs how a producer describes one. Neither restates the other, and
+neither is the place to look for the other's reasoning.
+
+Guidance is not a record. `AGENTS.md` says what a decision means for the code it
+sits beside and cites the record rather than standing in for it; a bullet that
+paraphrases a decision is guidance, however long it runs. The rule above governs
+**records** — this series and [`../rulings.md`](../rulings.md) — which is why that
+file cites the upstream amendment to the classification ruling instead of
+restating it.
 
 If a decision is purely local (renamed a variable, picked the obvious library,
 fixed a bug) — commit message. If it shapes how future work gets done — ADR.
+
+### Citing one
+
+**An ADR number without its repo is not a citation.** Two series share a number
+range: `ADR-0001` here is the mesh publishing protocol, `ADR-0001` in
+`invincible-agent` is something else entirely, and a third series (OpenDDIL)
+is cited by both. So:
+
+- A bare `ADR-NNNN` in this repository means **this repository's** series, and
+  nothing else may be written bare.
+- Every citation of another repository's series **names that repository** —
+  `invincible-agent ADR-0064`, `OpenDDIL ADR-0055` — and, where the text being
+  relied on could move, the commit that carries it.
+- A number someone announced before the record existed is **provisional** and
+  must not be cited as if allocated. One already moved: see
+  [`../rulings.md`](../rulings.md), 2026-11-05.
 
 ## Layout
 
