@@ -11,6 +11,14 @@ attributes:
       kind: file
       path: seed_parts.csv                  # relative to this file
       column: part_number
+    filters:
+      # Required, and the library ships no default. These are the statuses THIS example's
+      # server calls terminal; they are a sample, not a recommendation -- read them off your
+      # own server before copying them. A result whose status is not listed here is treated as
+      # still running, so it is re-read on every run and its steps are never fetched.
+      terminal_statuses: [PASSED, FAILED, ERRORED, TERMINATED, TIMED_OUT, DONE]
+      # step_detail_for defaults to all_terminal. Under 'failed_only', failed_statuses is
+      # required too and takes the same kind of sample list.
     operator:
       store: pseudonym
       pseudonym_key_env: SYSTEMLINK_PSEUDONYM_KEY

@@ -12,7 +12,6 @@ no dlt resource argument, state entry or config receives it.
 
 No module-level ``from __future__ import annotations``: dlt inspects resource signatures.
 """
-import hashlib
 import json
 import logging
 import os
@@ -24,6 +23,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence
 import dlt
 from dagster import AssetKey, AssetSpec, MaterializeResult
 
+from dag_tools.asset_wrappers.ingest_runs import message_digest
 from dag_tools.asset_wrappers.source_kinds import SourceKind, register_source_kind
 from dag_tools.systemlink import events as ev
 from dag_tools.systemlink import queries
@@ -371,15 +371,23 @@ def _env_value(name: str, what: str) -> str:
     return value
 
 
-def _root_error_name(failure: BaseException) -> str:
-    """dlt wraps whatever a resource raised; name the engine's own error when one is in the chain."""
+def _recorded_error(failure: BaseException) -> BaseException:
+    """dlt wraps whatever a resource raised; record the engine's own error when one is in the chain.
+
+    One function, because ``error_type`` and ``error_digest`` must name and digest the SAME
+    exception. Deriving them separately is how a row ends up describing two.
+    """
     seen, exc = set(), failure
     while exc is not None and id(exc) not in seen:
         if isinstance(exc, SystemLinkError):
-            return type(exc).__name__
+            return exc
         seen.add(id(exc))
         exc = exc.__cause__ or exc.__context__
-    return type(failure).__name__
+    return failure
+
+
+def _root_error_name(failure: BaseException) -> str:
+    return type(_recorded_error(failure)).__name__
 
 
 class SystemLinkKind(SourceKind):
@@ -669,7 +677,10 @@ class SystemLinkKind(SourceKind):
     def _ingest_row(self, context, cfg, rt, events, mode, started, failure) -> Dict[str, Any]:
         summary = events.summary()
         stats = rt.stats if rt is not None else Counter()
-        digest = hashlib.sha256(str(failure).encode()).hexdigest()[:12] if failure else None
+        # Of the error _root_error_name named, through the shared helper. Digesting the exception
+        # dlt hands over instead embeds a per-run load id, so two runs of one identical failure
+        # digested differently and the column could not do the one job it exists for.
+        digest = message_digest(_recorded_error(failure)) if failure else None
         return {
             "run_id": getattr(context, "run_id", None) or "local",
             "source_system": cfg.source_id,

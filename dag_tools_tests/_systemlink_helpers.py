@@ -13,7 +13,7 @@ TEST_KEY, TEST_PSEUDO = "test-key-0000", "test-pseudonym-key-0000"
 
 
 def load_example(tmp_path, monkeypatch, *, base_url="http://127.0.0.1:1", source_overrides=None,
-                 pipeline_overrides=None, set_env=True):
+                 source_drops=(), pipeline_overrides=None, set_env=True):
     """Copy the shipped example under a unique package name and load it exactly as a deployment would."""
     pkg = "pkg_" + uuid.uuid4().hex[:8]
     comp_dir = tmp_path / pkg / "components"
@@ -23,6 +23,8 @@ def load_example(tmp_path, monkeypatch, *, base_url="http://127.0.0.1:1", source
     doc = yaml.safe_load(path.read_text())
     attrs = doc["attributes"]
     attrs["source_config"].update(source_overrides or {})
+    for key in source_drops:  # so a test can load the example with a required block MISSING
+        attrs["source_config"].pop(key, None)
     attrs["pipelines"]["sl_example"].update(pipeline_overrides or {})
     path.write_text(json.dumps(doc))
     # get_destination knows only the warehouse drivers; a local duckdb file stands in for the destination.

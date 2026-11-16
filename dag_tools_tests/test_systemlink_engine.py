@@ -1,9 +1,11 @@
 """The SystemLink engine: client discipline, query shapes, paging, step batching, classification."""
 import json
 import logging
+from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 
 from dag_tools.systemlink import events as ev
 from dag_tools.systemlink import queries
@@ -19,6 +21,9 @@ from dag_tools_tests.systemlink_fake import FakeSystemLink, make_result, make_st
 
 KEY = "test-key-0000"
 TERMINAL = ["PASSED", "FAILED", "ERRORED", "DONE"]
+#: The example's sample list. It is the EXAMPLE's, not the library's -- which is what the pair
+#: test_the_spec_names_no_status_value / test_control_the_examples_own_document_... asserts.
+SAMPLE_STATUSES = ["PASSED", "FAILED", "ERRORED", "TERMINATED", "TIMED_OUT", "DONE"]
 
 
 class Clock:
@@ -455,6 +460,8 @@ def base_spec(**over):
         "type": "systemlink_test_monitor", "source_id": "sl1",
         "connection": {"base_url": "https://sl.invalid", "api_key_env": "SOME_KEY_VAR"},
         "seed": {"kind": "inline", "values": ["PN-1000-A"]},
+        # stated, because the library carries no default for it
+        "filters": {"terminal_statuses": ["DONE"]},
         "operator": {"store": "name"},
     }
     spec.update(over)
@@ -482,6 +489,55 @@ def test_the_operator_block_is_required():
     del spec["operator"]
     with pytest.raises(ValueError):
         parse_source_config(spec)
+
+
+def test_the_filters_block_is_required_because_terminal_statuses_has_no_default():
+    spec = base_spec()
+    del spec["filters"]
+    with pytest.raises(ValueError, match="terminal_statuses"):
+        parse_source_config(spec)
+
+
+def test_an_empty_terminal_statuses_gets_ITS_OWN_refusal():
+    # An empty list satisfies a required-field check and means nothing is ever terminal, so no
+    # steps are ever fetched and the run reads as a clean extraction. If the two cases ever share
+    # one message, the one that passes the field check is the one nobody is warned about.
+    spec = base_spec()
+    del spec["filters"]
+    absent = str(pytest.raises(ValueError, parse_source_config, spec).value)
+    empty = str(
+        pytest.raises(ValueError, parse_source_config, base_spec(filters={"terminal_statuses": []})).value
+    )
+    assert "no result would ever be classified terminal" in empty
+    assert absent != empty
+
+
+def test_failed_statuses_is_required_UNDER_failed_only_and_not_otherwise():
+    with pytest.raises(ValueError, match="failed_statuses"):
+        parse_source_config(
+            base_spec(filters={"terminal_statuses": ["DONE"], "step_detail_for": "failed_only"})
+        )
+    # and the other direction: nothing reads it under all_terminal, so nothing demands it
+    cfg = parse_source_config(base_spec(filters={"terminal_statuses": ["DONE"]}))
+    assert cfg.filters.step_detail_for == "all_terminal" and cfg.filters.failed_statuses == []
+
+
+def test_the_spec_names_no_status_value():
+    from dag_tools.systemlink import spec as spec_module
+
+    text = Path(spec_module.__file__).read_text(encoding="utf-8")
+    assert not [v for v in SAMPLE_STATUSES if v in text]
+
+
+def test_control_the_examples_own_document_carries_the_sample_list():
+    # The partner of the test above: the values have to live somewhere, and that somewhere is the
+    # deployment's YAML. Without this control, deleting the sample list would pass both.
+    doc = yaml.safe_load(
+        (Path(__file__).resolve().parent.parent / "examples" / "mfg_trace" / "systemlink"
+         / "component.yaml").read_text(encoding="utf-8")
+    )
+    stated = doc["attributes"]["source_config"]["filters"]["terminal_statuses"]
+    assert sorted(stated) == sorted(SAMPLE_STATUSES)
 
 
 def test_an_unknown_key_is_refused():

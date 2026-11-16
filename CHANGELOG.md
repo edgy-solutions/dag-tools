@@ -129,6 +129,36 @@ it back are named.
 
 ### Changed
 
+- **BREAKING (default removed): `filters.terminal_statuses` is now required on the
+  `systemlink_test_monitor` source kind, and the library ships no default for it.** It was
+  `["PASSED", "FAILED", "ERRORED", "TERMINATED", "TIMED_OUT", "DONE"]` in
+  `dag_tools/systemlink/spec.py`, which made one server's vocabulary every deployment's answer to
+  the question that decides when a result is complete and its steps are fetched. A server that
+  spells any of those differently was reading as a clean extraction that silently collected no
+  step. The `filters:` block is therefore required too, since it carries the field; the refusal
+  names `terminal_statuses` rather than leaving an operator to find out which field inside the
+  block has no default.
+
+  An **empty** list gets its own refusal, because it satisfies a required-field check and means
+  nothing is ever terminal: no step would ever be fetched, every result would be re-read on every
+  run, and nothing would report any of it.
+
+  `filters.failed_statuses` keeps its list but is now required where it is actually read — under
+  `filters.step_detail_for: failed_only`, non-empty. Requiring it unconditionally would force
+  every operator to write a list nothing reads.
+
+  To get the old behaviour back, state the old default in your YAML:
+
+  ```yaml
+  filters:
+    terminal_statuses: [PASSED, FAILED, ERRORED, TERMINATED, TIMED_OUT, DONE]
+  ```
+
+  Read it off your own server first; it is a sample, not a recommendation. Nothing in this
+  repository was deployed on the default. `examples/mfg_trace/systemlink/component.yaml` carries
+  the sample list, and `examples/mfg_trace/README.md` no longer claims the library holds one. No
+  signature or export changed.
+
 - **`coalesce` now counts ARGUMENTS, not source columns, so one source plus a declared `default`
   is accepted.** Such a mapping was refused by the arity table while **both** routes already
   implemented it and agreed on it — the row route falls back to the column's `default` when every
@@ -183,6 +213,23 @@ it back are named.
   load. A contract whose scope column is genuinely called `none` can no longer say so.
 
 ### Fixed
+
+- **`<prefix>ingest_runs.error_digest` on the SystemLink kind digested the wrong exception, so two
+  runs of one identical failure never matched.** The wrapper digested `str(failure)` — the
+  exception dlt hands over, whose message embeds a per-run load id — so the column was different
+  on every run and could not do the one job it exists for: letting two rows recording the same
+  failure be recognised as the same failure. The shared `ingest_runs.error_digest` had already
+  been corrected for this; the SystemLink wrapper kept a local copy of the old form.
+
+  It now digests the exception the row **names**. `error_type` here deliberately reports the
+  engine's own error from the cause chain rather than the innermost one, so the two are derived
+  from one function (`_recorded_error`); deriving them separately is how a row ends up describing
+  two different exceptions. New helper `ingest_runs.message_digest(exc)` digests one chosen
+  exception — additive, and `error_digest(failure)` is unchanged, now expressed through it.
+
+  **Boundary, deliberately accepted:** digests written before this release are not comparable
+  with digests written after it, for the same failure. The table is young and no deployment is
+  grouping on this column yet; the alternative was keeping a column that could never match.
 
 - **A Restate retry of a failed database login no longer locks the account out.**
   `ctx.run` retries whatever raises, and a failed login is not a free operation: every
