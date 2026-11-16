@@ -205,6 +205,13 @@ def build_dlt_source(
     stay in ``instantiate_assets``, which now calls this.
     """
     if base["creds"].drivername == "filesystem":
+        if query_callback is not None:
+            # The filesystem branch reads parquet files and never builds a
+            # query, so a callback would be dropped without a word.
+            raise ValueError(
+                "row_filters cannot apply to a filesystem source: it builds "
+                "no SQL query to filter. Remove them."
+            )
         @dlt.source
         def filesystem_source():
             local_hints = config.hints.copy()

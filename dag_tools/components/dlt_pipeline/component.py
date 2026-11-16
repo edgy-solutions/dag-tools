@@ -8,8 +8,14 @@ from dagster.components.resolved.model import Model
 from dagster_dlt import DagsterDltResource  # noqa: F401  (re-exported by consumers)
 from ..dlt_resource import dlt_resources
 from dag_tools.asset_wrappers.dlt_assets_parsing import create_dlt_assets
-from dag_tools.asset_wrappers.dlt_assets_factory import DltAssetGroupConfig
-from dag_tools.asset_wrappers.source_kinds import resolve_source_kind
+from dag_tools.asset_wrappers.dlt_assets_factory import (
+    DltAssetGroupConfig,
+    TableSpec,
+    build_table_hints,
+)
+from dag_tools.asset_wrappers.row_filters import callback_for
+from dag_tools.asset_wrappers.source_kinds import LEGACY, resolve_source_kind
+from .row_count_check import build_row_count_checks
 from .schedule import build_pipeline_schedule
 
 
@@ -49,7 +55,42 @@ class DltPipelineComponent(Component, Resolvable, Model):
             # Popped before DltAssetGroupConfig: it ignores unknown keys, so a
             # schedule left in would vanish without an error.
             schedule = pipeline_attrs.pop("schedule", None)
-            
+            # Popped for the same reason: with no extra="forbid" a table_config
+            # left in would vanish, and the pipeline would load with no cursor
+            # at all -- a full reload every run, reported as success.
+            raw_table_config = pipeline_attrs.pop("table_config", None) or {}
+            # Likewise row_filters: unpopped, the pipeline would extract every
+            # row of every table while the YAML read as filtered.
+            raw_row_filters = pipeline_attrs.pop("row_filters", None) or {}
+
+            table_config: Dict[str, TableSpec] = {
+                name: TableSpec.model_validate(spec)
+                for name, spec in raw_table_config.items()
+            }
+            unknown_tables = sorted(set(table_config) - set(sources))
+            if unknown_tables:
+                raise ValueError(
+                    f"pipeline '{pipeline_key}': table_config names tables that "
+                    f"are not in sources: {unknown_tables}. Either add them to "
+                    f"sources or drop the config -- a silently-unused index and "
+                    f"cursor reads as configured when it is not."
+                )
+            if table_config:
+                pipeline_attrs["hints"] = build_table_hints(
+                    table_config, pipeline_attrs.pop("hints", None) or {}
+                )
+            query_callback = callback_for(
+                pipeline_key, raw_row_filters, sources,
+                builds_sql_query=(
+                    kind is LEGACY
+                    and self.source_config.get("drivername") != "filesystem"
+                ),
+                source_description=(
+                    f"type {self.source_config.get('type')!r}, "
+                    f"driver {self.source_config.get('drivername')!r}"
+                ),
+            )
+
             pydantic_config = DltAssetGroupConfig(
                 name=pipeline_attrs.pop("name", pipeline_key),
                 **pipeline_attrs
@@ -60,7 +101,8 @@ class DltPipelineComponent(Component, Resolvable, Model):
                 source_config=source_config,
                 dest_config=self.dest_config,
                 config=pydantic_config,
-                staging_config=self.staging_config
+                staging_config=self.staging_config,
+                query_callback=query_callback,
             )
             generated_assets.extend(assets)
 
@@ -79,6 +121,13 @@ class DltPipelineComponent(Component, Resolvable, Model):
                         job_name=kind.schedule_job_name(pydantic_config.name),
                     )
                 )
+            cursorless = [t for t, spec in table_config.items() if not spec.cursor]
+            if cursorless:
+                contributions.append({
+                    "asset_checks": build_row_count_checks(
+                        pydantic_config.name, cursorless, asset_keys
+                    )
+                })
             for contribution in contributions:
                 for field, items in (contribution or {}).items():
                     extra[field].extend(items)

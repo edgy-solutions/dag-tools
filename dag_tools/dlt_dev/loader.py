@@ -131,7 +131,8 @@ def build_runnables_from_defs(
         )
 
     attrs = dict(pipelines[pipeline])
-    sources = list(tables) if tables else list(attrs.pop("sources", []) or [])
+    declared_sources = list(attrs.pop("sources", []) or [])
+    sources = list(tables) if tables else declared_sources
     if not sources:
         raise DefsError(f"pipeline {pipeline!r} declares no sources")
 
@@ -150,6 +151,26 @@ def build_runnables_from_defs(
         }
         attrs["hints"] = build_table_hints(specs, attrs.get("hints") or {})
 
+    # row_filters reach the source through the query callback, exactly as in
+    # the component. Resolved by the SAME function, so a local run is
+    # filtered when the deployed asset is.
+    from dag_tools.asset_wrappers.row_filters import callback_for
+    from dag_tools.asset_wrappers.source_kinds import LEGACY, resolve_source_kind
+
+    source_config = attributes.get("source_config") or {}
+    query_callback = callback_for(
+        pipeline, attrs.pop("row_filters", None), sources,
+        builds_sql_query=(
+            resolve_source_kind(source_config) is LEGACY
+            and source_config.get("drivername") != "filesystem"
+        ),
+        source_description=(
+            f"type {source_config.get('type')!r}, "
+            f"driver {source_config.get('drivername')!r}"
+        ),
+        declared_sources=declared_sources or sources,
+    )
+
     # Anything that is not a DltAssetGroupConfig field is component
     # machinery -- control tables, sensors, ack settings. Filtering by the
     # model's own fields means a new component key does not break this.
@@ -166,6 +187,7 @@ def build_runnables_from_defs(
         attributes.get("source_config") or {},
         attributes.get("dest_config") or {},
         DltAssetGroupConfig(**kwargs),
+        query_callback=query_callback,
         staging_config=attributes.get("staging_config"),
         destination_override=destination_override,
     )

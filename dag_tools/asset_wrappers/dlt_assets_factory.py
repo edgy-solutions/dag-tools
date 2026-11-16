@@ -10,7 +10,7 @@ from dlt.common.storages.configuration import AwsCredentials, FileSystemCredenti
 from dlt.destinations.impl.clickhouse.configuration import ClickHouseCredentials
 from dlt.destinations.impl.databricks.configuration import DatabricksCredentials
 from dlt.sources.credentials import ConnectionStringCredentials
-from pydantic import Field as PydanticField, BaseModel
+from pydantic import ConfigDict, Field as PydanticField, BaseModel
 
 from dagster import (
     AssetKey,
@@ -38,6 +38,73 @@ class DLTAssetSchedule(BaseModel):
     keys: List[AssetKey]
     schedule: str
     timezone: str = "America/New_York"
+
+
+class TableSpec(BaseModel):
+    """Per-table extraction settings.
+
+    A source that is loaded once in full and then followed incrementally
+    needs both halves per table: a ``primary_key`` to merge on and a
+    ``cursor`` to advance. Declaring them per table -- rather than one
+    key for the whole pipeline, which is all this factory used to accept
+    -- is what makes a set of heterogeneous tables expressible in one
+    pipeline, since the key and the cursor are rarely the same column
+    twice.
+
+    Lives here rather than beside any one component because two of them
+    now read it, and a second copy would be two models that drift.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    primary_key: Union[str, List[str]] = PydanticField(
+        description="Merge/index key. A list for a composite key.",
+    )
+    cursor: Optional[str] = PydanticField(
+        default=None,
+        description=(
+            "Incremental cursor column. Omit ONLY for a table that is "
+            "always fully reloaded -- without it every run re-extracts "
+            "the whole table, which is correct but not incremental."
+        ),
+    )
+    initial_value: Optional[Any] = PydanticField(
+        default=None,
+        description=(
+            "Starting cursor value. Left unset the first run is unbounded, "
+            "which is the full initial load a follow-on incremental source "
+            "wants anyway."
+        ),
+    )
+
+
+def build_table_hints(
+    table_config: Dict[str, TableSpec],
+    explicit_hints: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Turn per-table index/cursor settings into dlt resource hints.
+
+    ``table_config`` is the declarative front door; ``hints`` remains as
+    the escape hatch for anything dlt supports that has no dedicated
+    field. Explicit hints win on conflict, so an operator can always
+    reach past this function without editing it.
+
+    The generated ``incremental`` is a plain dict, which is what dlt's
+    ``apply_hints`` takes for its ``IncrementalArgs`` overload -- verified
+    against dlt 1.26 rather than assumed, since a silently-ignored cursor
+    would turn every delta load back into a full one.
+    """
+    hints: Dict[str, Any] = {t: dict(h) for t, h in (explicit_hints or {}).items()}
+
+    for table, spec in table_config.items():
+        generated: Dict[str, Any] = {"primary_key": spec.primary_key}
+        if spec.cursor:
+            incremental: Dict[str, Any] = {"cursor_path": spec.cursor}
+            if spec.initial_value is not None:
+                incremental["initial_value"] = spec.initial_value
+            generated["incremental"] = incremental
+        hints[table] = {**generated, **hints.get(table, {})}
+
+    return hints
 
 
 class DltAssetGroupConfig(BaseModel):
