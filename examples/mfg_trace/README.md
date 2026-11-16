@@ -117,31 +117,74 @@ limit computed that way rejects a reading that passed and nothing downstream
 looks odd. The published `low_limit_num` / `high_limit_num` are doubles, as
 the contract declares: the exact type is the arithmetic, not the storage.
 
-## Stage 1 — conform
+## Stage 1 — conform (`conform/`)
 
-One `contract_mapping` component instance per raw table, in **your**
-deployment's YAML, mapping your raw columns onto the two `conf_*` contracts.
-`examples/contract_mapping/` is the worked example of that component; this
-example does not duplicate it.
+One `contract_mapping` component instance per raw table, mapping the
+SystemLink kind's landing tables onto the two `conf_*` contracts:
+`conform/components/conf_test_repo_result/` and
+`conform/components/conf_test_repo_step_parameter/`.
 
 This is the only place anything from below is named, and that is the whole
 design: the mapping is a file an operator edits when a source renames a
-field, not a library release.
+field, not a library release. Nothing in `dag_tools` names any of these
+columns.
 
-**Three of the conformed columns need transforms `contract_mapping` does not
-ship yet**, so no stage-1 mapping is included here rather than one that
-pretends:
+It needed three transforms this library did not have, and each one exists
+because the source disagrees with the contract about exactly one thing:
 
-| conformed column | what it needs |
+| conformed column | what it needed | what it uses |
+|---|---|---|
+| `part_number`, `serial_number` | a normalizer. The contract says "the deployment's normalizer decides how"; `trim`/`upper`/`lower` are single-step and cannot be composed, and a real normalizer is a rule, not a case fold. | `normalize` with `rules: identifier`, declared in `conform/normalizers.yaml`. The raw value is kept beside it as a plain copy, so a normalizer change stays auditable — nothing generates a `*_raw` column, because what to keep verbatim is the mapping author's decision. |
+| `is_terminal` | which of your status values are terminal — a membership test over `status_type`. | `in_set`. The match is exact, so a value not listed is not terminal. The listed values are the same set `dag_tools/systemlink/spec.py` carries as its `terminal_statuses` default, which is what decides when the kind fetches steps: if your server's vocabulary differs, override **both**. |
+| `measurement_text`, `units`, `limits_text` | `''` where absent and null where empty. | `coalesce` with a declared `default: ""` for the first, `nullif` for the other two. |
+
+`loaded_at` uses `run_timestamp`: one instant for a whole load, not a
+per-row clock reading, so rows of one load are distinguishable by what they
+are rather than by when they were written. `extracted_at` and `source_system`
+read the kind's own stamps rather than restating constants the table already
+carries.
+
+`emit.dry_run: true` on both instances, so the example renders the SQL and
+writes nothing. Each instance sets an explicit `asset_name`: the default is
+`"contract_mapping"`, so two instances leaving it unset would mint one asset
+key and the load would fail naming neither.
+
+**Two limits, stated rather than papered over.** The flattened spelling of
+the nested status column (`status__status_type`) is dlt's own decision and is
+**unverified against a real run** — confirm it against your server before
+trusting the mapping. And six of the result columns (a part number, a serial
+number, a start time, a duration, a system id, a host name) are fields this
+repo has never observed; each is marked `# declared` in the mapping, against
+the `# observed` ones. `contract_mapping` has no normalization tolerance, so
+each column block names exactly one spelling.
+
+## The BW-shaped fixture (`bw/`)
+
+A second `DltPipelineComponent` instance, over a synthetic sqlite stand-in
+for a SAP-BW-shaped source: a master-data-shaped table and an as-built-shaped
+table. `python bw/seed.py` builds it (no warehouse, no credentials, no binary
+committed); `seed.apply_second_load()` is what changed in the source before
+the next extraction. `bw/component.yaml` expresses the active-version filter as
+`row_filters` and keeps history on the as-built table with `history: scd2`
+(no cursor: the two are refused together). Every name in it is this example's
+own; dag-tools names none of them, and
+`dag_tools_tests/test_mfg_trace_fixture.py` enforces that in both directions.
+
+Each plant sits on its own key, beside a control key that trips nothing:
+
+| plant | what it proves at the raw layer |
 |---|---|
-| `part_number`, `serial_number` | a normalizer. The contract says "the deployment's normalizer decides how"; `trim`/`upper`/`lower` are single-step and cannot be composed, and a real normalizer is a rule, not a case fold. |
-| `is_terminal` | which of your status values are terminal — a membership test over `status_type`, which no current transform expresses. |
-| `measurement_text`, `units`, `limits_text` | `''` where absent and null where empty. `coalesce` takes source columns, not a constant fallback. |
+| active and inactive versions of one key | the extraction filter drops the inactive row and keeps the active one |
+| an open-ended validity with the `99991231` sentinel | raw carries the sentinel as written, not a null |
+| a blank-key row | the extraction filter does **not** touch it; raw stays a faithful copy |
+| a child absent from the second load | scd2 keeps its open version (the key is a `merge_key`, so a key missing from a load is not retired) |
+| a child replaced at the same position | scd2 closes the old version and opens a new one |
 
-`normalize`, `where` and `nullif` are queued for the next change to
-`contract_mapping`; the mappings land with them. Until then the conformed
-tables are produced by your own models, and the `conf_*` documents are what
-they are checked against — which is the same seam either way.
+**Deferred, by name.** Two of these plants have their second half in the
+curated layer, which is PR D's and does not exist yet: dropping the blank-key
+row is a curated `where`, and turning the sentinel end date into a null is a
+`nullif`. Both are planted here and asserted to reach raw unchanged; their
+behaviour is proven in `contract_mapping`'s own suites, not against this data.
 
 ## Hazards
 

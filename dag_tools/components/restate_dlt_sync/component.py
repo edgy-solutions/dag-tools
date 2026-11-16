@@ -30,6 +30,9 @@ from dag_tools.asset_wrappers.dlt_assets_parsing import create_dlt_assets
 from dag_tools.asset_wrappers.dlt_assets_factory import DltAssetGroupConfig
 
 from .config import ControlTableSpec, MeiTableSpec, TableSpec
+# Lifted to the shared dlt factory; re-exported because dlt_dev.loader and
+# downstream repos import it from here.
+from dag_tools.asset_wrappers.dlt_assets_factory import build_table_hints  # noqa: F401
 
 
 def _executable_asset_keys(items: List[Any]) -> List[AssetKey]:
@@ -158,36 +161,6 @@ def _clean_entries(entries: List[Any]) -> List[Any]:
         if text:
             cleaned.append(text)
     return cleaned
-
-
-def build_table_hints(
-    table_config: Dict[str, TableSpec],
-    explicit_hints: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Turn per-table index/cursor settings into dlt resource hints.
-
-    ``table_config`` is the declarative front door; ``hints`` remains as
-    the escape hatch for anything dlt supports that has no dedicated
-    field. Explicit hints win on conflict, so an operator can always
-    reach past this function without editing it.
-
-    The generated ``incremental`` is a plain dict, which is what dlt's
-    ``apply_hints`` takes for its ``IncrementalArgs`` overload -- verified
-    against dlt 1.26 rather than assumed, since a silently-ignored cursor
-    would turn every delta load back into a full one.
-    """
-    hints: Dict[str, Any] = {t: dict(h) for t, h in (explicit_hints or {}).items()}
-
-    for table, spec in table_config.items():
-        generated: Dict[str, Any] = {"primary_key": spec.primary_key}
-        if spec.cursor:
-            incremental: Dict[str, Any] = {"cursor_path": spec.cursor}
-            if spec.initial_value is not None:
-                incremental["initial_value"] = spec.initial_value
-            generated["incremental"] = incremental
-        hints[table] = {**generated, **hints.get(table, {})}
-
-    return hints
 
 
 def latest_completed_query(control: ControlTableSpec) -> str:

@@ -1,0 +1,12 @@
+# The normalizer document BOTH mappings reference. One id, so a part number
+# and a serial number are conformed identically in both tables -- which is what
+# lets stage 2 join on them. A mapping holds only the reference.
+#
+# Deliberately regex-free (trim, upper): this example needs no
+# `regex_templates`, which are the operator's dialect to declare. Add a
+# `strip` / `replace` op here and the mappings must gain the template, which
+# the plan reports if they do not.
+normalizers:
+  identifier:
+    - op: trim
+    - op: upper

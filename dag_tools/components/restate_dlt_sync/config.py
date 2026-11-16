@@ -16,36 +16,9 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class TableSpec(BaseModel):
-    """Per-table extraction settings.
-
-    PDM does one full load and then only deltas, so every table needs
-    both halves: an ``index`` to merge on and a ``cursor`` to advance.
-    Declaring them per table (rather than one primary key for the whole
-    pipeline, which is all the component used to accept) is what makes a
-    dozen heterogeneous tables expressible.
-    """
-    model_config = ConfigDict(extra="forbid")
-
-    primary_key: Union[str, List[str]] = Field(
-        description="Merge/index key. A list for a composite key.",
-    )
-    cursor: Optional[str] = Field(
-        default=None,
-        description=(
-            "Incremental cursor column. Omit ONLY for a table that is "
-            "always fully reloaded -- without it every run re-extracts "
-            "the whole table, which is correct but not incremental."
-        ),
-    )
-    initial_value: Optional[Any] = Field(
-        default=None,
-        description=(
-            "Starting cursor value. Left unset the first run is unbounded, "
-            "which is exactly the full load PDM does first."
-        ),
-    )
+# TableSpec was lifted to the shared dlt factory so the plain dlt pipeline
+# component can use it too; the name stays importable from here.
+from dag_tools.asset_wrappers.dlt_assets_factory import TableSpec  # noqa: F401
 
 
 class ControlTableSpec(BaseModel):

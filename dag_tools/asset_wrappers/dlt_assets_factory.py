@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 import dlt
 from dlt.common.configuration.specs.azure_credentials import AzureCredentials
@@ -10,7 +10,7 @@ from dlt.common.storages.configuration import AwsCredentials, FileSystemCredenti
 from dlt.destinations.impl.clickhouse.configuration import ClickHouseCredentials
 from dlt.destinations.impl.databricks.configuration import DatabricksCredentials
 from dlt.sources.credentials import ConnectionStringCredentials
-from pydantic import Field as PydanticField, BaseModel
+from pydantic import ConfigDict, Field as PydanticField, BaseModel
 
 from dagster import (
     AssetKey,
@@ -38,6 +38,103 @@ class DLTAssetSchedule(BaseModel):
     keys: List[AssetKey]
     schedule: str
     timezone: str = "America/New_York"
+
+
+class TableSpec(BaseModel):
+    """Per-table extraction settings.
+
+    A source that is loaded once in full and then followed incrementally
+    needs both halves per table: a ``primary_key`` to merge on and a
+    ``cursor`` to advance. Declaring them per table -- rather than one
+    key for the whole pipeline, which is all this factory used to accept
+    -- is what makes a set of heterogeneous tables expressible in one
+    pipeline, since the key and the cursor are rarely the same column
+    twice.
+
+    Lives here rather than beside any one component because two of them
+    now read it, and a second copy would be two models that drift.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    primary_key: Union[str, List[str]] = PydanticField(
+        description="Merge/index key. A list for a composite key.",
+    )
+    cursor: Optional[str] = PydanticField(
+        default=None,
+        description=(
+            "Incremental cursor column. Omit ONLY for a table that is "
+            "always fully reloaded -- without it every run re-extracts "
+            "the whole table, which is correct but not incremental."
+        ),
+    )
+    initial_value: Optional[Any] = PydanticField(
+        default=None,
+        description=(
+            "Starting cursor value. Left unset the first run is unbounded, "
+            "which is the full initial load a follow-on incremental source "
+            "wants anyway."
+        ),
+    )
+    history: Optional[Literal["scd2"]] = PydanticField(
+        default=None,
+        description=(
+            "Keep the history of a changing row instead of its latest value. "
+            "``scd2`` closes the old version and opens a new one when a row "
+            "changes. The ``primary_key`` is then the natural key the retirement "
+            "is scoped by. Cannot be combined with ``cursor``. Absent means "
+            "today's behaviour exactly."
+        ),
+    )
+
+
+def build_table_hints(
+    table_config: Dict[str, TableSpec],
+    explicit_hints: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Turn per-table index/cursor settings into dlt resource hints.
+
+    ``table_config`` is the declarative front door; ``hints`` remains as
+    the escape hatch for anything dlt supports that has no dedicated
+    field. Explicit hints win on conflict, so an operator can always
+    reach past this function without editing it.
+
+    The generated ``incremental`` is a plain dict, which is what dlt's
+    ``apply_hints`` takes for its ``IncrementalArgs`` overload -- verified
+    against dlt 1.26 rather than assumed, since a silently-ignored cursor
+    would turn every delta load back into a full one.
+    """
+    hints: Dict[str, Any] = {t: dict(h) for t, h in (explicit_hints or {}).items()}
+
+    for table, spec in table_config.items():
+        if spec.history and spec.cursor:
+            raise ValueError(
+                f"table_config for '{table}' declares both history: {spec.history} "
+                f"and cursor: {spec.cursor!r}. A cursor loads only the rows past "
+                f"the watermark, and history reads a load as the whole source, so "
+                f"records the slice did not carry would be closed though nothing "
+                f"changed. Drop the cursor (history tables are loaded in full) or "
+                f"drop history."
+            )
+        if spec.history:
+            # The key becomes a merge_key, never a primary_key: with no merge_key
+            # dlt retires EVERY active row absent from the load, and with one it
+            # retires only those whose key is present in it. Validity columns and
+            # timestamps are left unset so dlt's own defaults apply.
+            scd: Dict[str, Any] = {
+                "write_disposition": {"disposition": "merge", "strategy": spec.history},
+                "merge_key": spec.primary_key,
+            }
+            hints[table] = {**scd, **hints.get(table, {})}
+            continue
+        generated: Dict[str, Any] = {"primary_key": spec.primary_key}
+        if spec.cursor:
+            incremental: Dict[str, Any] = {"cursor_path": spec.cursor}
+            if spec.initial_value is not None:
+                incremental["initial_value"] = spec.initial_value
+            generated["incremental"] = incremental
+        hints[table] = {**generated, **hints.get(table, {})}
+
+    return hints
 
 
 class DltAssetGroupConfig(BaseModel):
@@ -92,6 +189,16 @@ class DltAssetGroupConfig(BaseModel):
             "        resources:\n"
             "          requests: {cpu: '2000m', memory: '8Gi'}\n"
             "          limits:   {cpu: '4000m', memory: '16Gi'}"
+        ),
+    )
+    ingest_runs: bool = PydanticField(
+        default=False,
+        description=(
+            "Record one row per run, failed or not, in this pipeline's own dataset "
+            "(status, root error type, a digest of the message, row counts). Off by "
+            "default: a deployment that upgrades lands no table it did not ask for. "
+            "Read at RUN time by the source kind, so it is a field here, not popped. "
+            "A kind that records its own runs ignores it."
         ),
     )
     table_prefix: Optional[str] = PydanticField(

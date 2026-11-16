@@ -41,7 +41,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # therefore preserves the source's own int-ness instead of forcing a float --
 # see `plan.py`, where coercing one amount column to float was enough to stop
 # a mapping reproducing its fixture byte for byte.
-CONTRACT_TYPES = ("string", "numeric", "integer", "float", "boolean")
+CONTRACT_TYPES = (
+    "string", "numeric", "integer", "float", "boolean",
+    "timestamp", "date", "array<string>",
+)
 
 # The spelling a contract uses to say it has no scope column at all.
 #

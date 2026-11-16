@@ -1,0 +1,28 @@
+type: dag_tools.ContractMappingComponent
+
+attributes:
+  mapping_file: mapping.yaml
+
+  contract:
+    # The deployment's governed BUNDLE: one file, one document per table.
+    # `expect_contract_id` SELECTS the document out of it (and is only a check
+    # on a single-document file). Two instances, two ids, one governed file.
+    path: ../../../contracts/mfg_trace.yaml
+    expect_contract_id: mfg_trace.conf_test_repo_step_parameter
+
+  normalizers:
+    # Shared by both instances; resolved relative to this directory.
+    path: ../../normalizers.yaml
+
+  source_schema:
+    from_mapping: true
+    datahub: false
+
+  emit:
+    dry_run: true
+
+  # EXPLICIT and distinct per instance: see the result instance's note.
+  asset_name: conf_test_repo_step_parameter_mapping
+  group_name: mfg_trace_conform
+  tags:
+    moves_data: "false"

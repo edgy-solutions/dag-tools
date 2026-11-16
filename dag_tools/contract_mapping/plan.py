@@ -31,6 +31,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from dag_tools.contract_mapping.contract import CONTRACT_TYPES, Contract
 from dag_tools.contract_mapping.mapping import Mapping
+from dag_tools.contract_mapping.normalize import (
+    Normalizers,
+    NormalizerOp,
+    part_index,
+)
 
 # The rule ids this library reaches for, by the kind of test it emits.
 #
@@ -58,7 +63,13 @@ _NUMERIC_TYPES = ("numeric", "float")
 #: a fractional type; `concat` produces text whatever it was given; a
 #: `constant` of `null` is untyped. Under an enforced model contract each
 #: needs a cast, and the plan says so when the mapping declares none.
-_TYPE_CHANGING_TRANSFORMS = ("scale", "concat", "constant")
+_TYPE_CHANGING_TRANSFORMS = (
+    "scale", "concat", "constant", "in_set", "run_timestamp"
+)
+
+
+#: Per-column fields derived from others that ARE hashed; never in the hash.
+_DERIVED_COLUMN_FIELDS = ("invertible", "uninvertible_op")
 
 
 class MappingPlanError(Exception):
@@ -93,6 +104,23 @@ class PlannedColumn(BaseModel):
     separator: str = ""
     factor: Optional[Decimal] = None
     default: Any = None
+    values: Optional[List[Any]] = None
+    assume_utc: bool = False
+    # `run_timestamp` only: the operator's SQL for the load instant. Joins the
+    # plan hash only where set, so no other mapping's hash moves.
+    run_timestamp_sql: Optional[str] = None
+
+    # `normalize` only. `rules`, `part`, `ops` and `regex_templates` join the
+    # plan hash only where set, so a plan with no normalize column hashes as
+    # it did before they existed. `invertible` and `uninvertible_op` are
+    # DERIVED from `ops` (which is hashed) and stay out of the hash entirely:
+    # an unconditional per-column key would move every mapping's hash.
+    rules: Optional[str] = None
+    part: Optional[str] = None
+    ops: List[NormalizerOp] = Field(default_factory=list)
+    regex_templates: Dict[str, str] = Field(default_factory=dict)
+    invertible: bool = True
+    uninvertible_op: Optional[str] = None
 
     required: bool = False
     unit: Optional[str] = None
@@ -121,6 +149,17 @@ class PlannedTest(BaseModel):
     declared_in_contract: bool = True
 
 
+class PlannedFilter(BaseModel):
+    """One resolved `where` predicate: which source rows the model reads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    op: str
+    value: Optional[Any] = None
+    values: Optional[List[Any]] = None
+
+
 class MappingPlan(BaseModel):
     """What a mapping, reconciled with its contract, says to emit."""
 
@@ -144,8 +183,25 @@ class MappingPlan(BaseModel):
     scope: Optional[str] = None
     period_column: Optional[str] = None
 
+    row_filters: List[PlannedFilter] = Field(
+        default_factory=list,
+        description=(
+            "The source rows the model reads, ANDed in the order written. "
+            "Part of the plan hash, so a changed filter is a changed plan."
+        ),
+    )
     columns: List[PlannedColumn] = Field(default_factory=list)
     tests: List[PlannedTest] = Field(default_factory=list)
+
+    normalizers: Dict[str, List[NormalizerOp]] = Field(
+        default_factory=dict,
+        description=(
+            "Only the normalizer ids this mapping references, resolved, so a "
+            "dry run shows the ops that will run rather than a name. Not the "
+            "whole document: editing an unrelated normalizer must not make "
+            "every mapping's reviewed hash stale."
+        ),
+    )
 
     unmapped_declared: List[str] = Field(
         default_factory=list,
@@ -168,13 +224,39 @@ class MappingPlan(BaseModel):
         sentence without the artifact changing. Lets a materialization say
         "same bytes as last time" without diffing files.
         """
-        payload = json.dumps(
-            {
+        document = {
                 "contract_id": self.contract_id,
                 "model_name": self.model_name,
-                "columns": [c.model_dump(mode="json") for c in self.columns],
+                # assume_utc joins the payload only where it is set, so a plan
+                # that never uses it hashes as it did before the field existed.
+                "columns": [
+                    {
+                        k: v
+                        for k, v in c.model_dump(mode="json").items()
+                        if not (k == "assume_utc" and v is False)
+                        and not (k == "values" and v is None)
+                        and not (k == "run_timestamp_sql" and v is None)
+                        and k not in _DERIVED_COLUMN_FIELDS
+                        and not (k in ("rules", "part") and v is None)
+                        and not (k in ("ops", "regex_templates") and not v)
+                    }
+                    for c in self.columns
+                ],
                 "tests": [t.model_dump(mode="json") for t in self.tests],
-            },
+        }
+        # Joins the payload only where a filter is declared, so a mapping
+        # without one hashes as it did before the field existed.
+        if self.row_filters:
+            document["row_filters"] = [
+                f.model_dump(mode="json", exclude_none=True) for f in self.row_filters
+            ]
+        if self.normalizers:
+            document["normalizers"] = {
+                ident: [op.model_dump(mode="json", exclude_none=True) for op in ops]
+                for ident, ops in self.normalizers.items()
+            }
+        payload = json.dumps(
+            document,
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -213,10 +295,185 @@ def _rule_id(
     return (derived or generic), False
 
 
+# The type words a `nullif` sentinel can be checked against, and the Python
+# type a sentinel must then be.
+#
+# These are `CONTRACT_TYPES` spellings -- the one type vocabulary this library
+# owns, and the one `source: columns:` is written in throughout the shipped
+# examples. A warehouse's own spelling (`varchar`, `bigint`, `nvarchar`) is
+# deliberately NOT listed, and not because the list would be hard to write:
+# this library declares no warehouse types and no cast templates on purpose,
+# because a guessed one emits SQL that fails for a reason that has nothing to
+# do with the data -- and a table of dialect spellings here would be exactly
+# the thing that rule refuses to own. An unrecognised spelling leaves the
+# sentinel unchecked and says so, which is the stance every other check
+# against this block already takes.
+_SENTINEL_TYPE_FAMILIES = {"integer": int, "string": str}
+
+
+def _check_sentinel_type(name, entry, schema, schema_known, problems, notes) -> None:
+    """A `nullif` sentinel is compared with the source's raw value, so its type
+    must be the declared type of the source column.
+
+    Measured on duckdb: `nullif(<integer column>, '0')` casts the text to an
+    integer and matches, while the row route compares `0 == "0"` and does not.
+    The two routes would disagree on exactly the rows the mapping exists for.
+    """
+    source = entry.sources[0]
+    if not schema_known:
+        notes.append(
+            f"{name!r} uses nullif, and with no source schema its sentinel "
+            f"{entry.value!r} cannot be checked against the type of "
+            f"{source!r}; a type mismatch makes the two routes disagree"
+        )
+        return
+    declared = schema.get(source)
+    if declared is None:
+        return  # reported as an unknown source column
+    family = _SENTINEL_TYPE_FAMILIES.get(declared.strip().lower())
+    if family is None:
+        notes.append(
+            f"{name!r} uses nullif over source column {source!r} of declared "
+            f"type {declared!r}, which is not one of the type words this "
+            f"library reads ({', '.join(sorted(_SENTINEL_TYPE_FAMILIES))}), so "
+            "the sentinel's type is unchecked"
+        )
+        return
+    if not isinstance(entry.value, family):
+        problems.append(
+            f"{name!r} uses nullif with sentinel {entry.value!r} "
+            f"({type(entry.value).__name__}) over source column {source!r} "
+            f"declared {declared!r}; the two routes would disagree on exactly "
+            "the rows the mapping writes it for, because the warehouse coerces "
+            "the literal and the row route compares the written form"
+        )
+
+
+def _check_default_type(name, entry, contract_type, problems) -> None:
+    """A `coalesce` fallback has to be a value the contract's column can take.
+
+    `default` is `Any`, and the two routes do different things with one the
+    column cannot carry: the row route hands it to `coerce_value`, which
+    refuses it by name at materialization, while the SQL route emits it as a
+    bare literal the warehouse either refuses or silently coerces -- and
+    which of those it does is not this library's to decide, the same reason
+    it declares no warehouse types. Knowable at the load, so refused there.
+
+    The type read here is the CONTRACT's, which is this library's own
+    vocabulary; no warehouse spelling is involved and none is listed.
+    """
+    # Deferred: `emit` imports this module, so the dependency only runs one
+    # way at import time. `coerce_value` is the row route's own acceptance
+    # test, which is the point -- a second copy of it here would be the
+    # divergence this check exists to prevent.
+    from dag_tools.contract_mapping.emit import CoercionError, coerce_value
+
+    try:
+        coerce_value(entry.default, contract_type, f"column {name!r}", entry.assume_utc)
+    except CoercionError as error:
+        problems.append(
+            f"{name!r} coalesces to default {entry.default!r} "
+            f"({type(entry.default).__name__}), which the contract's "
+            f"{contract_type!r} column cannot take ({error}); the row route "
+            "refuses it and the SQL route emits it as a bare literal the "
+            "warehouse either refuses or coerces, so the two routes would "
+            "disagree at the warehouse"
+        )
+
+
+def _plan_normalize(
+    name: str,
+    entry: Any,
+    mapping: Mapping,
+    normalizers: Optional[Normalizers],
+    resolved: Dict[str, List[NormalizerOp]],
+    problems: List[str],
+    notes: List[str],
+) -> Dict[str, Any]:
+    """Resolve one `normalize` column against the normalizer document.
+
+    Returns the PlannedColumn fields it sets. Every refusal is appended to
+    `problems`, so one reload shows them all.
+    """
+    if normalizers is None:
+        problems.append(
+            f"{name!r} uses normalize with rules {entry.rules!r}, but no "
+            "normalizer document is configured; the mapping holds only the "
+            "reference, so the document it points at has to be supplied"
+        )
+        return {}
+    ops = normalizers.get(entry.rules)
+    if ops is None:
+        problems.append(
+            f"{name!r} references normalizer {entry.rules!r}, which the "
+            f"normalizer document does not declare (it declares "
+            f"{', '.join(normalizers.ids) or 'none'})"
+        )
+        return {}
+
+    split = next((op for op in ops if op.op == "split_revision"), None)
+    if split is None and entry.part is not None:
+        problems.append(
+            f"{name!r} sets part {entry.part!r} but normalizer {entry.rules!r} "
+            "has no split_revision, so the part says nothing and a knob that "
+            "says nothing must not look wired up"
+        )
+    if split is not None:
+        if entry.part is None:
+            problems.append(
+                f"{name!r} uses normalizer {entry.rules!r}, which ends in "
+                "split_revision, with no `part`; which part is produced would "
+                "otherwise be a guess, and both are plausible"
+            )
+        else:
+            try:
+                part_index(split.pattern, entry.part)
+            except ValueError as error:
+                problems.append(f"{name!r}: {error}")
+
+    needed = sorted({op.regex_template for op in ops if op.regex_template})
+    templates = {k: mapping.regex_templates[k] for k in needed if k in mapping.regex_templates}
+    for key in needed:
+        if key in mapping.regex_templates:
+            continue
+        ops_using = ", ".join(sorted({op.op for op in ops if op.regex_template == key}))
+        if mapping.source.table:
+            problems.append(
+                f"{name!r} uses normalizer {entry.rules!r} with op(s) "
+                f"{ops_using}, which need the mapping's `regex_templates."
+                f"{key}`; with a `source.table` the model is rendered as SQL "
+                "and cannot be rendered without it"
+            )
+        else:
+            notes.append(
+                f"{name!r} uses op(s) {ops_using} and the mapping declares no "
+                f"`regex_templates.{key}`; there is no `source.table`, so no "
+                "SQL is rendered and this only matters if one is added"
+            )
+
+    resolved[entry.rules] = list(ops)
+    culprit = next((op.op for op in ops if not op.idempotent), None)
+    if culprit is not None:
+        notes.append(
+            f"{name!r} is not invertible: op {culprit!r} of normalizer "
+            f"{entry.rules!r} is not idempotent on its own output, so a "
+            "proof over this mapping cannot cover this column"
+        )
+    return {
+        "rules": entry.rules,
+        "part": entry.part,
+        "ops": list(ops),
+        "regex_templates": templates,
+        "invertible": culprit is None,
+        "uninvertible_op": culprit,
+    }
+
+
 def build_mapping_plan(
     contract: Contract,
     mapping: Mapping,
     source_schema: Optional[Dict[str, str]] = None,
+    normalizers: Optional[Normalizers] = None,
 ) -> MappingPlan:
     """Reconcile a mapping with its contract and plan the emission.
 
@@ -225,6 +482,9 @@ def build_mapping_plan(
     carries a schema, the source-column checks cannot run and the plan says
     so -- an unknown source column then fails at materialization instead of
     at the code-location load.
+
+    `normalizers` is the normalizer document; a `normalize` column resolves
+    its `rules` against it, and only the ids referenced reach the plan.
     """
     problems: List[str] = []
     notes: List[str] = []
@@ -248,6 +508,24 @@ def build_mapping_plan(
             "no source schema available at planning time, so source columns "
             "are unverified until materialization"
         )
+
+    # -- the rows the mapping reads -----------------------------------------
+    row_filters = [
+        PlannedFilter(**f.model_dump(exclude_unset=True)) for f in mapping.source.where
+    ]
+    if row_filters and not schema_known:
+        notes.append(
+            "the mapping declares a `where` filter and no source schema is "
+            "available, so the columns it names cannot be checked; an unknown "
+            "column fails at materialization"
+        )
+    elif row_filters:
+        for f in row_filters:
+            if f.column not in schema:
+                problems.append(
+                    f"where filter names source column {f.column!r}, which the "
+                    f"source does not have"
+                )
 
     # -- every column the mapping names is a column the contract declares --
     for name in mapping.columns:
@@ -330,6 +608,7 @@ def build_mapping_plan(
 
     # -- per column -------------------------------------------------------
     planned: List[PlannedColumn] = []
+    resolved_normalizers: Dict[str, List[NormalizerOp]] = {}
     for column in contract.columns:
         entry = mapping.columns.get(column.name)
         if entry is None:
@@ -340,6 +619,54 @@ def build_mapping_plan(
                 f"contract column {column.name!r} declares type "
                 f"{column.type!r}, which this library does not know "
                 f"({', '.join(CONTRACT_TYPES)}); it cannot be rendered or tested"
+            )
+
+        if entry.assume_utc and column.type != "timestamp":
+            problems.append(
+                f"{column.name!r} sets assume_utc but the contract declares it "
+                f"{column.type!r}; the knob only means something on a "
+                "timestamp, and a knob that says nothing must not look wired up"
+            )
+
+        if entry.transform == "run_timestamp":
+            if column.type != "timestamp":
+                problems.append(
+                    f"{column.name!r} is produced by run_timestamp but the contract "
+                    f"declares it {column.type!r}; the transform mints an instant "
+                    "and is only meaningful on a timestamp"
+                )
+            if not mapping.run_timestamp_sql:
+                problems.append(
+                    f"{column.name!r} is produced by run_timestamp but the mapping "
+                    "declares no `run_timestamp_sql`; the SQL route would have "
+                    "nothing to render, and this library names no dialect"
+                )
+
+        if entry.transform == "in_set" and column.type != "boolean":
+            problems.append(
+                f"{column.name!r} is produced by in_set but the contract "
+                f"declares it {column.type!r}; a membership test produces a "
+                "boolean, and coercion would otherwise paper over the mistake "
+                "by stringifying True"
+            )
+
+        if entry.transform == "nullif":
+            _check_sentinel_type(
+                column.name, entry, schema, schema_known, problems, notes
+            )
+
+        if (
+            entry.transform == "coalesce"
+            and entry.default is not None
+            and column.type in CONTRACT_TYPES
+        ):
+            _check_default_type(column.name, entry, column.type, problems)
+
+        normalize_fields: Dict[str, Any] = {}
+        if entry.transform == "normalize":
+            normalize_fields = _plan_normalize(
+                column.name, entry, mapping, normalizers,
+                resolved_normalizers, problems, notes,
             )
 
         for source in entry.sources:
@@ -368,10 +695,18 @@ def build_mapping_plan(
                 separator=entry.separator,
                 factor=entry.factor,
                 default=entry.default,
+                values=entry.values,
+                assume_utc=entry.assume_utc,
+                run_timestamp_sql=(
+                    mapping.run_timestamp_sql
+                    if entry.transform == "run_timestamp"
+                    else None
+                ),
                 required=column.required,
                 unit=column.unit,
                 description=entry.description,
                 constant_within=list(column.constant_within),
+                **normalize_fields,
             )
         )
 
@@ -547,7 +882,9 @@ def build_mapping_plan(
         grain=list(contract.grain),
         scope=contract.scope,
         period_column=period_column,
+        row_filters=row_filters,
         columns=planned,
+        normalizers=resolved_normalizers,
         tests=tests,
         unmapped_declared=unmapped_declared,
         notes=notes,

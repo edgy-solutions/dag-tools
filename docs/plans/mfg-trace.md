@@ -596,6 +596,19 @@ is, not a name from below. The two repos split it this way:
 
 ### 6.3 Additive changes to `contract_mapping` (PR B)
 
+**LANDED, and the list below was short.** It was derived from the BW-shaped
+source and is not what the two test-repo conformed contracts needed. Three
+more changes went in beside the three listed: `in_set` (the terminal-status
+flag is a membership test over the source's status enum, which no transform
+expressed), `run_timestamp` (one instant per load for `loaded_at`, since a
+per-row clock reading makes rows of one load distinguishable by when they
+were written rather than by what they are), and `coalesce` relaxed to count
+ARGUMENTS rather than source columns, so one source plus a declared `default`
+is accepted — which is what the `''`-where-absent columns needed, and which
+both routes already implemented and agreed on while the arity table refused
+it. `normalize`'s rules live in a normalizer document rather than in the
+mapping. The shipped mappings are `examples/mfg_trace/conform/`.
+
 1. **`normalize` transform**: `{transform: normalize, rules: <normalizer
    id>, part: value|revision}`. Rules come from a normalizer document
    (§7). It renders to SQL (`trim`, `upper`, `replaceRegexpAll`,

@@ -51,6 +51,7 @@ from dagster.components.resolved.model import Model
 from dag_tools.contract_mapping.contract import Contract, load_contract
 from dag_tools.contract_mapping.emit import render_dbt_artifacts
 from dag_tools.contract_mapping.mapping import Mapping, load_mapping
+from dag_tools.contract_mapping.normalize import Normalizers, load_normalizers_text
 from dag_tools.contract_mapping.plan import MappingPlan, build_mapping_plan
 
 from .schema import ContractMappingRunConfig, ContractMappingSpec
@@ -92,6 +93,71 @@ def _load_document(path: str, what: str) -> Dict[str, Any]:
     return document
 
 
+def _load_contract_file(path: str, expect_id: Optional[str]) -> Dict[str, Any]:
+    """Read a contract from a file, which may be a governed BUNDLE.
+
+    A deployment governs its contracts together: one file, one document per
+    table, separated by `---` (the mfg_trace example's contract file is
+    exactly that, and its own header says each document loads unchanged).
+    `yaml.safe_load` refuses such a stream outright -- so a reader that
+    accepted only a single document could not point at the governed file at
+    all, only at a copy of one of its documents, which is a second governed
+    text needing a drift test to hold it to the first.
+
+    A stream carrying more than one document is therefore selected from by
+    `expect_contract_id` -- the id the operator has already named, rather
+    than a second field saying the same thing and a validator to catch the
+    two disagreeing. A bundle with no id named fails the load listing the
+    ids it holds: taking the first document would map against whichever
+    document happens to be first, and every column name might still line up,
+    which is the failure `expect_contract_id` exists to catch on a mis-edited
+    path. A single-document file behaves exactly as before, and there the id
+    stays a check rather than a selector.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise ValueError(f"cannot read the contract at {path}: {exc}") from exc
+
+    import yaml
+
+    try:
+        documents = [d for d in yaml.safe_load_all(text) if d is not None]
+    except yaml.YAMLError as exc:
+        raise ValueError(f"the contract at {path} does not parse: {exc}") from exc
+
+    if not documents:
+        raise ValueError(f"the contract at {path} holds no document")
+
+    if len(documents) == 1:
+        document = documents[0]
+        if not isinstance(document, dict):
+            raise ValueError(
+                f"the contract at {path} is a "
+                f"{type(document).__name__}, not a mapping"
+            )
+        return document
+
+    ids = [
+        d.get("contract_id") for d in documents if isinstance(d, dict)
+    ]
+    found = ", ".join(repr(i) for i in ids if i) or "none of them carries one"
+    if not expect_id:
+        raise ValueError(
+            f"the contract at {path} holds {len(documents)} documents; set "
+            f"`contract.expect_contract_id` to the one this mapping is for. "
+            f"It holds: {found}"
+        )
+    for document in documents:
+        if isinstance(document, dict) and document.get("contract_id") == expect_id:
+            return document
+    raise ValueError(
+        f"the contract at {path} holds no document with `contract_id` "
+        f"{expect_id!r}. It holds: {found}"
+    )
+
+
 def _fetch_contract_document(spec: ContractMappingSpec) -> Dict[str, Any]:
     """Fetch the served contract.
 
@@ -115,6 +181,28 @@ def _fetch_contract_document(spec: ContractMappingSpec) -> Dict[str, Any]:
             "contract document"
         )
     return document
+
+
+def _read_normalizers(path: str) -> Normalizers:
+    """Read the normalizer document from a file. Duplicate ids are refused."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise ValueError(f"cannot read the normalizer document at {path}: {exc}") from exc
+    return load_normalizers_text(text)
+
+
+def _fetch_normalizers(spec: ContractMappingSpec) -> Normalizers:
+    """Fetch the served normalizer document (`requests`, as the contract's is)."""
+    import requests
+
+    block = spec.normalizers
+    response = requests.get(
+        block.url, headers=dict(block.headers), timeout=block.timeout_seconds
+    )
+    response.raise_for_status()
+    return load_normalizers_text(response.text)
 
 
 def _check_expected_id(spec: ContractMappingSpec, contract: Contract) -> None:
@@ -291,25 +379,49 @@ def build_contract_mapping_asset(
     mapping_path = _resolve_path(spec.mapping_file, component_dir)
     mapping = load_mapping(_load_document(mapping_path, "mapping"))
 
+    uses_normalize = [n for n, c in mapping.columns.items() if c.transform == "normalize"]
+    if uses_normalize and spec.normalizers is None:
+        raise ValueError(
+            f"the mapping at {mapping_path} references normalizer rules in "
+            f"{', '.join(map(repr, uses_normalize))}, and this component "
+            "configures no `normalizers` (path or url), so there is no "
+            "document to resolve them against"
+        )
+    load_normalizer_doc: Optional[Normalizers] = None
+    if spec.normalizers is not None and spec.normalizers.path:
+        load_normalizer_doc = _read_normalizers(
+            _resolve_path(spec.normalizers.path, component_dir)
+        )
+    normalizers_served = bool(spec.normalizers is not None and spec.normalizers.url)
+
     # Validate as much as can be validated now. A file-backed contract plus a
     # mapping-declared schema is the whole plan, and getting it wrong should
     # fail the code location load rather than a run an hour later.
     load_notes: List[str] = []
     if spec.contract.path:
         contract = load_contract(
-            _load_document(_resolve_path(spec.contract.path, component_dir), "contract")
+            _load_contract_file(
+                _resolve_path(spec.contract.path, component_dir),
+                spec.contract.expect_contract_id,
+            )
         )
         _check_expected_id(spec, contract)
-        if mapping.source.columns and not spec.source_schema.datahub:
+        if (
+            mapping.source.columns
+            and not spec.source_schema.datahub
+            and not (normalizers_served and uses_normalize)
+        ):
             # Built for the exception it raises, not for its value: the plan
             # is rebuilt at materialization against whatever the contract
             # says then. This call is the load-time gate.
-            build_mapping_plan(contract, mapping, dict(mapping.source.columns))
+            build_mapping_plan(
+                contract, mapping, dict(mapping.source.columns), load_normalizer_doc
+            )
         else:
             load_notes.append(
                 "the plan was not built at load time because the source "
-                "schema comes from the catalog, so source columns are "
-                "unverified until this asset runs"
+                "schema comes from the catalog or the normalizers are served, so "
+                "source columns and normalizer references are unverified until this asset runs"
             )
     else:
         load_notes.append(
@@ -336,8 +448,9 @@ def build_contract_mapping_asset(
         notes = list(load_notes)
 
         if spec.contract.path:
-            document = _load_document(
-                _resolve_path(spec.contract.path, component_dir), "contract"
+            document = _load_contract_file(
+                _resolve_path(spec.contract.path, component_dir),
+                spec.contract.expect_contract_id,
             )
         else:
             document = _fetch_contract_document(spec)
@@ -358,7 +471,18 @@ def build_contract_mapping_asset(
                 "the source at all"
             )
 
-        plan = build_mapping_plan(run_contract, mapping, source_schema)
+        if spec.normalizers is None:
+            run_normalizers = None
+        elif spec.normalizers.path:
+            run_normalizers = _read_normalizers(
+                _resolve_path(spec.normalizers.path, component_dir)
+            )
+        else:
+            run_normalizers = _fetch_normalizers(spec)
+
+        plan = build_mapping_plan(
+            run_contract, mapping, source_schema, run_normalizers
+        )
         notes.extend(plan.notes)
 
         files = render_dbt_artifacts(plan)
@@ -453,6 +577,11 @@ class ContractMappingComponent(Component, Resolvable, Model):
     contract: Dict[str, Any]
     """Where the contract comes from: exactly one of `path` or `url`."""
 
+    normalizers: Dict[str, Any] = {}
+    """The normalizer document a `normalize` column references: exactly one
+    of `path` or `url`, as the contract. Needed only by a mapping that uses
+    `normalize`."""
+
     source_schema: Dict[str, Any] = {}
     """Where the source dataset's schema comes from: the mapping's own
     `source.columns` (the default, and the only one that can fail the code
@@ -478,6 +607,7 @@ class ContractMappingComponent(Component, Resolvable, Model):
             tags=self.tags,
             mapping_file=self.mapping_file,
             contract=self.contract,
+            normalizers=self.normalizers,
             source_schema=self.source_schema,
             emit=self.emit,
         )

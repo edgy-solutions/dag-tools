@@ -40,7 +40,82 @@ TRANSFORMS: Dict[str, Dict[str, Any]] = {
     "concat": {"sources": "2+", "requires": ()},
     "coalesce": {"sources": "2+", "requires": ()},
     "scale": {"sources": 1, "requires": ("factor",)},
+    "nullif": {"sources": 1, "requires": ("value",)},
+    "in_set": {"sources": 1, "requires": ("values",)},
+    "normalize": {"sources": 1, "requires": ("rules",)},
+    "run_timestamp": {"sources": 0, "requires": ()},
 }
+
+
+#: The six row-filter operators. One grammar for a mapping's `where` and the
+#: dlt component's `row_filters`, which calls `validate_where` below.
+WHERE_OPS = ("=", "!=", "in", "not_in", "is_null", "not_null")
+_WHERE_SCALAR = ("=", "!=")
+_WHERE_LIST = ("in", "not_in")
+
+
+def _check_literals(literals: List[Any], who: str, many: bool) -> None:
+    """The literal rules `in_set` and `where` share, written once.
+
+    Text or integer only, one type per list: a bool is an int to Python and
+    a flag to no warehouse, a float is an equality on floats, and a null is
+    never matched by SQL `=`/`in` while Python matches it, so the routes
+    would disagree on exactly the rows the mapping is written for. Binding a
+    value instead of inlining it changes none of this, which is why the dlt
+    component's `row_filters` is held to the same rules.
+    """
+    if many and not literals:
+        raise ValueError(f"{who} requires a non-empty `values`")
+    for v in literals:
+        if isinstance(v, bool) or not isinstance(v, (str, int)):
+            raise ValueError(
+                f"{who} takes text or integer literals only, got "
+                f"{literals!r}; a null is never matched by SQL `in` while "
+                "Python matches it, so the routes would disagree, and a "
+                "boolean or float is not a literal both routes compare alike "
+                "(null is spelled is_null / not_null)"
+            )
+    if len({isinstance(v, str) for v in literals}) > 1:
+        raise ValueError(
+            f"{who} takes all text or all integer literals, "
+            f"got a mix in {literals!r}; a dialect comparing text to an "
+            "integer either errors or coerces, and which is not this "
+            "library's to decide"
+        )
+
+
+def validate_where(flt: Dict[str, Any]) -> None:
+    """Refuse a malformed row filter; the one validator both halves call.
+
+    `flt` is one filter as written: only the keys the author wrote, so a
+    present-but-null `value` is told apart from an absent one. Raises
+    `ValueError` naming the filter. Checks the operator, which of `value` /
+    `values` it takes and that the other is absent, and the literals. It
+    does not check the column against a schema: that is the caller's, since
+    only the caller knows where the schema comes from.
+    """
+    column = flt.get("column")
+    op = flt.get("op")
+    if not isinstance(column, str) or not column.strip():
+        raise ValueError("a filter names no column")
+    who = f"filter on {column!r} (op {op!r})"
+    if op not in WHERE_OPS:
+        raise ValueError(
+            f"{who}: unknown operator; the operators are {', '.join(WHERE_OPS)}"
+        )
+    has_value, has_values = "value" in flt, "values" in flt
+    if op in _WHERE_SCALAR:
+        if not has_value or has_values:
+            raise ValueError(f"{who} takes `value` and no `values`")
+        _check_literals([flt["value"]], f"{who} value", False)
+    elif op in _WHERE_LIST:
+        if not has_values or has_value or flt["values"] is None:
+            raise ValueError(f"{who} takes `values` and no `value`")
+        if not isinstance(flt["values"], list) or not flt["values"]:
+            raise ValueError(f"{who} has an empty `values` list; it needs a non-empty list")
+        _check_literals(flt["values"], f"{who} values", True)
+    elif has_value or has_values:
+        raise ValueError(f"{who} takes neither `value` nor `values`")
 
 
 class ColumnMapping(BaseModel):
@@ -75,12 +150,53 @@ class ColumnMapping(BaseModel):
     )
     default: Any = Field(
         default=None,
-        description="`coalesce`: used when every source is null. Optional.",
+        description=(
+            "`coalesce`: used when every source is null. Optional, and it "
+            "counts as one of coalesce's arguments -- one source with a "
+            "declared fallback is a coalesce, a bare single source is not."
+        ),
+    )
+    values: Optional[List[Any]] = Field(
+        default=None,
+        description=(
+            "`in_set`: the literals a source value is tested against, all "
+            "text or all integer. Matching is exact -- no case folding, no "
+            "trimming -- because a source whose casing varies is a source "
+            "whose enum is not an enum, and folding here would hide that. "
+            "Not spelled `in`: that is a Python keyword, and `where` already "
+            "names the source-block row filter."
+        ),
+    )
+
+    rules: Optional[str] = Field(
+        default=None,
+        description=(
+            "`normalize`: the id of a normalizer in the normalizer document. "
+            "The mapping holds only the reference; every source that "
+            "references one id is conformed identically."
+        ),
+    )
+    part: Optional[str] = Field(
+        default=None,
+        description=(
+            "`normalize`: which named group of the normalizer's "
+            "`split_revision` pattern this column takes. The names are the "
+            "operator's, so this is not a closed pair."
+        ),
     )
 
     description: Optional[str] = Field(
         default=None,
         description="Carried onto the emitted model's column documentation.",
+    )
+    assume_utc: bool = Field(
+        default=False,
+        description=(
+            "`timestamp` columns only: read a value that names no offset as "
+            "UTC. A declared decision, never a default -- a naive value names "
+            "no instant, and reading it as UTC shifts a non-UTC source by "
+            "hours. Refused at plan time on any other contract type."
+        ),
     )
 
     @field_validator("sources", mode="before")
@@ -112,7 +228,27 @@ class ColumnMapping(BaseModel):
             raise ValueError(
                 f"transform {self.transform!r} takes exactly one `from`, got {count}"
             )
-        if wanted == "2+" and count < 2:
+        # `coalesce` counts ARGUMENTS, and a declared `default` is one of
+        # them: one source plus a constant fallback is two arguments, and
+        # both routes already render that shape and agree on it. `concat`
+        # is not relaxed alongside it -- it has no fallback to count, and
+        # `concat(x)` with a separator is a genuine no-op.
+        fallback = 1 if self.transform == "coalesce" and self.default is not None else 0
+        if wanted == "2+" and count + fallback < 2:
+            if self.transform == "coalesce":
+                # The arity `coalesce` wants is two ARGUMENTS, and `default`
+                # is one of them. Saying "add another `from`" here is what
+                # sent operators looking for a second source they do not
+                # have, and got a shipped, working feature written up as an
+                # absent one.
+                raise ValueError(
+                    "transform 'coalesce' takes two or more arguments and got "
+                    f"{count} `from` and "
+                    f"{'a' if fallback else 'no'} `default`; a constant fallback "
+                    "declared as `default` is the second argument, and is how "
+                    "a one-source coalesce is written. Over a single source "
+                    "with no fallback it is a no-op dressed as a transform."
+                )
             raise ValueError(
                 f"transform {self.transform!r} takes two or more `from`, got {count}"
             )
@@ -122,6 +258,60 @@ class ColumnMapping(BaseModel):
                 raise ValueError(
                     f"transform {self.transform!r} requires `{argument}`"
                 )
+
+        if self.transform == "nullif":
+            # bool is an int in Python (`0 == False`) and not in a warehouse;
+            # a float sentinel is an equality on floats.
+            if isinstance(self.value, bool) or not isinstance(self.value, (str, int)):
+                raise ValueError(
+                    "transform 'nullif' takes a text or integer `value`, got "
+                    f"{self.value!r}; a boolean would match an integer zero on "
+                    "the row route and not in the warehouse, and a float is an "
+                    "equality on floats"
+                )
+        if self.transform != "normalize":
+            for knob in ("rules", "part"):
+                if getattr(self, knob) is not None:
+                    raise ValueError(
+                        f"`{knob}` is set on transform {self.transform!r}; it "
+                        "only means something on `normalize`, and a knob that "
+                        "says nothing must not look wired up"
+                    )
+        if self.transform == "run_timestamp":
+            for knob in ("value", "factor", "default", "values"):
+                if getattr(self, knob) is not None:
+                    raise ValueError(
+                        f"`{knob}` is set on transform 'run_timestamp'; the instant "
+                        "comes from the caller, so the knob says nothing and must "
+                        "not look wired up"
+                    )
+            if self.separator or self.assume_utc:
+                raise ValueError(
+                    "`separator` / `assume_utc` are set on transform "
+                    "'run_timestamp'; neither means anything there"
+                )
+        if self.transform == "in_set":
+            _check_literals(
+                self.values or [], "transform 'in_set'", many=True
+            )
+        return self
+
+
+class RowFilter(BaseModel):
+    """One predicate on the source rows a mapping reads; see `validate_where`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    op: str
+    value: Optional[Any] = None
+    values: Optional[List[Any]] = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> "RowFilter":
+        validate_where(
+            {k: getattr(self, k) for k in self.model_fields_set} | {"column": self.column, "op": self.op}
+        )
         return self
 
 
@@ -155,6 +345,28 @@ class SourceDataset(BaseModel):
             "than at the code location load."
         ),
     )
+    where: List[RowFilter] = Field(
+        default_factory=list,
+        description=(
+            "Which source rows the mapping reads: `[{column, op, value|values}]`, "
+            "ANDed in the order written. A disjunction belongs in a view the "
+            "mapping reads from. An excluded row produces no output row."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _where_names_declared_columns(self) -> "SourceDataset":
+        # An empty `columns` means the schema comes from the catalog at
+        # materialization; the plan notes the filter went unchecked then.
+        if self.columns:
+            for flt in self.where:
+                if flt.column not in self.columns:
+                    raise ValueError(
+                        f"where filter names source column {flt.column!r}, "
+                        f"which `source.columns` does not declare "
+                        f"({sorted(self.columns)})"
+                    )
+        return self
 
 
 class PeriodKey(BaseModel):
@@ -232,6 +444,26 @@ class Mapping(BaseModel):
             "warehouse."
         ),
     )
+    regex_templates: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "`regex_replace` and `regex_extract`: SQL for a regex replace "
+            "(`{expr}`, `{pattern}`, `{replacement}`) and a positional regex "
+            "extract (`{expr}`, `{pattern}`, `{group}`), as this warehouse "
+            "spells them. Operator-declared, like `cast_templates`, because "
+            "this library names no dialect. Needed only by a normalizer "
+            "using a regex op."
+        ),
+    )
+    run_timestamp_sql: Optional[str] = Field(
+        default=None,
+        description=(
+            "SQL for the load instant, used verbatim by every `run_timestamp` "
+            "column. Operator-declared, like `cast_templates`, because this "
+            "library names no dialect. Required by a mapping that uses the "
+            "transform: the SQL route has nothing safe to render without it."
+        ),
+    )
     non_finite_predicate: Optional[str] = Field(
         default=None,
         description=(
@@ -256,6 +488,15 @@ class Mapping(BaseModel):
         default=None,
         description="Name of the emitted dbt model. Defaults to the contract id.",
     )
+
+    @field_validator("regex_templates")
+    @classmethod
+    def _templates_are_well_formed(cls, value: Dict[str, str]) -> Dict[str, str]:
+        from dag_tools.contract_mapping.normalize import check_template
+
+        for key, template in value.items():
+            check_template(key, template)
+        return value
 
 
 def load_mapping(document: Dict[str, Any]) -> Mapping:

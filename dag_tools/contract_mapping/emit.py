@@ -21,12 +21,24 @@ the predicate from its `non_finite_predicate`.
 from __future__ import annotations
 
 import math
+import re
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from dag_tools.contract_mapping.plan import MappingPlan, PlannedColumn, PlannedTest
+from dag_tools.contract_mapping.normalize import (
+    LSTRIP_ZEROS_PATTERN,
+    apply_ops,
+    part_index,
+)
+from dag_tools.contract_mapping.plan import (
+    MappingPlan,
+    PlannedColumn,
+    PlannedFilter,
+    PlannedTest,
+)
 
 
 class RenderError(Exception):
@@ -60,6 +72,104 @@ def _parse_number(text: str) -> Any:
         raise CoercionError(f"{text!r} is not a number") from exc
 
 
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+_EPOCH_AMBIGUITY = (
+    "epoch seconds and epoch milliseconds cannot be told apart from the value "
+    "alone, and guessing wrong is a factor-of-1000 error that still lands on a "
+    "plausible date; the mapping should produce an ISO-8601 value"
+)
+
+
+def _coerce_timestamp(value: Any, where: str, assume_utc: bool) -> datetime:
+    """Carry a timestamp as UTC; refuse anything that names no instant."""
+    if isinstance(value, bool):
+        raise CoercionError(f"{where}: a boolean is not a timestamp")
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        raise CoercionError(
+            f"{where}: {value!r} is a date, not a timestamp; widening it to "
+            "midnight would invent a time of day"
+        )
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise CoercionError(
+                f"{where}: {value!r} is not an ISO-8601 timestamp"
+            ) from exc
+    elif isinstance(value, (int, float, Decimal)):
+        raise CoercionError(f"{where}: {value!r} is a number; {_EPOCH_AMBIGUITY}")
+    else:
+        raise CoercionError(f"{where}: {value!r} is not a timestamp")
+
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        if not assume_utc:
+            raise CoercionError(
+                f"{where}: {value!r} names no UTC offset, so it names no "
+                "instant; reading it as UTC would shift every row of a "
+                "non-UTC source by hours. Declare `assume_utc: true` on the "
+                "column mapping if the source really is UTC"
+            )
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _coerce_date(value: Any, where: str) -> date:
+    """Carry a calendar date; a timestamp is not one, even at midnight."""
+    if isinstance(value, bool):
+        raise CoercionError(f"{where}: a boolean is not a date")
+    if isinstance(value, datetime):
+        raise CoercionError(
+            f"{where}: {value!r} is a timestamp, not a date; accepting it at "
+            "midnight would pass until the first row carrying a time"
+        )
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            # 3.11's fromisoformat also takes `20240131` and week dates; the
+            # shape is pinned here so the accepted spelling is one.
+            if not _ISO_DATE.fullmatch(value.strip()):
+                raise ValueError(value)
+            return date.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise CoercionError(
+                f"{where}: {value!r} is not YYYY-MM-DD, the only date spelling "
+                "this library reads"
+            ) from exc
+    if isinstance(value, (int, float, Decimal)):
+        raise CoercionError(f"{where}: {value!r} is a number; {_EPOCH_AMBIGUITY}")
+    raise CoercionError(f"{where}: {value!r} is not a date")
+
+
+def _coerce_string_array(value: Any, where: str) -> List[str]:
+    """Carry a list of strings; a bare string is not one."""
+    if isinstance(value, str):
+        raise CoercionError(
+            f"{where}: {value!r} is a bare string, not an array; a string is "
+            "iterable and would explode into its characters. The mapping "
+            "should produce a list"
+        )
+    if not isinstance(value, (list, tuple)):
+        raise CoercionError(
+            f"{where}: a {type(value).__name__} is not an array; only a list "
+            "or tuple has an order that is part of its value"
+        )
+    for index, element in enumerate(value):
+        if element is None:
+            raise CoercionError(
+                f"{where}: element {index} is null, and a null is not a string"
+            )
+        if not isinstance(element, str):
+            raise CoercionError(
+                f"{where}: element {index} is a {type(element).__name__}, not "
+                "a string; converting it would hide a mapping mistake"
+            )
+    return list(value)
+
+
 def _reject_non_finite(value: Any, where: str) -> None:
     if isinstance(value, float) and not math.isfinite(value):
         raise CoercionError(
@@ -71,7 +181,9 @@ def _reject_non_finite(value: Any, where: str) -> None:
         raise CoercionError(f"{where} is {value!r}, which is not finite")
 
 
-def coerce_value(value: Any, contract_type: str, where: str) -> Any:
+def coerce_value(
+    value: Any, contract_type: str, where: str, assume_utc: bool = False
+) -> Any:
     """Carry a value as the type its contract column declares.
 
     `numeric` is the interesting one: it accepts an integer or a fractional
@@ -98,6 +210,13 @@ def coerce_value(value: Any, contract_type: str, where: str) -> Any:
         if isinstance(value, int):
             return bool(value)
         raise CoercionError(f"{where}: {value!r} is not a boolean")
+
+    if contract_type == "timestamp":
+        return _coerce_timestamp(value, where, assume_utc)
+    if contract_type == "date":
+        return _coerce_date(value, where)
+    if contract_type == "array<string>":
+        return _coerce_string_array(value, where)
 
     # Whether the value arrived as text matters for `numeric`, below.
     from_text = isinstance(value, str)
@@ -148,12 +267,40 @@ def coerce_value(value: Any, contract_type: str, where: str) -> Any:
     return number
 
 
-def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
-    """Compute one output column's value from one source row."""
+def _literal_equal(value: Any, literal: Any) -> bool:
+    """`0 == False` in Python and not in any warehouse."""
+    if isinstance(value, bool) != isinstance(literal, bool):
+        return False
+    return value == literal
+
+
+def apply_column(
+    column: PlannedColumn,
+    row: Dict[str, Any],
+    run_timestamp: Optional[datetime] = None,
+) -> Any:
+    """Compute one output column's value from one source row.
+
+    `run_timestamp` is the load instant a `run_timestamp` column carries. The
+    caller supplies it; this module never reads a clock.
+    """
     where = f"column {column.name!r}"
 
     if column.transform == "constant":
         raw: Any = column.value
+    elif column.transform == "run_timestamp":
+        if run_timestamp is None:
+            raise RenderError(
+                f"{where} is produced by run_timestamp, which needs the "
+                "`run_timestamp` argument; none was given, and a clock is "
+                "never read in its place"
+            )
+        if run_timestamp.tzinfo is None or run_timestamp.utcoffset() is None:
+            raise RenderError(
+                f"{where}: `run_timestamp` is a naive datetime, which names no "
+                "instant; pass a timezone-aware one"
+            )
+        raw = run_timestamp
     else:
         for source in column.sources:
             if source not in row:
@@ -186,24 +333,75 @@ def apply_column(column: PlannedColumn, row: Dict[str, Any]) -> Any:
                 if isinstance(number, float):
                     number = Decimal(repr(number))
                 raw = Decimal(number) * column.factor
+        elif column.transform == "nullif":
+            # Compared before coercion: what is matched is what the source
+            # wrote, not what the contract widened it to.
+            raw = None if _literal_equal(values[0], column.value) else values[0]
+        elif column.transform == "in_set":
+            # Exact match, no folding or trimming. A null answers False, as
+            # the SQL's coalesce does, rather than staying null.
+            raw = values[0] is not None and any(
+                _literal_equal(values[0], literal) for literal in column.values or []
+            )
+        elif column.transform == "normalize":
+            raw = apply_ops(column.ops, column.part, values[0])
         else:  # pragma: no cover - the mapping model refuses anything else
             raise RenderError(f"{where}: no row rendering for {column.transform!r}")
 
-    return coerce_value(raw, column.contract_type, where)
+    return coerce_value(raw, column.contract_type, where, column.assume_utc)
 
 
 def apply_to_rows(
-    plan: MappingPlan, rows: Sequence[Dict[str, Any]]
+    plan: MappingPlan,
+    rows: Sequence[Dict[str, Any]],
+    run_timestamp: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Apply the plan to source rows, producing the contract's columns.
 
     Output column order follows the contract, not the source, so two mappings
     onto one contract produce the same shape.
+
+    `run_timestamp` is one instant for the whole call: every row of one load
+    carries the same value.
     """
     return [
-        {column.name: apply_column(column, row) for column in plan.columns}
+        {
+            column.name: apply_column(column, row, run_timestamp)
+            for column in plan.columns
+        }
         for row in rows
+        if _row_kept(plan.row_filters, row)
     ]
+
+
+def _filter_holds(flt: PlannedFilter, row: Dict[str, Any]) -> bool:
+    """One `where` predicate over one source row; mirrors `_sql_predicate`.
+
+    A null satisfies `is_null` and nothing else: `!=` and `not_in` are false
+    for it, as the SQL route's `is not null` guard makes them.
+    """
+    if flt.column not in row:
+        raise RenderError(
+            f"where filter reads source column {flt.column!r}, which this "
+            "row does not carry"
+        )
+    value = row[flt.column]
+    if flt.op == "is_null":
+        return value is None
+    if flt.op == "not_null":
+        return value is not None
+    if value is None:
+        return False
+    if flt.op == "=":
+        return _literal_equal(value, flt.value)
+    if flt.op == "!=":
+        return not _literal_equal(value, flt.value)
+    member = any(_literal_equal(value, literal) for literal in flt.values or [])
+    return member if flt.op == "in" else not member
+
+
+def _row_kept(filters: Sequence[PlannedFilter], row: Dict[str, Any]) -> bool:
+    return all(_filter_holds(flt, row) for flt in filters)
 
 
 # --------------------------------------------------------------------------
@@ -436,9 +634,61 @@ def _sql_expression(column: PlannedColumn) -> str:
     return rendered
 
 
+def _sql_normalize(column: PlannedColumn) -> str:
+    """Nest the normalizer's ops, left to right, around the source column.
+
+    `trim`/`upper`/`lower` use the spellings the standalone transforms do;
+    the regex ops go through the operator's `regex_templates`, with the
+    pattern and replacement as quote-doubled SQL literals and the group as a
+    positional integer. The extract is wrapped in `nullif(..., '')` so a
+    group that did not participate is NULL whatever the dialect answers.
+    """
+    expr = column.sources[0]
+    for op in column.ops:
+        if op.op in ("trim", "upper", "lower"):
+            expr = f"{op.op}({expr})"
+        elif op.op in ("strip", "replace", "lstrip_zeros"):
+            template = column.regex_templates.get("regex_replace")
+            if template is None:
+                raise RenderError(
+                    f"column {column.name!r} uses normalizer op {op.op!r}, "
+                    "which needs the mapping's `regex_templates.regex_replace`"
+                )
+            pattern = LSTRIP_ZEROS_PATTERN if op.op == "lstrip_zeros" else op.pattern
+            replacement = op.replacement if op.op == "replace" else ""
+            expr = template.format(
+                expr=expr,
+                pattern=_sql_literal(pattern),
+                replacement=_sql_literal(replacement),
+            )
+        elif op.op == "split_revision":
+            template = column.regex_templates.get("regex_extract")
+            if template is None:
+                raise RenderError(
+                    f"column {column.name!r} uses normalizer op 'split_revision', "
+                    "which needs the mapping's `regex_templates.regex_extract`"
+                )
+            extracted = template.format(
+                expr=expr,
+                pattern=_sql_literal(op.pattern),
+                group=part_index(op.pattern, column.part),
+            )
+            expr = f"nullif({extracted}, '')"
+        else:  # pragma: no cover - the op model refuses anything else
+            raise RenderError(f"no SQL rendering for normalizer op {op.op!r}")
+    return expr
+
+
 def _sql_transform(column: PlannedColumn) -> str:
     if column.transform == "constant":
         return _sql_literal(column.value)
+    if column.transform == "run_timestamp":
+        if not column.run_timestamp_sql:
+            raise RenderError(
+                f"column {column.name!r} is produced by run_timestamp, which "
+                "needs the mapping's `run_timestamp_sql`"
+            )
+        return column.run_timestamp_sql
     first = column.sources[0] if column.sources else ""
     if column.transform == "copy":
         return first
@@ -458,7 +708,35 @@ def _sql_transform(column: PlannedColumn) -> str:
         return f"coalesce({', '.join(arguments)})"
     if column.transform == "scale":
         return f"({first} * {column.factor})"
+    if column.transform == "nullif":
+        return f"nullif({first}, {_sql_literal(column.value)})"
+    if column.transform == "normalize":
+        return _sql_normalize(column)
+    if column.transform == "in_set":
+        literals = ", ".join(_sql_literal(v) for v in column.values or [])
+        # A bare `in` is NULL for a null column; say False instead.
+        return f"coalesce({first} in ({literals}), false)"
     raise RenderError(f"no SQL rendering for transform {column.transform!r}")
+
+
+def _sql_predicate(flt: PlannedFilter) -> str:
+    """Three-valued logic written out. The two `is not null` guards make the
+    SQL agree with the row route, which keeps a null for `!=` in Python."""
+    column = flt.column
+    if flt.op == "=":
+        return f"{column} = {_sql_literal(flt.value)}"
+    if flt.op == "!=":
+        return f"({column} is not null and {column} != {_sql_literal(flt.value)})"
+    literals = ", ".join(_sql_literal(v) for v in flt.values or [])
+    if flt.op == "in":
+        return f"{column} in ({literals})"
+    if flt.op == "not_in":
+        return f"({column} is not null and {column} not in ({literals}))"
+    if flt.op == "is_null":
+        return f"{column} is null"
+    if flt.op == "not_null":
+        return f"{column} is not null"
+    raise RenderError(f"no SQL rendering for where operator {flt.op!r}")
 
 
 def render_model_sql(plan: MappingPlan) -> str:
@@ -467,7 +745,12 @@ def render_model_sql(plan: MappingPlan) -> str:
     `source_table` is written into the FROM clause verbatim, so a mapping may
     put a `{{ source(...) }}` call there and have dbt resolve it -- which is
     the right way to get the dependency edge, and is why this function does
-    no quoting of its own.
+    no quoting of its own -- nor of the `where` columns.
+
+    `where` filters are ANDed in the order written; with none there is no
+    `where` line at all, so a mapping without filters renders as it always
+    did. There is no `or` and no nesting: a disjunction belongs in a view the
+    mapping reads from.
     """
     if not plan.source_table:
         raise RenderError(
@@ -487,6 +770,8 @@ def render_model_sql(plan: MappingPlan) -> str:
     ]
     lines.append(",\n".join(rendered))
     lines.append(f"from {plan.source_table}")
+    for index, flt in enumerate(plan.row_filters):
+        lines.append(("where " if index == 0 else "  and ") + _sql_predicate(flt))
     return "\n".join(lines) + "\n"
 
 

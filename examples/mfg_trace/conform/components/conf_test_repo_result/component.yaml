@@ -1,0 +1,32 @@
+type: dag_tools.ContractMappingComponent
+
+attributes:
+  mapping_file: mapping.yaml
+
+  contract:
+    # The deployment's governed BUNDLE: one file, one document per table.
+    # `expect_contract_id` SELECTS the document out of it (and is only a check
+    # on a single-document file). Two instances, two ids, one governed file.
+    path: ../../../contracts/mfg_trace.yaml
+    expect_contract_id: mfg_trace.conf_test_repo_result
+
+  normalizers:
+    # Shared by both instances; resolved relative to this directory.
+    path: ../../normalizers.yaml
+
+  source_schema:
+    from_mapping: true
+    datahub: false
+
+  emit:
+    # Renders and writes nothing, so the example runs with no dbt project and
+    # no warehouse.
+    dry_run: true
+
+  # EXPLICIT and distinct per instance. The default is "contract_mapping", so
+  # two instances leaving it unset mint one asset key and the load fails
+  # naming "contract_mapping", which points at neither of them.
+  asset_name: conf_test_repo_result_mapping
+  group_name: mfg_trace_conform
+  tags:
+    moves_data: "false"

@@ -131,7 +131,8 @@ def build_runnables_from_defs(
         )
 
     attrs = dict(pipelines[pipeline])
-    sources = list(tables) if tables else list(attrs.pop("sources", []) or [])
+    declared_sources = list(attrs.pop("sources", []) or [])
+    sources = list(tables) if tables else declared_sources
     if not sources:
         raise DefsError(f"pipeline {pipeline!r} declares no sources")
 
@@ -150,6 +151,26 @@ def build_runnables_from_defs(
         }
         attrs["hints"] = build_table_hints(specs, attrs.get("hints") or {})
 
+    # row_filters reach the source through the query callback, exactly as in
+    # the component. Resolved by the SAME function, so a local run is
+    # filtered when the deployed asset is.
+    from dag_tools.asset_wrappers.row_filters import callback_for
+    from dag_tools.asset_wrappers.source_kinds import LEGACY, resolve_source_kind
+
+    source_config = attributes.get("source_config") or {}
+    query_callback = callback_for(
+        pipeline, attrs.pop("row_filters", None), sources,
+        builds_sql_query=(
+            resolve_source_kind(source_config) is LEGACY
+            and source_config.get("drivername") != "filesystem"
+        ),
+        source_description=(
+            f"type {source_config.get('type')!r}, "
+            f"driver {source_config.get('drivername')!r}"
+        ),
+        declared_sources=declared_sources or sources,
+    )
+
     # Anything that is not a DltAssetGroupConfig field is component
     # machinery -- control tables, sensors, ack settings. Filtering by the
     # model's own fields means a new component key does not break this.
@@ -166,6 +187,7 @@ def build_runnables_from_defs(
         attributes.get("source_config") or {},
         attributes.get("dest_config") or {},
         DltAssetGroupConfig(**kwargs),
+        query_callback=query_callback,
         staging_config=attributes.get("staging_config"),
         destination_override=destination_override,
     )
@@ -185,7 +207,7 @@ def _destination(spec: Optional[str]):
     import dlt
 
     if spec.startswith("duckdb://"):
-        return dlt.destinations.duckdb(spec.replace("duckdb://", "", 1).lstrip("/"))
+        return dlt.destinations.duckdb(_duckdb_path(spec))
     if spec.endswith(".duckdb") or spec == ":memory:":
         return dlt.destinations.duckdb(spec)
     raise DefsError(
@@ -194,3 +216,30 @@ def _destination(spec: Optional[str]):
         f"destinations come from the defs file so a local run cannot "
         f"accidentally point at one that needs credentials."
     )
+
+
+_WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def _duckdb_path(spec: str) -> str:
+    """The file a ``duckdb://`` spec names, on POSIX as well as on Windows.
+
+    ``lstrip("/")`` cannot do this job, and the way it failed was silent:
+    it turned the absolute ``duckdb:///tmp/dev.duckdb`` -- the spelling
+    ``_destination``'s own docstring offers -- into the relative
+    ``tmp/dev.duckdb``, so a dev run on POSIX landed beside the current
+    directory instead of where it was told and reported success against
+    the wrong file. Windows hid it, because there the leading slash really
+    is the URL's separator before a drive letter.
+
+    So the two meanings of that slash are told apart rather than stripped
+    alike: before a drive letter it is the separator and goes, and
+    otherwise it is the first character of an absolute POSIX path and
+    stays. A spec naming no absolute path at all is left relative, which
+    is what it was before.
+    """
+    rest = spec[len("duckdb://"):]
+    stripped = rest.lstrip("/")
+    if _WINDOWS_DRIVE.match(stripped) or not rest.startswith("/"):
+        return stripped
+    return "/" + stripped

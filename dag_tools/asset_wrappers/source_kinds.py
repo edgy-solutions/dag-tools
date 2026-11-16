@@ -87,6 +87,13 @@ class SourceKind:
         already holds) overrides this. The kind is a registry singleton shared by
         every pipeline: keep no per-pipeline state on it; everything arrives here.
         """
+        if getattr(config, "ingest_runs", False):
+            from dag_tools.asset_wrappers.ingest_runs import execute_recorded
+
+            yield from execute_recorded(
+                context, dlt, pipeline=pipeline, config=config, run_kwargs=run_kwargs
+            )
+            return
         yield from dlt.run(context=context, **run_kwargs)
 
     def localize(self, source_config: Dict[str, Any], component_dir: Any) -> Dict[str, Any]:

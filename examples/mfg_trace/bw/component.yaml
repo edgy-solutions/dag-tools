@@ -1,0 +1,35 @@
+type: dag_tools.DltPipelineComponent
+
+attributes:
+  source_config:
+    type: sql_database
+    drivername: sqlite
+    credentials: "{{ env('BW_EXAMPLE_SOURCE_DB') }}"   # run seed.py, then point this at the file
+    database: main
+    schema: main
+
+  dest_config:
+    type: duckdb
+    drivername: duckdb
+    credentials: "{{ env('BW_EXAMPLE_DB') }}"
+    database: warehouse
+    schema: raw
+
+  pipelines:
+    bw_example:
+      dest_schema: raw
+      # The source's own spelling, which is what a BW extract hands out. dlt
+      # lower-cases it in the destination and in the asset key; the library
+      # matches the two spellings itself.
+      sources: [BW_MATERIAL_ATTR, BW_IBASE_COMP]
+      # Extraction keeps active versions only. The blank-key row is NOT
+      # filtered here: raw stays a faithful copy, and the curated layer drops it.
+      row_filters:
+        BW_MATERIAL_ATTR:
+          - {column: OBJVERS, op: "=", value: "A"}
+      # No cursor on the history table: history reads each load as the whole
+      # source, and a cursor with it fails the load.
+      table_config:
+        BW_IBASE_COMP:
+          primary_key: [IB_INSTANCE, IB_POSITION]
+          history: scd2

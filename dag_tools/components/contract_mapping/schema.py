@@ -65,7 +65,11 @@ class ContractBlock(BaseModel):
             "Refuse a contract whose `contract_id` is not this. Worth setting "
             "with `url`, where what arrives is not under the operator's "
             "control: a service that starts serving a different contract "
-            "would otherwise silently re-point the mapping."
+            "would otherwise silently re-point the mapping. With a `path` "
+            "holding more than one document -- contracts governed together as "
+            "one file -- this also SELECTS the document, and is required: a "
+            "bundle with no id named fails the load rather than mapping "
+            "against whichever document happens to be first."
         ),
     )
 
@@ -75,6 +79,42 @@ class ContractBlock(BaseModel):
             raise ValueError(
                 "set exactly one of `contract.path` or `contract.url`; a "
                 "contract read from two places is two contracts"
+            )
+        return self
+
+
+class NormalizersBlock(BaseModel):
+    """Where the normalizer document comes from; the contract's own topology.
+
+    Exactly one of `path` (read and validated at the code location load) or
+    `url` (fetched at materialization, never at load, for the same reason the
+    contract's is). With `url` the mapping's `rules` references are only
+    reconciled against the document at materialization, and the component
+    says so in its notes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to the normalizer document (YAML or JSON). Relative paths "
+            "resolve against the component directory."
+        ),
+    )
+    url: Optional[str] = Field(
+        default=None,
+        description="URL serving the normalizer document. Fetched at materialization.",
+    )
+    headers: Dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: float = Field(default=30.0, gt=0)
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "NormalizersBlock":
+        if bool(self.path) == bool(self.url):
+            raise ValueError(
+                "set exactly one of `normalizers.path` or `normalizers.url`; a "
+                "normalizer document read from two places is two documents"
             )
         return self
 
@@ -198,6 +238,7 @@ class ContractMappingSpec(BaseModel):
 
     mapping_file: str
     contract: ContractBlock
+    normalizers: Optional[NormalizersBlock] = None
     source_schema: SourceSchemaBlock
     emit: EmitBlock
 
@@ -221,6 +262,7 @@ class ContractMappingSpec(BaseModel):
         tags: Optional[Dict[str, str]],
         mapping_file: str,
         contract: Dict[str, Any],
+        normalizers: Optional[Dict[str, Any]] = None,
         source_schema: Optional[Dict[str, Any]],
         emit: Optional[Dict[str, Any]],
     ) -> "ContractMappingSpec":
@@ -232,6 +274,9 @@ class ContractMappingSpec(BaseModel):
             tags=dict(tags or {}),
             mapping_file=mapping_file,
             contract=ContractBlock.model_validate(contract or {}),
+            normalizers=(
+                NormalizersBlock.model_validate(normalizers) if normalizers else None
+            ),
             source_schema=SourceSchemaBlock.model_validate(source_schema or {}),
             emit=EmitBlock.model_validate(emit or {}),
         )

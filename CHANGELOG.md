@@ -53,18 +53,111 @@ it back are named.
   numeric type and the comparator table are each a thing this library must not guess, so one left
   unset fails `dbt parse` rather than resolving to something.
 
-  **Stage 1 — the mapping from a source's raw tables onto the two conformed contracts — is not
-  included yet**, and the example README names exactly why: the normalized identifier columns need
-  a normalizer, the terminal-status flag needs a membership test over the source's status enum, and
-  the empty-string-where-absent columns need a constant fallback. `contract_mapping` ships none of
-  the three (`trim`/`upper`/`lower` are single-step and cannot be composed; `coalesce` takes source
-  columns only). The flag is a required column, so a mapping written today would fail the
-  code-location load, and a `constant` standing in for it would say every attempt is terminal.
-  `normalize`, `where` and `nullif` are queued; the mappings land with them. Until then a deployment
-  produces the conformed tables with its own models, checked against the same two documents — the
-  same seam either way.
+  **Stage 1 — the mapping from a source's raw tables onto the two conformed contracts — now
+  ships too**, in `examples/mfg_trace/conform/`: one `contract_mapping` component instance per raw
+  table. It needed three transforms this library did not have, and they are below. Stage 1 is the
+  one place anything from below is named, and it is a file an operator edits when a source renames
+  a field, not a library release.
+
+- **Three more contract column types: `timestamp`, `date` and `array<string>`.** The three a
+  conformed vocabulary needs, and the three where a lenient reading is indistinguishable from a
+  correct one. `timestamp` is carried as UTC and **refuses a value naming no offset**: a naive
+  value names no instant, so reading it as UTC shifts every row of a non-UTC source by hours and
+  the result still looks like a timestamp. `assume_utc: true` on a column mapping is how a
+  deployment declares its source really is UTC, and it is refused on any other type, because a
+  knob that says nothing must not look wired up. `date` reads `YYYY-MM-DD` only — a datetime is
+  refused rather than silently accepted at midnight, which would pass until the first row carrying
+  a time, and the shape is pinned before parsing because `date.fromisoformat` also takes `20240131`
+  and week dates. `array<string>` refuses a bare string (iterable, and it would explode into its
+  characters) and a set (whose order is not part of its value). A number is refused for both date
+  types: epoch seconds and epoch milliseconds are indistinguishable in range for recent dates.
+  Purely additive — the five existing types are unchanged.
+
+- **Four more transforms, and a source-block row filter, on `contract_mapping`.** Each exists
+  because a source disagrees with a contract about exactly one thing.
+
+  - `nullif` — the value that means absent becomes a real null. A source writing `''` or a
+    far-future sentinel instead of a null is the ordinary case, and a reader cannot tell a
+    sentinel from data.
+  - `in_set` — a membership test over the source's own enum, which is how a boolean flag gets
+    derived from a status vocabulary this library may not name. Type-changing, so the mapping
+    declares a cast template for the result.
+  - `normalize` — a composed, declared rule: `trim`, `upper`, `lower`, `strip`, `replace`,
+    `lstrip_zeros` and `split_revision`, applied in order. The single-step case folds could not be
+    composed, and a real normalizer is a rule, not a case fold. The rules live in a **normalizer
+    document** (`normalizers.path` or `normalizers.url`, the contract's own topology), so the
+    identifier grammar is a file an operator edits, not a library release. A `*_raw` companion
+    column is the mapping author's own `copy` — nothing generates one, because what to keep
+    verbatim is the author's decision.
+  - `run_timestamp` — one instant for a whole load, taken from the caller
+    (`apply_to_rows(..., run_timestamp=...)`, keyword with a default, so no existing caller
+    changes) and from the mapping's declared `run_timestamp_sql` on the SQL route. Every row of
+    one load carries the same value; a per-row clock reading would make rows of one load
+    distinguishable by when they were written rather than by what they are.
+  - `source.where` — a row filter on the source block, on the same shared grammar the dlt
+    component's `row_filters` uses, so a filter means one thing in this repo.
+
+- **`table_config`, `row_filters`, a row-count check and `ingest_runs` on `DltPipelineComponent`.**
+  `table_config` carries a table's `primary_key` and `history: scd2`; the key is emitted as a
+  `merge_key`, so a key absent from a whole load is **not** retired. `history` together with
+  `cursor` fails the load naming both. `row_filters` expresses an extraction-side filter in six
+  operators. The row-count check asserts a table was not loaded empty. `ingest_runs: true` writes
+  one row per run, failed or not, carrying the **root** error's class name and a digest of its
+  message, never the message — an exception string routinely carries a DSN, a row of source data
+  or a token, and that table is as readable as any other in the warehouse. All four are opt-in;
+  a pipeline that declares none behaves exactly as before.
+
+- **A contract `path` may now hold a BUNDLE — several documents in one file.** A deployment
+  governs its contracts together, which is how this repo's own example ships them: one file, one
+  document per table, separated by `---`. The component read a contract with `yaml.safe_load`,
+  which refuses such a stream outright, so it could point only at a single-document file — or at a
+  **copy** of one document, which is a second governed text needing a drift test to hold it to the
+  first. `expect_contract_id` now **selects** the document from a bundle, and a bundle with no id
+  named **fails the load listing the ids it holds**: taking the first document would map against
+  whichever happens to be first, and every column name might still line up, which is the failure
+  that field exists to catch on a mis-edited path. One field rather than two, deliberately — a
+  separate selector would say the same fact twice and would make `expect_contract_id` vacuous on
+  the bundle route, since the selection would guarantee the match. A single-document file behaves
+  exactly as before, and there the id stays a check.
+
+- **A synthetic source fixture for the example, built by a script rather than committed as a
+  binary** (`examples/mfg_trace/bw/`): a second `DltPipelineComponent` instance over a sqlite
+  stand-in for a versioned, time-dependent source. Five things the extraction side has to get
+  right are planted on their **own keys**, beside a control key that trips nothing — without the
+  control, an accidentally-broken fixture filters or refuses every row and reads as a full set of
+  successful cases. Runs with no warehouse and no credentials.
 
 ### Changed
+
+- **`coalesce` now counts ARGUMENTS, not source columns, so one source plus a declared `default`
+  is accepted.** Such a mapping was refused by the arity table while **both** routes already
+  implemented it and agreed on it — the row route falls back to the column's `default` when every
+  value is null, the SQL route appends it as the last `coalesce` argument. Nobody writes two
+  matching route bodies for a shape they meant to refuse, so the arity rule was the mistake rather
+  than the feature, and the old message sent an operator to add a second source they do not have.
+  A bare one-argument `coalesce` with no fallback is still a no-op and is still refused. `concat`
+  is deliberately **not** relaxed alongside it: it has no fallback to count, so a one-source
+  `concat` really is a no-op, and a later edit symmetrizing the two because they share the `2+`
+  spelling would be wrong. This only accepts documents that previously failed the load.
+
+  The same change closes a two-route divergence of the same class, and moves it to the **load**:
+  a `default` the contract's column type cannot take was refused by the row route and emitted as a
+  bare literal on the SQL route, where the warehouse either errors or silently coerces — and which
+  it does is not this library's to decide. The check calls the row route's own acceptance test
+  rather than copying its rules, since a second copy would be the divergence it exists to prevent.
+  **Default change**, in the sense that such a mapping now fails the code-location load instead of
+  producing SQL whose behaviour depended on the warehouse.
+
+- **The two conformed `mfg_trace` contract documents now declare the grammar rule ids their own
+  emitted tests cite**: `null_value`, `wrong_type`, and `non_finite` on the one document carrying a
+  float column. `contract_mapping` emits tests under seven ids of its own and the template declared
+  two, so `tests_under_undeclared_rules` counted the rest — which is exactly the gap that number
+  exists to report: a failure naming an id outside the contract's `rules:` cannot be acted on by
+  anyone reading the contract. `non_finite` is declared on the result document only, because the
+  step-parameter document's one numeric column is an integer and declaring a rule nothing can trip
+  is the mirror vacuity. **This template is dag-tools' published interface**, so a deployment's
+  registered superset of it needs the same three ids — the same class of coordination as
+  `produced_since`.
 
 - **Key uniqueness now resolves to one rule id, `duplicate_key`, instead of a spelling derived
   from the contract's grain.** The derived id (`duplicate_<grain columns>`, falling back to
@@ -91,6 +184,14 @@ it back are named.
 
 ### Fixed
 
+- **A `duckdb:///absolute/path` dev destination resolves to an absolute path again.**
+  `dag_tools.dlt_dev`'s `--destination` resolution stripped every leading slash, so on
+  POSIX the absolute spelling the refusal message itself offers came back relative: a dev
+  run landed a DuckDB file beside the current directory and reported success against the
+  wrong one. The two meanings of that slash are now told apart -- before a drive letter it
+  is the URL's separator and goes, otherwise it is the first character of the path and
+  stays -- which is why Windows never saw the bug. The existing coverage asserted only
+  that a spec resolved to something, so the path itself is now pinned.
 - **The `mfg_trace` contract template spells its key-uniqueness rule `duplicate_key`**, the word
   the plan already uses for that refusal kind, instead of `key_not_unique`. Template and planning
   documents only — no governed contract and no library vocabulary changes. Note that neither
