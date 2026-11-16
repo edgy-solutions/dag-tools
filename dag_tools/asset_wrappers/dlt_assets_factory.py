@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 import dlt
 from dlt.common.configuration.specs.azure_credentials import AzureCredentials
@@ -75,6 +75,16 @@ class TableSpec(BaseModel):
             "wants anyway."
         ),
     )
+    history: Optional[Literal["scd2"]] = PydanticField(
+        default=None,
+        description=(
+            "Keep the history of a changing row instead of its latest value. "
+            "``scd2`` closes the old version and opens a new one when a row "
+            "changes. The ``primary_key`` is then the natural key the retirement "
+            "is scoped by. Cannot be combined with ``cursor``. Absent means "
+            "today's behaviour exactly."
+        ),
+    )
 
 
 def build_table_hints(
@@ -96,6 +106,26 @@ def build_table_hints(
     hints: Dict[str, Any] = {t: dict(h) for t, h in (explicit_hints or {}).items()}
 
     for table, spec in table_config.items():
+        if spec.history and spec.cursor:
+            raise ValueError(
+                f"table_config for '{table}' declares both history: {spec.history} "
+                f"and cursor: {spec.cursor!r}. A cursor loads only the rows past "
+                f"the watermark, and history reads a load as the whole source, so "
+                f"records the slice did not carry would be closed though nothing "
+                f"changed. Drop the cursor (history tables are loaded in full) or "
+                f"drop history."
+            )
+        if spec.history:
+            # The key becomes a merge_key, never a primary_key: with no merge_key
+            # dlt retires EVERY active row absent from the load, and with one it
+            # retires only those whose key is present in it. Validity columns and
+            # timestamps are left unset so dlt's own defaults apply.
+            scd: Dict[str, Any] = {
+                "write_disposition": {"disposition": "merge", "strategy": spec.history},
+                "merge_key": spec.primary_key,
+            }
+            hints[table] = {**scd, **hints.get(table, {})}
+            continue
         generated: Dict[str, Any] = {"primary_key": spec.primary_key}
         if spec.cursor:
             incremental: Dict[str, Any] = {"cursor_path": spec.cursor}
@@ -159,6 +189,16 @@ class DltAssetGroupConfig(BaseModel):
             "        resources:\n"
             "          requests: {cpu: '2000m', memory: '8Gi'}\n"
             "          limits:   {cpu: '4000m', memory: '16Gi'}"
+        ),
+    )
+    ingest_runs: bool = PydanticField(
+        default=False,
+        description=(
+            "Record one row per run, failed or not, in this pipeline's own dataset "
+            "(status, root error type, a digest of the message, row counts). Off by "
+            "default: a deployment that upgrades lands no table it did not ask for. "
+            "Read at RUN time by the source kind, so it is a field here, not popped. "
+            "A kind that records its own runs ignores it."
         ),
     )
     table_prefix: Optional[str] = PydanticField(
