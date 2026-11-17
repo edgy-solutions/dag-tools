@@ -157,7 +157,7 @@ contract requires (`current_caller` is exported from `iagent_mesh` as of 0.4.0).
 
 ---
 
-## 4. Rider from ADR-0049 — the failure modes must stay distinct
+## 4. Rider from invincible-agent ADR-0049 — the failure modes must stay distinct
 
 These reads will be **inner calls in compositions**. A composing verb one level up cannot report
 honestly over a client that collapses its failures. The client must distinguish, as separate and

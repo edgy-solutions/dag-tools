@@ -478,7 +478,7 @@ class ConfigurableDuckDBIOManager(MeshPublishable, ConfigurableIOManagerFactory)
     # There is no credentials hook, structurally. This used to advertise
     # ``self.duckdb.aws_access_key_id`` and its secret: the credential this IO
     # manager WRITES with, handed to any authorized reader with no expiry and
-    # no scope. The broker mints per request instead (ADR-0044).
+    # no scope. The broker mints per request instead (invincible-agent ADR-0044).
 
     def mesh_endpoint(self) -> Optional[str]:
         return self.duckdb.endpoint_url or None

@@ -1,6 +1,6 @@
 """The warehouse resource that says who read what, on every query it sends.
 
-Step 2 of the classification build (ADR-0064), and the implementation of the
+Step 2 of the classification build (invincible-agent ADR-0064), and the implementation of the
 one seam step 1 pinned: `fetch_rows(statement, parameters)`. Dropping this
 resource under `ReadAuditComponent` needs no change to that component.
 

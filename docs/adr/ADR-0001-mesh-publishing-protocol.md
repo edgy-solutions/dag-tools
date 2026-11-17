@@ -59,7 +59,7 @@ format no consumer can read, has no location another process can use. **An
 advertised-but-unreadable location is worse than an unadvertised asset**, because the gateway
 routes consumers to it with full confidence.
 
-**It returns no credentials.** Per ADR-0044 the broker mints, per request, scoped to the asset
+**It returns no credentials.** Per invincible-agent ADR-0044 the broker mints, per request, scoped to the asset
 and expiring with the access window. An IO manager runs in a pipeline pod and knows neither
 the caller nor the window; giving every user deployment minting authority would spread
 assume-role privilege across the fleet to replace one credential with dozens. **Advertising
@@ -84,7 +84,7 @@ and the original are indistinguishable by class name.
 
 `physical_coordinates` is a **load-time** call: it runs once at broker startup and its result
 is cached for the process lifetime. Nothing time-bound or caller-specific may be computed
-there. This is the constraint that forced ADR-0044's amendment, and it is a property of this
+there. This is the constraint that forced invincible-agent ADR-0044's amendment, and it is a property of this
 decision, not an implementation detail of that one.
 
 **The rule cuts both ways.** Producers that decline to advertise unreadable locations are
@@ -115,6 +115,6 @@ real.
 - A backend needs coordinates that do not fit the ticket's shape, suggesting the flat dict has
   outgrown itself.
 - `physical_coordinates` needs to become **per-request** — e.g. coordinates that vary by
-  caller. It is load-time cached today, and that assumption is load-bearing for ADR-0044.
+  caller. It is load-time cached today, and that assumption is load-bearing for invincible-agent ADR-0044.
 - The `mode` vocabulary grows a value whose handling differs in the CONSUMER rather than the
   broker, which would break the property that mode is transport-only.

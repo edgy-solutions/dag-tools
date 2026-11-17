@@ -20,7 +20,7 @@ version from a clock reading and would have to assume the worst of every
 ticket, including the ones carrying a real version.
 
 The broker half asserts on the ticket a CONSUMER receives, not on what the
-identity module returns in isolation, for the reason ADR-0044's tests state:
+identity module returns in isolation, for the reason invincible-agent ADR-0044's tests state:
 the defect that matters is a resolve path returning in front of the stamp.
 """
 from __future__ import annotations
@@ -138,7 +138,7 @@ def test_the_legacy_coordinate_path_is_identified_too():
 
 
 def test_two_resolves_of_one_urn_get_different_ticket_ids():
-    """THE LOAD-TIME TRAP, the same one ADR-0044 closed for credentials.
+    """THE LOAD-TIME TRAP, the same one invincible-agent ADR-0044 closed for credentials.
 
     ``physical_coordinates()`` runs ONCE at broker startup and its result lives
     in ``LOCAL_ASSETS`` for the process lifetime. An identity minted there
@@ -189,7 +189,7 @@ def test_an_absent_as_of_carries_a_reason():
 
 
 def test_an_absent_as_of_is_counted_per_source_type():
-    """Reported as a NUMBER, not a log line -- same posture as the ADR-0044 gauges.
+    """Reported as a NUMBER, not a log line -- same posture as the invincible-agent ADR-0044 gauges.
 
     A backend still in this dict after a cycle is one that needs a row in
     AS_OF_READERS, and this is how anyone would know that without reading logs.

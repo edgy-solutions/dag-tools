@@ -1,6 +1,6 @@
 """How the tag travels with the query, decided as data and never executed here.
 
-Step 2 of the classification build (ADR-0064). `tag.py` decides *what* a
+Step 2 of the classification build (invincible-agent ADR-0064). `tag.py` decides *what* a
 tagged query says about itself; this module decides *how* that text reaches
 the warehouse, and it produces a plan rather than running one.
 

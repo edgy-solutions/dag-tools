@@ -1,6 +1,6 @@
 """Declarative component: what the pipelines read, and which asset explains it.
 
-Step 1 of the classification build (ADR-0064). One asset per component
+Step 1 of the classification build (invincible-agent ADR-0064). One asset per component
 instance; it fetches a window of query history, rolls it up through the pure
 engine in `dag_tools.audit`, returns the report, and puts the headline numbers
 on the materialization so the scope number is readable in the UI and

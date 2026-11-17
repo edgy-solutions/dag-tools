@@ -1,6 +1,6 @@
 """Propagation: what a derived column's label is, given its sources'.
 
-ADR-0064 steps 4b and 4c, as rules rather than plumbing. The engine is pure,
+invincible-agent ADR-0064 steps 4b and 4c, as rules rather than plumbing. The engine is pure,
 so every rule here is exercised with a document invented for this module and
 no cluster, no catalog and no warehouse. The package's purity itself is
 asserted next door, in `test_warehouse_source_engine.py`.

@@ -1,6 +1,6 @@
 """Declarative component: a warehouse resource that tags every query it sends.
 
-Step 2 of the classification build (ADR-0064). One component instance builds
+Step 2 of the classification build (invincible-agent ADR-0064). One component instance builds
 one resource, under a key the deployment chooses, and that resource is what
 step 1's `ReadAuditComponent` reads history through -- unchanged, because
 `fetch_rows(statement, parameters)` is the whole seam between them.

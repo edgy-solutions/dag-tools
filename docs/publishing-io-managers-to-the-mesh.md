@@ -30,7 +30,7 @@ class MyIOManager(MeshPublishable, ConfigurableIOManagerFactory):
 `mesh_source_type`, `mesh_endpoint`, `mesh_region`, `mesh_scope`, `mesh_extra`.
 
 **There is no hook for credentials, and that is structural.** Per
-[ADR-0044](https://github.com/edgy-solutions/invincible-agent) the *broker*
+[invincible-agent ADR-0044](https://github.com/edgy-solutions/invincible-agent) the *broker*
 mints, per request, scoped to the asset and expiring with the access window. An
 IO manager runs in a pipeline pod and knows neither the caller nor the window.
 Anything a producer puts under `credentials` is dropped by the broker and

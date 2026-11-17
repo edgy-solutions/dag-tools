@@ -356,7 +356,7 @@ class ConfigurableArrowIOManager(MeshPublishable, ConfigurableIOManagerFactory):
         # does not exist.
         return "/".join([self.uri_base.rstrip("/"), *path]) + "/"
 
-    # NO CREDENTIALS HOOK EXISTS, and that is the point (ADR-0044). This used
+    # NO CREDENTIALS HOOK EXISTS, and that is the point (invincible-agent ADR-0044). This used
     # to return ``common.access_key_id`` / ``secret_access_key`` verbatim: the
     # key this IO manager WRITES with, handed to every authorized reader,
     # long-lived and write-capable. The broker mints a scoped, expiring,
@@ -370,7 +370,7 @@ class ConfigurableArrowIOManager(MeshPublishable, ConfigurableIOManagerFactory):
     def mesh_endpoint(self) -> Optional[str]:
         # An endpoint is a coordinate, not a secret. It MUST be reachable from
         # wherever the consumer runs — a bare service name resolves only in
-        # this deployment's namespace (ADR-0044's sibling finding).
+        # this deployment's namespace (invincible-agent ADR-0044's sibling finding).
         return self.fs.common.end_point or None
 
     def mesh_region(self) -> Optional[str]:

@@ -2,7 +2,7 @@
 
 A contract states what an asset must carry for a governed read to accept it:
 its grain, its scope, its period, and one row per column with that column's
-type and the invariants that hold over it. ADR-0066's first one lives at
+type and the invariants that hold over it. The first one written lives at
 `contracts/ev_fixture.yaml` in invincible-agent; a deployment's own contract
 is its own file.
 

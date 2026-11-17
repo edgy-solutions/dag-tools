@@ -1,6 +1,6 @@
 """Declarative component: a derived dataset's labels, composed from what it read.
 
-Steps 4b/4c of the classification build (ADR-0064). Step 4a labels a source
+Steps 4b/4c of the classification build (invincible-agent ADR-0064). Step 4a labels a source
 dataset where an operator declares the labels; this component answers the next
 question -- what a column *computed* from those sources publishes as -- for
 datasets something else builds. One component instance covers a set of derived

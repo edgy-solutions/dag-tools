@@ -375,7 +375,7 @@ class SQLIOManager(MeshPublishable, IOManager):
         ticket = super().physical_coordinates(asset_key_path)
         if ticket is None:
             return None
-        # ADR-0044 — STILL ECHOING, DELIBERATELY, AND THIS IS THE EXCEPTION.
+        # invincible-agent ADR-0044 — STILL ECHOING, DELIBERATELY, AND THIS IS THE EXCEPTION.
         #
         # Every S3-backed IO manager now advertises coordinates only, because
         # the broker can mint an STS credential scoped to the asset. There is
@@ -389,7 +389,7 @@ class SQLIOManager(MeshPublishable, IOManager):
         # ``unprotected_source_types`` on /health rather than passing it over
         # silently — live exposure, counted.
         #
-        # WHAT REMOVES THIS: ADR-0044's `mint-role` row for these backends —
+        # WHAT REMOVES THIS: invincible-agent ADR-0044's `mint-role` row for these backends —
         # `SET LOCAL ROLE` on a broker-held connection plus RLS for Postgres
         # (NOT gated on PG18: libpq's OAUTHBEARER has no Python API for
         # injecting a pre-existing JWT), and a role with `CREATE ROW POLICY`
