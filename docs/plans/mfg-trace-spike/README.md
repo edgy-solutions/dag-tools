@@ -34,8 +34,23 @@ export SYSTEMLINK_API_KEY=...
 ```
 
 Without `--part-number` only the Swagger observations are recorded. Other options:
-`--out-dir`, `--swagger-path` (repeatable), `--pages`, `--page-take`, `--overwrite`.
+`--out-dir`, `--swagger-path` (repeatable), `--swagger-file`, `--chain-ladder`,
+`--pages`, `--page-take`, `--overwrite`.
 Exit codes: 0 ok, 2 configuration or missing document, 3 the server answered 401.
+
+`--swagger-file PATH` reads the Swagger document from a local copy, for a server that
+serves it only to a browser login. It is mutually exclusive with `--swagger-path`, and
+the fetch is skipped rather than attempted and fallen back from: with no `--part-number`
+the probe then touches the network zero times. The operator's own path is never recorded.
+
+`--chain-ladder` walks an or-chain length ladder -- 20, 40, 80, 160, 320, 640 terms -- on
+`query-steps` and `query-products`, recording each rung's status and the rendered filter's
+length and nothing else. It needs `--part-number` and exits 2 without one. Every rung asks
+for no row, so the ladder moves no data; a rung wider than the result ids the seed returned
+is skipped rather than padded with a repeated id; and the whole ladder is walked past a
+rejection, so a server that answers non-monotonically is visible. Two numbers come out, the
+largest accepted chain and the first rejected one, and they belong in the deployment's
+`limits.step_batch_max`, not in the library.
 
 ## What it records
 

@@ -19,7 +19,7 @@ DEFAULTS: Dict[str, Any] = {
     "incremental.order_by": "UPDATED_AT",  # the other spelling is "updatedAt"
     "limits.step_filter": "or_chain",  # the other form is "in"
     "limits.step_batch_default": 15,
-    "limits.step_batch_max": 40,
+    "limits.step_batch_max": 20,  # a deployment raises it from its own ladder, in YAML
 }
 
 #: Not a spike-confirmed value: a hard cap on in-flight requests per run.
@@ -100,7 +100,7 @@ class FiltersSpec(_Strict):
 
 
 class LimitsSpec(_Strict):
-    page_size: int = Field(default=DEFAULTS["limits.page_size"], ge=1, le=1000)
+    page_size: int = Field(default=DEFAULTS["limits.page_size"], ge=1)
     step_batch_default: int = Field(default=DEFAULTS["limits.step_batch_default"], ge=1)
     step_batch_max: int = Field(default=DEFAULTS["limits.step_batch_max"], ge=1)
     step_filter: Literal["or_chain", "in"] = DEFAULTS["limits.step_filter"]

@@ -531,3 +531,36 @@ def test_the_incremental_job_is_never_a_backfill(tmp_path, monkeypatch, dlt_home
         defs = load_example(tmp_path, monkeypatch, base_url=fake.base_url)
         run_job(defs, "sl_example_incremental", DagsterInstance.ephemeral())
         assert not [r for r in fake.requests if r["body"].get("returnCount")]
+
+
+# --------------------------------------------------------------------------- the sizing pass
+
+
+def test_a_refused_sizing_pass_names_the_count_flag_not_a_page_size(tmp_path, monkeypatch, dlt_home):
+    """The sizing request carries no page size, so a 400 there must not send an operator to one.
+
+    It used to name ``limits.page_size`` while the body hardcoded its own ``take``, so the only
+    setting the message offered was one that never appears in the request.
+    """
+    rows, steps = world()
+    with FakeSystemLink(rows, steps) as fake:
+        fake.failures = [("query-results", 400)]  # the backfill's first call is the sizing pass
+        defs = load_example(tmp_path, monkeypatch, base_url=fake.base_url)
+        result = run_job(defs, BACKFILL, DagsterInstance.ephemeral())
+        assert not result.success
+        assert fake.requests[0]["body"].get("returnCount")  # it really was the sizing pass
+        text = "\n".join(
+            e.event_specific_data.error.to_string() for e in result.get_step_failure_events()
+        )
+        assert "returnCount" in text
+        assert "limits.page_size" not in text
+
+
+def test_the_sizing_pass_moves_no_row(tmp_path, monkeypatch, dlt_home):
+    """Every sizing request asks for the count and for no row at all."""
+    rows, steps = world()
+    with FakeSystemLink(rows, steps) as fake:
+        defs = load_example(tmp_path, monkeypatch, base_url=fake.base_url)
+        assert run_job(defs, BACKFILL, DagsterInstance.ephemeral()).success
+        sized = [r["body"] for r in fake.requests if r["body"].get("returnCount")]
+        assert sized and all(b["take"] == 0 for b in sized)

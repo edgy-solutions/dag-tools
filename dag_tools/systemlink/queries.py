@@ -49,9 +49,14 @@ def results_query(
 
 
 def count_query(part_number: str, *, workspace_id: Optional[str] = None) -> Dict[str, Any]:
-    """The sizing pass: one row requested, the server's total asked for."""
+    """The sizing pass: no row requested, only the server's total.
+
+    ``take`` is 0 because the count is the whole answer. A sizing pass that asked for a row
+    would pull and discard one row of real data per part, so moving none is a property of the
+    request rather than a promise about what the caller does with it.
+    """
     filt, subs = _scoped("partNumber == @0", [part_number], workspace_id)
-    return {"filter": filt, "substitutions": subs, "take": 1, "returnCount": True}
+    return {"filter": filt, "substitutions": subs, "take": 0, "returnCount": True}
 
 
 def steps_query(

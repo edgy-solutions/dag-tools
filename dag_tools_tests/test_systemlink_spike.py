@@ -93,14 +93,14 @@ class Fake:
     def __init__(self, part_number=PN, reject_in=False, reject_contains=False,
                  share_step_ids=False, shuffle_pages=False, max_take=None,
                  unauthorized=False, descending_broken=False, swagger2=False,
-                 swagger_at=DEFAULT_SWAGGER):
+                 swagger_at=DEFAULT_SWAGGER, n_results=4, max_chain=None):
         self.__dict__.update(locals())
         self.seen: List[Dict[str, Any]] = []
         self.walks = 0
         self.results = [{"id": f"rid-7f3a-{n:04d}", "partNumber": part_number,
                          "programName": "prog_functional", "serialNumber": "SN-0001",
-                         "status": "Passed", "updatedAt": f"2026-01-0{n}T00:00:00Z"}
-                        for n in range(1, 5)]
+                         "status": "Passed", "updatedAt": f"2026-01-{n:02d}T00:00:00Z"}
+                        for n in range(1, n_results + 1)]
         self.results.append({"id": "rid-other-9999", "partNumber": "PN-OTHER", "programName": "x",
                              "serialNumber": "SN-0002", "status": "Failed",
                              "updatedAt": "2026-02-01T00:00:00Z"})
@@ -123,6 +123,8 @@ class Fake:
         take = body.get("take", 100)
         if self.max_take is not None and take > self.max_take:
             return 400, {"error": "take"}
+        if self.max_chain is not None and filt.count("== @") > self.max_chain:
+            return 400, {"error": "chain"}
         ws = re.search(r"workspace == @(\d+)", filt)
         ws_idx = int(ws.group(1)) if ws else None
         if route == "query-steps":
@@ -291,8 +293,88 @@ def test_the_answering_swagger_path_is_recorded(tmp_path, monkeypatch, make_serv
     fake = make_server(swagger_at=JSON_SWAGGER)
     assert run(tmp_path, monkeypatch, fake) == 0
     out = json.loads((tmp_path / "out" / f"{VERSION}.json").read_text())
-    assert out["server"] == {"version": VERSION, "swagger_path": JSON_SWAGGER}
+    assert out["server"] == {"version": VERSION, "swagger_source": "server",
+                             "swagger_path": JSON_SWAGGER}
     assert [r["status"] for r in out["requests"] if r["route"] == "swagger"] == [404, 200]
+
+
+# --- the swagger document from a local file ---------------------------------
+#
+# A server that serves its swagger only to a browser login cannot be probed at
+# all without this: the probe would exit 2 on the fetch before reading a single
+# field.
+
+
+def _local_swagger(tmp_path, fake, name="nitestmonitor-v2.yml") -> Path:
+    path = tmp_path / "swagger" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(fake.doc), encoding="utf-8")
+    return path
+
+
+def test_a_local_swagger_file_is_read_and_NO_request_is_made_for_it(
+    tmp_path, monkeypatch, make_server
+):
+    """The fetch is skipped rather than attempted and fallen back from, so with
+    no --part-number the probe touches the network zero times."""
+    fake = make_server()
+    doc = _local_swagger(tmp_path, fake)
+    assert run(tmp_path, monkeypatch, fake, "--swagger-file", str(doc), part=None) == 0
+    out = json.loads((tmp_path / "out" / f"{VERSION}.json").read_text())
+    assert out["server"]["swagger_source"] == "file"
+    assert out["server"]["version"] == VERSION
+    assert out["requests"] == []
+    assert fake.seen == []
+    for name, expected in EXPECTED_SWAGGER.items():
+        assert out["observations"][name]["value"] == expected, name
+
+
+def test_the_operators_own_path_never_reaches_the_record(tmp_path, monkeypatch, make_server, capsys):
+    """The record is passed by hand, and a local path carries an account name.
+    So the record says a file was used and never which file -- the server path
+    it would otherwise have named is null."""
+    fake = make_server()
+    doc = _local_swagger(tmp_path, fake, name="cnogr-account-name-2026.yml")
+    assert run(tmp_path, monkeypatch, fake, "--swagger-file", str(doc), part=None) == 0
+    text = (tmp_path / "out" / f"{VERSION}.json").read_text()
+    assert "cnogr-account-name-2026" not in text
+    assert "cnogr-account-name-2026" not in capsys.readouterr().out
+    assert json.loads(text)["server"]["swagger_path"] is None
+
+
+def test_a_file_and_a_server_path_cannot_both_be_given(tmp_path, monkeypatch, make_server):
+    """One of the two would have to win silently, and a flag that is quietly
+    ignored is how a probe reports a server it never read."""
+    fake = make_server()
+    doc = _local_swagger(tmp_path, fake)
+    with pytest.raises(SystemExit) as e:
+        run(tmp_path, monkeypatch, fake, "--swagger-file", str(doc),
+            "--swagger-path", DEFAULT_SWAGGER, part=None)
+    assert e.value.code == 2
+
+
+def test_an_unreadable_swagger_file_exits_2_without_naming_the_path(
+    tmp_path, monkeypatch, make_server, capsys
+):
+    fake = make_server()
+    missing = tmp_path / "swagger" / "cnogr-account-name-2026.yml"
+    assert run(tmp_path, monkeypatch, fake, "--swagger-file", str(missing), part=None) == 2
+    assert "cnogr-account-name-2026" not in capsys.readouterr().err
+
+
+_NOT_A_MAPPING = "\n".join(["- not", "- a mapping", ""])
+
+
+@pytest.mark.parametrize("body", ["key: [unclosed", _NOT_A_MAPPING],
+                         ids=["unparseable", "not_a_mapping"])
+def test_a_swagger_file_that_is_not_a_document_exits_2(
+    tmp_path, monkeypatch, make_server, body
+):
+    fake = make_server()
+    path = tmp_path / "swagger" / "doc.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    assert run(tmp_path, monkeypatch, fake, "--swagger-file", str(path), part=None) == 2
 
 
 def test_every_request_is_on_the_allowlist_and_nothing_else_is_sent(tmp_path, monkeypatch, make_server):
@@ -468,7 +550,8 @@ def test_without_a_part_number_no_live_query_is_made(tmp_path, monkeypatch, make
     live = [k for k, v in obs.items() if v["evidence"] == "not_run"]
     assert sorted(live) == sorted(["descending_honoured", "projection_accepted", "max_take_accepted",
                                    "return_count_take_zero", "step_id_unique",
-                                   "result_id_list_filter", "continuation_token_stable"])
+                                   "result_id_list_filter", "continuation_token_stable",
+                                   "or_chain_length_ladder"])
     assert all(obs[k]["detail"] == "no --part-number" for k in live)
     assert obs["order_by_enum"]["evidence"] == "swagger"
     control = make_server()
@@ -504,3 +587,113 @@ def test_the_probe_imports_no_dagster_and_no_dlt():
     # control: the same check does notice a module that is loaded
     control = subprocess.run([sys.executable, "-c", "import sys, dagster; sys.exit(0 if 'dagster' in sys.modules else 1)"])
     assert control.returncode == 0
+
+
+# ------------------------------------------------------- the or-chain length ladder
+
+LADDER = spike._CHAIN_LADDER
+
+
+def _chain_requests(fake: Fake, route: str, least: int = 2):
+    """Requests on ``route`` whose filter is an or-chain of at least ``least`` terms."""
+    tail = route.rsplit("/", 1)[-1]
+    return [r for r in fake.seen
+            if r["path"].endswith(tail) and r["body"].get("filter", "").count("== @") >= least]
+
+
+def test_the_ladder_is_off_unless_it_is_asked_for(tmp_path, monkeypatch, make_server):
+    """A probe whose cost grows with its ladder is opt-in, and says so rather than going quiet."""
+    fake = make_server(n_results=25)
+    assert run(tmp_path, monkeypatch, fake) == 0
+    o = observations(tmp_path)["or_chain_length_ladder"]
+    assert o["value"] is None and o["evidence"] == "not_run"
+    assert not _chain_requests(fake, "query-products")  # and it sent nothing of its own
+
+
+def test_every_rung_is_walked_on_both_routes_and_only_a_status_is_recorded(
+        tmp_path, monkeypatch, make_server):
+    fake = make_server(n_results=max(LADDER) + 1)
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    ladder = value(tmp_path, "or_chain_length_ladder")
+    assert set(ladder) == {"query-steps", "query-products"}
+    for route in ("query-steps", "query-products"):
+        rungs = ladder[route]
+        assert sorted(int(n) for n in rungs) == LADDER
+        for n, rung in rungs.items():
+            assert set(rung) == {"status", "filter_chars"}
+            assert rung["status"] == 200 and rung["filter_chars"] > int(n)
+
+
+def test_the_whole_ladder_is_walked_past_a_rejection_so_a_flaky_limit_shows(
+        tmp_path, monkeypatch, make_server):
+    """Stopping at the first rejection would hide a server that answers non-monotonically."""
+    fake = make_server(n_results=max(LADDER) + 1, max_chain=LADDER[1])
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    rungs = value(tmp_path, "or_chain_length_ladder")["query-steps"]
+    assert [rungs[str(n)]["status"] for n in LADDER] == [200, 200] + [400] * (len(LADDER) - 2)
+
+
+def test_a_rung_wider_than_the_seeded_results_is_skipped_and_says_why(
+        tmp_path, monkeypatch, make_server):
+    """The steps chain needs one distinct result id per term; it never repeats one to fill a rung."""
+    fake = make_server(n_results=LADDER[0])
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    rungs = value(tmp_path, "or_chain_length_ladder")["query-steps"]
+    assert rungs[str(LADDER[0])]["status"] == 200
+    for n in LADDER[1:]:
+        assert rungs[str(n)] == {"status": None,
+                                 "detail": f"only {LADDER[0]} result ids available"}
+    sent = {r["body"]["filter"].count("== @") for r in _chain_requests(fake, "query-steps")}
+    assert max(sent) == LADDER[0]  # no rung was padded to a width the seed could not cover
+
+
+def test_with_no_results_the_steps_ladder_is_null_and_the_products_one_still_runs(
+        tmp_path, monkeypatch, make_server):
+    fake = make_server(n_results=0)
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    ladder = value(tmp_path, "or_chain_length_ladder")
+    assert ladder["query-steps"] is None
+    assert sorted(int(n) for n in ladder["query-products"]) == LADDER
+
+
+def test_every_rung_asks_for_no_row_so_the_ladder_moves_no_data(tmp_path, monkeypatch, make_server):
+    fake = make_server(n_results=max(LADDER) + 1)
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    for route in ("query-steps", "query-products"):
+        # LADDER[1] terms and up is the ladder alone; the 20-term rung shares its width with
+        # the step-id probe, which legitimately asks for rows.
+        rungs = _chain_requests(fake, route, least=LADDER[1])
+        assert rungs and all(r["body"]["take"] == 0 for r in rungs)
+
+
+def test_the_ladder_interpolates_no_value_into_any_filter(tmp_path, monkeypatch, make_server):
+    """Both chains are rendered as placeholders, so neither carries an id or a part number."""
+    from dag_tools.systemlink.queries import assert_values_only_in_substitutions
+
+    fake = make_server(n_results=max(LADDER) + 1)
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    for route in ("query-steps", "query-products"):
+        for r in _chain_requests(fake, route, least=LADDER[1]):
+            assert_values_only_in_substitutions(r["body"])
+
+
+def test_no_value_from_the_ladder_reaches_the_record(tmp_path, monkeypatch, make_server):
+    fake = make_server(n_results=max(LADDER) + 1)
+    assert run(tmp_path, monkeypatch, fake, "--chain-ladder") == 0
+    text = json.dumps(value(tmp_path, "or_chain_length_ladder"))
+    assert PN not in text and KEY not in text
+    assert not re.search(r"rid-7f3a|step-", text)
+
+
+def test_the_ladder_without_a_part_number_exits_2_rather_than_being_ignored(
+        tmp_path, monkeypatch, make_server):
+    """A silently ignored flag is how a probe reports a ladder it never walked."""
+    fake = make_server()
+    with pytest.raises(SystemExit) as ei:
+        run(tmp_path, monkeypatch, fake, "--chain-ladder", part=None)
+    assert ei.value.code == 2
+    assert not fake.seen
+
+
+def test_the_ladder_rungs_are_the_doubling_sequence_the_ruling_named():
+    assert LADDER == [20, 40, 80, 160, 320, 640]

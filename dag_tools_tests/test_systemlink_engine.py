@@ -558,3 +558,137 @@ def test_the_spike_decided_defaults_are_all_in_one_block():
         "incremental.order_by", "limits.step_filter", "limits.step_batch_default",
         "limits.step_batch_max",
     }
+
+
+# --------------------------------------------------------------- a 400 on an or-chain
+
+
+def _chain_terms(request) -> int:
+    """How many ``resultId == @n`` terms the request's filter carries."""
+    return json.loads(request.content)["filter"].count("resultId ==")
+
+
+def test_a_400_on_a_long_chain_is_re_issued_once_with_one_id_and_names_the_length():
+    sent = []
+
+    def handler(request):
+        sent.append(_chain_terms(request))
+        if sent[-1] > 1:
+            return httpx.Response(400, json={})
+        return httpx.Response(200, json={"steps": []})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected) as e:
+        fetch_steps(c, [f"R-{i}" for i in range(6)], form="or_chain", take=50,
+                    batcher=StepBatcher(6, 6))
+    assert sent == [6, 1]  # the batch, then one probe; never a split
+    text = str(e.value)
+    assert "limits.step_batch_default" in text and "limits.step_batch_max" in text
+    assert "6" in text
+
+
+def test_a_400_for_one_id_too_names_the_form_not_the_length():
+    sent = []
+
+    def handler(request):
+        sent.append(_chain_terms(request))
+        return httpx.Response(400, json={})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected) as e:
+        fetch_steps(c, [f"R-{i}" for i in range(6)], form="or_chain", take=50,
+                    batcher=StepBatcher(6, 6))
+    assert sent == [6, 1]
+    text = str(e.value)
+    assert "limits.step_filter" in text
+    assert "step_batch" not in text
+
+
+def test_a_400_is_never_split_the_way_a_timeout_is():
+    """Halving a malformed filter would send a request per leaf and end in the same message."""
+    sent = []
+
+    def handler(request):
+        sent.append(_chain_terms(request))
+        return httpx.Response(400, json={})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected):
+        fetch_steps(c, [f"R-{i}" for i in range(8)], form="or_chain", take=50,
+                    batcher=StepBatcher(8, 8))
+    assert len(sent) == 2  # not the 2N-1 a recursive split would cost
+    assert sent.count(1) == 1  # exactly one single-id request, and it is the probe
+
+
+def test_a_single_id_batch_that_400s_is_not_probed_because_nothing_is_left_to_tell_apart():
+    sent = []
+
+    def handler(request):
+        sent.append(_chain_terms(request))
+        return httpx.Response(400, json={})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected) as e:
+        fetch_steps(c, ["R-0"], form="or_chain", take=50, batcher=StepBatcher(1, 1))
+    assert sent == [1]
+    assert "limits.step_filter" in str(e.value)
+
+
+def test_a_probe_that_answers_nothing_leaves_the_original_diagnosis_standing():
+    """A timeout on the probe is not evidence either way, so the first message is kept."""
+    sent = []
+
+    def handler(request):
+        sent.append(_chain_terms(request))
+        return httpx.Response(400, json={}) if sent[-1] > 1 else httpx.Response(504, json={})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected) as e:
+        fetch_steps(c, [f"R-{i}" for i in range(4)], form="or_chain", take=50,
+                    batcher=StepBatcher(4, 4))
+    assert sent == [4, 1]
+    assert "HTTP 400" in str(e.value) and "step_batch" not in str(e.value)
+
+
+def test_the_probe_does_not_count_as_the_largest_batch_sent():
+    """``max_step_batch_sent`` feeds an asset check; a one-id probe must not look like a batch."""
+    def handler(request):
+        return httpx.Response(400, json={}) if _chain_terms(request) > 1 else httpx.Response(200, json={"steps": []})
+
+    c, _ = mock_client(handler)
+    with pytest.raises(SettingRejected):
+        fetch_steps(c, [f"R-{i}" for i in range(5)], form="or_chain", take=50,
+                    batcher=StepBatcher(5, 5))
+    assert c.events.max_step_batch_sent == 5
+
+
+# --------------------------------------------------------- the settings the ruling moved
+
+
+def test_a_page_size_above_a_thousand_is_a_deployments_decision_not_a_refusal():
+    """The server declares no maximum, so a library ceiling refuses a measured number."""
+    cfg = parse_source_config(base_spec(limits={"page_size": 10000}))
+    assert cfg.limits.page_size == 10000
+
+
+def test_a_page_size_of_zero_is_still_refused():
+    with pytest.raises(Exception):
+        parse_source_config(base_spec(limits={"page_size": 0}))
+
+
+def test_the_default_step_batch_max_is_the_conservative_reading():
+    assert DEFAULTS["limits.step_batch_max"] == 20
+    assert DEFAULTS["limits.step_batch_default"] <= DEFAULTS["limits.step_batch_max"]
+    cfg = parse_source_config(base_spec())
+    assert cfg.limits.step_batch_max == DEFAULTS["limits.step_batch_max"]
+
+
+def test_a_deployment_raises_the_chain_limit_from_its_own_ladder():
+    cfg = parse_source_config(base_spec(limits={"step_batch_default": 300, "step_batch_max": 640}))
+    assert (cfg.limits.step_batch_default, cfg.limits.step_batch_max) == (300, 640)
+
+
+def test_the_sizing_pass_asks_for_no_row_at_all():
+    body = queries.count_query("PN-1000-A")
+    assert body["take"] == 0 and body["returnCount"] is True
+    queries.assert_values_only_in_substitutions(body)
