@@ -291,17 +291,46 @@ Every existing test must pass unchanged, except one asserting
 
 ## Part B: the reader (after the owner answers)
 
-Recorded now so Part A does not paint it into a corner. It is not built until the
-owner's packet gives the URL patterns, the `repo` value and the digest
-confirmation.
+The owner answered on 2026-11-16, in
+`2026-11-16-packet-from-dag-tools-owner-image-record-answers.md`. The answers
+that shape this part:
+
+- **The record of truth.** It lives on branch `image-records` at
+  `inventory/<repo>/<git_sha>/image.json`, the same path as `layout.py`.
+  - Its credential-free raw URL follows
+    `https://raw.githubusercontent.com/<owner>/<name>/image-records/inventory/<repo>/<sha>/image.json`.
+  - That URL is derivable from `(repo, sha)`. This holds for a public repo only.
+  - CI enforces immutability: identical bytes are a no-op, and different bytes
+    fail the job. The URL itself is mutable by force-push, which is why the
+    pinned sha256 below is load-bearing.
+  - Raw content is cached for a few minutes, so a fresh record can 404 briefly
+    after its build.
+- **The release copy.** The same bytes are at
+  `https://github.com/<owner>/<name>/releases/download/<tag>/image.json`. That URL
+  is derivable from the tag, not from `(repo, sha)`. A pin therefore uses the
+  records-branch URL.
+- **The `repo` value.** dag-tools' own CI writes `dag-tools`. The owner declared
+  this; it was not measured, because the survey runs in Jenkins. A wrong value
+  must be caught by the repo-mismatch refusal, which stays a refusal.
+- **The digest.** `outputs.digest` is the top-level image index digest, and
+  every tag resolves to it. The owner measured this on 3 services × 3 tags.
+- **All or nothing.** CI writes no record at all unless every declared service
+  produced a valid digest. A record that is short a service cannot occur, so
+  the reader models no such state.
 
 - `InventoryPin.image_record: Optional[ImageRecordSource]`, where
   `ImageRecordSource` is `{source: str, sha256: str}`. It is additive, so
   manifest `SCHEMA_VERSION` goes from 5 to 6.
-- `qual init --image-record REPO=PATH_OR_URL` (repeatable). It may also take a
-  deployment-level template with `{repo}` and `{sha}` placeholders, so a pin
-  needs no pasted URL. The template is operator configuration. No URL is written
-  into the library.
+- `qual init --image-record-template REPO=TEMPLATE` (repeatable, keyed by
+  inventory repo). TEMPLATE contains `{repo}` and `{sha}`, filled from the
+  **pin's** own repo and git_sha.
+  - `qual init --image-record REPO=PATH_OR_URL` is an explicit per-pin override.
+    It is for a private repo, where the raw URL needs a credential.
+  - The template is operator configuration. No host, owner or branch is written
+    into the library.
+- At init and at preflight, a 404 is reported apart from other read failures:
+  "absent at source; a record can lag its build by minutes, retry". Both still
+  fail. Only the message differs.
 - Init fetches the source, `parse_image_record`s it, `check_record_names`
   against the pin, and records the sha256 of the bytes and the images
   (`InventoryPin.images`, unchanged).
