@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 """Bump on every additive change to the manifest schema."""
 
 
@@ -51,6 +51,15 @@ class VersionTarget(BaseModel):
     pins: Dict[str, str] = Field(default_factory=dict)
 
 
+class PinnedImage(BaseModel):
+    """One image CI recorded for a pinned commit (``repository`` + digest)."""
+    model_config = ConfigDict(extra="ignore")
+
+    repository: str
+    digest: str
+    """Lowercased ``sha256:<64 hex>``."""
+
+
 class InventoryPin(BaseModel):
     """One frozen (repo, sha) pair from the registry at qualification-init time.
 
@@ -63,6 +72,10 @@ class InventoryPin(BaseModel):
     repo: str
     git_sha: str
     pinned_timestamp: Optional[datetime] = None
+    images: Optional[List[PinnedImage]] = None
+    """Image digests CI recorded for this commit (``image.json``), copied at
+    init. ``None`` means no record was found; ``[]`` is a record naming no
+    image. Preflight matches a deployed image's digest against these."""
 
 
 class CoUpgradeRisk(BaseModel):
@@ -80,6 +93,22 @@ class CoUpgradeRisk(BaseModel):
     to_version: str = Field(alias="to")
     severity: str = Field(default="warning")
     """One of ``"warning"`` (minor/patch) or ``"major"`` (major bump)."""
+
+
+class LocationWaiver(BaseModel):
+    """A manifest row accepting one code location that reports no digest and
+    no sha. Both fields are required and may not be blank."""
+    model_config = ConfigDict(extra="ignore")
+
+    location: str
+    reason: str
+
+    @field_validator("location", "reason")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("must not be empty or whitespace")
+        return v
 
 
 class Deployment(BaseModel):
@@ -118,6 +147,32 @@ class Deployment(BaseModel):
     the code location was built from (matched against
     ``inventory_pins[].repo``). Configurable for the same reason as
     ``sha_metadata_key``."""
+
+    image_metadata_key: str = "image"
+    """``displayMetadata`` key carrying the code location's image reference.
+    Dagster's own name: it merges the code server's ``container_image``
+    (the chart sets ``DAGSTER_CURRENT_IMAGE``) in under this key."""
+
+    sha_tag_prefix: str = "sha-"
+    """Prefix of an image tag that names a git sha (what
+    docker/metadata-action's ``type=sha`` emits)."""
+
+    unverified_waivers: List[LocationWaiver] = Field(default_factory=list)
+    """Locations accepted although they report no digest and no sha. Lives
+    in the immutable manifest on purpose: candidate-preflight failure has no
+    ``GapAcceptance`` override, so there is no Q6 flag for this."""
+
+    @field_validator("unverified_waivers")
+    @classmethod
+    def _one_row_per_location(cls, v: List[LocationWaiver]) -> List[LocationWaiver]:
+        seen = set()
+        for w in v:
+            if w.location in seen:
+                raise ValueError(
+                    f"two waiver rows for location {w.location!r}"
+                )
+            seen.add(w.location)
+        return v
 
 
 class Selection(BaseModel):

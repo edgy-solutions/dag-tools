@@ -33,10 +33,11 @@ from typing import Dict, List, Optional
 
 import yaml
 
-from ..registry import InventoryRegistry
+from ..registry import InventoryRegistry, layout
 from .manifest import (
     Deployment,
     InventoryPin,
+    PinnedImage,
     ProbeSettings,
     QualificationManifest,
     Selection,
@@ -137,8 +138,40 @@ def _pin_inventories(registry: InventoryRegistry) -> List[InventoryPin]:
             repo=repo,
             git_sha=pointer.git_sha,
             pinned_timestamp=pointer.timestamp,
+            images=_pinned_images(registry, repo, pointer.git_sha),
         ))
     return pins
+
+
+def _pinned_images(
+    registry: InventoryRegistry, repo: str, git_sha: str,
+) -> Optional[List[PinnedImage]]:
+    """The image digests CI recorded for a pinned commit.
+
+    Absent record -> ``None`` (preflight then cannot match by digest). A
+    record that is malformed, or names another repo or sha than the pin,
+    fails init naming the repo and key: a wrong digest list would let a
+    deployment pass for the wrong commit, so it is never skipped.
+    """
+    key = layout.inventory_artifact_key(repo, git_sha, layout.IMAGE_FILE)
+    try:
+        record = registry.read_image_record(repo, git_sha)
+    except Exception as e:
+        raise ValueError(
+            f"image record for pinned repo {repo!r} at {key!r} is malformed: {e}"
+        ) from e
+    if record is None:
+        return None
+    if record.repo != repo or record.git_sha != git_sha:
+        raise ValueError(
+            f"image record for pinned repo {repo!r} at {key!r} names "
+            f"repo={record.repo!r} git_sha={record.git_sha!r}, not the pin "
+            f"({repo!r}, {git_sha!r})"
+        )
+    return [
+        PinnedImage(repository=i.repository, digest=i.digest)
+        for i in record.images
+    ]
 
 
 def _to_yaml_bytes(manifest: QualificationManifest) -> bytes:

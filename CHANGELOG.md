@@ -10,6 +10,35 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Changed
+
+- **Behaviour change: preflight identifies a code location by image digest, then `sha-<short>`
+  tag, then the legacy stamp, and a location that reports none of the three now FAILS
+  `deployed_shas_match_pins` when anything is pinned.** Before, a location with no
+  `workspace.yaml` stamp was informational, so a Helm-deployed fleet (the chart cannot emit the
+  stamp) could never pass and a deployment with no stamps was indistinguishable from a verified
+  one. To keep the old leniency for a location that genuinely has no image of its own, waive it
+  in the manifest: `qual init --waive-unverified-location NAME=REASON` (a reason is required;
+  there is no Q6 flag, so the waiver is part of the immutable record). With **no** pins the check
+  still passes, and its detail now says how many locations it could not verify. The report
+  schema is 3 (`location_identities`, `unused_waivers`, per-pin `outcome` / `source` /
+  `deployed_digest`) and the manifest schema is 5 (`images`, `unverified_waivers`,
+  `image_metadata_key`, `sha_tag_prefix`); both are additive and older readers ignore them. The
+  test `test_an_unstamped_location_is_informational_not_a_failure` was replaced by
+  `test_an_unverified_location_fails_while_an_unpinned_one_stays_informational`.
+- `DagsterGraphQLClient.get_code_locations` skips one malformed `displayMetadata` entry with a
+  WARNING naming the location instead of discarding that location's metadata.
+
+### Added
+
+- **New `dagtools registry record-image --repo R --sha S --image REF@sha256:<hex>`** (repeatable).
+  Writes `image.json` immutably beside the commit's inventory; idempotent for an identical set,
+  refuses a different one, refuses a reference with no digest, and never touches `latest.json`.
+  `qual init` copies the record into the pin. Also `qual init --image-metadata-key`,
+  `--sha-tag-prefix` and `--waive-unverified-location`.
+
 ## 0.16.1 — 2026-11-16
 
 ### Fixed

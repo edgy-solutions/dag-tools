@@ -23,7 +23,7 @@ import sys
 from datetime import timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 
@@ -155,6 +155,55 @@ registry_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(registry_app)
+
+
+@registry_app.command("record-image")
+def registry_record_image(
+    ctx: typer.Context,
+    repo: str = typer.Option(..., "--repo", help="Repo the image was built from."),
+    sha: str = typer.Option(..., "--sha", help="Git sha of the built commit."),
+    image: List[str] = typer.Option(
+        ..., "--image",
+        help=(
+            "Image reference WITH a digest: repository[:tag]@sha256:<64 hex>. "
+            "Repeatable. Any tag is accepted and ignored."
+        ),
+    ),
+    format: OutputFormat = typer.Option(
+        OutputFormat.JSON, "--format", help="Output format."
+    ),
+) -> None:
+    """Record the image digests CI built for a commit (``image.json``).
+
+    Idempotent for an identical set; a different set for the same commit is
+    refused. Never touches ``latest.json``.
+    """
+    from .preflight.identity import parse_image_reference
+    from .registry import ImageRecordMismatch, RecordedImage
+
+    settings = require_registry(ctx)
+    images = []
+    for ref in image:
+        parsed = parse_image_reference(ref)
+        if parsed.error or not parsed.digest:
+            typer.secho(
+                f"error: --image {ref!r}: "
+                f"{parsed.error or 'no digest (expected repository[:tag]@sha256:<64 hex>)'}",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        images.append(RecordedImage(repository=parsed.repository, digest=parsed.digest))
+    try:
+        record = settings.registry().record_image(repo, sha, images)
+    except ImageRecordMismatch as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if format == OutputFormat.JSON:
+        typer.echo(record.model_dump_json(indent=2))
+    else:
+        typer.echo(f"recorded {len(record.images)} image(s) for {repo}@{sha}")
+        for i in record.images:
+            typer.echo(f"  {i.repository}@{i.digest}")
 
 
 @registry_app.command("status")
@@ -411,6 +460,25 @@ def qual_init(
             "naming the code location's repo (matched to inventory_pins)."
         ),
     ),
+    image_metadata_key: str = typer.Option(
+        "image", "--image-metadata-key",
+        help=(
+            "displayMetadata key carrying each code location's image reference "
+            "(Dagster's own name is 'image'; preflight matches its digest)."
+        ),
+    ),
+    sha_tag_prefix: str = typer.Option(
+        "sha-", "--sha-tag-prefix",
+        help="Prefix of an image tag that names a git sha (docker/metadata-action type=sha).",
+    ),
+    waive_unverified_location: List[str] = typer.Option(
+        [], "--waive-unverified-location",
+        help=(
+            "NAME=REASON, repeatable. Accept a code location that reports no "
+            "image digest, sha tag or stamp. The reason is recorded in the "
+            "immutable manifest; there is no Q6 flag for this."
+        ),
+    ),
     staging_overrides: Optional[str] = typer.Option(
         None, "--staging-overrides",
         help="Pointer (typically s3://...) to the staging resource override config.",
@@ -445,12 +513,14 @@ def qual_init(
     # Lazy imports — keep registry-only commands lightweight.
     from .qualify import (
         Deployment,
+        LocationWaiver,
         QualificationManifest,
         Selection,
         VersionTarget,
         create_qualification,
     )
 
+    waivers = _parse_waivers(waive_unverified_location)
     baseline_pins_dict = _load_pins_file(baseline_pins)
     candidate_pins_dict = _load_pins_file(candidate_pins)
     probe_settings = _load_probe_config(probe_config)
@@ -471,6 +541,11 @@ def qual_init(
                 location_name=location_name, job_name=job_name,
                 sha_metadata_key=sha_metadata_key,
                 repo_metadata_key=repo_metadata_key,
+                image_metadata_key=image_metadata_key,
+                sha_tag_prefix=sha_tag_prefix,
+                unverified_waivers=[
+                    LocationWaiver(location=n, reason=r) for n, r in waivers
+                ],
             ),
             staging_overrides=staging_overrides,
             selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
@@ -486,6 +561,22 @@ def qual_init(
         typer.echo(manifest.model_dump_json(indent=2, by_alias=True))
     else:
         _print_manifest_table(manifest)
+
+
+def _parse_waivers(rows: List[str]) -> List[tuple]:
+    """``NAME=REASON`` rows. The first ``=`` splits; both sides are required."""
+    out = []
+    for row in rows:
+        name, sep, reason = row.partition("=")
+        if not sep or not name.strip() or not reason.strip():
+            typer.secho(
+                f"error: --waive-unverified-location {row!r}: expected "
+                "NAME=REASON with both sides non-empty",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        out.append((name.strip(), reason.strip()))
+    return out
 
 
 def _load_pins_file(path: Optional[Path]) -> dict:
@@ -954,13 +1045,18 @@ def _print_preflight_table(report) -> None:
     unsatisfied = [p for p in report.pinned_repos if not p.matched]
     for p in unsatisfied:
         typer.echo(
-            f"    pin {p.repo}: expected={p.expected_sha!r} "
-            f"deployed={p.deployed_sha!r} location={p.location_name!r}"
+            f"    pin {p.repo}: {p.outcome or 'unsatisfied'} "
+            f"expected={p.expected_sha!r} deployed={p.deployed_sha!r} "
+            f"digest={p.deployed_digest!r} location={p.location_name!r}"
         )
-    if unsatisfied and report.unstamped_locations:
+    for i in getattr(report, "location_identities", []):
+        extra = f" ({i.waiver_reason})" if i.waiver_reason else ""
         typer.echo(
-            "    unstamped locations: " + ", ".join(report.unstamped_locations)
+            f"    location {i.location_name}: {i.outcome}"
+            f"{' via ' + i.source if i.source else ''}{extra}"
         )
+    if report.unused_waivers:
+        typer.echo("    unused waivers: " + ", ".join(report.unused_waivers))
 
 
 @qual_app.command("report")

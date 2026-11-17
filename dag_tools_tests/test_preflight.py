@@ -439,15 +439,24 @@ def test_two_replicas_with_the_same_sha_pass(setup, monkeypatch):
     assert chk.passed
 
 
-def test_an_unstamped_location_is_informational_not_a_failure(setup, monkeypatch):
+def test_an_unverified_location_fails_while_an_unpinned_one_stays_informational(
+    setup, monkeypatch,
+):
+    # Replaces the old "unstamped is informational" test: a location that
+    # reports no digest, sha tag or stamp can no longer be told from a stale
+    # one, so with a pin present it fails unless the manifest waives it.
     _pinned(monkeypatch, setup, [("domain-a", SHA)])
-    report, chk = _run(setup, [
+    locs = [
         _loc("a", "domain-a", SHA), _loc("dag-tools-probes"),
         _loc("other", "unpinned-repo", "1111111"),
-    ])
-    assert chk.passed and report.passed
+    ]
+    report, chk = _run(setup, locs)
+    assert not chk.passed and not report.passed
+    assert "dag-tools-probes" in chk.detail
     assert report.unstamped_locations == ["dag-tools-probes"]
-    assert "unpinned-repo" in chk.detail
+    assert "other" in chk.detail
+    report2, chk2 = _run(setup, [locs[0], locs[2]])
+    assert chk2.passed and report2.passed
 
 
 def test_sha_check_runs_on_the_baseline_side_too(setup, monkeypatch):
