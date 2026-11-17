@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 """Bump on every additive change to the manifest schema."""
 
 
@@ -60,6 +60,17 @@ class PinnedImage(BaseModel):
     """Lowercased ``sha256:<64 hex>``."""
 
 
+class ImageRecordSource(BaseModel):
+    """Where a pin's image record is read from, and the hash of its bytes.
+
+    The URL is mutable by force-push; the hash is what makes it a pin.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    source: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class InventoryPin(BaseModel):
     """One frozen (repo, sha) pair from the registry at qualification-init time.
 
@@ -73,6 +84,9 @@ class InventoryPin(BaseModel):
     git_sha: str
     pinned_timestamp: Optional[datetime] = None
     images: Optional[List[PinnedImage]] = None
+    image_record: Optional[ImageRecordSource] = None
+    """Declared source of this pin's image record (manifest v6). None = no
+    record declared; preflight then behaves as before."""
     """Image digests CI recorded for this commit (``image.json``), copied at
     init. ``None`` means no record was found; ``[]`` is a record naming no
     image. Preflight matches a deployed image's digest against these."""
