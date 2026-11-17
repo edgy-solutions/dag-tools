@@ -551,6 +551,21 @@ def qual_init(
             "immutable manifest; there is no Q6 flag for this."
         ),
     ),
+    image_record_template: List[str] = typer.Option(
+        [], "--image-record-template",
+        help=(
+            "REPO=TEMPLATE, repeatable. Where to read a pin's image record; "
+            "TEMPLATE holds {repo} and {sha}, filled from the pin. The "
+            "record's sha256 is pinned into the manifest."
+        ),
+    ),
+    image_record: List[str] = typer.Option(
+        [], "--image-record",
+        help=(
+            "REPO=PATH_OR_URL, repeatable. Explicit image record source for "
+            "one pin (https URL or local path); beats the template."
+        ),
+    ),
     staging_overrides: Optional[str] = typer.Option(
         None, "--staging-overrides",
         help="Pointer (typically s3://...) to the staging resource override config.",
@@ -593,6 +608,8 @@ def qual_init(
     )
 
     waivers = _parse_waivers(waive_unverified_location)
+    record_templates = _parse_repo_map("--image-record-template", image_record_template)
+    record_sources = _parse_repo_map("--image-record", image_record)
     baseline_pins_dict = _load_pins_file(baseline_pins)
     candidate_pins_dict = _load_pins_file(candidate_pins)
     probe_settings = _load_probe_config(probe_config)
@@ -622,6 +639,8 @@ def qual_init(
             staging_overrides=staging_overrides,
             selection=Selection(prefer_tag=prefer_tag, reps_per_class=reps_per_class),
             probes=probe_settings,
+            image_record_templates=record_templates,
+            image_record_sources=record_sources,
             local_path=local_path,
             allow_overwrite=allow_overwrite,
         )
@@ -648,6 +667,28 @@ def _parse_waivers(rows: List[str]) -> List[tuple]:
             )
             raise typer.Exit(code=2)
         out.append((name.strip(), reason.strip()))
+    return out
+
+
+def _parse_repo_map(flag: str, rows: List[str]) -> dict:
+    """``REPO=VALUE`` rows. The first ``=`` splits; a repeated REPO is refused."""
+    out: dict = {}
+    for row in rows:
+        repo, sep, value = row.partition("=")
+        if not sep or not repo.strip() or not value.strip():
+            typer.secho(
+                f"error: {flag} {row!r}: expected REPO=VALUE with both sides non-empty",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        repo = repo.strip()
+        if repo in out:
+            typer.secho(
+                f"error: {flag} names repo {repo!r} twice",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=2)
+        out[repo] = value.strip()
     return out
 
 

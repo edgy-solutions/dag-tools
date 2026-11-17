@@ -27,16 +27,32 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import httpx
 import yaml
 
-from ..image_record import ImageRecordForOtherCommit, check_record_names
+from ..image_record import (
+    ImageRecordForOtherCommit,
+    ImageRecordInvalid,
+    check_record_names,
+    parse_image_record,
+)
+from ..image_record_source import (
+    ImageRecordSourceError,
+    fetch_image_record,
+    sha256_hex,
+)
 from ..registry import InventoryRegistry, layout
 from .manifest import (
     Deployment,
+    ImageRecordSource,
     InventoryPin,
     PinnedImage,
     ProbeSettings,
@@ -71,6 +87,9 @@ def create_qualification(
     local_path: Optional[Path] = None,
     allow_overwrite: bool = False,
     now: Optional[datetime] = None,
+    image_record_templates: Mapping[str, str] = {},
+    image_record_sources: Mapping[str, str] = {},
+    record_client: Optional[httpx.Client] = None,
 ) -> QualificationManifest:
     """Pin the registry snapshot, build the manifest, write it locally + remotely.
 
@@ -84,6 +103,10 @@ def create_qualification(
     local_path = local_path or default_local_manifest_path(qual_id)
 
     inventory_pins = _pin_inventories(registry)
+    _attach_image_records(
+        inventory_pins, image_record_templates, image_record_sources,
+        record_client,
+    )
     co_upgrade_risks = compute_co_upgrade_risks(baseline.pins, candidate.pins)
 
     manifest = QualificationManifest(
@@ -142,6 +165,97 @@ def _pin_inventories(registry: InventoryRegistry) -> List[InventoryPin]:
             images=_pinned_images(registry, repo, pointer.git_sha),
         ))
     return pins
+
+
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def fill_record_template(template: str, repo: str, sha: str) -> str:
+    """Literal replacement of ``{repo}`` and ``{sha}``; never ``str.format``."""
+    if "{sha}" not in template:
+        raise ValueError(f"image record template {template!r} must contain {{sha}}")
+    out = template.replace("{repo}", repo).replace("{sha}", sha)
+    if "{" in out or "}" in out:
+        raise ValueError(
+            f"image record template {template!r} has a placeholder other than "
+            "{repo} and {sha}"
+        )
+    return out
+
+
+def _attach_image_records(
+    pins: List[InventoryPin],
+    templates: Mapping[str, str],
+    sources: Mapping[str, str],
+    client: Optional[httpx.Client],
+) -> None:
+    """Fetch, parse and name-check each declared record; pin its sha256.
+
+    Refusals that need no fetch come first. Then every pin's problem is
+    collected so one error lists them all.
+    """
+    names = {p.repo for p in pins}
+    stray = sorted((set(templates) | set(sources)) - names)
+    if stray:
+        raise ValueError(
+            f"image record flag names repo(s) {stray} that match no pin; "
+            f"pinned repos are {sorted(names)}"
+        )
+    plan = []
+    problems: List[str] = []
+    for pin in pins:
+        if (pin.repo in sources or pin.repo in templates) and not (
+            _FULL_SHA.fullmatch(pin.git_sha)
+        ):
+            # CI records under the full lowercase commit sha. A short or
+            # upper-case pin sha would 404 forever and read at preflight as
+            # a record lagging its build; refuse it here, where the operator
+            # can still fix the survey that published it.
+            problems.append(
+                f"repo {pin.repo!r}: pinned git_sha {pin.git_sha!r} is not a "
+                "full 40-character lowercase commit sha, so no image record "
+                "can be found for it; fix the survey stage that publishes "
+                "--sha (the template passes ${GIT_COMMIT}) and re-survey"
+            )
+            continue
+        if pin.repo in sources:
+            plan.append((pin, sources[pin.repo]))
+        elif pin.repo in templates:
+            try:
+                plan.append((pin, fill_record_template(
+                    templates[pin.repo], pin.repo, pin.git_sha)))
+            except ValueError as e:
+                problems.append(f"repo {pin.repo!r}: {e}")
+    if problems:
+        raise ValueError("; ".join(problems))
+    for pin, source in plan:
+        try:
+            body = fetch_image_record(source, client=client)
+            record = parse_image_record(body)
+            check_record_names(record, pin.repo, pin.git_sha)
+        except ImageRecordSourceError as e:
+            problems.append(f"repo {pin.repo!r}: {e}")
+            continue
+        except (ImageRecordInvalid, ImageRecordForOtherCommit) as e:
+            problems.append(f"repo {pin.repo!r}: image record {source!r}: {e}")
+            continue
+        fetched = [
+            PinnedImage(repository=i.repository, digest=i.digest)
+            for i in record.images
+        ]
+        if pin.images is not None:
+            def _key(imgs):
+                return {(i.repository.lower(), i.digest) for i in imgs}
+            if _key(pin.images) != _key(fetched):
+                problems.append(
+                    f"repo {pin.repo!r}: image record {source!r} disagrees with "
+                    "the registry's record of the same commit"
+                )
+                continue
+        pin.images = fetched
+        pin.image_record = ImageRecordSource(source=source, sha256=sha256_hex(body))
+    if problems:
+        raise ValueError("image record problems: " + "; ".join(problems))
 
 
 def _pinned_images(

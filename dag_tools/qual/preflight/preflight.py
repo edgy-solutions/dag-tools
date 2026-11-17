@@ -40,11 +40,26 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Callable, List, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Literal, Mapping, Optional, Tuple
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..image_record import (
+    ImageRecordForOtherCommit,
+    ImageRecordInvalid,
+    check_record_names,
+    parse_image_record,
+)
+from ..image_record_source import (
+    ImageRecordSourceError,
+    fetch_image_record,
+    sha256_hex,
+)
 from ..graphql import (
     CodeLocationStatus,
     DagsterGraphQLClient,
@@ -65,7 +80,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+RecordProblem = Literal["absent", "unreadable", "changed", "unparseable", "other_commit"]
 
 
 class CheckResult(BaseModel):
@@ -106,9 +123,15 @@ class RepoShaCheck(BaseModel):
     location_name: Optional[str] = None
     matched: bool = False
     detail: Optional[str] = None
-    outcome: Optional[Literal["matched", "mismatch", "unmatched"]] = None
-    """Three distinct states: ``matched``; ``mismatch`` (a location was
-    attributed to this pin and disagrees); ``unmatched`` (nothing attributed)."""
+    outcome: Optional[
+        Literal["matched", "mismatch", "unmatched", "record_failed"]
+    ] = None
+    """Four distinct states: ``matched``; ``mismatch`` (a location was
+    attributed to this pin and disagrees); ``unmatched`` (nothing attributed);
+    ``record_failed`` (the pin declares an image record that could not be
+    verified; no location rescues it)."""
+    image_record_source: Optional[str] = None
+    image_record_problem: Optional[RecordProblem] = None
     source: Optional[Literal["digest", "sha_tag", "stamp"]] = None
     """Which identity source attributed the location (first source wins)."""
     deployed_digest: Optional[str] = None
@@ -184,6 +207,7 @@ def run_preflight(
     client_factory: Optional[Callable[[QualificationManifest], DagsterGraphQLClient]] = None,
     run_sample_size: int = 5,
     now: Optional[datetime] = None,
+    record_client: Optional[httpx.Client] = None,
 ) -> PreflightReport:
     """Run the Q3 preflight checks and return the report.
 
@@ -255,9 +279,10 @@ def run_preflight(
         # Reuses check 2's ``code_locations`` (no second workspace call).
         # If check 2 failed the list is empty and every pin is unsatisfied.
         try:
+            record_problems = _verify_image_records(manifest, record_client)
             (pinned_repos, location_identities, unused_waivers,
              unstamped_locations, sha_check) = _check_deployed_shas(
-                manifest, code_locations,
+                manifest, code_locations, record_problems,
             )
         except Exception as e:  # §4g: never raise
             pinned_repos, unstamped_locations = [], []
@@ -471,9 +496,52 @@ def _classify_location(
     return LocationIdentity(outcome="unverified", pins=[], detail=why, **base), []
 
 
+def _verify_image_records(
+    manifest: QualificationManifest,
+    client: Optional[httpx.Client],
+) -> Dict[int, Tuple[RecordProblem, str]]:
+    """Re-read every declared image record; map pin index -> (problem, message).
+
+    A pin that verifies is absent from the result. Never raises: a fetch
+    failure is data. The problem is the first of absent / unreadable (fetch),
+    changed (hash), unparseable, other_commit.
+    """
+    out: Dict[int, Tuple[RecordProblem, str]] = {}
+    for idx, pin in enumerate(manifest.inventory_pins):
+        rec = pin.image_record
+        if rec is None:
+            continue
+        try:
+            body = fetch_image_record(rec.source, client=client)
+        except ImageRecordSourceError as e:
+            out[idx] = (e.kind, str(e))  # type: ignore[assignment]
+            continue
+        except Exception as e:  # the seam promises ImageRecordSourceError; be safe
+            out[idx] = ("unreadable", f"fetch failed ({type(e).__name__})")
+            continue
+        if sha256_hex(body) != rec.sha256:
+            out[idx] = (
+                "changed",
+                f"bytes at the source no longer hash to the pinned sha256 "
+                f"{rec.sha256}",
+            )
+            continue
+        try:
+            record = parse_image_record(body)
+        except ImageRecordInvalid as e:
+            out[idx] = ("unparseable", str(e))
+            continue
+        try:
+            check_record_names(record, pin.repo, pin.git_sha)
+        except ImageRecordForOtherCommit as e:
+            out[idx] = ("other_commit", str(e))
+    return out
+
+
 def _check_deployed_shas(
     manifest: QualificationManifest,
     code_locations: List[CodeLocationStatus],
+    record_problems: Optional[Mapping[int, Tuple[RecordProblem, str]]] = None,
 ) -> Tuple[List[RepoShaCheck], List[LocationIdentity], List[str], List[str], CheckResult]:
     """Pin-driven identity check; see the module docstring (check 3).
 
@@ -562,7 +630,25 @@ def _check_deployed_shas(
                 ),
             ))
 
+    # No fallback: a declared record that cannot be verified fails its pin
+    # whatever any location says.
+    for idx, (problem, message) in (record_problems or {}).items():
+        pin = pins[idx]
+        assert pin.image_record is not None
+        results[idx] = results[idx].model_copy(update={
+            "matched": False,
+            "outcome": "record_failed",
+            "source": None,
+            "image_record_source": pin.image_record.source,
+            "image_record_problem": problem,
+            "detail": (
+                f"image record {pin.image_record.source!r} {problem}: {message}"
+            ),
+        })
+
     bad_pins = [r for r in results if not r.matched]
+    record_bad = [r for r in bad_pins if r.outcome == "record_failed"]
+    other_bad = [r for r in bad_pins if r.outcome != "record_failed"]
     if not pins:
         # Nothing is pinned, so no location stands in for anything and there is
         # nothing to qualify its identity against: report, do not gate.
@@ -585,15 +671,22 @@ def _check_deployed_shas(
             name=SHA_CHECK_NAME, passed=True, detail=detail,
         )
     parts: List[str] = []
-    if bad_pins:
+    if other_bad:
         parts.append(
-            f"{len(bad_pins)} of {len(results)} pin(s) unsatisfied: "
+            f"{len(other_bad)} of {len(results)} pin(s) unsatisfied: "
             + "; ".join(
                 f"{r.repo}: {r.detail} (expected {r.expected_sha!r}, "
                 f"deployed {r.deployed_sha!r}, location {r.location_name!r})"
-                for r in bad_pins
+                for r in other_bad
             )
             + f". To fix: {hint}"
+        )
+    if record_bad:
+        parts.append(
+            f"{len(record_bad)} of {len(results)} pin(s) declare an image record "
+            "that could not be verified: "
+            + "; ".join(f"{r.repo}: {r.detail}" for r in record_bad)
+            + ". To fix: re-run `qual init` or fix the record source"
         )
     if unverified:
         parts.append(unverified_hint)

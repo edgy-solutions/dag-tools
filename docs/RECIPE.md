@@ -354,6 +354,8 @@ or stamp is **unverified** and fails the check unless the manifest waives it
 location that reports an identity no pin claims is informational. With no
 pins the check passes and says how many locations it could not verify.
 
+A pin may also declare its image record's source (`qual init --image-record-template REPO=TEMPLATE`, `--image-record REPO=PATH_OR_URL`). Init pins the sha256 of the bytes; preflight re-reads the source and fails that pin if it is absent, unreadable, changed, unparseable or names another commit, whatever any location reports.
+
 ```yaml
 load_from:
   - grpc_server:

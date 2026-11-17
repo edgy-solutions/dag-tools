@@ -344,3 +344,157 @@ that shape this part:
 - The source is an `https://` URL or a local path. Plain `http://` is refused.
   The body is capped (64 KiB). The fetch goes through an injectable seam over
   httpx, so tests need no network.
+
+### B1. Fetch: new module `dag_tools/qual/image_record_source.py`
+
+This module is not the pure module. It imports httpx, so `image_record.py` stays
+free of I/O.
+
+- `fetch_image_record(source: str, *, client: Optional[httpx.Client] = None) -> bytes`
+  - If `source` starts with `https://`, it does a GET with no auth header,
+    `timeout=10`, and `follow_redirects=True`.
+    - It refuses a final URL that is not https; the release-asset URL redirects.
+    - It streams the body and refuses more than `MAX_RECORD_BYTES = 65536`.
+  - If `source` starts with `http://` or has any other `scheme://`, it raises
+    `ImageRecordUnreadable` naming the scheme. This happens before any I/O.
+  - Anything else is a local path. A missing file raises `ImageRecordAbsent`, and
+    a file larger than the cap is refused.
+- Errors:
+  - `ImageRecordSourceError(ValueError)` is the base. Every error carries
+    `.source` and `.kind`.
+  - `ImageRecordAbsent` has kind `"absent"`. It is raised for an HTTP 404 or a
+    missing local file. Its message ends "absent at source; a record can lag its
+    build by minutes, retry".
+  - `ImageRecordUnreadable` has kind `"unreadable"`. It covers every other
+    status, transport errors, timeouts, the cap, and a refused scheme. Its
+    message carries the status or the exception class, and no response body.
+- The seam is `client`. Tests pass
+  `httpx.Client(transport=httpx.MockTransport(...))`, so redirects and streaming
+  go through real httpx. No test touches the network.
+- `sha256_hex(body: bytes) -> str` returns lowercase hex.
+
+### B2. Manifest v6
+
+- `ImageRecordSource(BaseModel, extra="ignore")` has two fields:
+  - `source: str`;
+  - `sha256: str`, validated as `^[0-9a-f]{64}$`.
+- `InventoryPin.image_record: Optional[ImageRecordSource] = None`.
+- `SCHEMA_VERSION` goes from 5 to 6. A v5 manifest still loads, with
+  `image_record` set to `None`.
+
+### B3. `qual init`
+
+- `create_qualification` gains `image_record_templates: Mapping[str, str] = {}`
+  and `image_record_sources: Mapping[str, str] = {}`. Both are keyword-only with
+  empty defaults (§6).
+- The CLI flags are `--image-record-template REPO=TEMPLATE` and
+  `--image-record REPO=PATH_OR_URL`. Both are repeatable and use the same
+  `REPO=VALUE` parse as `--waive-unverified-location`.
+- Two problems are refused before any fetch:
+  - the same REPO given twice in one flag;
+  - a REPO that names no pin, because a typo must not be silently ignored.
+- For one repo, `--image-record` wins over `--image-record-template`.
+- Template filling:
+  - Use literal replacement of `{repo}` and `{sha}`, never `str.format`.
+  - The template must contain `{sha}`.
+  - After replacement, any remaining `{` or `}` is refused, naming the template.
+- Init fails, writing no manifest, if any pin with a source cannot be read,
+  parsed, or name-checked against that pin. All pins' problems are reported in
+  one `ValueError`. An absent record keeps its own message.
+- On success:
+  - `pin.image_record = {source, sha256 of the bytes}`;
+  - `pin.images` comes from the fetched record.
+  - If `_pinned_images` also finds a bucket record, the two must be equal as
+    sets of `(repository.lower(), digest)`. Otherwise init fails naming the repo.
+- `create_qualification` gains `record_client: Optional[httpx.Client] = None`,
+  which is passed through to the fetch.
+- Pins with no source behave exactly as today.
+
+### B4. Preflight
+
+- `run_preflight` gains `record_client: Optional[httpx.Client] = None`.
+- Before `_check_deployed_shas`, it fetches every pin that has an `image_record`
+  again. A failure becomes data and never raises out of `run_preflight`.
+- Per pin, the problem is the first of these that applies:
+  - `absent` or `unreadable`, from the fetch;
+  - `changed`, when the sha256 differs from the pinned one;
+  - `unparseable`, when `parse_image_record` raises;
+  - `other_commit`, when `check_record_names` raises.
+- A pin with a problem gets `outcome="record_failed"` and `matched=False`,
+  **whatever any location says**. This is the no-fallback rule: a location
+  matching by sha tag or by digest does not rescue it.
+  - Its detail names the source and the problem kind, and includes the fetch
+    error's message.
+  - Location identities are still computed and published as today.
+- New fields:
+  - `RepoShaCheck.outcome` adds `"record_failed"`.
+  - `RepoShaCheck` adds `image_record_source: Optional[str]` and
+    `image_record_problem: Optional[Literal[...the five kinds]]`.
+  - The preflight report `SCHEMA_VERSION` goes from 3 to 4.
+- The roll-up check fails when any pin is `record_failed`. The failure hint for
+  those pins names the source and says to re-run `qual init` or fix the source.
+  It must not suggest tags or stamps.
+- A pin whose record verifies is matched exactly as today: digest, then sha
+  tag, then stamp.
+  - Whether a pin with a record should require a digest is **not** ruled. Do
+    not change it.
+
+### B5. Tests: new `dag_tools_tests/test_image_record_reader.py`
+
+Each refusal is paired with a control that passes. Tests run on both venvs.
+
+- **Fetch:**
+  - https 200 returns the bytes;
+  - 404 is `ImageRecordAbsent`, and its message contains "retry";
+  - 500 is `Unreadable`;
+  - a transport error is `Unreadable`;
+  - `http://` is refused before any request, and the transport is asserted
+    never to be called;
+  - a redirect to an http URL is refused;
+  - a redirect to https is followed;
+  - a body of 65536 bytes is accepted, and 65537 bytes is refused;
+  - a local path that exists is read;
+  - a missing local path is `Absent`;
+  - no request carries an `Authorization` header.
+- **Init:**
+  - the template is filled from the pin, and the pinned sha256 is the bytes'
+    hash;
+  - the override beats the template;
+  - a template without `{sha}` is refused;
+  - an unknown `{x}` is refused;
+  - a repo key naming no pin is refused;
+  - a record for another sha fails init;
+  - a fetched record that disagrees with the bucket record fails init, with a
+    control where they agree;
+  - an absent source fails init with the absent message;
+  - problems in two pins are reported together;
+  - no source gives a manifest identical to today's, apart from the schema
+    version;
+  - a v5 manifest still loads.
+- **Preflight:**
+  - unchanged bytes plus a digest-matching location give `matched` (the control);
+  - changed bytes give `record_failed/changed`, even though the location matches
+    by digest;
+  - an absent source gives `record_failed/absent`, even though the location
+    matches by sha tag. Pair it with the control: the same location and pin,
+    with no `image_record`, match by sha tag;
+  - unreadable gives `record_failed/unreadable`;
+  - a fetch error never raises out of `run_preflight`;
+  - the roll-up detail names the source and does not mention a sha tag.
+- **Structure:**
+  - the pure module still imports no httpx, using the existing subprocess test;
+  - `image_record_source` is the only new module importing httpx.
+
+### B6. Docs
+
+- **AGENTS.md:** add a §4g bullet after the image-identity bullet. It covers:
+  - the pinned hash;
+  - the five problem kinds;
+  - that there is no fallback, and why;
+  - the https/path-only cap;
+  - that the pure module must stay pure;
+  - the test names.
+- **CHANGELOG:** the manifest moves to v6, the preflight report moves to v4, and
+  there are new init flags.
+- **README:** the qual init flags.
+- **RECIPE.md:** add a short note if it documents `qual init` flags.

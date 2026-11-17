@@ -380,7 +380,7 @@ def test_the_configured_keys_and_prefix_are_used(setup, monkeypatch):
     assert chk.passed
 
 
-def test_the_report_schema_is_3(setup, monkeypatch):
+def test_the_report_schema_is_4(setup, monkeypatch):
     _setup(monkeypatch, setup, [])
     report, _ = _run(setup, [_loc("a")])
-    assert report.schema_version == 3
+    assert report.schema_version == 4
