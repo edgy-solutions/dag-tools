@@ -232,6 +232,52 @@ def registry_record_image(
             typer.echo(f"  {i.repository}@{i.digest}")
 
 
+@registry_app.command("write-image-record")
+def registry_write_image_record(
+    repo: str = typer.Option(..., "--repo", help="Repo the image was built from."),
+    sha: str = typer.Option(..., "--sha", help="Git sha of the built commit."),
+    image: List[str] = typer.Option(
+        ..., "--image",
+        help=(
+            "Image reference WITH a digest: repository[:tag]@sha256:<64 hex>. "
+            "Repeatable. Any tag is accepted and ignored."
+        ),
+    ),
+    out: Path = typer.Option(..., "--out", help="File to write the record to."),
+) -> None:
+    """Render an image record to a file. Touches no storage.
+
+    This is what CI calls: the digest is minted by the push and is the one
+    fact only CI knows, so something there has to write it down, and the
+    runner has no registry credential and is not getting one. So this command
+    deliberately does NOT take ``--registry`` and does not go through
+    ``require_registry`` -- it opens no connection, reads nothing and writes
+    one file. ``record-image --from-file`` is what later ingests the result,
+    and it is the command that needs the registry.
+
+    The document is the same ``ImageRecord`` every reader parses, rendered by
+    the same renderer, so there is one grammar and one writer. Nothing is
+    written when the build refuses: a partial document on disk is a document
+    some later step would read.
+    """
+    from .image_record import ImageRecordInvalid, build_image_record, render_image_record
+
+    try:
+        record = build_image_record(repo, sha, list(image))
+        body = render_image_record(record)
+    except ImageRecordInvalid as e:
+        for line in e.problems:
+            typer.secho(f"error: {line}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    try:
+        out.write_bytes(body)
+    except OSError as e:
+        typer.secho(f"error: --out {str(out)!r}: {e.strerror or e}",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    typer.echo(f"wrote {len(record.images)} image(s) for {record.repo}@{record.git_sha} to {out}")
+
+
 @registry_app.command("status")
 def registry_status(
     ctx: typer.Context,
