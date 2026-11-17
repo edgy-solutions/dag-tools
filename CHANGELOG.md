@@ -15,7 +15,7 @@ it back are named.
 
 ### Added
 
-- `qual init --image-record-template REPO=TEMPLATE` and `--image-record REPO=PATH_OR_URL` (both repeatable) declare where a pin's image record is read from; the manifest moves to schema 6 (`InventoryPin.image_record`, additive; a v5 manifest still loads) and the preflight report to schema 4 (`RepoShaCheck.outcome` gains `record_failed`, plus `image_record_source` and `image_record_problem`). A pin with a declared record fails preflight if the record is absent, unreadable, changed, unparseable or names another commit, with no fallback to tag matching. `create_qualification` and `run_preflight` gain keyword-only parameters with defaults; nothing existing changes.
+- `qual init --image-record-template REPO=TEMPLATE` and `--image-record REPO=PATH_OR_URL` (both repeatable) declare where a pin's image record is read from; the manifest moves to schema 6 (`InventoryPin.image_record`, additive; a v5 manifest still loads) and the preflight report to schema 4 (`RepoShaCheck.outcome` gains `record_failed`, plus `image_record_source` and `image_record_problem`). A pin with a declared record fails preflight if the record is absent, unreadable, changed, unparseable or names another commit, with no fallback to tag matching. A pin that declares a record must carry a full 40-character lowercase `git_sha`, or `qual init` refuses it and names the survey stage; pins with no record declared are unaffected. `create_qualification` and `run_preflight` gain keyword-only parameters with defaults; nothing existing changes.
 
 ### Changed
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional
@@ -166,6 +167,9 @@ def _pin_inventories(registry: InventoryRegistry) -> List[InventoryPin]:
     return pins
 
 
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
 def fill_record_template(template: str, repo: str, sha: str) -> str:
     """Literal replacement of ``{repo}`` and ``{sha}``; never ``str.format``."""
     if "{sha}" not in template:
@@ -200,6 +204,20 @@ def _attach_image_records(
     plan = []
     problems: List[str] = []
     for pin in pins:
+        if (pin.repo in sources or pin.repo in templates) and not (
+            _FULL_SHA.fullmatch(pin.git_sha)
+        ):
+            # CI records under the full lowercase commit sha. A short or
+            # upper-case pin sha would 404 forever and read at preflight as
+            # a record lagging its build; refuse it here, where the operator
+            # can still fix the survey that published it.
+            problems.append(
+                f"repo {pin.repo!r}: pinned git_sha {pin.git_sha!r} is not a "
+                "full 40-character lowercase commit sha, so no image record "
+                "can be found for it; fix the survey stage that publishes "
+                "--sha (the template passes ${GIT_COMMIT}) and re-survey"
+            )
+            continue
         if pin.repo in sources:
             plan.append((pin, sources[pin.repo]))
         elif pin.repo in templates:

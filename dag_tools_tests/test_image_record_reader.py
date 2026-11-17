@@ -272,6 +272,32 @@ def test_control_a_good_template_is_accepted(registry):
           image_record_templates={"domain-a": "https://r.example.com/{sha}"})
 
 
+@pytest.mark.parametrize("sha", [SHA[:7], SHA.upper()])
+@pytest.mark.parametrize("flag", ["image_record_sources", "image_record_templates"])
+def test_a_pin_sha_that_is_not_full_lowercase_is_refused_naming_the_survey(
+    registry, sha, flag,
+):
+    _publish(registry, sha=sha)
+
+    def never(request):
+        raise AssertionError("no fetch for a sha no record can carry")
+
+    value = URL if flag == "image_record_sources" else "https://r.example.com/{sha}"
+    with pytest.raises(ValueError) as exc:
+        _init(registry, record_client=_client(never), **{flag: {"domain-a": value}})
+    msg = str(exc.value)
+    assert "not a full 40-character lowercase commit sha" in msg
+    assert "survey" in msg
+    assert "retry" not in msg
+
+
+def test_control_a_short_pin_sha_with_no_record_declared_inits_as_before(registry):
+    _publish(registry, sha=SHA[:7])
+    m = _init(registry)
+    assert m.inventory_pins[0].git_sha == SHA[:7]
+    assert m.inventory_pins[0].image_record is None
+
+
 def test_a_repo_naming_no_pin_is_refused(registry):
     _publish(registry)
     with pytest.raises(ValueError, match="match no pin"):
