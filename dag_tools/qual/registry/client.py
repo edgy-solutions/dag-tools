@@ -29,6 +29,13 @@ from botocore.client import Config as BotoConfig
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..image_record import (  # noqa: F401  (re-exported)
+    ImageRecord,
+    RecordedImage,
+    parse_image_record,
+    render_image_record,
+    validate_image_record,
+)
 from . import layout
 
 
@@ -189,31 +196,6 @@ class LatestPointer(BaseModel):
     dagtools_version: Optional[str] = None
 
 
-class RecordedImage(BaseModel):
-    """One image CI built for a commit: its repository and content digest."""
-
-    repository: str
-    digest: str
-    """Lowercased ``sha256:<64 hex>``."""
-
-
-class ImageRecord(BaseModel):
-    """The content of ``inventory/<repo>/<sha>/image.json``.
-
-    A per-commit record of what CI built. Two different digests for one
-    commit is the condition it exists to expose, so a re-record with a
-    different image set is refused. Same additive-only evolution rules.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    schema_version: int = Field(default=1)
-    repo: str
-    git_sha: str
-    images: List[RecordedImage] = Field(default_factory=list)
-    recorded_at: datetime
-
-
 class ImageRecordMismatch(Exception):
     """A commit already has an image record naming a different image set."""
 
@@ -309,6 +291,11 @@ class InventoryRegistry:
         :class:`ImageRecordMismatch` naming the key and writes nothing.
         Never touches ``latest.json``.
         """
+        record = ImageRecord(
+            repo=repo, git_sha=git_sha, images=list(images),
+            recorded_at=now or datetime.now(tz=timezone.utc),
+        )
+        validate_image_record(record)  # before any storage call
         key = layout.inventory_artifact_key(repo, git_sha, layout.IMAGE_FILE)
         wanted = {(i.repository, i.digest) for i in images}
         existing = self.read_image_record(repo, git_sha)
@@ -321,22 +308,18 @@ class InventoryRegistry:
                 f"commit (recorded {sorted(have)}, offered {sorted(wanted)}); "
                 "refusing to write"
             )
-        record = ImageRecord(
-            repo=repo, git_sha=git_sha, images=list(images),
-            recorded_at=now or datetime.now(tz=timezone.utc),
-        )
-        self.storage.put_immutable(key, record.model_dump_json().encode("utf-8"))
+        self.storage.put_immutable(key, render_image_record(record))
         return record
 
     def read_image_record(self, repo: str, git_sha: str) -> Optional[ImageRecord]:
         """Parsed ``image.json`` for a commit, or None if absent. A malformed
-        body raises (pydantic ``ValidationError``): the caller decides."""
+        body raises :class:`ImageRecordInvalid` (a ``ValueError``): the caller decides."""
         body = self.storage.get_optional(
             layout.inventory_artifact_key(repo, git_sha, layout.IMAGE_FILE)
         )
         if body is None:
             return None
-        return ImageRecord.model_validate_json(body)
+        return parse_image_record(body)
 
     def _put(self, key: str, body: bytes, *, allow_overwrite: bool) -> None:
         if allow_overwrite:

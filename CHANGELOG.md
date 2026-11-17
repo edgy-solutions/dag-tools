@@ -31,6 +31,8 @@ it back are named.
 - `DagsterGraphQLClient.get_code_locations` skips one malformed `displayMetadata` entry with a
   WARNING naming the location instead of discarding that location's metadata.
 
+- **Behaviour change: `registry read-image-record` and `qual init` now refuse a malformed image record they previously accepted** (an empty image list, a malformed or uppercase digest, a repository carrying a tag or digest, a repository listed twice, a naive `recorded_at`, a missing or unknown `schema_version`), raising `ImageRecordInvalid` (a `ValueError`) listing every problem instead of a pydantic `ValidationError`. `record-image` applies the same rules and writes canonical bytes. The model and `parse_image_reference` moved to `dag_tools.qual.image_record`; the old import paths still work.
+
 ### Added
 
 - **New `dagtools registry record-image --repo R --sha S --image REF@sha256:<hex>`** (repeatable).
@@ -38,6 +40,7 @@ it back are named.
   refuses a different one, refuses a reference with no digest, and never touches `latest.json`.
   `qual init` copies the record into the pin. Also `qual init --image-metadata-key`,
   `--sha-tag-prefix` and `--waive-unverified-location`.
+- `dagtools registry record-image --from-file PATH` ingests an image-record document CI already published (exclusive with `--image`; it must name `--repo` and `--sha` exactly).
 
 ## 0.16.1 — 2026-11-16
 
