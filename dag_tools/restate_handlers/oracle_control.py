@@ -24,7 +24,8 @@ full load, and a duplicated completion row could make our own sensor
 believe a cycle finished that did not.
 """
 import os
-from typing import Any, Dict, List, Optional
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, List, Optional, Tuple
 
 import oracledb
 import restate
@@ -71,13 +72,132 @@ def _connect():
     return oracledb.connect(user=user, password=password, dsn=dsn)
 
 
-def _require(payload: Dict[str, Any], *names: str) -> List[Any]:
-    missing = [n for n in names if payload.get(n) in (None, "", [])]
-    if missing:
-        raise ValueError(
-            f"Missing required payload fields: {', '.join(missing)}"
+def _refuse(problems: List[str]) -> None:
+    """Raise the one refusal, carrying every problem found.
+
+    Every problem is collected rather than raised on the first one,
+    because whoever is fixing the producer wants the list.
+    """
+    if problems:
+        raise db_retry.MalformedPayload(
+            "The payload cannot be acted on: " + "; ".join(problems) + "."
         )
+
+
+def _require(payload: Any, *names: str) -> List[Any]:
+    """Refuse a payload missing a field the handler needs.
+
+    Raises ``db_retry.MalformedPayload`` -- a ``ValueError`` subclass, so
+    nothing that caught the old error stops catching this one (AGENTS
+    section 6) -- and it is raised **inside** the step. Raised outside
+    one, as this helper used to be called, it left every bound behind:
+    the *invocation* failed, and Restate retries an invocation that
+    failed on a non-terminal error with no ``max_attempts`` anywhere, so
+    a payload with a field missing was retried with backoff for the life
+    of the worker and the journal never said what was wrong.
+
+    It names the fields it refuses and **no value** from any of them.
+    This message travels into the ``TerminalError``, from there into the
+    journal and back to the caller, and a payload for these handlers is
+    nothing but table and column names.
+    """
+    if not isinstance(payload, Mapping):
+        raise db_retry.MalformedPayload(
+            "The payload cannot be acted on: it is not a mapping of fields."
+        )
+    missing = [n for n in names if payload.get(n) in (None, "", [])]
+    _refuse([f"{n} is required and was not given" for n in missing])
     return [payload[n] for n in names]
+
+
+def _names_a_database_object(payload: Mapping, name: str) -> Optional[str]:
+    """A problem if ``name`` is present and is not text, else ``None``.
+
+    These fields are interpolated into the statement as identifiers, so
+    a non-string produces SQL that fails at Oracle for a reason with
+    nothing to do with the data -- and under a bounded retry it fails
+    three times first.
+    """
+    value = payload.get(name)
+    if value is None or isinstance(value, str):
+        return None
+    return f"{name} must be text; it names a database object"
+
+
+def _validated_request(
+    payload: Any,
+) -> Tuple[str, Any, Optional[str], Any, Dict[str, Any], Dict[str, Any]]:
+    """Read and refuse :func:`write_mei_request`'s payload. INSIDE the step.
+
+    The dangerous case is ``mei_values`` arriving as a string. A string
+    is truthy, sliceable and iterable, so the presence check above
+    accepts one and :func:`build_request_rows` then binds it one
+    *character* at a time -- an INSERT that runs, commits, and fills the
+    request table with one row per character. PDM reads that table. It
+    is the one failure here that reads as a success, so it is named
+    apart from the empty case, which merely refuses.
+    """
+    table_name, mei_values = _require(payload, "table_name", "mei_values")
+    key_column = payload.get("key_column") or payload.get("mei_column")
+    replace = payload.get("replace", True)
+    constants: Dict[str, Any] = (
+        payload.get("constants") or payload.get("extra_columns") or {}
+    )
+    defaults: Dict[str, Any] = payload.get("defaults") or {}
+
+    problems: List[str] = []
+    if isinstance(mei_values, (str, bytes)):
+        problems.append(
+            "mei_values must be a list of identifiers; a string is not one, "
+            "and inserting it would write one row per character"
+        )
+    elif isinstance(mei_values, Mapping) or not isinstance(mei_values, Sequence):
+        problems.append("mei_values must be a list of identifiers")
+    for name, block in (("constants", constants), ("defaults", defaults)):
+        if not isinstance(block, Mapping):
+            problems.append(f"{name} must be a mapping of columns")
+    for name in ("table_name", "key_column", "mei_column"):
+        problems.extend(filter(None, [_names_a_database_object(payload, name)]))
+    _refuse(problems)
+
+    return table_name, mei_values, key_column, replace, constants, defaults
+
+
+def _validated_signal(
+    payload: Any,
+) -> Tuple[str, Optional[str], Dict[str, Any], Any]:
+    """Read and refuse :func:`signal_load_complete`'s payload. INSIDE the step.
+
+    Returns the table, the optional timestamp column, the binds and the
+    status written, so the statement -- and the handler's own answer --
+    are built from what was refused rather than from a second reading of
+    the payload outside any step.
+    """
+    table_name, status_column, status_value = _require(
+        payload, "table_name", "status_column", "status_value"
+    )
+    timestamp_column = payload.get("timestamp_column")
+    load_type_column = payload.get("load_type_column")
+    load_type = payload.get("load_type")
+    extra_columns: Dict[str, Any] = payload.get("extra_columns") or {}
+
+    problems: List[str] = []
+    if not isinstance(extra_columns, Mapping):
+        problems.append("extra_columns must be a mapping of columns")
+    for name in (
+        "table_name",
+        "status_column",
+        "timestamp_column",
+        "load_type_column",
+    ):
+        problems.extend(filter(None, [_names_a_database_object(payload, name)]))
+    _refuse(problems)
+
+    binds: Dict[str, Any] = {status_column: status_value}
+    if load_type_column and load_type:
+        binds[load_type_column] = load_type
+    binds.update(extra_columns)
+    return table_name, timestamp_column, binds, status_value
 
 
 def build_request_rows(
@@ -129,24 +249,25 @@ def build_request_rows(
             row = {**defaults, **value, **constants}
         else:
             if not key_column:
-                raise ValueError(
+                raise db_retry.MalformedPayload(
                     "a scalar entry needs key_column to say which column it "
-                    f"belongs in; got {value!r} with no key_column. Supply "
-                    "key_column, or make the entries mappings."
+                    "belongs in, and none was given. Supply key_column, or "
+                    "make the entries mappings."
                 )
             row = {**defaults, key_column: value, **constants}
 
         if key_column:
             key = row.get(key_column)
             if key is None:
-                raise ValueError(
-                    f"entry {value!r} has no value for key_column "
-                    f"{key_column!r}."
+                raise db_retry.MalformedPayload(
+                    "an entry of the request list has no value for key_column."
                 )
         rows.append(row)
 
     if not rows:
-        raise ValueError("the request list resolved to zero rows")
+        raise db_retry.MalformedPayload(
+            "the request list resolved to zero rows"
+        )
 
     # One column set across the batch, ordered deterministically so the
     # generated INSERT is stable run to run.
@@ -189,19 +310,25 @@ async def write_mei_request(ctx: restate.Context, payload: dict):
       extra_columns (optional) — constant columns applied to every row
                     (a request id, a requested-at stamp, a load type)
     """
-    table_name, mei_values = _require(payload, "table_name", "mei_values")
-    key_column = payload.get("key_column") or payload.get("mei_column")
-    replace = payload.get("replace", True)
-    constants: Dict[str, Any] = (
-        payload.get("constants") or payload.get("extra_columns") or {}
-    )
-    defaults: Dict[str, Any] = payload.get("defaults") or {}
-
-    rows = build_request_rows(
-        mei_values, key_column=key_column, constants=constants, defaults=defaults,
-    )
-
     def _write():
+        # Read, refused and turned into rows INSIDE the step, so the
+        # refusal is bounded by the step that carries it. See
+        # _validated_request and db_retry.MalformedPayload.
+        (
+            table_name,
+            mei_values,
+            key_column,
+            replace,
+            constants,
+            defaults,
+        ) = _validated_request(payload)
+        rows = build_request_rows(
+            mei_values,
+            key_column=key_column,
+            constants=constants,
+            defaults=defaults,
+        )
+
         with _connect() as connection:
             with connection.cursor() as cursor:
                 if replace:
@@ -253,20 +380,12 @@ async def signal_load_complete(ctx: restate.Context, payload: dict):
                        have to join our row to PDM's to know.
       extra_columns    (optional) — any further constant columns
     """
-    table_name, status_column, status_value = _require(
-        payload, "table_name", "status_column", "status_value"
-    )
-    timestamp_column = payload.get("timestamp_column")
-    load_type_column = payload.get("load_type_column")
-    load_type = payload.get("load_type")
-    extra_columns: Dict[str, Any] = payload.get("extra_columns") or {}
-
-    binds: Dict[str, Any] = {status_column: status_value}
-    if load_type_column and load_type:
-        binds[load_type_column] = load_type
-    binds.update(extra_columns)
-
     def _write():
+        # Read and refused INSIDE the step, as above.
+        table_name, timestamp_column, binds, status_value = _validated_signal(
+            payload
+        )
+
         with _connect() as connection:
             with connection.cursor() as cursor:
                 cols = list(binds.keys())
@@ -284,9 +403,14 @@ async def signal_load_complete(ctx: restate.Context, payload: dict):
                 )
             connection.commit()
 
-    await ctx.run(
-        "signal_load_complete",
-        db_retry.terminal_on_damage(_write),
-        **db_retry.run_options(),
-    )
-    return {"status_written": status_value}
+        # Returned so the handler answers with what the row actually
+        # carried, rather than re-reading the payload outside the step.
+        return status_value
+
+    return {
+        "status_written": await ctx.run(
+            "signal_load_complete",
+            db_retry.terminal_on_damage(_write),
+            **db_retry.run_options(),
+        )
+    }

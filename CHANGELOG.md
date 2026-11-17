@@ -10,7 +10,7 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## 0.16.1 — 2026-11-16
+## Unreleased
 
 ### Fixed
 
@@ -31,6 +31,47 @@ it back are named.
   truthy, sliceable and iterable, so the presence check accepted it and the chunker bound it one
   character at a time — an UPDATE that ran, committed, and flipped whatever rows carried those
   single-character keys. That shape is now refused with its own message.
+
+- **`GenericApiSyncService` and `GenericOracleControlService` are converted the same way, so
+  nothing in the library still validates a payload outside its step.** Both carried the identical
+  defect and both were a loop, not damage.
+
+  `api_sync.process_record` has one payload and **two** steps, and `_validated` is the first
+  statement of *both* closures rather than one call before them: the two steps are separate journal
+  entries, so a replay can execute either without the other. It refuses a non-mapping payload, a
+  missing or non-text `api_path` / `source_table` / `pk_column`, a `pk_value` that is not a single
+  identifier, and an `api_path` that does not begin with `/` — that last one joins the base URL by
+  *extending its host*, which fails like a name that does not resolve, on the one step here that is
+  deliberately unbounded. **The sub-case that sends rather than loops is `row_data` as a string**: a
+  string is valid JSON, so the request would be built, sent and quite possibly accepted — a row
+  posted to the API as a bare JSON string.
+
+  `oracle_control`'s `_require` now raises `MalformedPayload` from **inside** the step, and both its
+  handlers (`write_mei_request`, `signal_load_complete`) read nothing outside one. **The sub-case
+  that commits rather than loops is `mei_values` as a string**: the presence check accepted one and
+  `build_request_rows` bound it one character at a time — an INSERT that ran, committed, and filled
+  the request table with a row per character, which PDM then reads. `build_request_rows`' three
+  refusals are `MalformedPayload` too and no longer quote the payload value they refused.
+
+  **No signature, export or default changed, and the raised type is compatible.** `MalformedPayload`
+  is a `ValueError` subclass, so anything that caught the old `ValueError` still catches this one
+  (AGENTS §6) — which is why the existing `build_request_rows` tests assert `ValueError` unchanged
+  and still pass. What a *handler* raises to its caller is now `restate.TerminalError`, because the
+  refusal happens inside the step; that is the whole point of the move.
+
+- **`db_retry` gains `terminal_on_refusal`** (additive), which makes only *our own* refusals
+  (`MissingCredentials`, `MalformedPayload`) terminal and classifies nothing else. The HTTP step in
+  `api_sync` takes it, and keeps no retry bound. `terminal_on_damage` cannot be used there: it reads
+  the driver's codes out of the exception text, matching them as standalone numbers anywhere in it,
+  and an HTTP failure quotes the URL it failed on — so `404 Client Error: Not Found for url:
+  .../orders/18456` would be read as a SQL Server login failure and the call abandoned on the first
+  attempt, which is exactly the retry that step exists for. The connecting step beside it keeps
+  `terminal_on_damage` and its bound.
+
+- **A structural seal stops the defect returning in a fourth handler.**
+  `test_every_payload_handler_refuses_inside_its_step` walks the handler package, finds every
+  `@...handler()` whose last parameter is a payload, and fails if any of them touches it outside a
+  step — with a planted-defect control, because a check that sees nothing passes otherwise.
 
 - **`dag_tools/restate_handlers/db_retry.py` gains `MalformedPayload`** (additive; a `ValueError`
   subclass, like `MissingCredentials`), the `PAYLOAD_MALFORMED` reason token, and a `classify`
@@ -69,12 +110,6 @@ library does not have, or the reverse.
 - **A number announced before its record existed is not a citation, and one had moved.** The
   provisional `ADR-0066` for this work was never allocated, so the three references to it in
   `dag_tools/contract_mapping/` are reworded rather than renumbered.
-
-### Known
-
-- `restate_handlers/api_sync.py` and `restate_handlers/oracle_control.py` still validate their
-  payloads outside the step and carry the identical defect. `MalformedPayload` is the mechanism
-  for both and each is a one-line change; they are not converted in this release.
 
 ## 0.16.0 — 2026-11-16
 

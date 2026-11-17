@@ -204,12 +204,58 @@ def test_mei_request_carries_extra_columns(db):
 
 def test_mei_request_rejects_an_empty_list(db):
     """An empty request would DELETE the table and leave every MEI-scoped
-    table unpopulated -- a silent no-data outcome, not an error."""
-    with pytest.raises(ValueError, match="Missing required payload"):
+    table unpopulated -- a silent no-data outcome, not an error.
+
+    The raised type changed deliberately. The refusal now happens inside
+    the wrapped step, so the ``MalformedPayload`` the closure raises
+    arrives at the caller as a ``restate.TerminalError``. That is the
+    point of the move: read before ``ctx.run``, as this handler used to,
+    a plain ``ValueError`` left every bound behind -- the *invocation*
+    failed, and Restate retries an invocation that failed on a
+    non-terminal error with no ``max_attempts`` anywhere, so a payload
+    with a field missing was retried with backoff for the life of the
+    worker.
+
+    Backwards compatibility (AGENTS section 6) is in what the closure
+    raises: ``MalformedPayload`` is a ``ValueError`` subclass, so
+    anything that caught the old error still catches this one -- which
+    is why the three ``build_request_rows`` tests below still assert
+    ``ValueError`` and still pass.
+    """
+    import restate
+
+    with pytest.raises(restate.TerminalError, match="payload cannot be acted on") as caught:
         _run(oracle_control.write_mei_request, {
             "table_name": "PDM_MEI_REQUEST", "mei_column": "MEI_NUMBER",
             "mei_values": [],
         }, db)
+
+    message = str(caught.value)
+    assert "mei_values" in message
+    assert "PDM_MEI_REQUEST" not in message
+    assert "MEI_NUMBER" not in message
+    assert issubclass(oracle_control.db_retry.MalformedPayload, ValueError)
+
+
+def test_a_string_of_meis_is_refused_rather_than_writing_one_row_per_character(db):
+    """The dangerous shape, and the reason it is named apart.
+
+    A string is truthy, sliceable and iterable, so the presence check
+    accepts one and ``build_request_rows`` binds it one *character* at a
+    time: an INSERT that runs, commits, and fills the request table with
+    a row per character. PDM reads that table. It is the one failure
+    here that reads as a success.
+    """
+    import restate
+
+    with pytest.raises(restate.TerminalError, match="a string is not one") as caught:
+        _run(oracle_control.write_mei_request, {
+            "table_name": "PDM_MEI_REQUEST", "mei_column": "MEI_NUMBER",
+            "mei_values": "MEI-1",
+        }, db)
+
+    assert "one row per character" in str(caught.value)
+    assert db.execute("SELECT COUNT(*) FROM PDM_MEI_REQUEST").fetchone() == (0,)
 
 
 # ---------------------------------------------------------------------------
@@ -234,10 +280,23 @@ def test_signal_load_complete_appends_our_row(db):
 
 
 def test_signal_load_complete_requires_the_status(db):
-    with pytest.raises(ValueError, match="Missing required payload"):
+    """Refused inside the step, so it costs one invocation and not a loop.
+
+    Same deliberate change of raised type as
+    ``test_mei_request_rejects_an_empty_list`` above, for the same
+    reason.
+    """
+    import restate
+
+    with pytest.raises(restate.TerminalError, match="payload cannot be acted on") as caught:
         _run(oracle_control.signal_load_complete, {
             "table_name": "PDM_CONTROL", "status_column": "LOAD_STATUS",
         }, db)
+
+    message = str(caught.value)
+    assert "status_value" in message
+    assert "PDM_CONTROL" not in message
+    assert "LOAD_STATUS" not in message
 
 
 # ---------------------------------------------------------------------------

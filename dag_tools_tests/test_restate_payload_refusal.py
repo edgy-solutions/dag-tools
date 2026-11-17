@@ -18,7 +18,9 @@ the failure this module is about happens before any step exists, and
 ``test_the_old_shape_would_loop_at_the_invocation_level`` is the control
 that proves the invoker can observe a loop at all.
 """
+import ast
 import asyncio
+import pathlib
 
 import pytest
 
@@ -28,6 +30,10 @@ pytest.importorskip("oracledb")
 import restate
 
 from dag_tools.restate_handlers import db_retry, oracle_ack
+
+#: Spelled this way because a literal escape in this file is what the
+#: planted source below is made of.
+NL = chr(10)
 
 GOOD = {"table_name": "T", "pk_column": "K", "record_ids": [1, 2]}
 
@@ -382,3 +388,90 @@ def test_the_stats_row_is_still_written_when_one_is_asked_for(monkeypatch):
     sql, binds = inserts[0]
     assert "INSERT INTO S" in sql
     assert binds == {"rows_acked": 1, "source_table": "T", "batch": "b1"}
+
+
+# --------------------------------------------------------------------- #
+# The structural seal: no handler reads its payload outside a step
+# --------------------------------------------------------------------- #
+
+#: The handlers this invariant covers: every one whose payload is a
+#: payload. ``api_call_plan.execute_plan`` is deliberately not one of
+#: them -- its parameter is a rendered plan, and a plan it cannot act on
+#: is *recorded* rather than raised (AGENTS section 4a), so it has no
+#: refusal to put inside a step.
+CONVERTED_HANDLERS = {
+    ("api_sync.py", "process_record"),
+    ("oracle_ack.py", "mark_as_processed"),
+    ("oracle_control.py", "write_mei_request"),
+    ("oracle_control.py", "signal_load_complete"),
+}
+
+
+def _payload_handlers(root):
+    """Every Restate handler under ``root`` whose last parameter is a payload."""
+    found = {}
+    for path in sorted(pathlib.Path(root).glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not any(
+                isinstance(d, ast.Call) and getattr(d.func, "attr", "") == "handler"
+                for d in node.decorator_list
+            ):
+                continue
+            names = [a.arg for a in node.args.args]
+            if names and names[-1] == "payload":
+                found[(path.name, node.name)] = node
+    return found
+
+
+def _payload_read_outside_a_step(node):
+    """Lines where the handler touches ``payload`` outside a nested function.
+
+    A nested function is the body of a ``ctx.run`` action, so a read
+    inside one is a read inside the step. A read out here is one no
+    bound reaches: the invocation fails, and an invocation that failed
+    on a non-terminal error is retried with no ``max_attempts``
+    anywhere.
+    """
+    lines = []
+
+    def walk(parent):
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+            ):
+                continue
+            if isinstance(child, ast.Name) and child.id == "payload":
+                lines.append(child.lineno)
+            walk(child)
+
+    walk(node)
+    return lines
+
+
+def test_every_payload_handler_refuses_inside_its_step():
+    """The seal that stops this defect coming back in a fourth handler."""
+    handlers = _payload_handlers(pathlib.Path(oracle_ack.__file__).parent)
+
+    assert set(handlers) == CONVERTED_HANDLERS
+
+    offenders = {
+        where: _payload_read_outside_a_step(node)
+        for where, node in handlers.items()
+        if _payload_read_outside_a_step(node)
+    }
+    assert offenders == {}
+
+
+def test_control_the_check_finds_a_payload_read_before_the_step():
+    """Without this, the test above would pass on a check that sees nothing."""
+    planted = ast.parse(
+        "@service.handler()" + NL
+        + "async def h(ctx, payload):" + NL
+        + "    table = payload['table_name']" + NL
+        + "    await ctx.run('s', lambda: table)" + NL
+    ).body[0]
+
+    assert _payload_read_outside_a_step(planted) == [3]
