@@ -41,6 +41,37 @@ it back are named.
   `qual init` copies the record into the pin. Also `qual init --image-metadata-key`,
   `--sha-tag-prefix` and `--waive-unverified-location`.
 - `dagtools registry record-image --from-file PATH` ingests an image-record document CI already published (exclusive with `--image`; it must name `--repo` and `--sha` exactly).
+- **New `dagtools registry write-image-record --repo R --sha S --image REF@sha256:<hex> --out FILE`**
+  (`--image` repeatable). Renders an image-record document to a file and touches no storage, so it
+  needs no `--registry` and no credential. Refuses, naming every problem at once, a reference with
+  no digest, one repository given two different digests, or an empty list, and writes nothing when
+  it refuses. This is what CI calls; `record-image --from-file` is what ingests the result.
+- **CI records every build's image digests, so the preflight check above has something to match.**
+  `.github/workflows/build-containers.yml` now writes one image record per master commit — the
+  same `ImageRecord` document `record-image` reads, one document and one parser — and commits it
+  to a branch of its own, `image-records`, at `inventory/<repo>/<git_sha>/image.json`. That path
+  mirrors the registry's own layout, is derivable from a pin's `repo` and `sha`, and on a public
+  repository is readable with no credential:
+  `https://raw.githubusercontent.com/<owner>/<name>/image-records/inventory/<repo>/<sha>/image.json`.
+  A release additionally carries the record as an `image.json` asset on the GitHub release. A
+  record is never rewritten: identical bytes are a no-op, differing bytes fail the job. An Actions
+  artifact is kept beside it as a convenience, never as the record. A pull request records nothing.
+
+  Because the document has no field for a service that produced no digest, and a record is never
+  rewritten, **nothing is published at all unless every service in the workflow-declared fleet
+  produced a usable ref** — so a record naming fewer images than the fleet cannot occur, and "the
+  file is absent" and "the file is short a service" are one state rather than two readings of one.
+  The fleet rule lives in the new `scripts/image_refs.py`, a committed file rather than a YAML
+  heredoc, because a rule in a heredoc can only ever be string-matched and never run. The release
+  job builds no document of its own — `recorded_at` makes two renders of one commit different
+  bytes — it fetches the commit's record, refuses unless the digest it names for each service is
+  what that service's release names now resolve to against the registry, and attaches those exact
+  bytes. That is what makes "retag, not rebuild means a release's digests equal its commit's" a
+  claim this workflow checks rather than a sentence.
+
+  No library change: no signature, export or default. **No credential was added to CI** — the
+  mechanism rides the runner's own `GITHUB_TOKEN`, with `contents: write` scoped to the two jobs
+  that write a record.
 
 ## 0.16.1 — 2026-11-16
 

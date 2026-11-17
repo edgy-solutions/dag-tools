@@ -11,6 +11,25 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/dag-tools
+  # The fleet, declared ONCE and read by both record jobs. Each matrix job
+  # knows its own service and nothing else, so no build job can say what the
+  # whole fleet is -- and a record that lists only the services that ran is a
+  # claim that what it lists is everything. The collector is handed this list,
+  # so an absence is a REFUSAL rather than an omission. A test asserts this
+  # list, the build matrix and the retag matrix are the same set.
+  SERVICES: central-gateway restate-worker user-deployment
+  # The inventory repo name the record is written under. The survey that
+  # publishes inventories for this repo is not a GitHub Action -- it passes
+  # `--repo "${REPO_NAME}"` from its own environment -- so there is nothing
+  # here to read it off, and this is a declaration. It must equal that
+  # REPO_NAME, and is the one line to change if it does not. A reader whose
+  # pin names a different repo refuses rather than matching the wrong pin.
+  INVENTORY_REPO: dag-tools
+  # Where the record of truth lives: one commit per build on a branch of its
+  # own, so a record outlives the 90-day artifact and needs no credential to
+  # read. An Actions artifact is kept as a convenience beside it, never as
+  # the record.
+  RECORDS_BRANCH: image-records
 
 permissions:
   contents: read
@@ -104,6 +123,10 @@ jobs:
             type=sha,enable={{is_default_branch}}
 
       - name: Build and push
+        # The digest is minted by the push and is the one fact only CI knows:
+        # nothing downstream can recover it for a commit whose tags have since
+        # moved. `id:` is what makes it readable as an output.
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
@@ -121,6 +144,205 @@ jobs:
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      # One service's fragment: the full image ref it pushed, which is what
+      # the record is written from. Written even when the digest is empty --
+      # the collector reads an empty fragment as "ran and pushed nothing" and
+      # an absent one as "never ran", and a step that skipped itself would
+      # leave the second looking like the first. Gated on a push because
+      # nothing else pushes an image, and a ref for an image that was never
+      # pushed would be a lie.
+      #
+      # `outputs.digest` is the OCI index digest -- measured: identical for
+      # `sha-<short>`, `X.Y.Z` and `X.Y`, and distinct from either
+      # per-platform manifest digest. It is the digest a tag resolves to,
+      # which is the digest a deployment pins.
+      - name: Record this image's ref
+        if: ${{ github.event_name == 'push' }}
+        env:
+          SERVICE: ${{ matrix.service }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p digest-fragment
+          printf '%s\n' "${DIGEST:+${REGISTRY}/${IMAGE_PREFIX}/${SERVICE}@${DIGEST}}" \
+            > "digest-fragment/${SERVICE}"
+          cat "digest-fragment/${SERVICE}"
+
+      - name: Publish this image's ref
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-ref-${{ matrix.service }}
+          path: digest-fragment/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 90
+
+  # The commit's image record: what a pin for this commit names. Until this
+  # existed, a qualification preflight comparing a running location against
+  # its pinned digests had nothing to match and every location read as
+  # unverified. The digest is also the one fact only CI knows -- it is minted
+  # by the push and cannot be recovered downstream for a commit whose tags
+  # have since moved.
+  #
+  # The document is the `ImageRecord` the qual registry already reads, written
+  # by the one command that writes it. One document, one parser, one writer.
+  #
+  # A record is NEVER REWRITTEN, and the document has no field for a service
+  # that produced no digest -- so a partial record could never be corrected.
+  # Nothing is published at all unless every declared service produced a
+  # usable ref. That makes "the file is absent" and "the file is short a
+  # service" one state rather than two readings of one, which is the guarantee
+  # the reader side is specced against.
+  #
+  # `!cancelled()` rather than `success()`, so a partially failed build still
+  # reaches the collector and gets a refusal NAMING the services it is short,
+  # instead of a job that quietly skipped.
+  image-record:
+    name: "Image record"
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ !cancelled() && github.ref_type != 'tag' && github.event_name == 'push' }}
+    # Writing the record of truth needs a commit, and nothing else in this
+    # workflow does. `GITHUB_TOKEN` scoped to this one job is the whole
+    # mechanism: NO SECRET IS ADDED TO THIS REPOSITORY'S CI.
+    permissions:
+      contents: write
+    # Two master commits can land close together and both write to the same
+    # branch. Without `cancel-in-progress` a second run waits rather than
+    # racing; the push retry below is the backstop for a writer that lands
+    # from somewhere else.
+    concurrency:
+      group: image-records
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Deliberately not a full `pip install .`. This job writes a ten-line
+      # JSON document; a full install would drag in pyodbc, oracledb,
+      # deltalake, connectorx and clickhouse-connect, and couple the record
+      # path to whether those wheels build today. Measured: `--no-deps -e .`
+      # plus these three is enough to import the CLI. `boto3` is needed only
+      # because the `registry` group imports its storage client at module
+      # level, even for a command that touches no storage.
+      - name: Install the writer
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --no-deps -e .
+          python -m pip install --quiet typer pydantic boto3
+
+      # `continue-on-error` so a build that produced nothing gets the
+      # collector's refusal, which names every service and where its fragment
+      # should have been, rather than this step's "no artifacts found".
+      - name: Collect the per-service refs
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-ref-*
+          # Flat: each artifact holds one file named after its service, so
+          # the collector reads `<dir>/<service>` and nothing can collide.
+          merge-multiple: true
+          path: digest-fragments
+
+      - name: Write the record
+        run: |
+          set -euo pipefail
+          # The fleet rule lives here, in a committed script, because the
+          # writing command is handed refs and so cannot know a service is
+          # missing. It refuses before anything is written.
+          mapfile -t REFS < <(python3 scripts/image_refs.py collect \
+            --services "${SERVICES}" \
+            --registry "${REGISTRY}/${IMAGE_PREFIX}" \
+            --fragments digest-fragments)
+
+          ARGS=()
+          for ref in "${REFS[@]}"; do ARGS+=(--image "${ref}"); done
+
+          # The document grammar is the command's: it refuses a ref with no
+          # digest, one repository at two digests, or an empty list, and
+          # renders canonical bytes so a hash over the file is stable.
+          dagtools registry write-image-record \
+            --repo "${INVENTORY_REPO}" \
+            --sha "${GITHUB_SHA}" \
+            "${ARGS[@]}" \
+            --out image.json
+          cat image.json
+
+      # The record of truth. Committed to a branch of its own, so it outlives
+      # the artifact and is readable with no credential; the path mirrors the
+      # registry's own layout, so one derivation serves both sides.
+      #
+      # An existing record with identical bytes is a no-op -- the same
+      # idempotence `record-image` already has. One with different bytes fails
+      # the job and changes nothing: a commit's images do not change, so a
+      # disagreement means something rebuilt them, and that is not a thing to
+      # paper over by overwriting the record.
+      - name: Commit the record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RECORD_PATH="inventory/${INVENTORY_REPO}/${GITHUB_SHA}/image.json"
+          ORIGIN="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          for attempt in $(seq 1 5); do
+            rm -rf records
+            # Clone the branch if it exists; start it as an orphan if not, so
+            # the first build of all needs no manual setup.
+            if git clone --quiet --depth 1 --single-branch \
+                 --branch "${RECORDS_BRANCH}" "${ORIGIN}" records 2>/dev/null; then
+              echo "${RECORDS_BRANCH} exists"
+            else
+              echo "::notice::${RECORDS_BRANCH} does not exist yet; starting it"
+              mkdir records
+              git -C records init --quiet --initial-branch "${RECORDS_BRANCH}"
+              git -C records remote add origin "${ORIGIN}"
+            fi
+
+            if [ -f "records/${RECORD_PATH}" ]; then
+              if cmp -s image.json "records/${RECORD_PATH}"; then
+                echo "::notice::${RECORD_PATH} is already recorded with these exact bytes; nothing to do"
+                exit 0
+              fi
+              echo "::error::${RECORD_PATH} already exists with DIFFERENT bytes. A record is never rewritten: a commit's images do not change, so this means something rebuilt them. Nothing was written."
+              exit 1
+            fi
+
+            mkdir -p "records/$(dirname "${RECORD_PATH}")"
+            cp image.json "records/${RECORD_PATH}"
+            git -C records add -- "${RECORD_PATH}"
+            git -C records -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "record: ${INVENTORY_REPO} ${GITHUB_SHA}"
+
+            if git -C records push --quiet origin "HEAD:refs/heads/${RECORDS_BRANCH}"; then
+              echo "recorded ${RECORD_PATH}"
+              exit 0
+            fi
+            # Someone else wrote to the branch between the clone and the
+            # push. Re-clone rather than rebase: each record is its own file,
+            # so re-doing the work on top of theirs is the whole merge -- and
+            # it re-does the overwrite check against what they wrote.
+            echo "::notice::${RECORDS_BRANCH} moved under us; retrying (attempt ${attempt}/5)"
+            sleep $(( attempt * 5 ))
+          done
+          echo "::error::could not write ${RECORD_PATH} to ${RECORDS_BRANCH} after 5 attempts"
+          exit 1
+
+      # A convenience, never the record: the artifact expires and the branch
+      # does not.
+      - name: Publish the record as an artifact too
+        if: ${{ always() && hashFiles('image.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-record-${{ github.sha }}
+          path: image.json
+          if-no-files-found: error
+          retention-days: 90
 
   # Rename the commit's build as the release. No build and no re-mint: the
   # source manifest's own BYTES are PUT under the release name, so the release
@@ -208,6 +430,7 @@ jobs:
 
           # Verify by resolving each release name against the registry, not by
           # trusting that the PUT returned 201.
+          RESOLVED=""
           for name in "${NAMES[@]}"; do
             got="$(curl -fsI -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
               "${API}/manifests/${name}" | tr -d '\r' \
@@ -217,4 +440,134 @@ jobs:
               exit 1
             fi
             echo "${REPO_PATH}:${name} -> ${got}"
+            RESOLVED="${RESOLVED:+${RESOLVED},}${name}=${got}"
           done
+
+          echo "${SERVICE} release names resolve to: ${RESOLVED}"
+
+          # This service's fragment for the release job: the ref every release
+          # name was just RESOLVED to against the registry, not the one this
+          # job intended to write. RETAG, NOT REBUILD means a release's
+          # digests equal its commit's, and this is what makes that checkable
+          # rather than asserted -- the release job refuses to attach the
+          # commit's record unless the record's digest for this service is
+          # the digest the registry now answers with.
+          mkdir -p digest-fragment
+          printf '%s\n' "${REGISTRY}/${REPO_PATH}@${SOURCE_DIGEST}" \
+            > "digest-fragment/${SERVICE}"
+
+      - name: Publish this release's resolved ref
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-ref-${{ matrix.service }}
+          path: digest-fragment/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 90
+
+  # The release copy of the record, attached to the GitHub release as an asset
+  # so a deployment can fetch it beside the chart.
+  #
+  # It does NOT build a document of its own. The record is the commit's, and
+  # the commit's master build already wrote it; `recorded_at` is the time it
+  # was written, so a second render of the same commit could never be the same
+  # bytes. This job FETCHES that record, refuses unless the digest it names
+  # for each service is the digest the release names now resolve to, and
+  # attaches those exact bytes. One writer, one document -- and the AGENTS.md
+  # claim that a release's digests equal its commit's becomes a thing this job
+  # checks against the registry rather than a sentence.
+  #
+  # Attached with `gh release upload`, not a third `softprops/action-gh-release`
+  # writer: two workflows already create a release for each tag, and adding a
+  # third creator is how a tag ends up with more than one release. `gh release
+  # upload` writes to the PUBLISHED release that `gh release view` resolves.
+  #
+  # No credential is added here. `GITHUB_TOKEN` with job-scoped
+  # `contents: write` is what reads the branch and attaches the asset; nothing
+  # in this workflow reaches a registry other than GHCR, and nothing records
+  # anything outside this repository.
+  release-record:
+    name: "Release record"
+    runs-on: ubuntu-latest
+    needs: retag
+    if: ${{ !cancelled() && github.ref_type == 'tag' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # `continue-on-error` for the same reason as the record job's: a retag
+      # that produced nothing should get the verifier's refusal, which names
+      # the service, rather than this step's "no artifacts found".
+      - name: Collect what each release name resolved to
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-ref-*
+          merge-multiple: true
+          path: digest-fragments
+
+      # The tag is normally pushed seconds after the merge, so the master run
+      # that records this commit may still be going. Waiting here is the same
+      # bet the retag job makes about the image itself.
+      - name: Fetch the commit's record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RECORD_PATH="inventory/${INVENTORY_REPO}/${GITHUB_SHA}/image.json"
+          ORIGIN="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          for attempt in $(seq 1 30); do
+            rm -rf records
+            if git clone --quiet --depth 1 --single-branch \
+                 --branch "${RECORDS_BRANCH}" "${ORIGIN}" records 2>/dev/null \
+               && [ -f "records/${RECORD_PATH}" ]; then
+              cp "records/${RECORD_PATH}" image.json
+              echo "fetched ${RECORD_PATH}"
+              cat image.json
+              exit 0
+            fi
+            echo "waiting for ${RECORD_PATH} on ${RECORDS_BRANCH} (attempt ${attempt}/30)"
+            sleep 20
+          done
+          echo "::error::no record for ${GITHUB_SHA} on ${RECORDS_BRANCH}. The master build that pushed these images is what writes it; a release does not write one of its own. Nothing was attached."
+          exit 1
+
+      - name: Verify the record against the release
+        run: |
+          set -euo pipefail
+          python3 scripts/image_refs.py verify \
+            --services "${SERVICES}" \
+            --registry "${REGISTRY}/${IMAGE_PREFIX}" \
+            --fragments digest-fragments \
+            --record image.json
+
+      - name: Publish the record as an artifact too
+        if: ${{ hashFiles('image.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-record-${{ github.ref_name }}
+          path: image.json
+          if-no-files-found: error
+          retention-days: 90
+
+      # The release may not exist yet: another workflow creates it from the
+      # same tag push. Waiting is why this is not a `softprops` step of its
+      # own -- a second creator would make a second release rather than wait
+      # for the first.
+      - name: Attach the record to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+              gh release upload "${GITHUB_REF_NAME}" image.json --clobber
+              echo "attached image.json to ${GITHUB_REF_NAME}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::no release named ${GITHUB_REF_NAME} to attach the image record to"
+          exit 1
