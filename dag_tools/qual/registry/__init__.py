@@ -18,9 +18,12 @@ the immutability / write-last semantics.
 from . import layout
 from .client import (
     BuildMeta,
+    ImageRecord,
+    ImageRecordMismatch,
     ImmutableKeyExists,
     InventoryRegistry,
     LatestPointer,
+    RecordedImage,
     S3Storage,
     StorageSettings,
 )
@@ -34,9 +37,12 @@ from .status import (
 __all__ = [
     "layout",
     "BuildMeta",
+    "ImageRecord",
+    "ImageRecordMismatch",
     "ImmutableKeyExists",
     "InventoryRegistry",
     "LatestPointer",
+    "RecordedImage",
     "S3Storage",
     "StorageSettings",
     "RepoStatus",

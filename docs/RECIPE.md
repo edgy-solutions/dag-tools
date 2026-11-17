@@ -337,14 +337,22 @@ dagtools qual classes --id <qual_id>
 
 Precondition: test deployment runs `baseline` versions and the pinned repo
 SHAs are deployed to it. `dagtools qual preflight` checks this via GraphQL
-(`deployed_shas_match_pins`, both sides) and fails on mismatch. Dagster
-exposes no git sha, so the operator must **stamp** each code location in
-`workspace.yaml` via `additional_metadata`; the keys are
-`deployment.repo_metadata_key` / `sha_metadata_key` (defaults `repo` /
-`git_sha`). The check is pin-driven: every `inventory_pins` entry needs a
-stamped location whose sha equals the pin (case-insensitive; a prefix of at
-least 7 chars is accepted). Unstamped locations such as `dag-tools-probes`
-are informational.
+(`deployed_shas_match_pins`, both sides) and fails on mismatch. Each
+code location is identified by, in order: the **image digest** the code
+server reports (the Dagster chart sets `DAGSTER_CURRENT_IMAGE`, surfaced as
+`displayMetadata` key `image`, `deployment.image_metadata_key`), then a
+`sha-<short>` **tag** (`deployment.sha_tag_prefix`), then the legacy
+`workspace.yaml` `additional_metadata` stamp (`repo_metadata_key` /
+`sha_metadata_key`). The first source that attributes the location wins and
+a mismatch is final. Digests are compared to what
+`dagtools registry record-image --repo R --sha S --image REF@sha256:...`
+recorded for the pin (run it in CI after the image is built; `qual init`
+copies it into the pin). The check is pin-driven: every `inventory_pins`
+entry needs a matching location. A location that reports no digest, sha tag
+or stamp is **unverified** and fails the check unless the manifest waives it
+(`qual init --waive-unverified-location NAME=REASON`, reason required); a
+location that reports an identity no pin claims is informational. With no
+pins the check passes and says how many locations it could not verify.
 
 ```yaml
 load_from:
@@ -1139,10 +1147,12 @@ a larger `abortTimeoutSeconds` or a higher cap. `max_attempts` /
 ## Known limitations
 
 - **Dagster exposes no git sha.** `WorkspaceLocationEntry` carries no
-  source revision (`versionKey` is an internal cache key). Preflight relies
-  on an operator stamp in `workspace.yaml` `additional_metadata`
-  (surfaced as `displayMetadata`); an unstamped deployment cannot be
-  verified, so preflight fails the pin rather than guessing.
+  source revision (`versionKey` is an internal cache key). Preflight
+  identifies a location by the image the code server reports
+  (`DAGSTER_CURRENT_IMAGE`, digest first, then a `sha-<short>` tag), and
+  falls back to an operator stamp in `workspace.yaml` `additional_metadata`
+  (which the Dagster chart cannot emit). A location with none of the three
+  cannot be verified: it fails the check unless the manifest waives it.
 - **GraphQL drift.** Dagster GraphQL fields and internals shift across
   versions; the survey and launcher must be defensive and version-gated
   (schema introspection, soft per-field failure). The inventory extractor

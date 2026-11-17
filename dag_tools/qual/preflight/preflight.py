@@ -19,12 +19,15 @@ the baseline side (no priors exist yet to back-compat-check):
      ``workspaceOrError.locationEntries``; any non-``LOADED`` status
      fails the gate. The error message comes from
      ``locationOrLoadError`` for operator triage.
-  3. **Deployed shas match pins** (``deployed_shas_match_pins``, both
+  3. **Deployed identity matches pins** (``deployed_shas_match_pins``, both
      sides). Pin-driven: every ``manifest.inventory_pins`` entry must be
-     matched by a location whose ``displayMetadata`` stamps that repo and a
-     compatible git sha. Dagster surfaces no git sha itself, so the stamp is
-     an operator contract (``workspace.yaml`` ``additional_metadata``).
-     Unstamped / unpinned locations are informational.
+     matched by a location. A location is identified by its image digest
+     (against the digests CI recorded for the pinned commit), then a
+     ``sha-<short>`` tag, then the ``workspace.yaml`` stamp. Outcomes stay
+     distinct: matched, mismatch, a pin nothing matches, and unverified (a
+     location reporting none of those), which fails unless the manifest
+     waives that location with a reason. Unpinned locations are
+     informational.
   4. **(Candidate only) Run rendering check.** Sample baseline run_ids
      from the previously-published Q2 state and ``pipelineRunOrError``
      each one. Any not-found = event-log back-compat broke; investigate.
@@ -37,7 +40,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Literal, Optional, Tuple
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,9 +51,10 @@ from ..graphql import (
     DagsterGraphQLError,
     resolve_auth_token,
 )
-from ..qualify import QualificationManifest
+from ..qualify import Deployment, InventoryPin, QualificationManifest
 from ..registry import InventoryRegistry
 from ..runs.state import QualRunState, RepStatus
+from .identity import parse_image_reference, same_repository, sha_from_tag
 
 
 logger = logging.getLogger(__name__)
@@ -61,7 +65,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class CheckResult(BaseModel):
@@ -102,6 +106,28 @@ class RepoShaCheck(BaseModel):
     location_name: Optional[str] = None
     matched: bool = False
     detail: Optional[str] = None
+    outcome: Optional[Literal["matched", "mismatch", "unmatched"]] = None
+    """Three distinct states: ``matched``; ``mismatch`` (a location was
+    attributed to this pin and disagrees); ``unmatched`` (nothing attributed)."""
+    source: Optional[Literal["digest", "sha_tag", "stamp"]] = None
+    """Which identity source attributed the location (first source wins)."""
+    deployed_digest: Optional[str] = None
+
+
+class LocationIdentity(BaseModel):
+    """How one workspace location was identified (report schema 3)."""
+    model_config = ConfigDict(extra="ignore")
+
+    location_name: str
+    outcome: Literal["matched", "mismatch", "unpinned", "unverified", "waived"]
+    source: Optional[Literal["digest", "sha_tag", "stamp"]] = None
+    pins: List[str] = Field(default_factory=list)
+    """Repos of the pins this location was attributed to."""
+    image: Optional[str] = None
+    deployed_digest: Optional[str] = None
+    deployed_sha: Optional[str] = None
+    waiver_reason: Optional[str] = None
+    detail: Optional[str] = None
 
 
 class PreflightReport(BaseModel):
@@ -126,7 +152,17 @@ class PreflightReport(BaseModel):
     """One entry per ``inventory_pins`` entry, satisfied or not."""
 
     unstamped_locations: List[str] = Field(default_factory=list)
-    """Loaded locations carrying no repo stamp. Informational only."""
+    """Locations whose identity outcome is ``unverified`` or ``waived``: they
+    report no digest, no sha tag and no stamp. An unverified one FAILS the
+    sha check; a waived one is named here because the waiver is a decision
+    an auditor should be able to see."""
+
+    location_identities: List[LocationIdentity] = Field(default_factory=list)
+    """One per workspace location: how it was identified, or why not."""
+
+    unused_waivers: List[str] = Field(default_factory=list)
+    """Waiver rows naming no workspace location, or a location that was not
+    unverified. Informational."""
 
     checks: List[CheckResult] = Field(default_factory=list)
     """Roll-up of the high-level checks. UI / CLI reads this for
@@ -172,6 +208,8 @@ def run_preflight(
     sampled_runs: List[RunRenderingCheck] = []
     pinned_repos: List[RepoShaCheck] = []
     unstamped_locations: List[str] = []
+    location_identities: List[LocationIdentity] = []
+    unused_waivers: List[str] = []
     checks: List[CheckResult] = []
 
     try:
@@ -217,11 +255,13 @@ def run_preflight(
         # Reuses check 2's ``code_locations`` (no second workspace call).
         # If check 2 failed the list is empty and every pin is unsatisfied.
         try:
-            pinned_repos, unstamped_locations, sha_check = _check_deployed_shas(
+            (pinned_repos, location_identities, unused_waivers,
+             unstamped_locations, sha_check) = _check_deployed_shas(
                 manifest, code_locations,
             )
         except Exception as e:  # §4g: never raise
             pinned_repos, unstamped_locations = [], []
+            location_identities, unused_waivers = [], []
             sha_check = CheckResult(
                 name=SHA_CHECK_NAME, passed=False,
                 detail=f"sha check failed unexpectedly: {e}",
@@ -256,6 +296,8 @@ def run_preflight(
         sampled_runs=sampled_runs,
         pinned_repos=pinned_repos,
         unstamped_locations=unstamped_locations,
+        location_identities=location_identities,
+        unused_waivers=unused_waivers,
         checks=checks,
         passed=all(c.passed for c in checks),
     )
@@ -323,100 +365,242 @@ def _shas_match(a: str, b: str) -> bool:
     return len(short) >= _MIN_SHA_PREFIX and long_.startswith(short)
 
 
+class _Attribution:
+    """One location's claim on one pin (internal)."""
+    __slots__ = ("pin_index", "kind", "source", "location")
+
+    def __init__(self, pin_index: int, kind: str, source: str, location: str):
+        self.pin_index = pin_index
+        self.kind = kind  # "matched" | "mismatch"
+        self.source = source
+        self.location = location
+
+
+def _classify_location(
+    loc: CodeLocationStatus,
+    pins: List[InventoryPin],
+    deployment: Deployment,
+) -> Tuple[LocationIdentity, List[_Attribution]]:
+    """Attribute one location to pins: digest, then sha tag, then stamp.
+
+    First source that attributes wins, and a mismatch is final (the digest
+    is what the kubelet pulled; a tag claiming the pin does not overrule it).
+    """
+    meta = loc.display_metadata or {}
+    image_text = meta.get(deployment.image_metadata_key) or None
+    ref = parse_image_reference(image_text) if image_text else None
+    digest = ref.digest if ref else None
+    repository = ref.repository if ref and not ref.error else None
+    tag_sha = (
+        sha_from_tag(ref.tag, deployment.sha_tag_prefix) if ref else None
+    )
+    stamp_repo = meta.get(deployment.repo_metadata_key)
+    stamp_sha = meta.get(deployment.sha_metadata_key)
+    stamp_applies = bool(stamp_repo) and bool(stamp_sha)
+
+    def recorded_repo(pin: InventoryPin) -> bool:
+        return bool(repository) and any(
+            same_repository(i.repository, repository)
+            for i in (pin.images or [])
+        )
+
+    base = dict(
+        location_name=loc.name, image=image_text, deployed_digest=digest,
+        deployed_sha=tag_sha or (stamp_sha if stamp_applies else None),
+    )
+
+    def done(kind: str, source: str, idxs: List[int], detail: str):
+        ident = LocationIdentity(
+            outcome=kind, source=source, detail=detail,
+            pins=[pins[i].repo for i in idxs], **base,
+        )
+        return ident, [_Attribution(i, kind, source, loc.name) for i in idxs]
+
+    # 1. digest
+    if digest:
+        hit = [i for i, p in enumerate(pins)
+               if digest in {d.digest for d in (p.images or [])}]
+        if hit:
+            return done("matched", "digest", hit,
+                        f"image digest {digest} is recorded for the pin")
+        miss = [i for i, p in enumerate(pins) if recorded_repo(p)]
+        if miss:
+            return done(
+                "mismatch", "digest", miss,
+                f"image digest {digest} is not the one recorded for the "
+                f"pinned commit of repository {repository!r}",
+            )
+    # 2. sha tag
+    if tag_sha:
+        hit = [i for i, p in enumerate(pins) if _shas_match(p.git_sha, tag_sha)]
+        if hit:
+            return done("matched", "sha_tag", hit,
+                        f"image tag names sha {tag_sha!r}, which is the pin")
+        miss = [i for i, p in enumerate(pins) if recorded_repo(p)]
+        if miss:
+            return done(
+                "mismatch", "sha_tag", miss,
+                f"image tag names sha {tag_sha!r}, not the pinned commit of "
+                f"repository {repository!r}",
+            )
+    # 3. workspace.yaml stamp (kept: deployments use it today)
+    if stamp_applies:
+        idxs = [i for i, p in enumerate(pins) if p.repo == stamp_repo]
+        if idxs:
+            ok = [i for i in idxs if _shas_match(stamp_sha, pins[i].git_sha)]
+            if ok:
+                return done("matched", "stamp", ok,
+                            f"stamp {deployment.sha_metadata_key}={stamp_sha!r}")
+            return done(
+                "mismatch", "stamp", idxs,
+                f"stamp {deployment.sha_metadata_key}={stamp_sha!r} is not the pin",
+            )
+    # no attribution
+    reported = bool(digest or tag_sha or stamp_applies)
+    if reported:
+        ident = LocationIdentity(
+            outcome="unpinned", pins=[],
+            detail="reports an identity no pin claims (another repo's location)",
+            **base,
+        )
+        return ident, []
+    why = (
+        f"image reference unparseable ({ref.error})" if ref and ref.error
+        else "reports no image digest, no sha tag and no stamp"
+    )
+    return LocationIdentity(outcome="unverified", pins=[], detail=why, **base), []
+
+
 def _check_deployed_shas(
     manifest: QualificationManifest,
     code_locations: List[CodeLocationStatus],
-) -> Tuple[List[RepoShaCheck], List[str], CheckResult]:
-    """Pin-driven: every ``inventory_pins`` entry must be satisfied by a
-    stamped location. Locations the qualification does not pin (e.g.
-    ``dag-tools-probes``) are informational and never fail the check."""
+) -> Tuple[List[RepoShaCheck], List[LocationIdentity], List[str], List[str], CheckResult]:
+    """Pin-driven identity check; see the module docstring (check 3).
+
+    Returns ``(pin results, location identities, unused waivers,
+    unstamped location names, roll-up check)``. A location is identified by
+    image digest, then ``sha-<short>`` tag, then the workspace stamp.
+    Outcomes stay distinct: matched, mismatch, unmatched pin, unverified.
+    Unverified is never a pass unless a manifest waiver names the location.
+    """
     pins = manifest.inventory_pins
-    if not pins:
-        return [], [], CheckResult(
-            name=SHA_CHECK_NAME, passed=True,
-            detail="no inventory pins to verify",
-        )
+    dep = manifest.deployment
+    waivers = {w.location: w.reason for w in dep.unverified_waivers}
 
-    repo_key = manifest.deployment.repo_metadata_key
-    sha_key = manifest.deployment.sha_metadata_key
-
-    by_repo: Dict[str, List[Tuple[str, Optional[str]]]] = {}
-    unstamped: List[str] = []
+    identities: List[LocationIdentity] = []
+    attrs: List[_Attribution] = []
     for loc in code_locations:
-        meta = loc.display_metadata or {}
-        repo = meta.get(repo_key)
-        if not repo:
-            unstamped.append(loc.name)
-            continue
-        by_repo.setdefault(repo, []).append((loc.name, meta.get(sha_key)))
+        ident, claimed = _classify_location(loc, pins, dep)
+        if ident.outcome == "unverified" and loc.name in waivers:
+            ident = ident.model_copy(update={
+                "outcome": "waived", "waiver_reason": waivers[loc.name],
+            })
+        identities.append(ident)
+        attrs.extend(claimed)
+
+    waived_names = {i.location_name for i in identities if i.outcome == "waived"}
+    unused = sorted(n for n in waivers if n not in waived_names)
+    unverified = [i.location_name for i in identities if i.outcome == "unverified"]
+    unstamped = [
+        i.location_name for i in identities if i.outcome in ("unverified", "waived")
+    ]
+    unpinned = [i.location_name for i in identities if i.outcome == "unpinned"]
+    ident_by_name = {i.location_name: i for i in identities}
+
+    hint = (
+        "deploy by digest (set the chart tag to '<tag>@sha256:<digest>') or "
+        f"by a '{dep.sha_tag_prefix}<short>' tag, and record digests in CI "
+        "with `dagtools registry record-image`"
+    )
+    unverified_hint = (
+        f"Unverified location(s): {', '.join(unverified)} - {hint}; or waive "
+        "with `qual init --waive-unverified-location NAME=REASON`; or stamp "
+        f"additional_metadata ({dep.repo_metadata_key}, {dep.sha_metadata_key}) "
+        "in workspace.yaml"
+    )
 
     results: List[RepoShaCheck] = []
-    for pin in pins:
-        stamps = by_repo.get(pin.repo, [])
-        if not stamps:
+    for idx, pin in enumerate(pins):
+        mine = [a for a in attrs if a.pin_index == idx]
+        good = [a for a in mine if a.kind == "matched"]
+        bad = [a for a in mine if a.kind == "mismatch"]
+        if bad:
+            first = bad[0]
+            ident = ident_by_name[first.location]
+            if good:
+                names = ", ".join(f"{a.location}={a.kind}" for a in good + bad)
+                detail = (
+                    f"ambiguous: locations attributed to this repo disagree ({names})"
+                )
+            else:
+                detail = (
+                    f"mismatch: location {first.location!r} deploys "
+                    f"{ident.deployed_digest or ident.deployed_sha!r}, "
+                    f"pin expects {pin.git_sha!r}"
+                )
             results.append(RepoShaCheck(
                 repo=pin.repo, expected_sha=pin.git_sha,
-                detail="pinned code is not deployed: no location stamps "
-                       f"{repo_key}={pin.repo!r}",
+                deployed_sha=ident.deployed_sha, location_name=first.location,
+                outcome="mismatch", source=first.source,
+                deployed_digest=ident.deployed_digest, detail=detail,
             ))
-            continue
-        first = stamps[0][1] or ""
-        # An empty `first` is covered: _shas_match("", x) is False for every
-        # x, so a repo stamped by several locations where the first carries no
-        # sha reads as a disagreement, which is what it is.
-        if any(not _shas_match(first, sha or "") for _, sha in stamps[1:]):
-            names = ", ".join(f"{n}={sha!r}" for n, sha in stamps)
+        elif good:
+            first = good[0]
+            ident = ident_by_name[first.location]
             results.append(RepoShaCheck(
                 repo=pin.repo, expected_sha=pin.git_sha,
-                location_name=stamps[0][0],
-                detail=f"ambiguous: locations stamping this repo disagree ({names})",
-            ))
-            continue
-        name, sha = stamps[0]
-        if not sha:
-            results.append(RepoShaCheck(
-                repo=pin.repo, expected_sha=pin.git_sha, location_name=name,
-                detail=f"location {name!r} stamps the repo but no {sha_key!r}",
-            ))
-        elif _shas_match(sha, pin.git_sha):
-            results.append(RepoShaCheck(
-                repo=pin.repo, expected_sha=pin.git_sha, deployed_sha=sha,
-                location_name=name, matched=True,
+                deployed_sha=ident.deployed_sha, location_name=first.location,
+                matched=True, outcome="matched", source=first.source,
+                deployed_digest=ident.deployed_digest,
             ))
         else:
             results.append(RepoShaCheck(
-                repo=pin.repo, expected_sha=pin.git_sha, deployed_sha=sha,
-                location_name=name,
-                detail=f"mismatch: location {name!r} deploys {sha!r}, "
-                       f"pin expects {pin.git_sha!r}",
+                repo=pin.repo, expected_sha=pin.git_sha, outcome="unmatched",
+                detail=(
+                    "pinned code is not deployed: no location matches repo "
+                    f"{pin.repo!r} by digest, sha tag or workspace stamp"
+                ),
             ))
 
-    pinned_names = {p.repo for p in pins}
-    extra = sorted(r for r in by_repo if r not in pinned_names)
-    bad = [r for r in results if not r.matched]
-    if not bad:
-        detail = f"{len(results)} pin(s) verified"
-        if extra:
-            detail += f"; stamped but not pinned (ignored): {', '.join(extra)}"
-        return results, unstamped, CheckResult(
+    bad_pins = [r for r in results if not r.matched]
+    if not pins:
+        # Nothing is pinned, so no location stands in for anything and there is
+        # nothing to qualify its identity against: report, do not gate.
+        detail = "no inventory pins to verify"
+        if unverified:
+            detail += (
+                f"; {len(unverified)} location(s) unverified; "
+                "not gated because nothing is pinned"
+            )
+        return results, identities, unused, unstamped, CheckResult(
             name=SHA_CHECK_NAME, passed=True, detail=detail,
         )
-    parts = [
-        f"{r.repo}: {r.detail} (expected {r.expected_sha!r}, "
-        f"deployed {r.deployed_sha!r}, location {r.location_name!r})"
-        for r in bad
-    ]
-    detail = f"{len(bad)} of {len(results)} pin(s) unsatisfied: " + "; ".join(parts)
-    if unstamped:
-        detail += (
-            f". Unstamped location(s): {', '.join(unstamped)} - the operator "
-            f"likely needs to stamp additional_metadata ({repo_key}, {sha_key}) "
-            "in workspace.yaml"
+    if not bad_pins and not unverified:
+        detail = f"{len(results)} pin(s) verified"
+        if unpinned:
+            detail += f"; unpinned location(s) (ignored): {', '.join(unpinned)}"
+        if unstamped:
+            detail += f"; waived location(s): {', '.join(unstamped)}"
+        return results, identities, unused, unstamped, CheckResult(
+            name=SHA_CHECK_NAME, passed=True, detail=detail,
         )
-    if extra:
-        detail += f". Stamped but not pinned (ignored): {', '.join(extra)}"
-    return results, unstamped, CheckResult(
-        name=SHA_CHECK_NAME, passed=False, detail=detail,
+    parts: List[str] = []
+    if bad_pins:
+        parts.append(
+            f"{len(bad_pins)} of {len(results)} pin(s) unsatisfied: "
+            + "; ".join(
+                f"{r.repo}: {r.detail} (expected {r.expected_sha!r}, "
+                f"deployed {r.deployed_sha!r}, location {r.location_name!r})"
+                for r in bad_pins
+            )
+            + f". To fix: {hint}"
+        )
+    if unverified:
+        parts.append(unverified_hint)
+    if unpinned:
+        parts.append(f"Unpinned location(s) (ignored): {', '.join(unpinned)}")
+    return results, identities, unused, unstamped, CheckResult(
+        name=SHA_CHECK_NAME, passed=False, detail=". ".join(parts),
     )
 
 

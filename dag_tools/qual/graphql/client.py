@@ -665,13 +665,18 @@ query DagtoolsWorkspace {
             if link.get("__typename") == "PythonError":
                 error = link.get("message")
             metadata: Dict[str, str] = {}
-            try:
-                for item in entry.get("displayMetadata") or []:
-                    if not isinstance(item, dict) or item.get("key") is None:
+            for item in entry.get("displayMetadata") or []:
+                # Soft-fail per entry: one malformed item drops only itself,
+                # so the entries beside it (the image, a stamp) survive.
+                try:
+                    if item.get("key") is None:
                         continue
                     metadata[str(item["key"])] = str(item.get("value"))
-            except Exception:  # soft-fail: a malformed stamp must not abort
-                pass
+                except Exception as exc:
+                    logger.warning(
+                        "get_code_locations: skipping a malformed "
+                        "displayMetadata entry on location %r: %s", name, exc,
+                    )
             out.append(CodeLocationStatus(
                 name=name, load_status=load_status, error=error,
                 display_metadata=metadata,

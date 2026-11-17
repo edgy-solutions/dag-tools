@@ -60,6 +60,10 @@ IO_MANAGERS_FILE = "io_managers.json"
 DBT_PROJECTS_FILE = "dbt_projects.json"
 LOAD_VALIDATION_FILE = "load_validation.json"
 CANARY_FILE = "canary.json"
+# Written by CI (``dagtools registry record-image``), not by the survey: the
+# image digests built for one commit. Independent of ``SURVEY_ARTIFACTS`` and
+# of ``latest.json``.
+IMAGE_FILE = "image.json"
 LATEST_POINTER_FILE = "latest.json"
 
 # The canonical artifact set written by a survey, in publish order. The
