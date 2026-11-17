@@ -241,12 +241,23 @@ def _terminal_for(exc: BaseException) -> Optional[restate.TerminalError]:
     return restate.TerminalError(f"{code}: {_TIER_EXPLANATION[tier]}")
 
 
-def terminal_on_damage(action: Callable[[], Any]) -> Callable[[], Any]:
-    """Wrap a ``ctx.run`` action so a damaging failure never gets retried.
+def _refusal_terminal_for(exc: BaseException) -> Optional[restate.TerminalError]:
+    """A terminal error for OUR OWN refusals only, and nothing else.
 
-    Applied at the call site rather than inside each handler's closure,
-    so one reading of a handler shows both halves of the protection: the
-    wrapper and the bound travel together.
+    No driver classification: see :func:`terminal_on_refusal` for why a
+    step that does not connect must not get it.
+    """
+    for kind, sentence in _OURS:
+        if isinstance(exc, kind):
+            return restate.TerminalError(f"{exc} {sentence}")
+    return None
+
+
+def _guard(
+    action: Callable[[], Any],
+    resolve: Callable[[BaseException], Optional[restate.TerminalError]],
+) -> Callable[[], Any]:
+    """The wrapper both guards below are made of.
 
     An async action gets an async wrapper. A sync wrapper around a
     coroutine function would catch only the failure of *creating* the
@@ -262,7 +273,7 @@ def terminal_on_damage(action: Callable[[], Any]) -> Callable[[], Any]:
             except restate.TerminalError:
                 raise
             except BaseException as exc:  # noqa: BLE001 -- re-raised below
-                terminal = _terminal_for(exc)
+                terminal = resolve(exc)
                 if terminal is None:
                     raise
                 raise terminal from exc
@@ -276,12 +287,51 @@ def terminal_on_damage(action: Callable[[], Any]) -> Callable[[], Any]:
         except restate.TerminalError:
             raise
         except BaseException as exc:  # noqa: BLE001 -- re-raised below
-            terminal = _terminal_for(exc)
+            terminal = resolve(exc)
             if terminal is None:
                 raise
             raise terminal from exc
 
     return _guarded
+
+
+def terminal_on_damage(action: Callable[[], Any]) -> Callable[[], Any]:
+    """Wrap a ``ctx.run`` action so a damaging failure never gets retried.
+
+    Applied at the call site rather than inside each handler's closure,
+    so one reading of a handler shows both halves of the protection: the
+    wrapper and the bound travel together.
+
+    For a step that CONNECTS. It reads the driver's error codes, and a
+    false positive there fails an invocation loudly, which is the safe
+    direction to be wrong in when the alternative is a locked account.
+    """
+    return _guard(action, _terminal_for)
+
+
+def terminal_on_refusal(action: Callable[[], Any]) -> Callable[[], Any]:
+    """Wrap a ``ctx.run`` action so OUR OWN refusals never get retried.
+
+    The narrow half of :func:`terminal_on_damage`: a
+    ``MissingCredentials`` or a ``MalformedPayload`` becomes terminal on
+    the first failure, and every other exception is left exactly as it
+    was. There is no retry bound to go with it, because the step this
+    exists for is not a connecting one and its retries are the ones
+    ``ctx.run`` is actually for.
+
+    It exists because the driver classification would be actively WRONG
+    on such a step, not merely useless. ``DAMAGING_SQLSERVER_CODES`` are
+    matched as standalone numbers anywhere in the exception text, since
+    that is how the driver reports them -- and an HTTP failure quotes the
+    URL it failed on, so ``404 Client Error ... /orders/18456`` would be
+    read as a login failure and the call refused instead of retried. On
+    a connecting step that trade is right; on an HTTP step it turns a
+    transient upstream failure into a dead invocation whenever a
+    five-digit identifier happens to collide.
+
+    So the refusal travels and the classification does not.
+    """
+    return _guard(action, _refusal_terminal_for)
 
 
 def run_options() -> Dict[str, Any]:
