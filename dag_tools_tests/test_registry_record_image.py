@@ -242,3 +242,98 @@ def test_one_malformed_display_metadata_entry_drops_only_itself_and_warns(
         (loc,) = client.get_code_locations()
     assert loc.display_metadata == {"host": "h", "image": f"{REPO_IMG}@{D1}"}
     assert sum("loc1" in r.getMessage() for r in caplog.records) == 2
+
+
+# --- the document's validator at every door --------------------------------
+
+
+class _ExplodingStorage:
+    def __getattr__(self, name):
+        raise AssertionError(f"storage touched: {name}")
+
+
+def test_an_invalid_offer_touches_no_storage():
+    from dag_tools.qual.image_record import ImageRecordInvalid
+
+    bad = InventoryRegistry(_ExplodingStorage())
+    with pytest.raises(ImageRecordInvalid):
+        bad.record_image("r", SHA, [RecordedImage(repository="x", digest="nope")])
+    with pytest.raises(ImageRecordInvalid):
+        bad.record_image("r", SHA, [])
+
+
+def test_record_image_writes_the_canonical_bytes(reg):
+    from dag_tools.qual.image_record import render_image_record
+
+    now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+    rec = reg.record_image(
+        "r", SHA,
+        [RecordedImage(repository="z/b", digest=D2), RecordedImage(repository="a/c", digest=D1)],
+        now=now,
+    )
+    body = reg.storage.get_optional(layout.inventory_artifact_key("r", SHA, layout.IMAGE_FILE))
+    assert body == render_image_record(rec)
+    assert [i["repository"] for i in json.loads(body)["images"]] == ["a/c", "z/b"]
+
+
+def test_read_image_record_refuses_a_hand_edited_uppercase_digest(reg):
+    from dag_tools.qual.image_record import ImageRecordInvalid
+
+    key = layout.inventory_artifact_key("r", SHA, layout.IMAGE_FILE)
+    doc = {"schema_version": 1, "repo": "r", "git_sha": SHA,
+           "images": [{"repository": "x", "digest": "sha256:" + "A" * 64}],
+           "recorded_at": "2026-11-16T12:00:00Z"}
+    reg.storage.put_immutable(key, json.dumps(doc).encode())
+    with pytest.raises(ImageRecordInvalid):
+        reg.read_image_record("r", SHA)
+    doc["images"][0]["digest"] = D1
+    reg.storage.put_mutable(key, json.dumps(doc).encode())
+    assert reg.read_image_record("r", SHA).images[0].digest == D1
+
+
+def _published_file(tmp_path, sha=SHA, repo="domain-a"):
+    from dag_tools.qual.image_record import build_image_record, render_image_record
+
+    rec = build_image_record(
+        repo, sha, [f"{REPO_IMG}@{D1}"],
+        now=datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc),
+    )
+    p = tmp_path / "image.json"
+    p.write_bytes(render_image_record(rec))
+    return p
+
+
+def test_cli_from_file_records_what_the_file_says(reg, tmp_path):
+    p = _published_file(tmp_path)
+    r = _invoke("registry", "record-image", "--repo", "domain-a", "--sha", SHA,
+                "--from-file", str(p))
+    assert r.exit_code == 0, r.output
+    stored = reg.read_image_record("domain-a", SHA)
+    assert [(i.repository, i.digest) for i in stored.images] == [(REPO_IMG, D1)]
+    assert stored.recorded_at == datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+
+
+def test_cli_from_file_for_another_sha_is_refused(reg, tmp_path):
+    p = _published_file(tmp_path, sha="1" * 40)
+    r = _invoke("registry", "record-image", "--repo", "domain-a", "--sha", SHA,
+                "--from-file", str(p))
+    assert r.exit_code == 2
+    assert reg.read_image_record("domain-a", SHA) is None
+
+
+def test_cli_from_file_and_image_together_is_refused(reg, tmp_path):
+    p = _published_file(tmp_path)
+    both = _invoke("registry", "record-image", "--repo", "domain-a", "--sha", SHA,
+                   "--from-file", str(p), "--image", f"{REPO_IMG}@{D1}")
+    neither = _invoke("registry", "record-image", "--repo", "domain-a", "--sha", SHA)
+    for r in (both, neither):
+        assert r.exit_code == 2
+        assert "--image" in r.output and "--from-file" in r.output
+    assert reg.read_image_record("domain-a", SHA) is None
+
+
+def test_cli_reports_every_bad_image_at_once(reg):
+    r = _record(f"{REPO_IMG}:v1", "other/x@sha256:zz", f"ok/y@{D1}")
+    assert r.exit_code == 2
+    assert REPO_IMG in r.output and "other/x" in r.output
+    assert reg.read_image_record("domain-a", SHA) is None

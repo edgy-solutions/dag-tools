@@ -33,6 +33,7 @@ from typing import Dict, List, Optional
 
 import yaml
 
+from ..image_record import ImageRecordForOtherCommit, check_record_names
 from ..registry import InventoryRegistry, layout
 from .manifest import (
     Deployment,
@@ -162,12 +163,12 @@ def _pinned_images(
         ) from e
     if record is None:
         return None
-    if record.repo != repo or record.git_sha != git_sha:
+    try:
+        check_record_names(record, repo, git_sha)
+    except ImageRecordForOtherCommit as e:
         raise ValueError(
-            f"image record for pinned repo {repo!r} at {key!r} names "
-            f"repo={record.repo!r} git_sha={record.git_sha!r}, not the pin "
-            f"({repo!r}, {git_sha!r})"
-        )
+            f"image record for pinned repo {repo!r} at {key!r} {e}"
+        ) from e
     return [
         PinnedImage(repository=i.repository, digest=i.digest)
         for i in record.images

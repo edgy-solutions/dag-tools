@@ -162,11 +162,18 @@ def registry_record_image(
     ctx: typer.Context,
     repo: str = typer.Option(..., "--repo", help="Repo the image was built from."),
     sha: str = typer.Option(..., "--sha", help="Git sha of the built commit."),
-    image: List[str] = typer.Option(
-        ..., "--image",
+    image: Optional[List[str]] = typer.Option(
+        None, "--image",
         help=(
             "Image reference WITH a digest: repository[:tag]@sha256:<64 hex>. "
-            "Repeatable. Any tag is accepted and ignored."
+            "Repeatable. Any tag is accepted and ignored. Exclusive with --from-file."
+        ),
+    ),
+    from_file: Optional[Path] = typer.Option(
+        None, "--from-file",
+        help=(
+            "Ingest an image-record document CI already published. It must "
+            "name --repo and --sha exactly. Exclusive with --image."
         ),
     ),
     format: OutputFormat = typer.Option(
@@ -178,26 +185,45 @@ def registry_record_image(
     Idempotent for an identical set; a different set for the same commit is
     refused. Never touches ``latest.json``.
     """
-    from .preflight.identity import parse_image_reference
-    from .registry import ImageRecordMismatch, RecordedImage
+    from .image_record import (
+        ImageRecordForOtherCommit,
+        ImageRecordInvalid,
+        build_image_record,
+        check_record_names,
+        parse_image_record,
+    )
+    from .registry import ImageRecordMismatch
 
-    settings = require_registry(ctx)
-    images = []
-    for ref in image:
-        parsed = parse_image_reference(ref)
-        if parsed.error or not parsed.digest:
-            typer.secho(
-                f"error: --image {ref!r}: "
-                f"{parsed.error or 'no digest (expected repository[:tag]@sha256:<64 hex>)'}",
-                fg=typer.colors.RED, err=True,
-            )
-            raise typer.Exit(code=2)
-        images.append(RecordedImage(repository=parsed.repository, digest=parsed.digest))
-    try:
-        record = settings.registry().record_image(repo, sha, images)
-    except ImageRecordMismatch as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+    def _fail(lines: List[str]) -> None:
+        for line in lines:
+            typer.secho(f"error: {line}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
+
+    if bool(image) == (from_file is not None):
+        _fail(["give exactly one of --image and --from-file"])
+    settings = require_registry(ctx)
+    try:
+        if from_file is not None:
+            try:
+                body = from_file.read_bytes()
+            except OSError as e:
+                _fail([f"--from-file {str(from_file)!r}: {e.strerror or e}"])
+            record = parse_image_record(body)
+            check_record_names(record, repo, sha)
+        else:
+            record = build_image_record(repo, sha, image or [])
+    except ImageRecordInvalid as e:
+        _fail(e.problems)
+    except ImageRecordForOtherCommit as e:
+        _fail([str(e)])
+    try:
+        record = settings.registry().record_image(
+            record.repo, record.git_sha, record.images, now=record.recorded_at,
+        )
+    except ImageRecordInvalid as e:
+        _fail(e.problems)
+    except ImageRecordMismatch as e:
+        _fail([str(e)])
     if format == OutputFormat.JSON:
         typer.echo(record.model_dump_json(indent=2))
     else:
