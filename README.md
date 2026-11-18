@@ -906,11 +906,11 @@ The component defines:
 - four warning-severity asset checks;
 - a maintenance job that compacts each table, removes old versions and keeps a scalar index on `source_bundle` so each bundle's delete-then-append does not scan the table.
 
-The mapping can scope an index (a key unique only within a parcel stays within that parcel), pick one value out of a list with `prefer`, and lift libxml2's built-in parser limits with `document.huge_tree: true`. `vars` are evaluated once per document, not per row. See `docs/DOCUMENT_TABLES.md`.
+Documents are XML (XPath expressions) or JSON (`document.format: json`, JMESPath expressions). The mapping can scope an index (a key unique only within a parcel stays within that parcel), pick one value out of a list with `prefer`, reach another level of a `rows` chain with `from:` and `index_of:`, cut a value with `split`, keep part of one with `extract`, resolve a file reference by name in one folder with `basename_in`, describe the bundle's members directly with a `members:` table (`only_unreferenced: true` keeps the ones no document refers to), treat sentinel strings as absent with `nulls`, write a constant with `const`, let several tables write one dataset with `into`, and lift libxml2's built-in parser limits with `document.huge_tree: true`. `vars` (XML only) are evaluated once per document, not per row. See `docs/DOCUMENT_TABLES.md`.
 
 A re-run of a bundle deletes that bundle's rows before appending, so counts do not move. `write_concurrency` defaults to 1, because two writers on the same bundle were measured duplicating it. `dagtools documents profile` surveys a source before you write a mapping. It can redact values and anonymise bundle names.
 
-Install with `uv pip install -e ".[documents]"`. The mapping grammar, the profiler and the concurrency findings are in [`docs/DOCUMENT_TABLES.md`](docs/DOCUMENT_TABLES.md). Runnable example with an invented format: [`examples/document_tables`](examples/document_tables).
+Install with `uv pip install -e ".[documents]"` (it includes `jmespath` for JSON documents and `typer` for the profiler command). The mapping grammar, the profiler and the concurrency findings are in [`docs/DOCUMENT_TABLES.md`](docs/DOCUMENT_TABLES.md). Runnable example with an invented format: [`examples/document_tables`](examples/document_tables).
 
 ## Setup & Development
 

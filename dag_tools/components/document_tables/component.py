@@ -169,12 +169,13 @@ class _Plan:
         self.cm = compile_mapping(self.mapping_doc)
         self.source_uri = _resolve_local(spec.source.uri, component_dir)
         self.destination_uri = _resolve_local(spec.destination.uri, component_dir)
-        self.tables: List[str] = list(self.cm.table_names) + [REJECTS_TABLE]
-        unknown = [t for t in spec.checks.allow_empty if t not in self.cm.table_names]
+        # one asset per dataset: a table's own, or the `into` several tables share
+        self.tables: List[str] = list(self.cm.dataset_names) + [REJECTS_TABLE]
+        unknown = [t for t in spec.checks.allow_empty if t not in self.cm.dataset_names]
         if unknown:
             raise ValueError(
                 f"checks.allow_empty names tables the mapping does not declare: {unknown}; "
-                f"its tables are {self.cm.table_names}"
+                f"its tables are {self.cm.dataset_names} (a shared `into` is named once, by that name)"
             )
         self.prefix = spec.prefix
         self.pool = pool_for(self.destination_uri)
@@ -207,7 +208,7 @@ class _Plan:
                 name="unknown_paths", asset=self.key(REJECTS_TABLE),
                 description=f"At most {c.unknown_paths} structural path(s) outside expected_paths.",
             ))
-        for t in self.cm.table_names:
+        for t in self.cm.dataset_names:
             if self.cm.file_columns(t):
                 out.append(AssetCheckSpec(
                     name="file_resolution_rate", asset=self.key(t),
@@ -277,6 +278,15 @@ def _table_metadata(plan: _Plan, table: str, stats: BundleStats, result: Any, wr
         md["dagtools/bundle_bytes"] = int(bundle_bytes)
     if bundle_modified is not None:
         md["dagtools/bundle_modified"] = bundle_modified
+    feeding = plan.cm.tables_of(table) if table != REJECTS_TABLE else []
+    if feeding != [table] and feeding:
+        md["rows_by_table"] = MetadataValue.json({t: int(stats.rows_by_table.get(t, 0)) for t in feeding})
+    kept = {t: stats.members_kept[t] for t in feeding if t in stats.members_kept}
+    if kept:
+        # `only_unreferenced`: members no document's file column resolved to were kept
+        md["members_kept"] = MetadataValue.json(kept) if feeding != [table] else kept[table]
+        skipped = {t: stats.members_skipped.get(t, 0) for t in kept}
+        md["members_skipped"] = MetadataValue.json(skipped) if feeding != [table] else skipped[table]
     if table in stats.coercion_failures:
         md["coercion_failures"] = MetadataValue.json(dict(stats.coercion_failures[table]))
     if table in stats.unmapped_values:
@@ -334,7 +344,7 @@ def _check_results(plan: _Plan, stats: BundleStats) -> Iterator[AssetCheckResult
             metadata={"unknown_paths": n, "allowed": c.unknown_paths},
         )
 
-    for t in plan.cm.table_names:
+    for t in plan.cm.dataset_names:
         k = plan.key(t)
         if plan.cm.file_columns(t):
             rate = stats.file_resolution_rate(t)
@@ -372,6 +382,8 @@ def build_tables_asset(plan: _Plan) -> Any:
             description=(
                 "Documents the mapping could not read, one row each, with the reason."
                 if t == REJECTS_TABLE else f"Rows of `{t}`, one Lance dataset, partitioned by bundle."
+                + ("" if plan.cm.tables_of(t) == [t] else
+                   " Written by tables " + ", ".join(f"`{x}`" for x in plan.cm.tables_of(t)) + ".")
             ),
         )
         for t in plan.tables

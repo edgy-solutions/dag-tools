@@ -582,3 +582,58 @@ def test_local_start_after_nested(tmp_path):
     assert keys_after(source, "a/x") == ["a/y", "b/x", "c/z"]
     assert keys_after(source, "b/x") == ["c/z"]
     assert keys_after(source, "a") == ["a/x", "a/y", "b/x", "c/z"]
+
+
+# ------------------------------------------------------------------ names with unusual characters
+
+#: A bundle name carrying every character the review asked about. Each of
+#: space, ``$`` and ``-``/``.`` (the siblings) sorts BELOW ``/``, which is the
+#: ordering a prefix listing and ``start_after`` pruning have to get right.
+ODD = "2026-05 depot [east] @dock $2"
+#: Siblings whose names start with ODD's whole name: a prefix listing of ODD
+#: that forgot the separator would open them too.
+ODD_SIBLINGS = (ODD + " annex", ODD + "-b")
+ODD_ZIP = ODD + ".zip"
+
+
+def _odd_files():
+    tree = {f"{ODD}/{rel}": data for rel, data in S.bundle_files("flat").items()}
+    for sib in ODD_SIBLINGS:
+        tree.update({f"{sib}/{rel}": data for rel, data in S.bundle_files("numbered").items()})
+    return tree
+
+
+def _assert_odd_bundles(source):
+    refs = {r.key: r for r in source.list_bundles()}
+    assert {ODD, ODD_ZIP, *ODD_SIBLINGS} <= set(refs)
+    # opening ODD opens exactly ODD: no sibling sharing its name as a prefix
+    assert paths(source, refs[ODD]) == sorted(S.bundle_files("flat"))
+    for sib in ODD_SIBLINGS:
+        assert paths(source, refs[sib]) == sorted(S.bundle_files("numbered"))
+    assert paths(source, refs[ODD_ZIP]) == sorted(S.bundle_files("numbered"))
+    # the key round-trips through ref_for, which is how a tagged run reopens it
+    assert source.ref_for(ODD) == refs[ODD]
+    assert paths(source, source.ref_for(ODD)) == sorted(S.bundle_files("flat"))
+    # pruning below ODD keeps every name that sorts after it, and only those
+    after = {r.key for r in source.list_bundles(start_after=ODD)}
+    assert ODD not in after and {ODD_ZIP, *ODD_SIBLINGS} <= after
+    assert all(k > ODD for k in after)
+
+
+def test_a_bundle_named_with_brackets_at_dollar_and_spaces_lists_and_opens_alone_locally(tmp_path):
+    S.write_tree(tmp_path, _odd_files())
+    S.write_zip(tmp_path / ODD_ZIP, S.bundle_files("numbered"))
+    _assert_odd_bundles(open_source(str(tmp_path), bundle_depth=1))
+
+
+def test_a_bundle_named_with_brackets_at_dollar_and_spaces_lists_and_opens_alone_on_s3(s3_env):
+    import boto3
+    from moto import mock_aws
+
+    with mock_aws():
+        c = boto3.client("s3", region_name="us-east-1")
+        c.create_bucket(Bucket="bkt")
+        for rel, data in _odd_files().items():
+            c.put_object(Bucket="bkt", Key=f"pre/{rel}", Body=data)
+        c.put_object(Bucket="bkt", Key=f"pre/{ODD_ZIP}", Body=S.zip_bytes(S.bundle_files("numbered")))
+        _assert_odd_bundles(open_source("s3://bkt/pre", bundle_depth=1))

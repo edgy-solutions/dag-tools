@@ -1,9 +1,11 @@
 """Document readers: parse bytes, select rows, evaluate expressions.
 
 :class:`DocumentReader` is the seam a second document language plugs into
-(a JSON reader over JMESPath is the planned second one). The engine talks to
-it only through compiled expressions, so it never sees the expression
-language itself.
+(:class:`JsonReader`, JMESPath over the standard library's parser, is the
+second). The engine talks to it only through compiled expressions, so it
+never sees the expression language itself. An XML view returns text; a JSON
+view returns the native value (``3``, ``true``) and coercion decides whether
+it fits the column.
 
 :class:`XmlReader` is XPath 1.0 over lxml, parsed with every external
 resolution off: no entity expansion, no DTD load, no network. Expressions are
@@ -14,6 +16,7 @@ fast path answers exactly what XPath answers on the same node.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol, Set, Tuple
@@ -46,11 +49,13 @@ class ParserLimit(DocumentError):
 class Compiled(Protocol):
     source: str
 
-    def scalar(self, node: Any, variables: Dict[str, Any]) -> Optional[str]: ...
+    def scalar(self, node: Any, variables: Dict[str, Any]) -> Any: ...
 
-    def strings(self, node: Any, variables: Dict[str, Any]) -> List[Optional[str]]: ...
+    def strings(self, node: Any, variables: Dict[str, Any]) -> List[Any]: ...
 
     def nodes(self, node: Any, variables: Dict[str, Any]) -> List[Any]: ...
+
+    def returns_nodes(self) -> bool: ...
 
 
 class DocumentReader(Protocol):
@@ -344,40 +349,289 @@ class XmlReader:
 
     def structural_paths(self, root: Any) -> Set[str]:
         """Every element and attribute path, by local name: ``/A/B/@c``."""
-        qn = self._etree.QName
-        out: Set[str] = set()
-        # A document repeats a few shapes many times, so each (parent path,
-        # tag) and each (path, attribute names) is spelled out once; the set
-        # of paths is the same as visiting every node, only cheaper.
-        child_path: Dict[Tuple[str, str], str] = {}
-        seen_attrs: Set[Tuple[str, Tuple[str, ...]]] = set()
+        return xml_structural_paths(root)
 
-        def local(tag: str) -> str:
-            return qn(tag).localname if tag[0] == "{" else tag
 
-        def walk(el: Any, path: str) -> None:
-            keys = el.keys()
-            if keys:
-                sig = (path, tuple(keys))
-                if sig not in seen_attrs:
-                    seen_attrs.add(sig)
-                    for a in keys:
-                        out.add(f"{path}/@{local(a)}")
-            for c in el:
-                tag = c.tag
-                if tag.__class__ is not str:  # comments, PIs, entities
-                    continue
-                k = (path, tag)
-                cp = child_path.get(k)
-                if cp is None:
-                    cp = child_path[k] = f"{path}/{local(tag)}"
-                    out.add(cp)
-                walk(c, cp)
+def xml_structural_paths(root: Any) -> Set[str]:
+    """Every element and attribute path of a parsed XML tree, by local name: ``/A/B/@c``.
 
-        top = f"/{local(root.tag)}"
-        out.add(top)
-        walk(root, top)
+    The one spelling of an XML structural path. The engine checks a document
+    against ``expected_paths`` with it and the profiler writes its path lists
+    with it, so a profiled list pasted into a mapping matches by construction.
+    """
+    if root is None:
+        return set()
+    from lxml import etree
+
+    qn = etree.QName
+    out: Set[str] = set()
+    # A document repeats a few shapes many times, so each (parent path,
+    # tag) and each (path, attribute names) is spelled out once; the set
+    # of paths is the same as visiting every node, only cheaper.
+    child_path: Dict[Tuple[str, str], str] = {}
+    seen_attrs: Set[Tuple[str, Tuple[str, ...]]] = set()
+
+    def local(tag: str) -> str:
+        return qn(tag).localname if tag[0] == "{" else tag
+
+    def walk(el: Any, path: str) -> None:
+        keys = el.keys()
+        if keys:
+            sig = (path, tuple(keys))
+            if sig not in seen_attrs:
+                seen_attrs.add(sig)
+                for a in keys:
+                    out.add(f"{path}/@{local(a)}")
+        for c in el:
+            tag = c.tag
+            if tag.__class__ is not str:  # comments, PIs, entities
+                continue
+            k = (path, tag)
+            cp = child_path.get(k)
+            if cp is None:
+                cp = child_path[k] = f"{path}/{local(tag)}"
+                out.add(cp)
+            walk(c, cp)
+
+    top = f"/{local(root.tag)}"
+    out.add(top)
+    walk(root, top)
+    return out
+
+
+# ------------------------------------------------------------------ JSON
+
+
+def _jmespath() -> Any:
+    try:
+        import jmespath
+    except ImportError as e:  # pragma: no cover - exercised only without the extra
+        raise ImportError(
+            "reading JSON documents needs jmespath; install the `documents` extra: "
+            "pip install 'edgy-dag-tools[documents]'"
+        ) from e
+    return jmespath
+
+
+_JSON_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_JSON_SEG = r'(?:[A-Za-z_][A-Za-z0-9_]*|"(?:[^"\\]|\\.)*")'
+_FP_JSON_CHAIN = re.compile(rf"^\s*{_JSON_SEG}(?:\.{_JSON_SEG})*\s*$")
+_FP_JSON_SEG = re.compile(_JSON_SEG)
+
+# JMESPath functions whose result is never a list of nodes. An expression
+# that is nothing but a call to one cannot give `prefer` a list to choose
+# from (``sort``, ``keys``, ``values``, ``reverse`` and friends can).
+JMES_SCALAR_FUNCS = frozenset(
+    [
+        "abs", "avg", "ceil", "contains", "ends_with", "floor", "join", "length", "max", "max_by",
+        "min", "min_by", "not_null", "starts_with", "sum", "to_number", "to_string", "type",
+    ]
+)
+
+
+def json_path_key(key: str) -> str:
+    """The structural-path step for one object key: ``.k`` or ``."quoted key"``.
+
+    A key that is not a JMESPath identifier is written as a JSON string, which
+    is also how a JMESPath expression quotes it -- so a path line and an
+    expression spell an awkward key the same way.
+    """
+    if _JSON_IDENT.match(key):
+        return "." + key
+    return "." + json.dumps(key, ensure_ascii=False)
+
+
+def _json_fast_path(source: str) -> Optional[Tuple[str, ...]]:
+    """A dotted chain of plain or quoted keys, read as a tuple of keys; ``@`` is ``()``."""
+    s = source.strip()
+    if s == "@":
+        return ()
+    if not _FP_JSON_CHAIN.match(s):
+        return None
+    return tuple(json.loads(seg) if seg.startswith('"') else seg for seg in _FP_JSON_SEG.findall(s))
+
+
+class _JmesExpr:
+    """A compiled JMESPath with the scalar / string-list / node-list views.
+
+    Values are returned natively (a JSON ``3`` is an ``int``, ``true`` a
+    ``bool``); coercion decides what fits the column. An object or a list
+    where one value was expected is handed on as-is, so the column's coercer
+    counts it as a failure rather than this view inventing a text for it.
+
+    A dotted chain of keys (``a.b``, ``"Dock door".code``) and ``@`` skip
+    JMESPath and walk the objects directly; ``test_documents_json`` asserts the
+    walk answers what JMESPath answers on every node of the depot document.
+    """
+
+    __slots__ = ("source", "_fn", "_keys", "_parsed")
+
+    def __init__(self, source: str, jmespath: Any) -> None:
+        self.source = source
+        try:
+            compiled = jmespath.compile(source)
+        except Exception:
+            raise DocumentError(f"expression does not compile: {source!r}") from None
+        self._parsed = compiled.parsed
+        self._keys = _json_fast_path(source)
+        self._fn = compiled.search
+
+    def returns_nodes(self) -> bool:
+        p = self._parsed
+        t = p.get("type")
+        if t == "literal":
+            return False
+        if t == "function_expression" and p.get("value") in JMES_SCALAR_FUNCS:
+            return False
+        return True
+
+    def _run(self, node: Any) -> Any:
+        keys = self._keys
+        if keys is not None:
+            cur = node
+            for k in keys:
+                if not isinstance(cur, dict):
+                    return None
+                cur = cur.get(k)
+            return cur
+        try:
+            return self._fn(node)
+        except Exception as e:
+            raise DocumentError(f"expression failed: {self.source!r}: {type(e).__name__}") from None
+
+    def scalar(self, node: Any, variables: Dict[str, Any]) -> Any:
+        r = self._run(node)
+        if isinstance(r, list):
+            return r[0] if r else None
+        return r
+
+    def strings(self, node: Any, variables: Dict[str, Any]) -> List[Any]:
+        r = self._run(node)
+        if r is None:
+            return []
+        if isinstance(r, list):
+            return [x for x in r if x is not None]
+        return [r]
+
+    def nodes(self, node: Any, variables: Dict[str, Any]) -> List[Any]:
+        r = self._run(node)
+        if isinstance(r, list):
+            return [x for x in r if x is not None]
+        if isinstance(r, dict):
+            return [r]
+        return []
+
+
+def _refuse_constant(name: str) -> Any:
+    raise DocumentError("not valid JSON: NaN and Infinity are not JSON numbers")
+
+
+def _finite_float(text: str) -> Any:
+    # json reads 1e999 as inf. A number that is not finite is kept as the text
+    # it was written as -- which is what the XML route sees -- and coercion
+    # refuses it there exactly as it would refuse the attribute.
+    x = float(text)
+    return x if math.isfinite(x) else text
+
+
+class JsonReader:
+    """JSON documents, with JMESPath expressions.
+
+    A UTF-8 BOM is accepted. An empty or whitespace-only document has no root
+    and yields no rows; so do ``{}``, ``[]`` and a bare scalar, because there
+    is nothing in them for a row expression to select. Only text that is not
+    JSON is a reject, and its message names a line and column, never the text.
+    ``NaN`` and ``Infinity`` are not JSON and are refused.
+    """
+
+    def __init__(self, *, max_bytes: Optional[int] = None) -> None:
+        self._jmespath = _jmespath()
+        self.max_bytes = max_bytes
+
+    def parse(self, data: bytes) -> Any:
+        if self.max_bytes is not None and len(data) > self.max_bytes:
+            raise DocumentError(f"document exceeds max_bytes ({self.max_bytes})")
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise DocumentError("document is not valid UTF-8") from None
+        if not text.strip():
+            return None
+        try:
+            return json.loads(text, parse_constant=_refuse_constant, parse_float=_finite_float)
+        except json.JSONDecodeError as e:
+            raise DocumentError(f"not valid JSON: {e.msg} at line {e.lineno} column {e.colno}") from None
+        except DocumentError:
+            raise
+        except RecursionError:
+            raise DocumentError("not valid JSON: nested too deeply to read") from None
+        except ValueError as e:
+            raise DocumentError(f"not valid JSON: {type(e).__name__}") from None
+
+    def compile(self, expr: str) -> _JmesExpr:
+        return _JmesExpr(expr, self._jmespath)
+
+    def structural_paths(self, root: Any) -> Set[str]:
+        """Every distinct container and key path: ``$``, ``$.a``, ``$.a[]``, ``$.a[].b``."""
+        return json_structural_paths(root)
+
+
+def json_structural_paths(root: Any) -> Set[str]:
+    """Every distinct container and key path of a parsed JSON value.
+
+    ``$``, ``$.a``, ``$.a[]``, ``$.a[].b``; a key that is not an identifier is
+    written quoted (:func:`json_path_key`), ``$.a."b c"``. Each list level is
+    written ``[]``, so a list nested directly in a list is ``$.a[][]``. An
+    empty list still contributes its ``[]`` path. A document with no root
+    (zero bytes, whitespace) has no paths at all.
+
+    The one spelling of a JSON structural path: the engine checks documents
+    with it and the profiler writes its path lists with it.
+    """
+    out: Set[str] = set()
+    if root is None:
         return out
+    key_path: Dict[Tuple[str, str], str] = {}
+
+    def walk(v: Any, path: str) -> None:
+        if isinstance(v, dict):
+            for k, c in v.items():
+                kk = (path, k)
+                p = key_path.get(kk)
+                if p is None:
+                    p = key_path[kk] = path + json_path_key(k)
+                    out.add(p)
+                walk(c, p)
+        elif isinstance(v, list):
+            p = path + "[]"
+            out.add(p)
+            for c in v:
+                walk(c, p)
+
+    out.add("$")
+    walk(root, "$")
+    return out
+
+
+_QUOTED_STEP = re.compile(r'\."((?:[^"\\]|\\.)*)"')
+
+
+def path_spelling_key(path: str) -> str:
+    """``path`` with every quoted key step unquoted: ``$.a."b c"`` -> ``$.a.b c``.
+
+    Used only to tell a spelling difference from a structural one: two paths
+    that differ here differ in structure; two that agree here and differ as
+    written differ only in how a key was spelled. It is not a structural path
+    itself (``$."a.b"`` and ``$.a.b`` both read ``$.a.b`` here).
+    """
+
+    def unquote(m: "re.Match[str]") -> str:
+        try:
+            return "." + json.loads('"' + m.group(1) + '"')
+        except ValueError:
+            return m.group(0)
+
+    return _QUOTED_STEP.sub(unquote, path)
 
 
 def reader_for(
@@ -385,6 +639,8 @@ def reader_for(
 ) -> DocumentReader:
     if fmt == "xml":
         return XmlReader(strip_namespaces=strip_namespaces, max_bytes=max_bytes, huge_tree=huge_tree)
+    if fmt == "json":
+        return JsonReader(max_bytes=max_bytes)
     raise DocumentError(f"no reader for document format {fmt!r}")
 
 

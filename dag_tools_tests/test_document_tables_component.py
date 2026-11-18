@@ -520,3 +520,177 @@ def test_the_sensor_names_the_files_above_the_depth_and_orders_trees_by_key(exam
         assert isinstance(_tick(sensor, instance), dg.SkipReason)
         skip = _tick(sensor, instance)
         assert "2 file(s) above the bundle depth" in skip.skip_message
+
+
+# --- names with unusual characters ------------------------------------------
+
+#: ``[``, ``]``, ``@``, ``$`` and spaces. Dagster refuses none of them in a
+#: dynamic partition key (only in a multi-partition dimension), and a name
+#: with no ``/`` is its own partition key.
+ODD = "2026-05 depot [east] @dock $2"
+ODD_SIBLINGS = (ODD + " annex", ODD + "-b")
+
+
+@pytest.fixture
+def aws_env(monkeypatch):
+    pytest.importorskip("moto")
+    pytest.importorskip("boto3")
+    for k, v in {
+        "AWS_ACCESS_KEY_ID": "testing",
+        "AWS_SECRET_ACCESS_KEY": "testing",
+        "AWS_SESSION_TOKEN": "testing",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+
+
+def _plant_odd(c: Path) -> None:
+    root = _bundles(c)
+    for name, variant in [(ODD, "flat")] + [(s, "numbered") for s in ODD_SIBLINGS]:
+        for rel, data in syn.bundle_files(variant).items():
+            p = root / name / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+
+
+def _lance_rows_by_bundle(c: Path) -> dict:
+    out = {}
+    for t in KEYS:
+        tbl = lance.dataset(str(_output(c) / f"{t}.lance")).to_table(columns=["source_bundle", "publish_period"])
+        for b, p in zip(tbl.column("source_bundle").to_pylist(), tbl.column("publish_period").to_pylist()):
+            out.setdefault((t, b, p), 0)
+            out[(t, b, p)] += 1
+    return out
+
+
+def _exercise_odd(c: Path) -> None:
+    assert partition_key_for(ODD) == ODD
+    defs = _load(c)
+    sensor = defs.get_sensor_def(f"{NAME}_discovery")
+    with dg.instance_for_test() as instance:
+        out = _tick(sensor, instance)
+        reqs = {r.partition_key: r for r in out.run_requests}
+        # discovery lists it, the partition key is Dagster's to hold, and the
+        # request carries the bundle's own key as its tag
+        assert {ODD, *ODD_SIBLINGS} <= set(reqs)
+        assert ODD in set(instance.get_dynamic_partitions(f"{NAME}_bundles"))
+        assert reqs[ODD].tags[BUNDLE_TAG] == ODD
+        assert reqs[ODD].run_key.rsplit("@", 1)[0] == ODD  # a stamp never carries "@"
+
+        # by tag
+        assert _run(defs, instance, ODD, tags={BUNDLE_TAG: ODD}).success
+        want = {(t, ODD, "2026-05"): n for t, n in syn.EXPECTED_ROWS.items()}
+        assert _lance_rows_by_bundle(c) == want  # ODD's rows only; no sibling opened
+
+        # by key match, with no tag: the same bundle, so every count is unchanged
+        assert _run(defs, instance, ODD).success
+        assert _lance_rows_by_bundle(c) == want
+
+
+def test_a_bundle_named_with_brackets_at_dollar_and_spaces_round_trips_locally(example):
+    _plant_odd(example)
+    _exercise_odd(example)
+
+
+def test_a_bundle_named_with_brackets_at_dollar_and_spaces_round_trips_on_s3(example, aws_env):
+    import boto3
+    from moto import mock_aws
+
+    _plant_odd(example)
+    root = _bundles(example)
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket="bkt")
+        for p in sorted(root.rglob("*")):
+            if p.is_file():
+                s3.put_object(Bucket="bkt", Key="bundles/" + p.relative_to(root).as_posix(), Body=p.read_bytes())
+        shutil.rmtree(root)  # the run must read the bucket, not a stray local copy
+        _rewrite(example, lambda a: a["source"].update(uri="s3://bkt/bundles"))
+        _exercise_odd(example)
+
+
+# --- shared datasets (`into`) and `only_unreferenced` -----------------------
+
+#: Two tables feeding one dataset, and a member table keeping only what no
+#: document's file column resolved to. All rows come from the example's own
+#: bundles: 4 flags and 5 scans, and on the numbered variant one resolved
+#: photo (S1.png) beside an ambiguous pair (S2.png) no reference resolved to.
+SHARED = {"flag_events": ("/Manifest/Parcel/Flag", "flag"), "scan_events": ("/Manifest/Parcel/Scan", "scan")}
+SHARED_ROWS = {"flag_events": syn.EXPECTED_ROWS["flags"], "scan_events": syn.EXPECTED_ROWS["scans"]}
+KEYS_PLUS = KEYS + ["events", "loose"]
+
+
+def _add_shared_and_loose(c: Path) -> None:
+    doc = yaml.safe_load(_mapping(c).read_text(encoding="utf-8"))
+    for i, (tname, (rows, kind)) in enumerate(SHARED.items()):
+        cols = {"event_id": "@id", "kind": {"const": kind}}
+        if i:
+            cols = dict(reversed(list(cols.items())))  # column order is not part of the schema
+        doc["tables"][tname] = {"rows": rows, "into": "events", "columns": cols}
+    doc["tables"]["loose"] = {
+        "members": ["**/*.png"],
+        "only_unreferenced": True,
+        "columns": {"path": {"member": "path"}},
+    }
+    _mapping(c).write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+
+def _events(c: Path) -> list:
+    tbl = lance.dataset(str(_output(c) / "events.lance")).to_table(columns=["kind", "event_id"])
+    return sorted(zip(tbl.column("kind").to_pylist(), tbl.column("event_id").to_pylist()))
+
+
+def test_a_shared_into_is_one_asset_and_its_tables_are_not(example):
+    _add_shared_and_loose(example)
+    defs = _load(example)
+    keys = {k.to_user_string() for k in defs.resolve_asset_graph().get_all_asset_keys()}
+    assert keys == {f"{NAME}/{t}" for t in KEYS_PLUS}
+    desc = _tables_asset(defs).specs_by_key[dg.AssetKey([NAME, "events"])].description
+    assert "`flag_events`, `scan_events`" in desc
+    checked = {s.asset_key.path[-1] for s in _tables_asset(defs).check_specs}
+    assert "events" in checked and not checked & set(SHARED)
+
+
+def test_a_shared_dataset_counts_rows_by_table_and_members_kept_and_skipped(example):
+    _add_shared_and_loose(example)
+    defs = _load(example)
+    with dg.instance_for_test() as instance:
+        result = _run(defs, instance, "2026-04_depot-b")
+        assert result.success
+        md = _mat_metadata(result)
+        assert set(md) == set(KEYS_PLUS)
+        assert md["events"]["dagster/row_count"] == sum(SHARED_ROWS.values())
+        assert md["events"]["rows_by_table"] == SHARED_ROWS
+        assert {k for k, _ in _events(example)} == {"flag", "scan"}
+        assert sum(1 for k, _ in _events(example) if k == "flag") == SHARED_ROWS["flag_events"]
+        # S1.png was resolved by a photo; the S2.png pair was ambiguous, so neither was
+        assert md["loose"]["members_kept"] == 2 and md["loose"]["members_skipped"] == 1
+        assert md["loose"]["dagster/row_count"] == 2
+        loose = lance.dataset(str(_output(example) / "loose.lance")).to_table(columns=["path"])
+        assert sorted(p.rsplit("/", 2)[-2] for p in loose.column("path").to_pylist()) == ["01", "02"]
+        # a dataset fed by one table carries neither figure
+        assert "rows_by_table" not in md["flags"] and "members_kept" not in md["flags"]
+        evals = {(e.asset_key.path[-1], e.check_name): e for e in _checks(result)}
+        assert evals[("events", "non_empty")].passed
+        assert not {k for k, _ in evals} & {(t, "non_empty") for t in SHARED}
+
+
+def test_a_shared_dataset_is_replaced_per_bundle_and_kept_across_bundles(example):
+    _add_shared_and_loose(example)
+    defs = _load(example)
+    n = sum(SHARED_ROWS.values())
+    with dg.instance_for_test() as instance:
+        assert _run(defs, instance, "2026-04_depot-b").success
+        assert _run(defs, instance, "2026-03_depot-a").success
+        assert len(_events(example)) == 2 * n
+        assert _run(defs, instance, "2026-04_depot-b").success
+        assert len(_events(example)) == 2 * n  # delete-then-append of both tables' rows, once
+
+
+def test_allow_empty_names_the_shared_dataset_not_a_table_feeding_it(example):
+    _add_shared_and_loose(example)
+    _rewrite(example, lambda a: a["checks"].update(allow_empty=["events"]))
+    assert "events" not in _non_empty_tables(_load(example))
+    _rewrite(example, lambda a: a["checks"].update(allow_empty=["flag_events"]))
+    _refused(example, "flag_events", "allow_empty", "a shared `into` is named once")
