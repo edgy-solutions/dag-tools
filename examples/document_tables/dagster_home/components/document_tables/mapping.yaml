@@ -1,0 +1,309 @@
+# The mapping for the synthetic "parcel depot" format -- the only document
+# format that appears anywhere in dag-tools. Every name and value in it is
+# invented. A real deployment writes its own mapping and keeps it private;
+# nothing in the component knows any format.
+#
+# A test holds this file equal to `dag_tools_tests/documents_synthetic.py`'s
+# MAPPING, so the example and the test suite can never describe two formats.
+version: 1
+
+document:
+  format: xml
+  # Globs on a member's path inside the bundle. A member matching none of
+  # them (readme.txt, the photos) is not a document.
+  match: ["*.xml", "*/*.xml"]
+  # A document larger than this is rejected, not parsed.
+  max_bytes: 1000000
+
+lineage:
+  # Every row carries `publish_period`, read off the bundle's name.
+  publish_period:
+    from: bundle_name
+    regex: '(?P<period>\d{4}-\d{2})'
+
+# The structural paths this format is known to carry. A document carrying
+# any other path is counted (and, with `fail`, rejected); `dagtools documents
+# profile --paths-out` writes this list for a sample of real bundles.
+expected_paths:
+  - /Manifest
+  - /Manifest/@id
+  - /Manifest/@created
+  - /Manifest/Depot
+  - /Manifest/Depot/@site
+  - /Manifest/Depot/@dock
+  - /Manifest/Depot/@shift
+  - /Manifest/Parcel
+  - /Manifest/Parcel/@id
+  - /Manifest/Parcel/@weight
+  - /Manifest/Parcel/@fragile
+  - /Manifest/Parcel/Scan
+  - /Manifest/Parcel/Scan/@id
+  - /Manifest/Parcel/Scan/@at
+  - /Manifest/Parcel/Scan/@lane
+  - /Manifest/Parcel/Scan/Reading
+  - /Manifest/Parcel/Scan/Reading/@kind
+  - /Manifest/Parcel/Scan/Reading/@value
+  - /Manifest/Parcel/Scan/Limit
+  - /Manifest/Parcel/Scan/Limit/@kind
+  - /Manifest/Parcel/Scan/Limit/@low
+  - /Manifest/Parcel/Scan/Limit/@high
+  - /Manifest/Parcel/Scan/Item
+  - /Manifest/Parcel/Scan/Item/@sku
+  - /Manifest/Parcel/Scan/Item/@qty
+  - /Manifest/Parcel/Flag
+  - /Manifest/Parcel/Flag/@id
+  - /Manifest/Parcel/Flag/@code
+  - /Manifest/Parcel/Flag/ScanRef
+  - /Manifest/Parcel/Flag/ScanRef/@id
+  - /Manifest/Extras
+  - /Manifest/Extras/Photos
+  - /Manifest/Extras/Photos/photo
+  - /Manifest/Extras/Photos/photo/@parcel
+  - /Manifest/Extras/Photos/photo/@path
+  - /Manifest/Extras/Photos/photo/ref
+  - /Manifest/Extras/Photos/photo/ref/@scan
+  - /Manifest/Extras/Watch
+  - /Manifest/Extras/Watch/@parcel
+  - /Manifest/Extras/Watch/@scan
+  - /Manifest/Review
+  - /Manifest/Review/@flagRef
+  - /Manifest/Review/@by
+  - /Manifest/Review/Decision
+  - /Manifest/Review/Decision/@code
+on_unknown_path: warn
+
+# Indexes are built once per document, before any table, and are what a
+# column's `lookup` reads. An index may look up an index declared above it,
+# never one below.
+indexes:
+  reviews:
+    rows: /Manifest/Review
+    keys: "@flagRef"
+    values:
+      decision: Decision/@code
+      by: "@by"
+  photo_refs:
+    rows: /Manifest/Extras/Photos/photo
+    # A scan id is unique only within its parcel -- two parcels reuse S1 --
+    # so the entry is filed under (scope, key). A lookup into a scoped index
+    # must name its own scope and matches only entries with an equal one; a
+    # null or empty scope on either side matches nothing and is counted in
+    # the run's `null_scopes`.
+    scope: "@parcel"
+    # Every key in the node-set files the entry: a photo referencing two
+    # scans is found under both.
+    keys: ref/@scan
+    values:
+      path: "@path"
+  watched:
+    rows: /Manifest/Extras/Watch
+    scope: "@parcel"
+    keys: "@scan"
+    values:
+      scan: "@scan"
+  flags_by_scan:
+    rows: /Manifest/Parcel/Flag
+    # The scope is evaluated relative to the index row: here, the flag's
+    # parcel.
+    scope: ../@id
+    keys: ScanRef/@id
+    values:
+      code: "@code"
+
+# One Lance dataset per table, at <destination>/<table>.lance. Every table
+# also carries doc_id, source_bundle, source_file, publish_period and
+# ingested_at, and row_id when a template is given.
+tables:
+  loads:
+    rows: /Manifest
+    row_id: "{manifest_id}"
+    columns:
+      manifest_id: "@id"
+      created:
+        type: timestamp
+        expr: "@created"
+      site: Depot/@site
+      dock: Depot/@dock
+      shift:
+        expr: Depot/@shift
+        # A value the map does not name takes the default and is counted.
+        map:
+          values:
+            early: E
+            late: L
+          default: "?"
+      parcel_count:
+        type: int32
+        expr: count(Parcel)
+
+  parcels:
+    rows: /Manifest/Parcel
+    vars:
+      manifest: string(/Manifest/@id)
+    row_id: "{manifest_id}/{parcel_id}"
+    columns:
+      manifest_id: $manifest
+      parcel_id: "@id"
+      # "heavy" is not a number: the cell is null and the failure counted.
+      weight:
+        type: float64
+        expr: "@weight"
+      fragile:
+        type: bool
+        expr: "@fragile"
+      flag_ids:
+        type: list<string>
+        expr: Flag/@id
+      scan_count:
+        type: int64
+        expr: count(Scan)
+
+  scans:
+    rows: /Manifest/Parcel/Scan
+    row_id: "{doc_id}:{row_number}"
+    columns:
+      scan_id: "@id"
+      parcel_id: ../@id
+      at:
+        type: timestamp
+        expr: "@at"
+      lane:
+        type: int32
+        expr: "@lane"
+      readings:
+        type: list<struct>
+        rows: Reading
+        fields:
+          kind: "@kind"
+          value:
+            type: float64
+            expr: "@value"
+      temp_low:
+        type: float64
+        expr: Limit[@kind='temp']/@low
+      # The first expression that yields a value wins.
+      temp_bound:
+        type: float64
+        first_of:
+          - Limit[@kind='temp']/@low
+          - Limit[@kind='temp']/@high
+      first_sku:
+        expr: Item/@sku
+        when_empty: none
+      item_skus:
+        type: list<string>
+        expr: Item/@sku
+      # The lookup's scope is evaluated relative to the table row: the
+      # scan's parcel. Remove it and S1 of P2 would read P1's photos and
+      # flags -- the cross-link the scope exists to prevent.
+      has_photo:
+        lookup:
+          index: photo_refs
+          scope: ../@id
+          keys: "@id"
+          mode: exists
+      watched:
+        lookup:
+          index: watched
+          scope: ../@id
+          keys: "@id"
+          mode: exists
+      is_flagged:
+        lookup:
+          index: flags_by_scan
+          scope: ../@id
+          keys: "@id"
+          mode: exists
+      flag_count:
+        lookup:
+          index: flags_by_scan
+          scope: ../@id
+          keys: "@id"
+          mode: count
+      first_flag:
+        lookup:
+          index: flags_by_scan
+          scope: ../@id
+          keys: "@id"
+          field: code
+          mode: first
+      last_flag:
+        lookup:
+          index: flags_by_scan
+          scope: ../@id
+          keys: "@id"
+          field: code
+          mode: last
+      flag_codes:
+        lookup:
+          index: flags_by_scan
+          scope: ../@id
+          keys: "@id"
+          field: code
+          mode: list
+
+  flags:
+    rows: /Manifest/Parcel/Flag
+    columns:
+      flag_id: "@id"
+      code: "@code"
+      scan_ids:
+        type: list<string>
+        expr: ScanRef/@id
+      review_count:
+        lookup:
+          index: reviews
+          keys: "@id"
+          mode: count
+      decision:
+        lookup:
+          index: reviews
+          keys: "@id"
+          field: decision
+          mode: last
+      decisions:
+        lookup:
+          index: reviews
+          keys: "@id"
+          field: decision
+          mode: list
+          sort: true
+      # One decision out of the list, by precedence: the first value in
+      # `prefer` that is present wins. No review at all gives `when_empty`;
+      # reviews carrying none of the preferred values give null and are
+      # counted in `unmapped_values`. (`first_of`, by contrast, chooses among
+      # expressions, not among the values of one list.)
+      verdict:
+        type: string
+        lookup:
+          index: reviews
+          keys: "@id"
+          field: decision
+          mode: list
+        prefer: [REJECT, REPAIR, ACCEPT]
+        when_empty: none
+      photo_count:
+        lookup:
+          index: photo_refs
+          scope: ../@id
+          keys: ScanRef/@id
+          mode: count
+
+  photos:
+    rows: /Manifest/Extras/Photos/photo
+    columns:
+      parcel_id: "@parcel"
+      scan_ids:
+        type: list<string>
+        expr: ref/@scan
+      image:
+        type: file
+        expr: "@path"
+        # Tried in order. The photos sit in a folder named after the
+        # manifest -- flat in one bundle, in numbered subfolders in the
+        # other -- so the second strategy finds them by name. A name found
+        # twice is ambiguous: the row is kept and stores no bytes.
+        resolve:
+          - document_dir
+          - basename_under: "{document_stem}"
+        probe: image

@@ -222,6 +222,21 @@ broker = [
     # connectorx (the client's read path) cannot run CREATE ROLE.
     "psycopg2-binary>=2.9",
 ]
+documents = [
+    # dag_tools.documents + DocumentTablesComponent: documents to tables.
+    # lxml evaluates the mapping's XPath, pylance writes the tables,
+    # Pillow probes image dimensions for `probe: image` file columns,
+    # boto3 streams bundles from S3-compatible storage. pyarrow is a base
+    # dependency already and is restated for the floor lance needs.
+    "lxml>=5.0",
+    "pylance>=0.20",
+    "Pillow>=10.0",
+    "boto3>=1.34",
+    "pyarrow>=14",
+    # A column's `timezone:` is read through zoneinfo, which on Windows
+    # has no system database to read from.
+    "tzdata; sys_platform == 'win32'",
+]
 dev = [
     "dagster-webserver",
     "pytest",
@@ -232,7 +247,7 @@ dev = [
 # the note on the `datahub` extra for why the cap there is what makes
 # this satisfiable.
 all = [
-    "edgy-dag-tools[orchestrator,datahub,worker,qual,broker,dev]",
+    "edgy-dag-tools[orchestrator,datahub,worker,qual,broker,documents,dev]",
 ]
 
 [project.scripts]
@@ -258,5 +273,5 @@ module_name = "dag_tools.definitions"
 code_location_name = "dag_tools"
 
 [tool.dagster.components]
-register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage", "dag_tools.components.s3_sensor", "dag_tools.components.restate_dlt_sync", "dag_tools.components.restate_api_sync", "dag_tools.components.grist_ingest"]
+register_components = ["dag_tools.components.dlt_pipeline", "dag_tools.components.dbt_project", "dag_tools.components.datahub_lineage", "dag_tools.components.s3_sensor", "dag_tools.components.restate_dlt_sync", "dag_tools.components.restate_api_sync", "dag_tools.components.grist_ingest", "dag_tools.components.document_tables"]
 

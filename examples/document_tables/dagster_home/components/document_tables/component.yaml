@@ -1,0 +1,60 @@
+type: dag_tools.DocumentTablesComponent
+
+attributes:
+  # Names the default asset key prefix, the partitions, both jobs and the
+  # sensor: document_tables_example_ingest, ..._maintenance, ..._discovery.
+  name: document_tables_example
+
+  source:
+    # Relative to this directory. Each directory one level under it is a
+    # bundle (bundle_depth: 1); a .zip there would be a bundle too.
+    #
+    # For an object store:
+    #
+    #   uri: "{{ env('DOCUMENT_BUNDLES_URI') }}"     # s3://bucket/prefix
+    #   endpoint_url: "{{ env('S3_ENDPOINT_URL') }}" # MinIO and friends
+    #
+    # Credentials come from the environment, never from this file.
+    uri: ../../../bundles
+    bundle_depth: 1
+
+  # A path relative to this directory, or the mapping itself, inline.
+  mapping: mapping.yaml
+
+  destination:
+    # One Lance dataset per table at <uri>/<table>.lance. Relative to this
+    # directory; gitignored.
+    #
+    # For an object store, pass Lance its options -- anything secret as an
+    # environment reference:
+    #
+    #   uri: "{{ env('DOCUMENT_TABLES_URI') }}"
+    #   storage_options:
+    #     aws_access_key_id: "{{ env('AWS_ACCESS_KEY_ID') }}"
+    #     aws_secret_access_key: "{{ env('AWS_SECRET_ACCESS_KEY') }}"
+    uri: ../../../output
+
+  checks:
+    # The example's bundles each carry one malformed document out of three,
+    # and one photo the manifest names but the bundle does not hold. The
+    # defaults (0.0 and 1.0) would flag both; these thresholds accept them.
+    max_reject_rate: 0.34
+    min_file_resolution_rate: 0.3
+    unknown_paths: 0
+
+  discovery:
+    interval_seconds: 60
+    max_new_partitions_per_tick: 10
+    # STOPPED unless asked for -- turn it on in the UI.
+    default_status: STOPPED
+
+  maintenance:
+    older_than_days: 7
+    # cron: "0 3 * * 0"   # a schedule for the maintenance job, also STOPPED
+
+  # Runs writing to one destination at once. Keep it at 1 unless the
+  # destination's store has been shown to commit concurrent writers safely
+  # (docs/DOCUMENT_TABLES.md).
+  write_concurrency: 1
+
+  group_name: document_tables_example

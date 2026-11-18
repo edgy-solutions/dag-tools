@@ -89,3 +89,6 @@ schemas/export/
 # (mfg-trace third ruling amendment, 2026-11-12). Only the README is tracked.
 /docs/plans/mfg-trace-spike/*
 !/docs/plans/mfg-trace-spike/README.md
+
+# document_tables example: Lance tables written by a local run
+examples/document_tables/output/

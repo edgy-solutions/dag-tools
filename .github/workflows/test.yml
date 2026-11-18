@@ -173,7 +173,7 @@ jobs:
       - name: Install with dagster pinned to the floor
         run: |
           uv pip install \
-            -e ".[qual,broker,worker,dev]" \
+            -e ".[qual,broker,worker,documents,dev]" \
             "dagster==1.10.19" \
             "dagster-aws==0.26.19" \
             "dagster-dbt==0.26.19" \

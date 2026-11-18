@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from dag_tools.components.dbt_project import CustomDbtProjectComponent
     from dag_tools.components.contract_mapping import ContractMappingComponent
     from dag_tools.components.datahub_lineage import DatahubLineageComponent
+    from dag_tools.components.document_tables import DocumentTablesComponent
     from dag_tools.components.otel_api_sync import OtelApiSyncComponent
     from dag_tools.components.read_audit import ReadAuditComponent
     from dag_tools.components.tagged_warehouse import TaggedWarehouseComponent
@@ -20,6 +21,7 @@ _module_lookup = {
     "ContractMappingComponent": "dag_tools.components.contract_mapping.component",
     "ClassificationPropagationComponent": "dag_tools.components.classification_propagation.component",
     "DatahubLineageComponent": "dag_tools.components.datahub_lineage.component",
+    "DocumentTablesComponent": "dag_tools.components.document_tables.component",
     "OtelApiSyncComponent": "dag_tools.components.otel_api_sync.component",
     "ReadAuditComponent": "dag_tools.components.read_audit.component",
     "RestateApiSyncComponent": "dag_tools.components.restate_api_sync.component",

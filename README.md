@@ -22,6 +22,7 @@ This library follows a **Dagster-first** configuration approach.
 - `dag_tools/audit/`: The **read audit** — a pure (Dagster-free) engine that turns a warehouse's query history into a report of which asset read which object, and which reads nothing explains. Builds the SELECT and returns SQL plus bound parameters; a resource runs it. Names no relation, column or identity, not even as a default. Surfaced as `ReadAuditComponent` (YAML) and `dagtools audit` (CLI).
 - `dag_tools/contract_mapping/`: The **contract mapping** engine — pure (no Dagster, no dbt) — that reconciles a data contract against a source schema and renders the dbt model that satisfies it plus the tests that prove it still does. The same plan also runs over Python rows, which is how a mapping is proven with no warehouse. Refuses at code-location load anything that would emit a wrong artifact, notes anything it merely could not test, and guesses no warehouse type, cast or predicate. Surfaced as `ContractMappingComponent`.
 - `dag_tools/warehouse_source/`: The **warehouse source** engine — a pure (Dagster-free, DataHub-free) package that reads the deployment's mounted classification dimensions document, validates each column's `{dimension: values}` label against it, plans an observation that moves no data, and builds the catalog payload. Surfaced as `WarehouseSourceComponent`, which publishes one source dataset as an observable source asset under the PHYSICAL platform's dataset URN and attaches the Dagster asset as lineage. Names no database, schema, table, column, dimension or value, not even as a default.
+- `dag_tools/documents/`: The **documents** engine. It is pure Python with no Dagster import. It holds the bundle sources (zips and directory trees, local or S3), the mapping grammar, the XPath reader, coercion, file resolution, the Lance writer and the bundle profiler. It knows no document format: everything format-specific lives in the mapping YAML a deployment supplies. Surfaced as `DocumentTablesComponent` and `dagtools documents profile`.
 - `dag_tools/io_managers/`: Custom Dagster IO Managers. The shipped set is `ConfigurableArrowIOManager` (parquet via `pyarrow.fs`), `ConfigurableSQLIOManager`, the DuckDB and Delta managers, the S3 manager, `CortexPolarsIOManager` and the mesh-publishing mixin. **There is no Snowflake or Databricks IO manager here.** Where the YAML examples below say `io_manager_key: "snowflake_io_manager"`, that is a resource key the *deployment* binds to a manager of its own; this library ships the `dlt` **destination** support for Snowflake and Databricks (`config_to_credentials` / `get_destination`) and no IO manager for either.
 - `dag_tools/resources/`: Reusable resources and API/Database clients, including the **tagged warehouse** resource (`TaggedWarehouseComponent`) — every query it sends carries which asset the read was for, and a query it cannot attribute is not sent.
 - `dag_tools/sensors/`: Common sensors (S3, file system, etc.).
@@ -880,6 +881,36 @@ one place anything from below is named, and it needed three transforms this libr
 
 Runnable example, with a sample comparator table and both stages documented:
 [`examples/mfg_trace`](examples/mfg_trace).
+
+### 19. Documents to tables (`DocumentTablesComponent`)
+
+`DocumentTablesComponent` turns bundles of documents (a zip or a directory tree, local or on S3) into one Lance table per mapped table, plus `_rejects`. Each bundle is one dynamic partition. A mapping YAML says which XPath feeds which column, and that file is the only place a document format is named. dag-tools ships none.
+
+```yaml
+type: dag_tools.DocumentTablesComponent
+attributes:
+  name: shipments
+  source:
+    uri: "{{ env('DOCS_SOURCE_URI') }}"
+    bundle_depth: 1
+  mapping: mapping.yaml
+  destination:
+    uri: "{{ env('DOCS_LANCE_URI') }}"
+  discovery:
+    max_new_partitions_per_tick: 25
+```
+
+The component defines:
+- a multi-asset, one asset per table, partitioned by bundle;
+- a discovery sensor, stopped by default;
+- four warning-severity asset checks;
+- a maintenance job that compacts each table, removes old versions and keeps a scalar index on `source_bundle` so each bundle's delete-then-append does not scan the table.
+
+The mapping can scope an index (a key unique only within a parcel stays within that parcel), pick one value out of a list with `prefer`, and lift libxml2's built-in parser limits with `document.huge_tree: true`. `vars` are evaluated once per document, not per row. See `docs/DOCUMENT_TABLES.md`.
+
+A re-run of a bundle deletes that bundle's rows before appending, so counts do not move. `write_concurrency` defaults to 1, because two writers on the same bundle were measured duplicating it. `dagtools documents profile` surveys a source before you write a mapping. It can redact values and anonymise bundle names.
+
+Install with `uv pip install -e ".[documents]"`. The mapping grammar, the profiler and the concurrency findings are in [`docs/DOCUMENT_TABLES.md`](docs/DOCUMENT_TABLES.md). Runnable example with an invented format: [`examples/document_tables`](examples/document_tables).
 
 ## Setup & Development
 
