@@ -91,6 +91,30 @@ it back are named.
   mechanism rides the runner's own `GITHUB_TOKEN`, with `contents: write` scoped to the two jobs
   that write a record.
 
+### Fixed
+
+- **The central gateway image rejected every RS256 token.** Its Dockerfile installed bare
+  `pyjwt`, and PyJWT's signature algorithms live in the optional `crypto` extra
+  (`cryptography>=3.4.0; extra == "crypto"`). Without it `import jwt` still succeeds, the
+  container still starts and still passes its healthcheck, and only `HS256/384/512` register —
+  so a gateway configured for RS256, which is the default, came up clean and refused every
+  token as `token_invalid` whatever its signature, while PyJWT's own explanation
+  (`RS256 requires 'cryptography' to be installed`) was swallowed by the verifier's broad
+  `except`. A deployment fault in a token fault's words. The image now installs
+  `pyjwt[crypto]`, and the `broker` extra declares `PyJWT[crypto]>=2.8` for anyone installing
+  the library rather than running the image — note that only the Dockerfile governs the image,
+  since the gateway's build context never reads the project file.
+
+  New `scripts/check_gateway_signing.py` verifies a freshly minted, in-memory RS256 token on
+  both paths the gateway can take (a key resolved through `jwt.PyJWK` and a static PEM, which
+  fail differently), and CI runs it **inside the built gateway image, before the push**. It
+  needs no network, writes no key material and adds **no credential to CI**.
+
+  `dag_tools.central_gateway.identity` now also logs, once per distinct state, when a
+  configured algorithm cannot be verified by the installed library. The refusal reason is
+  unchanged: it is still `token_invalid`, so `/health`'s refusal counts and the HTTP statuses
+  are exactly as before. No signature, export or default changes.
+
 ## 0.16.1 — 2026-11-16
 
 ### Fixed

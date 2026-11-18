@@ -105,6 +105,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The gateway is configured for an asymmetric algorithm, and PyJWT's
+      # asymmetric algorithms are in its optional `crypto` extra. Installed
+      # without it the image builds, starts and passes its healthcheck, and
+      # refuses EVERY token as invalid -- the library's own explanation is
+      # swallowed by the verifier, so the fault presents as a bad issuer and
+      # costs a day. Nothing but presenting a signed token to the image can
+      # see that state, so the check runs against the image, before the push.
+      #
+      # A separate single-arch `load: true` build, because a multi-arch build
+      # cannot be loaded into the daemon and a PR pushes nothing. It is not a
+      # second build in any real sense: the multi-arch step below reuses this
+      # builder's cache for amd64 and only arm64 is new work.
+      - name: Build the gateway image for the signing check
+        if: ${{ matrix.service == 'central-gateway' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: central-gateway-signing-check:${{ github.sha }}
+
+      # `--network none` is part of the assertion: the check mints its own key
+      # pair in memory, so it needs no network, no key material and no
+      # credential. The script is mounted rather than built in -- the image's
+      # build context is the gateway directory and carries no `scripts/`.
+      - name: Verify the built gateway image verifies a signed token
+        if: ${{ matrix.service == 'central-gateway' }}
+        run: |
+          docker run --rm --network none \
+            -v "${{ github.workspace }}/scripts:/check:ro" \
+            "central-gateway-signing-check:${{ github.sha }}" \
+            python /check/check_gateway_signing.py
+
       # Compute image tags from the git ref:
       #   - Branch push (master/main) → :sha-<short> + :latest
       # PR builds get no tags emitted here (push: is false on PR).
