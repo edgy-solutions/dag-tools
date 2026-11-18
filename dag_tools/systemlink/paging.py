@@ -3,13 +3,23 @@
 Step batching (spec 5.2): a :class:`StepBatcher` cannot be built able to emit more than
 ``step_batch_max``; a 504 / timeout splits the batch recursively in halves and the oversized
 batch is never sent again; a requested id that comes back with no steps is logged ``not_visible``.
+
+A 400 is never split. It is re-issued once with a single id, which tells an over-long chain
+from a form the server refuses, and both answers raise -- see
+:func:`_discriminate_step_refusal`.
 """
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from . import events as ev
 from . import queries
-from .client import GatewayTimeout, RequestFailed, SystemLinkClient
+from .client import (
+    GatewayTimeout,
+    RequestFailed,
+    SettingRejected,
+    SystemLinkClient,
+    SystemLinkError,
+)
 
 
 def iter_pages(
@@ -57,6 +67,49 @@ class StepBatcher:
         return list(batch[:mid]), list(batch[mid:])
 
 
+def _discriminate_step_refusal(
+    client: SystemLinkClient,
+    batch: Sequence[str],
+    *,
+    form: str,
+    take: int,
+    workspace_id: Optional[str],
+    refusal: SettingRejected,
+) -> SystemLinkError:
+    """Tell an over-long or-chain from a form this server refuses. Returns what to raise.
+
+    A 400 on a multi-id batch has two causes and the request names only one of them: the
+    operator is sent to change the *form*, whose only other value this server may refuse too.
+    A one-term chain is the simplest filter this kind can build, so re-issuing once with a
+    single id separates the two cleanly -- accepted means the form is fine and the length was
+    the cause; refused means the form was.
+
+    Both answers raise. The batch is never split on a 400: a timeout is a size signal and a
+    400 is not, so halving a genuinely malformed filter would send one request per leaf and
+    every one of them would come back with the same message. A single-id batch is not probed,
+    because there is nothing left to discriminate.
+    """
+    try:
+        client.post(
+            "query-steps",
+            queries.steps_query([batch[0]], form=form, take=take, workspace_id=workspace_id),
+            setting="limits.step_filter",
+            splittable=True,  # answer now; this path has already failed once
+        )
+    except SettingRejected:
+        return SettingRejected(
+            "query-steps: HTTP 400 for a single result id as well, so the chain length is not "
+            "the cause. Check the setting 'limits.step_filter' against this server's spelling."
+        )
+    except SystemLinkError:
+        return refusal  # the probe answered nothing, so the original diagnosis stands
+    return SettingRejected(
+        f"query-steps: HTTP 400 for {len(batch)} result ids but not for one, so the chain "
+        f"length is the cause and the form is not. Lower the settings "
+        f"'limits.step_batch_default' / 'limits.step_batch_max' below {len(batch)}."
+    )
+
+
 def fetch_steps(
     client: SystemLinkClient,
     result_ids: Sequence[str],
@@ -98,6 +151,13 @@ def fetch_steps(
             events.emit(ev.GATEWAY_TIMEOUT_SPLIT, size=len(batch))
             left, right = StepBatcher.halves(batch)
             return one(left) + one(right)
+        except SettingRejected as refusal:
+            if len(batch) == 1:
+                raise
+            events.info("step_chain_refused", size=len(batch))
+            raise _discriminate_step_refusal(
+                client, batch, form=form, take=take, workspace_id=workspace_id, refusal=refusal
+            ) from refusal
 
     batches = list(batcher.batches(result_ids))
     if max_concurrency > 1 and len(batches) > 1:

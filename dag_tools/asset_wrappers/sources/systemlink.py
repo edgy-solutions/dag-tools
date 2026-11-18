@@ -640,7 +640,10 @@ class SystemLinkKind(SourceKind):
             data, _ = rt.client.post(
                 "query-results",
                 queries.count_query(part, workspace_id=cfg.connection.workspace_id),
-                setting="limits.page_size",
+                # The sizing request carries no page size at all; what it sends that a server
+                # can refuse is the count flag. Naming a setting the body does not carry sends
+                # the operator to change something that never appears in the request.
+                setting="returnCount",
             )
             counts[part] = data.get("totalCount")
         rt.events.info("backfill_sizing", counts=counts, total=sum(c for c in counts.values() if isinstance(c, int)))

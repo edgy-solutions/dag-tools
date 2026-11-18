@@ -5,6 +5,12 @@ behaviours (booleans, status codes, counts). It never records a base URL, an
 API key, a part number or any value out of a response. Every request goes
 through ``ReadOnlyClient``, which refuses any route off its allowlist before a
 network call is made.
+
+The swagger document is fetched from the server by default. A server that
+serves it only to a browser login can be probed by handing the probe a local
+copy with ``--swagger-file``; the record then says the document came from a
+file, and never which file, because the record is read by hand and a local
+path carries the operator's account name.
 """
 import argparse
 import datetime
@@ -19,7 +25,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import httpx
 import yaml
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PROBE_NAME = "dag_tools.systemlink.spike"
 ROUTES = ("query-results", "query-steps", "query-products")
 DEFAULT_SWAGGER_PATHS = (
@@ -32,6 +38,9 @@ CONNECTION_KEYS = {"base_url", "api_key_env", "api_version_path", "workspace_id"
 _ROW_KEYS = {"query-results": "results", "query-steps": "steps", "query-products": "products"}
 _ENV_CALL = re.compile(r"\{\{\s*env\(\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\)\s*\}\}")
 _TAKE_LADDER = [10000, 5000, 1000, 500, 100]
+#: Rungs for the or-chain length ladder. Opt-in: it is the one probe that issues a request
+#: per rung per route, and the number it produces belongs in a deployment's YAML.
+_CHAIN_LADDER = [20, 40, 80, 160, 320, 640]
 
 
 class ConfigError(Exception):
@@ -258,13 +267,15 @@ def _norm(s: str) -> str:
 
 class _Probe:
     def __init__(self, client: ReadOnlyClient, part_number: str, workspace_id: Optional[str],
-                 declared: Dict[str, Dict[str, Any]], pages: int, page_take: int):
+                 declared: Dict[str, Dict[str, Any]], pages: int, page_take: int,
+                 chain_ladder: bool = False):
         self.c = client
         self.pn = part_number
         self.ws = workspace_id
         self.declared = declared
         self.pages = pages
         self.page_take = page_take
+        self.chain_ladder = chain_ladder
         self.result_ids: List[str] = []
 
     def body(self, filt: str, subs: List[Any], **extra: Any) -> Dict[str, Any]:
@@ -304,10 +315,14 @@ class _Probe:
             "step_id_unique": self.safe(self.step_id_unique),
             "result_id_list_filter": self.safe(self.result_id_list_filter),
             "continuation_token_stable": self.safe(self.continuation_token_stable),
+            "or_chain_length_ladder": self.safe(self.or_chain_length_ladder),
         }
 
     def seed(self) -> Dict[str, Any]:
-        status, data = self.c.query("query-results", self.part_body(take=20))
+        # The ladder needs one distinct result id per term of its longest rung; every other
+        # probe takes the first 20 or 5 of the same list, so asking for more changes none of them.
+        take = max(20, _CHAIN_LADDER[-1]) if self.chain_ladder else 20
+        status, data = self.c.query("query-results", self.part_body(take=take))
         if status == 200:
             self.result_ids = [str(r["id"]) for r in _rows("query-results", data) if r.get("id")]
         return obs(status, "live", "seed")
@@ -445,11 +460,59 @@ class _Probe:
                            "insert cannot be proven read-only")
 
 
+    def or_chain_length_ladder(self) -> Dict[str, Any]:
+        """How long an or-chain each route accepts. Statuses only.
+
+        Opt-in (``--chain-ladder``), because it is the only probe whose cost grows with the
+        ladder and because what comes out of it is a number for one deployment's YAML, never a
+        default in ``spec.py``. Every rung sends ``take: 0``, so the ladder moves no row data;
+        what is recorded is the status and the length of the rendered filter, never a value.
+
+        The filter length is recorded beside the term count because a server that bounds the
+        filter *string* rejects a chain of long ids before a chain of short ones -- read as a
+        term count alone, that reads as a flaky limit.
+        """
+        if not self.chain_ladder:
+            return not_run("--chain-ladder not given")
+        out: Dict[str, Any] = {}
+
+        steps: Optional[Dict[str, Any]] = {}
+        if not self.result_ids:
+            steps = None
+        else:
+            for n in _CHAIN_LADDER:
+                if n > len(self.result_ids):
+                    steps[str(n)] = {"status": None,
+                                     "detail": f"only {len(self.result_ids)} result ids available"}
+                    continue
+                body = self.steps_body(self.result_ids[:n], take=0)
+                status, _ = self.c.query("query-steps", body)
+                steps[str(n)] = {"status": status, "filter_chars": len(body["filter"])}
+        out["query-steps"] = steps
+
+        products: Dict[str, Any] = {}
+        for n in _CHAIN_LADDER:
+            filt = " || ".join(f"partNumber == @{i}" for i in range(n))
+            body = self.body(filt, [self.pn] * n, take=0)
+            status, _ = self.c.query("query-products", body)
+            products[str(n)] = {"status": status, "filter_chars": len(body["filter"])}
+        out["query-products"] = products
+
+        return obs(out, "live",
+                   "take 0 on every rung, so no row data moves; status and rendered filter "
+                   "length only. query-steps uses one distinct result id per term and a rung "
+                   "wider than the seeded results is skipped. query-products repeats the one "
+                   "--part-number per term: the chain and the filter are the right length, but "
+                   "the terms are not distinct, so it bounds the route's chain and says nothing "
+                   "about matching. The whole ladder is walked rather than stopped at the first "
+                   "rejection, so a non-monotonic answer is visible rather than hidden.")
+
+
 # ------------------------------------------------------------------------ main
 
 _LIVE_NAMES = ("descending_honoured", "projection_accepted", "max_take_accepted",
                "return_count_take_zero", "step_id_unique", "result_id_list_filter",
-               "continuation_token_stable")
+               "continuation_token_stable", "or_chain_length_ladder")
 
 
 def _sanitize_version(v: str) -> str:
@@ -461,7 +524,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--component", required=True)
     p.add_argument("--part-number")
     p.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
-    p.add_argument("--swagger-path", action="append")
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--swagger-path", action="append",
+                     help="a path on the server to try, repeatable; the default list is tried in order")
+    src.add_argument("--swagger-file",
+                     help="read the swagger document from this local file instead of fetching it, "
+                          "for a server that serves it only to a browser login")
+    p.add_argument("--chain-ladder", action="store_true",
+                   help="walk the or-chain length ladder on query-steps and query-products, "
+                        "recording the status of each rung; needs --part-number")
     p.add_argument("--pages", type=int, default=3)
     p.add_argument("--page-take", type=int, default=2)
     p.add_argument("--overwrite", action="store_true")
@@ -469,7 +540,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.chain_ladder and not args.part_number:
+        # A silently ignored flag is how a probe reports a ladder it never walked.
+        parser.error("--chain-ladder needs --part-number")
     # httpx logs full request URLs at INFO; the host must not reach any log.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
@@ -487,19 +562,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             swagger_paths, verify=conn["verify_tls"])
     try:
         doc, swagger_path = None, None
-        for sp in swagger_paths:
-            resp = client.get_swagger(sp)
-            if resp.status_code == 200:
-                try:
-                    doc = yaml.safe_load(resp.text)
-                except yaml.YAMLError:
-                    print("error: the swagger document did not parse", file=sys.stderr)
-                    return 2
-                swagger_path = sp
-                break
-        if doc is None:
-            print("error: no swagger path answered 200", file=sys.stderr)
-            return 2
+        if args.swagger_file:
+            # No GET is made at all on this route: with no --part-number the probe
+            # touches the network zero times.
+            source = "file"
+            try:
+                text = Path(args.swagger_file).read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"error: the swagger file could not be read: {type(e).__name__}", file=sys.stderr)
+                return 2
+            try:
+                doc = yaml.safe_load(text)
+            except yaml.YAMLError:
+                print("error: the swagger document did not parse", file=sys.stderr)
+                return 2
+            if not isinstance(doc, dict):
+                print("error: the swagger document is not a mapping", file=sys.stderr)
+                return 2
+        else:
+            source = "server"
+            for sp in swagger_paths:
+                resp = client.get_swagger(sp)
+                if resp.status_code == 200:
+                    try:
+                        doc = yaml.safe_load(resp.text)
+                    except yaml.YAMLError:
+                        print("error: the swagger document did not parse", file=sys.stderr)
+                        return 2
+                    swagger_path = sp
+                    break
+            if doc is None:
+                print("error: no swagger path answered 200", file=sys.stderr)
+                return 2
         observations, declared, version = parse_swagger(doc)
         out_file = Path(args.out_dir) / f"{_sanitize_version(version)}.json"
         if out_file.exists() and not args.overwrite:
@@ -507,7 +601,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
         if args.part_number:
             observations.update(_Probe(client, args.part_number, conn.get("workspace_id"),
-                                       declared, args.pages, args.page_take).run_all())
+                                       declared, args.pages, args.page_take,
+                                       chain_ladder=args.chain_ladder).run_all())
         else:
             for name in _LIVE_NAMES:
                 observations[name] = {"value": None, "evidence": "not_run",
@@ -522,7 +617,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "schema_version": SCHEMA_VERSION,
         "probe": PROBE_NAME,
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "server": {"version": version, "swagger_path": swagger_path},
+        # swagger_source says where the document came from; swagger_path is the
+        # path ON THE SERVER that answered, and is null for a local file -- the
+        # operator's own path is never recorded.
+        "server": {"version": version, "swagger_source": source, "swagger_path": swagger_path},
         "observations": observations,
         "requests": client.requests,
     }
