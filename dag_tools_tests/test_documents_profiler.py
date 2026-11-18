@@ -1,6 +1,7 @@
 """Tests for the document bundle profiler (synthetic vocabulary only)."""
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -153,8 +154,13 @@ def test_state_is_json_and_not_pickle(zip_src, tmp_path):
 def test_cli_help_and_profile(zip_src, tmp_path):
     from dag_tools.qual.cli import app
 
-    r = CliRunner().invoke(app, ["documents", "profile", "--help"])
-    assert r.exit_code == 0 and "--report-only" in r.output
+    # Rich styles option names with ANSI escapes wherever it thinks a terminal
+    # is attached (CI runners included), which splits "--report-only" in the
+    # raw output. Ask for plain text and strip any styling that survives.
+    r = CliRunner().invoke(app, ["documents", "profile", "--help"],
+                           env={"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "200"})
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", r.output)
+    assert r.exit_code == 0 and "--report-only" in plain, plain
     r = CliRunner().invoke(app, ["documents", "profile", "--source", str(zip_src),
                                  "--out", str(tmp_path / "o")])
     assert r.exit_code == 0, r.output
