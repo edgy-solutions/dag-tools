@@ -62,8 +62,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 # Two layouts, as in main.py: the deployed image is flat `/app` and a bare relative import
 # is a startup CrashLoop; the tests import the package form.
@@ -671,3 +672,311 @@ def announce() -> str:
     )
     _PKG_LOGGER.info(line)
     return line
+
+
+# ---------------------------------------------------------------------------
+# The startup self-check: can this process verify a signed token AT ALL?
+# ---------------------------------------------------------------------------
+# A gateway whose token library is installed without signature support starts cleanly, passes
+# its healthcheck and then refuses every token it is handed. The refusal vocabulary is
+# deliberately NOT where that is answered -- a token this process cannot verify is in fact
+# unverified, and every reason token is an HTTP status and a number on `/health` (ADR 4o-1) --
+# so it is answered here instead, as a deployment fact: the process asks itself at startup
+# whether it can verify a signed token, and a process that cannot is NOT READY.
+#
+# The check SIGNS a token and VERIFIES it. Reading the library's algorithm registry would have
+# been cheaper and would have caught this one fault, but it answers a different question --
+# whether a name is registered -- and the question worth gating readiness on is the one an
+# operator would ask: can this process verify a signed token. So it is measured rather than
+# inferred.
+
+#: The check's own issuer and audience. They name nothing real on purpose: a round trip over the
+#: deployment's configured issuer would prove nothing more about it, and would read in a log as
+#: though a token from that issuer had been seen. Neither is URL-SHAPED either, although `iss`
+#: usually is: this module writes down no issuer and no audience value, and that seal cannot tell
+#: a reserved name from somebody's deployment -- nor should it have to. The round trip needs a
+#: claim it can compare, not a locator, so it uses one that can never be mistaken for an address.
+_SELF_CHECK_ISSUER = "gateway-self-check-issuer"
+_SELF_CHECK_AUDIENCE = "gateway-self-check"
+
+#: `SignatureCheck.problem` values: the states that are not a per-algorithm answer. NONE of them
+#: is a refusal reason. `REASONS` is the vocabulary of what this gateway says about a TOKEN;
+#: these say something about the PROCESS, and a reader must never be able to take one for the
+#: other -- which is why `no_algorithm_configured` is spelled nothing like `unconfigured`.
+LIBRARY_ABSENT = "library_absent"
+NO_ALGORITHM_CONFIGURED = "no_algorithm_configured"
+CHECK_FAILED = "check_failed"
+
+
+class SignatureCheck(NamedTuple):
+    """What this process can and cannot verify, measured once at startup.
+
+    FOUR per-algorithm buckets, because there are four different things to do about one:
+
+        verified     -- signed and verified here, in this process. The answer that matters.
+        unsupported  -- the library does not register it. The ruled fault: it needs a new image.
+        unexercised  -- registered, but this check cannot mint a key for its family.
+                        Registration means the backend for it imported, and that is then the
+                        whole of what is known; a future algorithm must not make a working
+                        gateway unready over this check's own ignorance.
+        failed       -- registered, a key was minted, and the round trip did not come back. Not
+                        the ruled fault, and gated all the same: it is still a process that
+                        cannot verify what it is configured for.
+
+    Collapsing `unsupported` into `failed` would send an operator to the wrong fix, and
+    collapsing `unexercised` into either would make this check an outage of its own.
+    """
+
+    configured: Tuple[str, ...] = ()
+    verified: Tuple[str, ...] = ()
+    unsupported: Tuple[str, ...] = ()
+    unexercised: Tuple[str, ...] = ()
+    failed: Tuple[str, ...] = ()
+    problem: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        """Is this process fit to be sent tokens?
+
+        `check_failed` answers YES, alone among the problems, and that is deliberate: an
+        instrument may never break the thing it measures. A configured algorithm the library
+        does not register is a measurement OF THE DEPLOYMENT; a check that threw is a
+        measurement of the check, and taking every pod out over the latter is the failure mode
+        this mechanism exists to prevent rather than a strict reading of it. It is logged at
+        ERROR and published, so it is loud rather than silent.
+
+        A PARTIAL answer is not ready. A gateway configured for two algorithms and able to
+        verify one of them can verify `a` signed token and cannot verify the tokens its issuer
+        actually mints; every one of those is refused as invalid, which is the fault in full.
+        """
+        if self.problem == CHECK_FAILED:
+            return True
+        return not (self.problem or self.unsupported or self.failed)
+
+    def message(self) -> str:
+        """One sentence an operator can act on. Names algorithms and env var NAMES only."""
+        if self.problem == LIBRARY_ABSENT:
+            return (
+                "the token library is not installed in this image, so no signature can be "
+                "verified and every token is refused"
+            )
+        if self.problem == NO_ALGORITHM_CONFIGURED:
+            return (
+                "no signing algorithm is configured, so no token can verify whatever its "
+                "signature -- set GATEWAY_JWT_ALGORITHMS"
+            )
+        if self.problem == CHECK_FAILED:
+            return (
+                "the startup signature self-check did not complete, so nothing is known about "
+                "this image's signature support; readiness is not gated on a check that broke"
+            )
+        if self.unsupported:
+            return (
+                "this image cannot verify %s: the token library is installed without signature "
+                "support, so such a token is refused as invalid whatever its signature. Install "
+                "it as pyjwt[crypto], or configure an algorithm this image supports."
+                % ", ".join(self.unsupported)
+            )
+        if self.failed:
+            return (
+                "this process could not sign and verify a token with %s, although the library "
+                "registers it" % ", ".join(self.failed)
+            )
+        if self.verified:
+            return "this process signs and verifies %s" % ", ".join(self.verified)
+        return (
+            "this image registers %s and this check cannot exercise it, so registration is all "
+            "that is known" % ", ".join(self.unexercised)
+        )
+
+    def report(self) -> Dict[str, Any]:
+        """The published form, for `/ready`'s refusal and `/health`'s body.
+
+        Algorithm names and one sentence. No key, no token, no claim and no env var VALUE -- the
+        keys this check signs with are minted in memory for it and never leave it.
+        """
+        return {
+            "ready": self.ok,
+            "configured": list(self.configured),
+            "verified": list(self.verified),
+            "unsupported": list(self.unsupported),
+            "unexercised": list(self.unexercised),
+            "failed": list(self.failed),
+            "problem": self.problem,
+            "message": self.message(),
+        }
+
+
+def _self_check_keypair(alg: str):
+    """A throwaway key pair for `alg`, or None if this check does not know its family.
+
+    Minted in memory, per process, for this check alone: never written, never logged, never
+    sent. The families are the ones RFC 7518 and RFC 8037 bind to these algorithm names -- a
+    protocol's vocabulary, like the HTTP statuses the plan handlers branch on, and not a name
+    from below.
+
+    None means UNEXERCISED, never unsupported: an algorithm a later library registers and this
+    check cannot mint a key for is one whose backend demonstrably imported.
+
+    A failure to mint is NOT caught here. It propagates, and the caller records the algorithm as
+    `failed` -- a key family this code claims to know and cannot produce is a process that
+    cannot verify, which is the safe direction to be wrong in.
+    """
+    if alg.startswith("HS"):
+        # One secret, both sides: that is what makes it symmetric.
+        secret = os.urandom(32)
+        return secret, secret
+    if alg.startswith(("RS", "PS")):
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        return key, key.public_key()
+    if alg.startswith("ES"):
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        curves = {
+            "ES256": ec.SECP256R1,
+            "ES384": ec.SECP384R1,
+            "ES512": ec.SECP521R1,
+            "ES256K": ec.SECP256K1,
+        }
+        curve = curves.get(alg)
+        if curve is None:
+            return None
+        key = ec.generate_private_key(curve())
+        return key, key.public_key()
+    if alg == "EdDSA":
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        key = ed25519.Ed25519PrivateKey.generate()
+        return key, key.public_key()
+    return None
+
+
+def _round_trip(jwt_module, alg: str) -> Optional[bool]:
+    """Sign a token with `alg` and verify it. True, False, or None for an unknown key family.
+
+    Decoded under the same options `_verify` decodes a real token with, so the round trip
+    exercises the required claims and the audience check rather than a bare signature.
+    """
+    keys = _self_check_keypair(alg)
+    if keys is None:
+        return None
+    signing, verifying = keys
+    token = jwt_module.encode(
+        {
+            "iss": _SELF_CHECK_ISSUER,
+            "aud": _SELF_CHECK_AUDIENCE,
+            "exp": int(time.time()) + 60,
+        },
+        signing,
+        algorithm=alg,
+    )
+    claims = jwt_module.decode(
+        token,
+        verifying,
+        algorithms=[alg],
+        audience=_SELF_CHECK_AUDIENCE,
+        options={"verify_aud": True, "require": ["exp", "iss", "aud"]},
+    )
+    return claims.get("iss") == _SELF_CHECK_ISSUER
+
+
+def check_signature_support() -> SignatureCheck:
+    """Sign and verify a token with each configured algorithm. NEVER raises, reaches no network.
+
+    No key source is read and no JWKS is fetched: the question is what this PROCESS can do, and
+    a check that needed the issuer to be reachable would answer a different question and would
+    report an outage somewhere else as an image fault.
+
+    An empty algorithm list is reported before the library is even imported, because it is a
+    fault whatever is installed: `jwt.decode(algorithms=[])` accepts nothing, so every token is
+    refused as invalid, and that state otherwise looks exactly like a quiet one.
+    """
+    try:
+        configured = tuple(_algorithms())
+    except Exception:  # noqa: BLE001
+        return SignatureCheck(problem=CHECK_FAILED)
+    if not configured:
+        return SignatureCheck(problem=NO_ALGORITHM_CONFIGURED)
+    try:
+        import jwt as jwt_module
+    except Exception:  # noqa: BLE001
+        return SignatureCheck(configured=configured, problem=LIBRARY_ABSENT)
+    try:
+        available = set(jwt_module.algorithms.get_default_algorithms())
+    except Exception:  # noqa: BLE001
+        return SignatureCheck(configured=configured, problem=CHECK_FAILED)
+    verified: List[str] = []
+    unsupported: List[str] = []
+    unexercised: List[str] = []
+    failed: List[str] = []
+    for alg in configured:
+        if alg not in available:
+            unsupported.append(alg)
+            continue
+        try:
+            answer = _round_trip(jwt_module, alg)
+        except Exception:  # noqa: BLE001
+            failed.append(alg)
+            continue
+        if answer is None:
+            unexercised.append(alg)
+        elif answer:
+            verified.append(alg)
+        else:
+            failed.append(alg)
+    return SignatureCheck(
+        configured=configured,
+        verified=tuple(verified),
+        unsupported=tuple(unsupported),
+        unexercised=tuple(unexercised),
+        failed=tuple(failed),
+    )
+
+
+_signature_check: Optional[SignatureCheck] = None
+
+
+def run_signature_self_check() -> SignatureCheck:
+    """Run the check ONCE, at startup, and remember the answer. Logs it; never raises.
+
+    Once rather than per probe for two reasons. A readiness probe runs every few seconds for the
+    life of the pod, and minting a key on each one is a cost paid forever for an answer that
+    cannot have changed. And it cannot change: the library is baked into the image, and the
+    algorithm list arrives as an environment variable, which is populated once, when the process
+    starts -- so a fix takes a restart, and the restart is what re-runs this.
+    """
+    global _signature_check
+    try:
+        check = check_signature_support()
+    except Exception as exc:  # noqa: BLE001  # the function above promises not to; belt and braces
+        check = SignatureCheck(problem=CHECK_FAILED)
+        _PKG_LOGGER.error("identity: the signature self-check raised (%s)", type(exc).__name__)
+    _signature_check = check
+    line = "identity: signature self-check ready=%s configured=%s verified=%s%s%s%s%s" % (
+        "yes" if check.ok else "no",
+        ",".join(check.configured) or "none",
+        ",".join(check.verified) or "none",
+        (" unsupported=" + ",".join(check.unsupported)) if check.unsupported else "",
+        (" unexercised=" + ",".join(check.unexercised)) if check.unexercised else "",
+        (" failed=" + ",".join(check.failed)) if check.failed else "",
+        (" problem=" + check.problem) if check.problem else "",
+    )
+    if check.ok and not check.problem:
+        _PKG_LOGGER.info(line)
+    else:
+        # Loud even where readiness is not gated: `check_failed` is the one state in which this
+        # gateway serves while knowing nothing about its own signature support.
+        _PKG_LOGGER.error("%s -- %s", line, check.message())
+    return check
+
+
+def signature_self_check() -> Optional[SignatureCheck]:
+    """The startup answer, or None if the check has not run.
+
+    None never gates. Readiness is refused on a NEGATIVE verdict, never on the absence of one:
+    a gateway that has not been asked has not answered no. That the question is always asked is
+    a property of the lifespan, where it is sealed, not of this reader.
+    """
+    return _signature_check

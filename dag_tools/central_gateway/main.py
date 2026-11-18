@@ -98,6 +98,12 @@ async def lifespan(app: FastAPI):
     principal_gauge.announce()
     refusal_gauge.announce()
     identity.announce()
+    # Ask this process whether it can verify a signed token, ONCE, here. The answer cannot
+    # change while the process runs -- the library is baked into the image and the algorithm
+    # list arrives as an environment variable, which is populated once, at startup -- so a
+    # readiness probe reads the cached verdict rather than minting a key every few seconds.
+    # It never raises; a check that broke leaves the gateway ready and says so loudly.
+    identity.run_signature_self_check()
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     logger.info("Connected to Redis.")
     yield
@@ -167,11 +173,35 @@ async def health_check():
     except Exception as exc:  # noqa: BLE001
         logger.warning("refusal-reason counts unavailable (%s)", type(exc).__name__)
         body["refusal_reasons"] = None
+    # Its own block again, and on the LIVENESS body rather than only the readiness refusal: a
+    # pod held out of service answers no probe an operator reads, so the one place the verdict
+    # is legible while nothing is being served is here. Liveness is not readiness, so this
+    # still answers 200 when the verdict is negative -- restarting the pod fixes nothing, since
+    # the next process gets the same image and the same environment.
+    try:
+        signing = identity.signature_self_check()
+        body["signature_support"] = None if signing is None else signing.report()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("signature self-check unavailable (%s)", type(exc).__name__)
+        body["signature_support"] = None
     return body
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness probe: checks if critical dependencies (Redis) are reachable."""
+    """Readiness probe: can this process verify a signed token, and is Redis reachable?
+
+    The signature verdict is checked FIRST, and that order is the point. A gateway whose token
+    library cannot verify the algorithm it is configured for refuses every token it is handed,
+    and Redis is usually fine at the same moment -- so a gateway that reported "Redis
+    unreachable" or nothing at all would send the operator to the wrong suspect. It is also the
+    one of the two faults that will never fix itself: Redis comes back, an image does not.
+
+    A verdict of None does not gate. Readiness is refused on a NEGATIVE answer, never on the
+    absence of one; that the question is always asked is sealed in the lifespan.
+    """
+    signing = identity.signature_self_check()
+    if signing is not None and not signing.ok:
+        raise HTTPException(status_code=503, detail=signing.report())
     if not redis_client:
         raise HTTPException(status_code=503, detail="Redis client not initialized")
     try:

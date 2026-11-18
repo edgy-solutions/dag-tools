@@ -384,11 +384,22 @@ def test_health_carries_the_reason_counts(monkeypatch):
 
 
 def test_no_existing_health_key_changes(monkeypatch):
-    """The probe body gains one key and changes nothing. `/health` is a liveness contract."""
+    """The probe body gains keys and changes none. `/health` is a liveness contract.
+
+    The set is spelled out rather than loosened to a subset check, so a key added here is a
+    deliberate edit of this line and not something that arrives unnoticed. `signature_support` is
+    the startup signature verdict, which rides on `/health` because a pod `/ready` is holding out
+    of service answers no probe an operator reads.
+    """
     body = TestClient(gateway.app).get("/health").json()
     assert body["status"] == "ok"
     assert "principal_record" in body
-    assert set(body) == {"status", "principal_record", "refusal_reasons"}
+    assert set(body) == {
+        "status",
+        "principal_record",
+        "refusal_reasons",
+        "signature_support",
+    }
 
 
 def test_health_still_answers_when_the_reason_counter_misbehaves(monkeypatch):
