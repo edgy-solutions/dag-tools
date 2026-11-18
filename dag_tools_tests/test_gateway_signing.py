@@ -177,6 +177,11 @@ def test_the_workflow_runs_the_check_against_the_built_gateway_image():
     loaded = [s for s in steps if (s.get("with") or {}).get("load") is True]
     assert len(loaded) == 1, [s.get("name") for s in loaded]
     assert "central-gateway" in loaded[0]["if"]
+    # `push: false` unconditionally, which is also what keeps the digest-capture
+    # seal in test_image_record_ci.py honest: that test counts the steps that
+    # push, and it can only tell this one apart because this one says so.
+    assert loaded[0]["with"]["push"] is False
+    assert loaded[0].get("id") != "push"
     runners = [s for s in steps if "check_gateway_signing.py" in (s.get("run") or "")]
     assert len(runners) == 1, [s.get("name") for s in steps]
     assert "central-gateway" in runners[0]["if"]

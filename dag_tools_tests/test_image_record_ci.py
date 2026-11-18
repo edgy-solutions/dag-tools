@@ -464,13 +464,29 @@ def test_the_declared_fleet_is_both_matrices(workflow):
 
 def test_the_build_step_captures_the_digest_it_mints(workflow):
     """Without an ``id:`` the push's digest is unreadable, and it is the one
-    fact nothing downstream can recover."""
+    fact nothing downstream can recover.
+
+    The count is of the steps that PUSH, not of every build step. The job also
+    builds the gateway image locally for the signing check, which pushes
+    nothing and so mints no digest for anything to record. A step counts as
+    non-pushing only if it says ``push: false`` unconditionally -- the pushing
+    step's own value is an expression (``github.event_name == 'push'``), and
+    the action pushes by default when the key is absent -- so a second pushing
+    step still trips the count whether it pushes always or only sometimes.
+    That is the property worth keeping: with two of them, WHICH digest the
+    record names would be an accident of ordering.
+    """
     steps = workflow["jobs"]["build"]["steps"]
-    push = [
+    builds = [
         s for s in steps if str(s.get("uses", "")).startswith("docker/build-push-action")
     ]
-    assert len(push) == 1
+    push = [s for s in builds if s.get("with", {}).get("push", True) is not False]
+    assert len(push) == 1, [s.get("name") for s in push]
     assert push[0]["id"] == "push"
+    for other in builds:
+        if other is push[0]:
+            continue
+        assert other.get("id") != "push", other.get("name")
     record = [s for s in steps if s.get("name") == "Record this image's ref"]
     assert len(record) == 1
     assert "steps.push.outputs.digest" in record[0]["env"]["DIGEST"]
