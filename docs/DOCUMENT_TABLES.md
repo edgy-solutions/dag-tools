@@ -2,7 +2,7 @@
 
 Bundles of structured documents go in. One Lance table per mapped entity comes out.
 
-A **bundle** is a zip or a directory tree, local or on S3, holding documents (XML today) and
+A **bundle** is a zip or a directory tree, local or on S3, holding documents (XML or JSON) and
 the files they refer to, such as images. A **mapping** is a YAML file the deployment writes. It
 says which documents to read, which rows each table takes from them, and how each column is
 computed and typed. The component reads the mapping, adds one Dagster partition per bundle and
@@ -17,7 +17,10 @@ mapping, which the deployment keeps to itself. The one format that appears in th
 - [Quick start](#quick-start)
 - [The component](#the-component)
 - [The mapping](#the-mapping) (and [`vars` are per document](#the-mapping),
-  [scoped indexes](#scoped-indexes), [parser limits](#parser-limits))
+  [JSON documents](#json-documents), [rows chains](#rows-chains-reaching-another-level),
+  [scoped indexes](#scoped-indexes), [member tables](#member-tables),
+  [several tables, one dataset](#several-tables-one-dataset-into),
+  [parser limits](#parser-limits))
 - [What a run produces](#what-a-run-produces)
 - [Profiling bundles before writing a mapping](#profiling-bundles-before-writing-a-mapping)
 - [Concurrency and Lance: what was measured](#concurrency-and-lance-what-was-measured)
@@ -53,13 +56,13 @@ attributes:
     storage_options:                 # handed to Lance as-is; secrets as env references
       aws_access_key_id: "{{ env('AWS_ACCESS_KEY_ID') }}"
       aws_secret_access_key: "{{ env('AWS_SECRET_ACCESS_KEY') }}"
-    flush_rows: 50000                # rows buffered per table before a write
+    flush_rows: 50000                # rows buffered per dataset before a write
   asset_key_prefix: [documents]      # default: [<name>]
   checks:
     max_reject_rate: 0.0
     min_file_resolution_rate: 1.0
     unknown_paths: 0
-    allow_empty: []                  # tables allowed to come out with no rows
+    allow_empty: []                  # datasets allowed to come out with no rows
   discovery:
     interval_seconds: 300
     max_new_partitions_per_tick: 25
@@ -86,7 +89,7 @@ Use the call form: the attribute form `{{ env.X }}` does not resolve on Dagster 
 
 | Definition | Name | Notes |
 |---|---|---|
-| Multi-asset | `<name>_tables` | One asset per mapping table, plus `_rejects`. Dynamically partitioned, one partition per bundle. |
+| Multi-asset | `<name>_tables` | One asset per dataset (a mapping table, or tables sharing an `into`), plus `_rejects`. Dynamically partitioned, one partition per bundle. |
 | Asset job | `<name>_ingest` | Selects exactly those assets. |
 | Sensor | `<name>_discovery` | Adds a partition per new bundle and requests its run. STOPPED by default. |
 | Job | `<name>_maintenance` | Compacts every table, maintains its `source_bundle` index and removes old versions. |
@@ -120,6 +123,7 @@ document:
   max_bytes: 1000000            # larger documents are rejected, not parsed
   huge_tree: false              # lift the XML parser's built-in limits; see "Parser limits"
   strip_namespaces: false
+  nulls: []                     # strings meaning absent; see "Column options"
 
 lineage:
   publish_period:               # every row carries publish_period
@@ -156,9 +160,10 @@ tables:
         expr: "@weight"
 ```
 
-Expressions are XPath 1.0 (through lxml), evaluated relative to the row node. Common shapes
-(`@attr`, `child/@attr`, `child`) take a fast path that skips XPath; a test holds the fast path
-equal to XPath.
+Expressions are XPath 1.0 (through lxml) for `format: xml` and JMESPath for `format: json`
+(see [JSON documents](#json-documents)), evaluated relative to the row node. Common shapes
+(`@attr`, `child/@attr`, `child`; a dotted chain of JSON keys) take a fast path that skips
+XPath or JMESPath; a test holds each fast path equal to the full engine.
 
 > **`vars` are evaluated once per document, not once per row.**
 >
@@ -173,6 +178,76 @@ equal to XPath.
 >
 > A var that yields nothing becomes the empty string. Use vars for values that really are
 > per document, such as a header field that every row should carry.
+
+### JSON documents
+
+```yaml
+document:
+  format: json                  # expressions are JMESPath; needs the documents extra (jmespath)
+  match: ["**/*.json"]
+  max_bytes: 1000000
+expected_paths: [$, $.Depot, $.Depot."Dock door", $.parcels, $.parcels[], $.parcels[].id]
+tables:
+  parcels:
+    rows: parcels[]
+    columns:
+      parcel_id: id
+      door: {type: int32, from: root, expr: 'Depot."Dock door"'}
+```
+
+- **Every XML guarantee holds.** Expressions are compiled once, a dotted chain of keys takes a
+  fast path, coercion never raises, a document is committed whole or rejected, and the
+  structure is checked against `expected_paths`.
+- **Keys that are not identifiers** are quoted the JMESPath way: `Depot."Dock door"`,
+  `"Count(late)"`. That works in expressions, in the fast path, in structural paths and in
+  `expected_paths`.
+- **Structural paths** are written `$`, `$.key`, `$.key.sub`, `$.list[]`, `$.list[].leaf`, and a
+  list inside a list is `$.grid[][]`. The profiler writes `paths/<family>.txt` in this form, so
+  its output pastes straight into `expected_paths`.
+- **Native values.** A JSON `3` or `3.0` fills an `int32`; `3.5` does not and is a counted
+  coercion failure. `true` fills a `bool`. A string goes through the same text parsing as an
+  XML attribute (`"4"` fills an `int32`). An object or a list where one value was expected is a
+  counted coercion failure.
+- **`a[][]` flattens** one level per `[]`, as JMESPath does.
+- **Nothing to read is not a reject.** A zero-byte file, `{}`, `[]` and a bare scalar such as
+  `3` give no rows and no `_rejects` row. Only text that is not JSON is rejected, and the
+  message names a line and column, never the text. `NaN` and `Infinity` are not JSON and are
+  rejected; a number too large to be finite (`1e999`) is kept as its text and refused by a
+  `float64` column exactly as the XML route refuses it.
+- **A UTF-8 BOM is accepted.**
+- **No `vars`.** JMESPath has no variables. A JSON mapping reaches another level with `from:`
+  (below). `huge_tree` and `strip_namespaces` apply to XML only and fail the load under
+  `format: json`.
+
+### Rows chains: reaching another level
+
+A plain-string `rows` keeps its meaning. A list of levels names each step instead:
+
+```yaml
+tables:
+  scans:
+    rows:
+      - {as: parcel, each: "parcels[]"}   # evaluated from the root
+      - {as: scan, each: "scans[]"}       # evaluated from every parcel
+    columns:
+      parcel_id: {from: parcel, expr: id} # read at the parcel this scan belongs to
+      scan_id: id                         # the row node: the last level
+      manifest_id: {from: root, expr: id}
+      scan_pos: {index_of: scan}          # 0-based within this parcel's scans[]
+```
+
+- The first level's `each` is evaluated from the root, each later one from every node of the
+  level before. The row node is the last level.
+- `from: <level>` evaluates the column at that level's node. `root` is always available, also
+  on a plain-string `rows`. It applies to `expr`, `first_of`, a lookup's `keys` and `scope`, a
+  `list<struct>`'s `rows` and a file column's `expr`. It is how a JSON mapping does what an XML
+  mapping does with `../@id`, and it works for XML too.
+- `index_of: <level>` is the 0-based position of that level's node within its own `each`
+  result, so it restarts under every parent. It is an `int64`.
+- An index takes the chain form too, and its `from:` applies to its `keys` and `scope`.
+- These fail the load: a level that does not exist; a `from:` other than `root` on a plain-string
+  `rows`; two levels with the same `as:`; `index_of` on a plain-string `rows`; `from:` or
+  `index_of` on a `list<struct>` field (they apply to the column).
 
 ### Which members are documents
 
@@ -241,12 +316,60 @@ null out.
 - `first_of: [expr, expr, ...]`: the first expression that yields a value wins.
 - `when_empty: <value>`: what an absent value becomes.
 - `empty_as_null: true`: whether an empty string counts as absent.
+- `nulls: ["-", "N/A", ...]`: strings that mean absent. A value equal to an entry **after
+  trimming** is null, before `split`, `extract`, `map` and coercion, so it takes `when_empty` or
+  `map.null` and is not a coercion failure, an `extract` miss or an unmapped value. The match is
+  on the whole value and is case-sensitive: `NIL` does not match `nil` or `NILx`. A JSON number
+  or bool is compared by its text (`-1` matches `nulls: ["-1"]`).
+  - `document.nulls` is every column's default. A column's own `nulls` **replaces** it, and
+    `nulls: []` turns it off for that column. A `list<struct>` column's `nulls` is its fields'
+    default.
+  - Under `split` the parts are compared one by one: an absent part is dropped, or kept as null
+    under `keep_empty`. In `first_of` and `prefer` an absent value is skipped. A `file`
+    reference that is a `nulls` entry names no file and is not counted missing.
+  - A blank entry fails the load (an empty value is already absent under `empty_as_null`), and
+    so does `nulls` on an `index_of` column, which is a position.
+- `const: <value>`: the same value on every row. It is read as the column's `type` when the
+  mapping loads, so `{type: int32, const: "7"}` stores 7, `list<T>` takes a YAML list, and a
+  YAML date is read as its ISO text. A value that is not a value of the type fails the load,
+  naming the column and never the value. A `timestamp` const takes `format` and `timezone`, and
+  one naming no offset needs `timezone`. `const` reads no source, so it refuses `expr`,
+  `first_of`, `lookup`, `from`, `split`, `extract`, `map`, `nulls`, `when_empty` and the rest;
+  a `file` column has no constant.
 - `map: {values: {...}, default: ..., null: ...}`: translate through a table, comparing keys
   as strings. A value the table does not name takes `default` when one is written (even
   `default: null`). Otherwise it is null, and it is counted (`unmapped_values`) so an
   unfamiliar code is visible.
-- `format`, `timezone`: timestamp columns only. `timezone` is an IANA name read through
-  `zoneinfo`.
+- `split: "<sep>"`: cut one value on a literal separator. Each part is trimmed. Empty parts
+  are dropped unless `keep_empty: true`, and an empty or null value gives `[]`. The column is
+  a `list<T>`, and each part goes through `extract`, `map` and coercion on its own, so a part
+  that cannot be read is counted like any other value. With `prefer`, the parts are the list
+  `prefer` chooses from, and the column is the element type. A kept empty part is null when
+  `empty_as_null` is on (the default).
+- `extract: "<regex>"`: keep part of the value. The result is the named group `value` if the
+  pattern has one, else group 1, else the whole match. It runs before `map` and coercion, so
+  `extract: '^ZX-(?P<value>[0-9]+)$'` with `type: int32` stores the number. A value the pattern
+  does not match is null and counted in `unmapped_values`, like an unmapped `map` value:
+  `when_empty` and `map.null` do not stand in for it, because the source did have a value. A
+  pattern that does not compile fails the load.
+  **The pattern is trusted deployer configuration.** It runs through Python's `re` on every
+  value of the column, and nothing guards against a pattern that backtracks badly: a pattern
+  such as `^(a+)+$` can take seconds or longer on one long value, and the run waits for it.
+  Write anchored patterns without nested repetition, and test them on the longest values the
+  profile shows.
+- `from: <level>`, `index_of: <level>`: see [Rows chains](#rows-chains-reaching-another-level).
+- `format`, `timezone`: timestamp columns only. `format` is a strptime pattern, for values
+  that are not ISO-8601. `timezone` is an IANA name read through `zoneinfo`, and it is required
+  for any value that names no offset: without it such a value is a counted coercion failure,
+  because a naive time names no instant. A value that does name an offset keeps its own.
+
+  ```yaml
+  scanned_at:
+    type: timestamp
+    expr: "@scanned"            # e.g. 01/05/2026 08:30 -- a day-first local time, no offset
+    format: "%d/%m/%Y %H:%M"
+    timezone: Asia/Tokyo        # stored as 2026-04-30T23:30:00Z
+  ```
 - `lookup: {index, keys, scope, field, mode, order, distinct, sort}`: look values up in an
   index built from the same document. `mode` is `exists` (bool), `count` (int64), `first` /
   `last` (the field's type) or `list` (a list of it). An index may look up an index declared
@@ -301,6 +424,100 @@ A lookup into a scoped index without `scope` fails the load, and so does a looku
 counted: per table and column in `null_scopes`, and for index rows in `index_null_scopes` on
 `_rejects`.
 
+### Member tables
+
+A table can describe the bundle's members instead of reading documents:
+
+```yaml
+tables:
+  overviews:
+    members: ["overview_*.png", "*/overview_*.png"]   # same glob rules as document.match
+    columns:
+      name: {member: name}
+      folder: {member: dir}
+      bytes: {type: int64, member: size}
+      side: {member: stem, extract: '^overview_(?P<value>[a-z]+)'}
+      image: {type: file, member: self, probe: image}
+```
+
+- One row per matching member, in path order, once per bundle. `doc_id` is derived from the
+  bundle key and the member path, and `source_file` is the member path.
+- `member:` is one of `path`, `name` (the file name), `stem` (the name without its extension),
+  `ext` (lower-case with the dot, or empty when there is none), `dir` (the folder, empty at the
+  bundle root), `size` (bytes) and `modified`. `member: self` on a `file` column stores the
+  member itself; `probe: image` works as on any file column.
+- `extract`, `map`, `split` and coercion apply as on any column.
+- **A root member's `dir` is null**, because an empty string is null under `empty_as_null`.
+- **A zip member's `modified` names no time zone.** Typed `timestamp` it is a counted coercion
+  failure unless the column declares `timezone`.
+- A member matched by `document.match` may also match a member table, and it is then both read
+  as a document and described as a member.
+- Member tables are written, counted, checked and made idempotent exactly like other tables.
+  A member whose row fails writes a `_rejects` row naming the member.
+- `member:` on a table built from `rows`, and `vars` on a member table, fail the load.
+
+#### Members no document refers to (`only_unreferenced`)
+
+```yaml
+  loose_photos:
+    members: ["**/*.png"]
+    only_unreferenced: true     # keep only members no file column resolved to
+    columns:
+      path: {member: path}
+```
+
+- A member is **referenced** when a `file` column of any table resolved to it, in any document
+  of the bundle. The decision is made after every document has been read, so a reference from
+  a document that sorts after the member still counts.
+- **A rejected document references nothing.** Its rows are dropped from every table, so the
+  members it resolved to stay unreferenced.
+- A reference that did not resolve to exactly one member (missing or ambiguous) references
+  nothing either: an ambiguous pair of candidates is kept, both of them.
+- The run metadata counts `members_kept` and `members_skipped`. On a dataset fed by several
+  tables both are json, keyed by table.
+- `only_unreferenced` on a table built from `rows` fails the load.
+
+### Several tables, one dataset (`into`)
+
+Two tables that describe the same kind of row from different places in a document can write
+one Lance dataset:
+
+```yaml
+tables:
+  flag_events:
+    rows: /Manifest/Parcel/Flag
+    into: events
+    columns:
+      event_id: "@id"
+      kind: {const: flag}
+  scan_events:
+    rows: /Manifest/Parcel/Scan
+    into: events
+    columns:
+      kind: {const: scan}       # column order is not part of the schema
+      event_id: "@id"
+```
+
+- **One asset per dataset.** `events` is the asset; `flag_events` and `scan_events` are not.
+  The asset's description names the tables that feed it.
+- **The columns must be identical.** Every table sharing an `into` declares the same column
+  names with the same types, and either every one of them declares a `row_id` or none does.
+  Otherwise the load fails at `tables.<name>.into`, naming the columns only one side has and
+  each column whose type differs.
+- **`into` may name a table**, and then joins that table's own dataset. Naming a table that
+  itself writes elsewhere, `_rejects`, or a name that is not an identifier fails the load.
+- **Writes, counts and checks are per dataset.** The bundle's rows of every feeding table are
+  deleted together and appended together. `coercion_failures` and the other per-column counts
+  are kept under the dataset. The checks attach to the dataset, and `checks.allow_empty`
+  names the dataset, never a table that feeds it.
+- **`rows_by_table`** in the dataset's metadata counts the rows each feeding table wrote. A
+  dataset fed by one table does not carry it.
+- **A `row_id` must be unique across every table sharing the dataset.** Nothing checks this:
+  two tables whose templates can produce the same id write rows a reader cannot tell apart. Put
+  something that differs per table into the template, such as a `const` column naming the
+  table (`row_id: "{kind}/{event_id}"`).
+- A member table and a document table may share an `into`.
+
 ### System columns
 
 Every table carries `doc_id`, `source_bundle`, `source_file`, `publish_period` and
@@ -321,6 +538,7 @@ image:
     - document_dir              # relative to the referring document's directory
     - bundle_root               # relative to the bundle root
     - basename_under: "{document_stem}"   # by file name, anywhere under that directory
+    - basename_in: document_dir           # by file name, in exactly that one folder
   probe: image                  # adds _format, _width, _height (needs Pillow)
   store: blob                   # or reference: keep the member path, no bytes
 ```
@@ -329,7 +547,17 @@ A file column emits itself (the bytes, as `large_binary` with `lance-encoding:bl
 the member path under `store: reference`) and also `_ref`, `_member`, `_resolution`, `_bytes`
 and `_sha256`.
 
-`_resolution` holds the strategy that found the member, `missing` or `ambiguous`. A name found
+`basename_in: document_dir | bundle_root` takes the reference's file name and looks for it
+in exactly one folder: the referring document's directory, or the bundle root. It never
+recurses, so it cannot be ambiguous. It is for references carrying a folder prefix the bundle
+does not have (`outbound/p1.png` beside a document that sits next to `p1.png`).
+`basename_under` is unchanged.
+
+A reference that is not text (a JSON number or object where a path was expected) is counted as
+a coercion failure on `<column>_ref` and resolves to nothing.
+
+`_resolution` holds the strategy that found the member (`document_dir`, `bundle_root`,
+`basename_under`, `basename_in`, or `self` in a member table), `missing` or `ambiguous`. A name found
 more than once is ambiguous: the row is kept, and no bytes are stored, because picking one
 would be a guess. The `file_resolution_rate` check is resolved / (resolved + missing +
 ambiguous).
@@ -356,8 +584,23 @@ A mapping is checked twice when the code location loads:
   - `prefer` that is empty, lists a non-scalar value, is combined with `first_of`, sits on a
     `list<...>` type, or reads a source that returns one value (a single-value lookup mode, or
     an expression that is a scalar on its face, such as `string(...)` or `count(...)`);
-  - a `document.match` glob that is empty, starts with `/`, contains a backslash, has `**`
-    inside a segment, or leaves a `[` unclosed.
+  - a `document.match` or `members` glob that is empty, starts with `/`, contains a
+    backslash, has `**` inside a segment, or leaves a `[` unclosed;
+  - in a rows chain: an unknown level in `from:` or `index_of`, a non-root `from:` on a
+    plain-string `rows`, or a duplicate `as:`;
+  - `keep_empty` without `split`, or an `extract` that does not compile;
+  - `member:` outside a member table, or a table with both `rows` and `members` (or neither);
+  - `vars` in a JSON mapping or a member table, and `huge_tree` / `strip_namespaces` under
+    `format: json`.
+  - a blank `nulls` entry, or `nulls` on an `index_of` column;
+  - a `const` that is not a value of its column's type, a `timestamp` const naming no offset
+    with no `timezone`, a `const` combined with anything that reads a source value, or a
+    `const` on a `file` column;
+  - an `into` that is `_rejects`, is not an identifier, or names a table that writes elsewhere;
+    tables sharing an `into` with different columns, types or `row_id`;
+  - `only_unreferenced` on a table that is not a member table;
+  - `checks.allow_empty` naming something that is not a dataset (a table feeding a shared
+    `into` is named by its dataset).
 
 Every problem is reported at once.
 
@@ -400,7 +643,7 @@ source. Measured against moto:
 Locally, discovery at `bundle_depth: 2` reads only the directories above the bundles. The whole
 source is listed only at `bundle_depth: 0`, where the root is the one bundle.
 
-**Materialization metadata, per table:**
+**Materialization metadata, per dataset:**
 
 - `dagster/row_count`, `dagster/column_schema`, `dagster/uri`
 - `documents_parsed`, `documents_rejected`, `rows_deleted`, `duration_seconds`
@@ -410,6 +653,8 @@ source is listed only at `bundle_depth: 0`, where the root is the one bundle.
 - `unknown_paths`, `documents_with_unknown_paths` and a sample of the unknown paths
 - on `_rejects` only: `index_null_scopes`, per index, the index rows whose scope came out null
   or empty and were therefore filed under no key
+- on a dataset fed by several tables (`into`): `rows_by_table`
+- on a member table with `only_unreferenced`: `members_kept` and `members_skipped`
 
 `dagster/column_schema` and `dagster/uri` are what the existing `DatahubLineageComponent`
 sensor reads, so lineage needs no extra wiring.
@@ -422,6 +667,17 @@ sources whose parser errors quote document content.
 **Drift.** Every structural path a document carries (`/Root/Child/@attr`) is compared with
 `expected_paths`. Paths the mapping does not expect are counted, sampled into the metadata and
 checked by `unknown_paths`. Under `on_unknown_path: fail` such a document is rejected.
+
+**Path spelling.** The comparison is of text, so `expected_paths` must spell each path exactly
+as the engine does, and the profiler's `paths/<family>.txt` is written by the engine's own
+function. For JSON, a key that is a JMESPath identifier is written bare (`$.Depot.door`) and any
+other key is written as a JSON string (`$.Depot."Dock door"`, `$."2026"`), which is also how an
+expression quotes it. A list written by hand in another spelling (an identifier quoted, or an
+awkward key left bare) matches nothing, and every document then reports its paths as unknown.
+When every unknown path of a document would match after unquoting, the run says so once per
+bundle in a warning, and under `on_unknown_path: fail` the reject message adds that
+`expected_paths` appear to use a different key spelling. Neither names a path, because a path
+is built from the document's own keys. The fix is to regenerate the list with the profiler.
 
 ## Profiling bundles before writing a mapping
 
@@ -484,14 +740,16 @@ whose run coordinator ignores pools gets no serialisation from it.
   an object store with conditional writes. Until a deployment has measured its own store, keep
   `write_concurrency: 1`.
 - **S3 as a bundle source** is tested against moto, not a real bucket.
-- **Formats other than XML.** `document.format` accepts only `xml`. The profiler also reads
-  JSON, but the engine does not ingest it yet.
 - **S3 listing costs** are counted against moto, not a real bucket.
 - **20,000 rows/s.** The bundled benchmark (`test_throughput_on_a_bulk_manifest`, 120,001
   rows from one 20,000-entry manifest, no Lance write) measures about 13,000-17,000 rows/s on
   a Windows desktop under Python 3.12 and about 14,000-15,000 under 3.10. Scoped indexes,
   `prefer` and the parser-limit check did not move it outside that range. About two thirds of that
   time is spent evaluating values at roughly 4 microseconds each, which is close to the limit
-  of pure Python for this design. Run it yourself with
-  `DAGTOOLS_BENCH=1 pytest dag_tools_tests/test_documents_engine.py -k throughput -s`; under
-  `DAGTOOLS_BENCH=1` the test fails below 20,000.
+  of pure Python for this design. Rows chains, `split`, `extract` and member tables left the
+  XML figure where it was: interleaved against the previous release on one machine, both read
+  about 11,000-16,000 rows/s on 3.12 and 3.10. The same manifest as JSON
+  (`test_json_throughput_on_a_bulk_manifest`) reads about 10,000-11,000 rows/s on 3.12 and
+  8,500-9,700 on 3.10, slower than XML. Run them yourself with
+  `DAGTOOLS_BENCH=1 pytest dag_tools_tests/test_documents_engine.py dag_tools_tests/test_documents_json.py -k throughput -s`;
+  under `DAGTOOLS_BENCH=1` both tests fail below 20,000.

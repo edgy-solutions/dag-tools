@@ -49,6 +49,10 @@ def to_string(v: Any) -> Result:
         return None, False
     if isinstance(v, bool):
         return ("true" if v else "false"), False
+    if isinstance(v, (dict, list)):
+        # A JSON object or array where one value was expected. Its repr is
+        # Python syntax, not the document's text, so it is a failure.
+        return None, True
     return str(v), False
 
 

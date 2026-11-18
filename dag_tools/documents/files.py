@@ -25,7 +25,7 @@ import io
 import posixpath
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from dag_tools.documents.mapping import BasenameUnder
+from dag_tools.documents.mapping import BasenameIn, BasenameUnder
 from dag_tools.documents.sources import Member, normalise_member_path
 
 MISSING = "missing"
@@ -57,7 +57,7 @@ def render_template(template: str, document: Member) -> str:
 def resolve(
     ref: Optional[str],
     document: Member,
-    strategies: Sequence[Union[str, BasenameUnder]],
+    strategies: Sequence[Union[str, BasenameUnder, BasenameIn]],
     index: MemberIndex,
 ) -> Tuple[Optional[Member], Optional[str]]:
     """``(member, outcome)``; outcome is the winning strategy, missing or ambiguous.
@@ -79,6 +79,15 @@ def resolve(
             prefix = root + "/"
             hits = [m for m in index.by_name.get(base, ()) if m.path.startswith(prefix)]
             name = "basename_under"
+        elif isinstance(strat, BasenameIn):
+            # The reference's last segment, looked up in exactly one folder and
+            # never below it. A folder holds one member per name, so this
+            # strategy can miss but cannot be ambiguous.
+            base = posixpath.basename(ref_n)
+            folder = doc_dir if strat.basename_in == "document_dir" else ""
+            m = index.by_path.get(posixpath.join(folder, base) if folder else base) if base else None
+            hits = [m] if m is not None else []
+            name = "basename_in"
         else:
             target = _clean(posixpath.join(doc_dir, ref_n) if strat == "document_dir" else ref_n)
             m = index.by_path.get(target) if target is not None else None

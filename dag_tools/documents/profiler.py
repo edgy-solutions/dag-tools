@@ -45,8 +45,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+from dag_tools.documents.reader import json_path_key, json_structural_paths, xml_structural_paths
 from dag_tools.documents.sources import (
     BundleRef,
     Member,
@@ -241,6 +242,8 @@ class DocWalk:
     counts: Counter = field(default_factory=Counter)
     image_refs: list = field(default_factory=list)
     root: str = ""
+    #: the engine's own structural paths of this document (``expected_paths`` spelling)
+    structural: set = field(default_factory=set)
 
 
 # ------------------------------------------------------------------ checkpoint
@@ -332,11 +335,14 @@ class Profiler:
         self.errors: List[dict] = []
         self.buf: Dict[str, List[dict]] = {t: [] for t in ROW_TABLES}
         self.path_listings: List[Tuple[str, str, int]] = []
+        #: family -> the engine's structural paths over every document of it
+        self.structural: Dict[str, Set[str]] = defaultdict(set)
 
     def state(self) -> Dict[str, Any]:
         return {
             "version": STATE_VERSION,
             "paths": {p: s.to_json() for p, s in self.paths.items()},
+            "structural": {f: sorted(s) for f, s in self.structural.items()},
             "docs_by_kind": dict(self.docs_by_kind), "shapes": self.shapes,
             "dir_templates": dict(self.dir_templates), "assoc": dict(self.assoc),
             "errors": self.errors,
@@ -348,6 +354,16 @@ class Profiler:
         self.shapes = st["shapes"]
         self.dir_templates, self.assoc = Counter(st["dir_templates"]), Counter(st["assoc"])
         self.errors = st["errors"]
+        if "structural" in st:
+            self.structural = defaultdict(set, {f: set(v) for f, v in st["structural"].items()})
+        else:
+            # A checkpoint written before path files came from the engine's own
+            # walk. Its per-path stats are spelled the same way, so they seed it.
+            self.structural = defaultdict(set)
+            for p, ps in self.paths.items():
+                if ps.files_seen > 0 and ":" in p:
+                    fam, rest = p.split(":", 1)
+                    self.structural[fam].add(rest)
 
     def reset_buffers(self) -> None:
         self.buf = {t: [] for t in ROW_TABLES}
@@ -360,6 +376,7 @@ class Profiler:
         parser = etree.XMLParser(recover=False, huge_tree=True, remove_comments=True,
                                  resolve_entities=False, no_network=True)
         root = etree.fromstring(data, parser=parser)
+        w.structural = xml_structural_paths(root)
 
         def walk(el: Any, parent: str) -> None:
             ns, name = local_name(el.tag)
@@ -424,8 +441,9 @@ class Profiler:
             if isinstance(v, dict):
                 st.container = True
                 for k, val in v.items():
-                    self.paths[f"{path}.{k}"].card(1)
-                    walk(val, f"{path}.{k}")
+                    kp = path + json_path_key(k)
+                    self.paths[kp].card(1)
+                    walk(val, kp)
             elif isinstance(v, list):
                 st.container = True
                 ip = f"{path}[]"
@@ -441,6 +459,7 @@ class Profiler:
 
         for d in docs:
             walk(d, f"{fam}:$")
+            w.structural |= json_structural_paths(d)
 
     # ---------------------------------------------------------------- documents
 
@@ -469,6 +488,7 @@ class Profiler:
 
         for p in w.paths:
             self.paths[p].files_seen += 1
+        self.structural[kind] |= w.structural
         for p, n in w.counts.items():
             self.paths[p].occurrences += n
         self.docs_by_kind[kind] += 1
@@ -672,7 +692,15 @@ class Profiler:
         return rows
 
     def write_path_files(self, out: Path, scrub: Optional["Scrubber"] = None) -> None:
-        """One ``paths/<family>.txt`` per document family: sorted structural paths."""
+        """One ``paths/<family>.txt`` per document family: sorted structural paths.
+
+        The lines are the engine's own structural paths
+        (:func:`~dag_tools.documents.reader.xml_structural_paths`,
+        :func:`~dag_tools.documents.reader.json_structural_paths`), so a list pasted
+        into ``expected_paths`` matches the documents it was profiled from. A
+        ``scrub`` pattern that matches a key changes that line, and a changed line
+        no longer matches; that is counted and warned about, never silent.
+        """
         pdir = out / "paths"
         shutil.rmtree(pdir, ignore_errors=True)
         pdir.mkdir(parents=True, exist_ok=True)
@@ -680,11 +708,18 @@ class Profiler:
         listing: List[Tuple[str, str, int]] = []
         for fam in sorted(self.docs_by_kind):
             prefix = f"{fam}:"
-            lines = sorted(p[len(prefix):] for p, st in self.paths.items()
-                           if p.startswith(prefix) and st.files_seen > 0)
-            if scrub:
-                lines = [scrub.text(ln) for ln in lines]
+            lines = sorted(self.structural.get(fam) or (
+                p[len(prefix):] for p, st in self.paths.items() if p.startswith(prefix) and st.files_seen > 0))
             fname = safe_name(fam)
+            if scrub:
+                scrubbed = [scrub.text(ln) for ln in lines]
+                changed = sum(a != b for a, b in zip(lines, scrubbed))
+                lines = scrubbed
+                if changed:
+                    logger.warning(
+                        "scrub changed %d line(s) of the path list for family %s; those lines no "
+                        "longer match the engine's spelling and would be unknown paths in expected_paths",
+                        changed, fname)
             if fname in used and used[fname] != fam:
                 fname = f"{fname}-{hashlib.sha1(fam.encode()).hexdigest()[:6]}"
             used[fname] = fam

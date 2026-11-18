@@ -1757,6 +1757,7 @@ all = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "hypercorn" },
+    { name = "jmespath" },
     { name = "lxml" },
     { name = "moto", extra = ["s3"] },
     { name = "pandas" },
@@ -1766,7 +1767,7 @@ all = [
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pyjwt" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pylance" },
     { name = "pytest" },
     { name = "redis" },
@@ -1783,7 +1784,7 @@ broker = [
     { name = "hypercorn" },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
-    { name = "pyjwt" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "redis" },
     { name = "s3fs" },
 ]
@@ -1798,11 +1799,13 @@ dev = [
 ]
 documents = [
     { name = "boto3" },
+    { name = "jmespath" },
     { name = "lxml" },
     { name = "pillow", version = "12.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pillow", version = "13.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pyarrow" },
     { name = "pylance" },
+    { name = "typer" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 orchestrator = [
@@ -1862,6 +1865,7 @@ requires-dist = [
     { name = "hypercorn", marker = "extra == 'broker'", specifier = ">=0.16" },
     { name = "hypercorn", marker = "extra == 'worker'", specifier = ">=0.16.0" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "jmespath", marker = "extra == 'documents'", specifier = ">=1.0" },
     { name = "lxml", marker = "extra == 'documents'", specifier = ">=5.0" },
     { name = "moto", extras = ["s3"], marker = "extra == 'dev'", specifier = ">=5" },
     { name = "oracledb", specifier = ">=3.4.2" },
@@ -1878,7 +1882,7 @@ requires-dist = [
     { name = "pydantic", marker = "extra == 'worker'", specifier = ">=2.0.0" },
     { name = "pydantic-settings", marker = "extra == 'worker'", specifier = ">=2.0.0" },
     { name = "pyiceberg", specifier = ">=0.7" },
-    { name = "pyjwt", marker = "extra == 'broker'", specifier = ">=2.8" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'broker'", specifier = ">=2.8" },
     { name = "pylance", marker = "extra == 'documents'", specifier = ">=0.20" },
     { name = "pyodbc", specifier = ">=5.3.0" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -1890,6 +1894,7 @@ requires-dist = [
     { name = "s3fs", marker = "extra == 'orchestrator'", specifier = ">=2023.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0,<2.1" },
     { name = "sqlalchemy", marker = "extra == 'worker'", specifier = ">=2.0.0" },
+    { name = "typer", marker = "extra == 'documents'", specifier = ">=0.12" },
     { name = "typer", marker = "extra == 'qual'", specifier = ">=0.12" },
     { name = "tzdata", marker = "sys_platform == 'win32' and extra == 'documents'" },
 ]

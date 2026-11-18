@@ -208,6 +208,15 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Tell a parser limit from malformed XML by a probe re-parse, never by libxml2's error code.** `huge_tree: true` never lifts `max_bytes`.
 - **`document.match` globs never let `*` cross `/`.** Use `**` as a whole segment.
 - **The `source_bundle` index is best-effort.** Its failure is reported and must never fail maintenance.
+- **A JSON document with nothing in it is no rows, not a reject.** Zero bytes, `{}`, `[]` and a bare scalar give no rows. Only text that is not JSON (including `NaN` / `Infinity`) is rejected, and the message names a line and column, never the text.
+- **Hold each fast path equal to its full engine.** The JSON dotted-key fast path is tested against `jmespath.search`, as the XML one is against XPath.
+- **A rows chain is the only way to reach another level in JSON.** `from: <level>` / `index_of: <level>`; never reintroduce `vars` for JSON.
+- **An `extract` miss is counted, never silently null.** It lands in `unmapped_values` and bypasses `when_empty` and `map.null`.
+- **A `nulls` value is absent, not a failure.** It is matched whole after trimming, before split/extract/map/coercion, so it is never counted as a coercion failure, a miss or an unmapped value.
+- **A `const` is checked at load and never echoed.** It is typed by the column's `type`; a bad one fails the load naming the column, not the value.
+- **A shared `into` is one dataset.** Assets, writes, counts, checks and `allow_empty` are per dataset; the feeding tables' columns and types must be identical.
+- **`only_unreferenced` is decided after the last document.** A rejected document references nothing.
+- **The profiler and the engine spell paths with one function.** Never give the profiler its own path spelling.
 
 ## 5. Dagster Component API Pattern (1.12 GA)
 - **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.

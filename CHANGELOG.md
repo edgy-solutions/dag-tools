@@ -28,6 +28,18 @@ it back are named.
   - `document.match` globs are path globs: `*` does not cross `/`, and `**` matches whole segments.
   - Opening a bundle lists only that bundle's prefix; maintenance keeps a scalar index on `source_bundle` and reports it as `source_bundle_index`.
   - See `docs/DOCUMENT_TABLES.md` and `examples/document_tables`.
+- Document tables read JSON and gain new mapping features. All are additive: a mapping that worked before loads and produces the same rows.
+  - `document.format: json`, with JMESPath expressions and every XML guarantee (compiled once, a fast path held equal to JMESPath, coercion never raises, whole-document commit or reject, `expected_paths`). Values arrive typed; non-identifier keys are quoted; a zero-byte file, `{}`, `[]` or a bare scalar gives no rows and no reject; `NaN` / `Infinity` are rejects; a UTF-8 BOM is accepted. `jmespath` is added to the `documents` extra. The profiler now quotes a JSON key that is not an identifier in the paths it writes (`$.Depot."Dock door"`, where it wrote `$.Depot.Dock door`), so its output pastes into `expected_paths`; identifier keys are written as before.
+  - `rows` as a chain (`[{as, each}, ...]`), with `from: <level>` (and `from: root` on any table) on columns and indexes, and `index_of: <level>`.
+  - `split` (with `keep_empty`) and `extract` on columns.
+  - `basename_in: document_dir | bundle_root` file resolution, and a non-text file reference counted as a `<column>_ref` coercion failure.
+  - Member tables: `members: [globs]` with `member:` columns.
+  - `nulls` (per column, defaulting to `document.nulls`): strings that mean absent, matched whole after trimming, before split, extract, map and coercion.
+  - `const`: a constant column, typed by the column's `type` when the mapping loads.
+  - `into`: several tables write one dataset and one asset. Their columns and types must be identical; the dataset's metadata carries `rows_by_table`, and `checks.allow_empty` names the dataset.
+  - `only_unreferenced` on a member table keeps only members no file column resolved to, counted as `members_kept` / `members_skipped`.
+  - The profiler writes structural paths with the engine's own spelling, and a run whose `expected_paths` differ only in key quoting says so once per bundle.
+  - Bundle names containing `[`, `]`, `@`, `$` or spaces work for local and S3 sources.
 - `qual init --image-record-template REPO=TEMPLATE` and `--image-record REPO=PATH_OR_URL` (both repeatable) declare where a pin's image record is read from; the manifest moves to schema 6 (`InventoryPin.image_record`, additive; a v5 manifest still loads) and the preflight report to schema 4 (`RepoShaCheck.outcome` gains `record_failed`, plus `image_record_source` and `image_record_problem`). A pin with a declared record fails preflight if the record is absent, unreadable, changed, unparseable or names another commit, with no fallback to tag matching. A pin that declares a record must carry a full 40-character lowercase `git_sha`, or `qual init` refuses it and names the survey stage; pins with no record declared are unaffected. `create_qualification` and `run_preflight` gain keyword-only parameters with defaults; nothing existing changes.
 
 ### Changed
