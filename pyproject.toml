@@ -215,7 +215,13 @@ broker = [
     # dependency equivalent of a test passing for the wrong reason. Found
     # while adding the subject-source gauge, which leans on PyJWT harder.
     "redis>=5.0",
-    "PyJWT>=2.8",
+    # `[crypto]`, never bare: the RSA/EC/Ed signature algorithms live in
+    # PyJWT's optional `crypto` extra. Without it `import jwt` still
+    # succeeds and only HS* registers, so a gateway configured for RS256
+    # starts clean and refuses every token as invalid -- a deployment fault
+    # that reads as a token fault. The gateway IMAGE is governed by
+    # dag_tools/central_gateway/Dockerfile, not by this extra; both say it.
+    "PyJWT[crypto]>=2.8",
     # invincible-agent ADR-0044 mint-role: the broker issues short-lived DATABASE roles for
     # postgres/clickhouse, which needs a driver that can execute DDL.
     # clickhouse-connect is already a base dependency; psycopg2 is not, and

@@ -349,6 +349,52 @@ def _say_unconfigured() -> None:
     )
 
 
+_no_signature_support_said: Optional[tuple] = None
+
+
+def _say_no_signature_support(jwt_module) -> None:
+    """Name a configured algorithm the INSTALLED library cannot verify, once per distinct state.
+
+    PyJWT's asymmetric algorithms live in its optional `crypto` extra. Installed without it,
+    `import jwt` still succeeds, the gateway still starts, and only the HMAC algorithms
+    register -- so a gateway configured for RS256 comes up clean and then refuses every token
+    it is handed. PyJWT says exactly what is wrong (`RS256 requires 'cryptography' to be
+    installed`) and the decode's `except Exception` swallows it, so the operator is told a
+    deployment fault in a token fault's words and goes looking at the token issuer.
+
+    The refusal reason is deliberately left alone: the returned token is in fact unverifiable
+    by this process, every reason token is a number on `/health` and an HTTP status (ADR
+    §4o-1), and moving this case to a deployment fault is a decision about that vocabulary
+    rather than about this log line. So this adds the sentence that was missing and changes no
+    answer. Latched on the state, like `_say_unconfigured`, so an image that is fixed and then
+    regressed says so again.
+    """
+    global _no_signature_support_said
+    try:
+        configured = tuple(_algorithms())
+        available = set(jwt_module.algorithms.get_default_algorithms())
+    except Exception:  # noqa: BLE001  # an instrument may never break the thing it measures
+        return
+    missing = tuple(a for a in configured if a not in available)
+    if not missing:
+        _no_signature_support_said = None
+        return
+    state = (configured, missing)
+    if state == _no_signature_support_said:
+        return
+    _no_signature_support_said = state
+    speak = logger.error if len(missing) == len(configured) else logger.warning
+    speak(
+        "identity: this image cannot verify %s -- the token library is installed without "
+        "signature support, so %s token is refused as invalid whatever its signature. Install "
+        "it as pyjwt[crypto]. Configured: %s; available here: %s",
+        ", ".join(missing),
+        "every" if len(missing) == len(configured) else "any such",
+        ", ".join(configured),
+        ", ".join(sorted(available)) or "none",
+    )
+
+
 def _verify(token: Optional[str]):
     """Returns `(claims, None)` on success or `(None, reason)`. Never raises.
 
@@ -369,6 +415,7 @@ def _verify(token: Optional[str]):
         import jwt
     except ImportError:  # pragma: no cover
         return None, UNCONFIGURED
+    _say_no_signature_support(jwt)
     try:
         key = _jwks_signing_key(url, token) if url else static
     except _JwksUnavailable as exc:
