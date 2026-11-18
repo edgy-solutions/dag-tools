@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Manifest id="M2" created="2026-03-02T10:00:00.000000001Z"><Depot site="south" dock="D1" shift="night"/><Parcel id="P3" weight="1" fragile="1"><Scan id="S4" at="2026-03-02T10:00:00Z" lane="3"><Reading kind="temp" value="3"/></Scan><Flag id="F3" code="LATE"><ScanRef id="S4"/></Flag></Parcel></Manifest>

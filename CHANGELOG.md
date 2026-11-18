@@ -15,6 +15,19 @@ it back are named.
 
 ### Added
 
+- `DocumentTablesComponent` (`dag_tools.DocumentTablesComponent`) turns bundles of documents into Lance tables. A bundle is a zip or a directory tree, local or on S3, and each one is a dynamic partition.
+  - A private mapping YAML supplies every format-specific detail. The library names no document format.
+  - Per bundle, the writer deletes and then appends, so a re-run leaves counts unchanged. `write_concurrency` defaults to 1, through a Dagster pool.
+  - Also defined: a discovery sensor and, when `maintenance.cron` is set, a maintenance schedule (both stopped by default), four checks at WARN severity, and a maintenance job.
+  - The engine lives in `dag_tools.documents` and does not import Dagster.
+  - New command `dagtools documents profile` surveys a source before a mapping is written.
+  - New optional extra `documents` (`lxml`, `pylance`, `Pillow`, `boto3`, `pyarrow`, plus `tzdata` on Windows).
+  - Additive only: no existing signature, export or default changes.
+  - Mapping features: scoped indexes (`scope` on an index and on every lookup into it; a null or empty scope matches nothing and is counted in `null_scopes` / `index_null_scopes`), `prefer` to pick one value out of a list by precedence, and `order: keys` on lookups.
+  - `document.huge_tree: true` lifts libxml2's built-in parser limits. A document that hits one is rejected naming that option, told apart from malformed XML by a probe re-parse. `max_bytes` still applies.
+  - `document.match` globs are path globs: `*` does not cross `/`, and `**` matches whole segments.
+  - Opening a bundle lists only that bundle's prefix; maintenance keeps a scalar index on `source_bundle` and reports it as `source_bundle_index`.
+  - See `docs/DOCUMENT_TABLES.md` and `examples/document_tables`.
 - `qual init --image-record-template REPO=TEMPLATE` and `--image-record REPO=PATH_OR_URL` (both repeatable) declare where a pin's image record is read from; the manifest moves to schema 6 (`InventoryPin.image_record`, additive; a v5 manifest still loads) and the preflight report to schema 4 (`RepoShaCheck.outcome` gains `record_failed`, plus `image_record_source` and `image_record_problem`). A pin with a declared record fails preflight if the record is absent, unreadable, changed, unparseable or names another commit, with no fallback to tag matching. A pin that declares a record must carry a full 40-character lowercase `git_sha`, or `qual init` refuses it and names the survey stage; pins with no record declared are unaffected. `create_qualification` and `run_preflight` gain keyword-only parameters with defaults; nothing existing changes.
 
 ### Changed

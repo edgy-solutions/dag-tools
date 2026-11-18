@@ -197,6 +197,18 @@ This project serves as the central hub for common Dagster utilities, resources, 
 - **Keep the comparator vocabulary out of the library.** No comparison codes, no operator strings beyond the two words `low` and `high` (named after the curated contract's own limit columns). Match the **whole** operator, never a prefix. An operator the deployment's table omits is kept as text and counted at warning severity — never dropped, never read as a value, and never reported as a parse failure.
 - **Compute a tolerance in the configured exact numeric type, not in doubles**, and keep `is_latest` terminal-only.
 
+## 4s. Documents to tables (`dag_tools.documents` + `DocumentTablesComponent`)
+- **The engine stays pure.** `dag_tools/documents/` imports no `dagster`. `lxml`, `lance`, `pyarrow`, `Pillow` and `boto3` belong to the optional `documents` extra and are imported lazily, so a base install still imports `dag_tools`.
+- **Name no document format.** Every element, attribute, path and value lives in the deployment's private mapping YAML. The only format that may appear in code, tests, docs or comments is the invented one in `examples/document_tables`.
+- **Never log a value from a document at INFO or above.** A log line may name a bundle, a member, a count or a column, and nothing else.
+- **Coercion never raises.** A value that does not coerce becomes null and is counted.
+- **Keep the writer idempotent per bundle.** It deletes the bundle's rows by `source_bundle` and then appends. Do not raise `write_concurrency` above 1 by default: two writers on the same bundle duplicate it.
+- **`vars` are evaluated once per document, against the root.** A per-row value is a column or a row-relative lookup, never a var.
+- **A lookup into a scoped index must give a `scope`.** A null or empty scope matches nothing and is counted, never dropped.
+- **Tell a parser limit from malformed XML by a probe re-parse, never by libxml2's error code.** `huge_tree: true` never lifts `max_bytes`.
+- **`document.match` globs never let `*` cross `/`.** Use `**` as a whole segment.
+- **The `source_bundle` index is best-effort.** Its failure is reported and must never fail maintenance.
+
 ## 5. Dagster Component API Pattern (1.12 GA)
 - **Rule**: All custom components MUST use the triple-inheritance pattern: `class MyComponent(Component, Resolvable, Model)`.
 - **Imports**: `from dagster.components import Component, ComponentLoadContext` and `from dagster.components.resolved.base import Resolvable` and `from dagster.components.resolved.model import Model`.

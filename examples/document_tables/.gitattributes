@@ -1,0 +1,3 @@
+# The bundles are compared byte for byte with what the test suite generates;
+# a checkout that rewrote their line endings would fail that comparison.
+bundles/** -text
