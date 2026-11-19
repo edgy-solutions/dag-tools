@@ -8,7 +8,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **The chart deploys no object store.** No template in the dag-tools chart creates one, and no chart value names a bucket. A deployment supplies the store and tells each client where it is. `built`
+1. **The chart deploys no object store.** No template in the dag-tools chart creates one, and no chart value names a bucket. A deployment supplies the store and tells each client where it is. `not built`
 2. **The Delta and Arrow IO managers, and the Arrow resource, take an explicit key pair and endpoint in config.** The two IO managers each define an identical common block; neither imports the other's, so they agree by duplication. In each the access key id, the secret and the endpoint are required. The region has a fixed default, and plain HTTP is off unless a deployment turns it on. Delta's renames are not marked safe, so a backend that cannot rename atomically is not treated as one that can. The Arrow resource declares the same required key pair and endpoint, a fixed region default and plain HTTP off; the [S3 sensor](s3-sensor.md)'s Arrow component constructs it with its required fields unset (that record, finding 10). `built`
 3. **The PyArrow clients may create a bucket.** The backend of each IO manager that uses PyArrow's S3 filesystem sets bucket creation on by default, so a write to a bucket that does not exist creates it rather than failing. The Arrow resource's client sets it on in code with no setting to turn it off, and that client's only method reads. `built`
 4. **A reader's ticket carries only the region and the endpoint, never the writer's key.** The coordinates an IO manager advertises for a ticket are the region and, when set, the endpoint address. The credential a reader receives is minted by the [domain broker](domain-broker.md) per request, read-only and scoped to the dataset's prefix (that record, findings 6 and 9). The reasons are in invincible-agent ADR-0044. `built`
@@ -68,7 +68,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No object store in the chart | `helm/dag-tools/templates/` (no store template) | not stated | — | `built` |
+| No object store in the chart | `helm/dag-tools/templates/` (no store template) | not stated | — | `not built` |
 | Explicit key pair and endpoint; HTTP off; renames not marked safe | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`, `:357-359`; `dag_tools/io_managers/arrow.py:36-41` | not stated | `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
 | Bucket creation on | `dag_tools/io_managers/delta.py:141-143`; `dag_tools/io_managers/arrow.py:51-54`, `:135-141`; `dag_tools/resources/arrow.py:10`, `:29`, `:32` | not stated | no test | `built` |
 | Arrow resource: same fields; constructed unset | `dag_tools/resources/arrow.py:64-81`; `dag_tools/components/s3_sensor/arrow_component.py:65` | not stated | no test | `built` |
