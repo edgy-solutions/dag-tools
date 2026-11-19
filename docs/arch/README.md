@@ -65,6 +65,7 @@ How closely is one of:
 |---|---|---|
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
+| [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
