@@ -30,7 +30,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 
-No connection is built at this pin: nothing in the code or the chart refers to this component.
+No connection is built at this pin: nothing in the code or the chart refers to this component. `not built`
 
 ## Place in the mesh
 

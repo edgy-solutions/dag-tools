@@ -53,13 +53,11 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | none: a Delta or Arrow IO manager in a code location | is called by | S3 API | access key pair and endpoint required in the IO manager's config | the writer's files, written and read | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`; `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
-| CO-CLIENT | is called by | S3 API | read-only key minted per request and scoped to the dataset's prefix, taken from the ticket | the dataset's files, read with the ticket's region and endpoint | `dag_tools/io_managers/delta.py:229-246`, `:298-302`; `test_mesh_publishable_mixin.py`: `test_the_mixin_offers_no_way_to_supply_credentials` | `built` |
-| CO-S3-SENSOR | is called by | S3 API | the client library's own credential, as Dagster's S3 resource resolves it | a prefix listing | `dag_tools/resources/s3.py:11-30`; `test_documents_sources.py`: `test_s3_endpoint_url_is_accepted` | `built` |
-| CO-DOCUMENT-TABLES | is called by | S3 API | the client's default credential chain | document files read | `dag_tools/resources/s3.py:11-30`; `test_documents_sources.py`: `test_s3_endpoint_url_is_accepted` | `built` |
-| CO-DLT-PIPELINE | is called by | S3 API | an AWS-style key pair from the environment | staged files written to a filesystem destination | `dag_tools/asset_wrappers/dlt_assets_factory.py:325-335`; no test | `built` |
 | none: the qualification registry client | is called by | S3 API | the default credential chain; optional endpoint | immutable per-build records, with a pointer written last | `dag_tools/qual/registry/client.py:45-55`, `:62-75`; `test_registry_client.py`: `test_storage_put_immutable_refuses_overwrite` | `built` |
 | none: a DuckDB resource | is called by | S3 API | not established | files read through an endpoint split into a host and a TLS flag | `dag_tools/resources/duckdb.py:90-98`; `test_duckdb_resource.py`: `test_split_endpoint` | `built` |
 | none: a demo IO manager registered only in demo mode | is called by | S3 API | standard key and secret from the environment; an unset one becomes empty | demo files written and read | `dag_tools/user_deployment/definitions.py:62-67`, `:233-256`; no test of an unset key | `built` |
+
+CO-CLIENT, CO-S3-SENSOR, CO-DOCUMENT-TABLES and CO-DLT-PIPELINE also reach an S3-compatible store, through their own configuration. Their records draw that store as a `none:` party rather than as this component, because which store a deployment runs is still open in this record. They are therefore not rows here.
 
 ## Place in the mesh
 
