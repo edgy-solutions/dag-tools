@@ -53,7 +53,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 
 ## Gaps
 
-- **No server end for the SDK's remote graph client, and no remote vector client** (finding 1). Remedy: [roadmap row 8](../ROADMAP.md).
+- **No server end for the SDK's remote graph client, and no remote vector client** (finding 1). Remedy: retire the remote graph client, [roadmap row 8](../ROADMAP.md) (`accepted`).
 - **No conformance check reads a live graph or vector store** (finding 10). The offline check proves the contract over stubs. No roadmap row yet; it will go on the list of claims a seal could make `measured`, which is not yet written.
 - **No access decision on these reads by default** (finding 6). Remedy: roadmap row 6.
 - **The store sees the engine's credential, and no receipt comes back** (findings 3, 7). Remedy: roadmap row 7.

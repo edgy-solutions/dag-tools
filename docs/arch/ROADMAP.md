@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed`: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 12 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 12 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -13,9 +13,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 3 | No ticket on the producer's credential (dag-tools #72) | every backend a ticket names is read on a credential minted for that ticket | — (proposed; no decision yet) | — |
 | 4 | Bounded reads from SQL backends (dag-tools #73) | a read from a SQL backend is no larger than the caller asked for and can stop before the whole table moves | — (proposed; no decision yet) | — |
 | 5 | A version on every read (dag-tools #74) | a receipt says which version of the dataset was read | — (proposed; no decision yet) | — |
-| 6 | Engine read decisions on by default (not filed) | a graph or vector read returns only what the person may read | — (proposed; no decision yet) | the preconditions invincible-agent's chart names for the switch |
-| 7 | A receipt on graph and vector reads (not filed) | a graph or vector answer says what was read, for whom, and which version | — (proposed; no decision yet) | row 5, for the version |
-| 8 | Decide the server end of the SDK's remote graph client (not filed) | an agent outside an engine reaches the graph only through a route that decides, or the remote client is retired | — (proposed; stalled, no decision yet) | row 6; an open invincible-agent item for generic mesh gateway routes |
+| 6 | Engine read decisions on by default (not filed) | a graph or vector read returns only what the person may read | — (proposed; owner named: invincible-agent) | the preconditions invincible-agent's chart names for the switch |
+| 7 | A receipt on graph and vector reads (not filed) | a graph or vector answer says what was read, for whom, and which version | — (proposed; owners named: the SDK and invincible-agent; no work now) | row 5, for the version |
+| 8 | Retire the SDK's remote graph client (not filed) | no client posts to a route nothing serves; in-process readers inside engines are the supported shape | the architect's ruling, 2026-11-18 (accepted: retire) | — |
 | 9 | No placeholder on a served path (not filed) | a registered dataset and an issued ticket are real or refused | — (proposed; no decision yet) | — |
 | 10 | Remove expired minted SQL accounts (not filed) | a database holds no minted account past its lifetime | — (proposed; no decision yet) | — |
 | 11 | The gateway says what it does (not filed) | the gateway's code and warnings describe the gateway that runs | — (proposed; no decision yet) | — |
@@ -67,7 +67,8 @@ The remedies proposed for gaps the flow and component records found, in the orde
 ### 6. Engine read decisions on by default
 
 - **Gap:** [agent capabilities, finding 6](flows/agent-capabilities.md). The engines' per-document and per-class checks run only when `ENABLE_AGENTIC_AUTH` is on, and the code and chart both default it off (invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944`). With it off, every result is kept. `built`
-- **Owner:** invincible-agent. The chart ties the switch to the last step of its ADR-0025 and to a plan for the switch, which lists preconditions that are not built. Neither was read here.
+- **Owner:** invincible-agent, with review by a second lane (named by the architect, 2026-11-18). The chart ties the switch to the last step of its ADR-0025 and to a plan for the switch, which lists preconditions that are not built. Neither was read here.
+- **First deliverable (read-only):** what exactly is unprotected with the switch off, meaning which reads return results the caller is not entitled to and which other checks still apply; what ADR-0025's remaining step is; and what breaks when the switch is on. Then a plan to turn it on in a test deployment and then to make it the chart default. The row leads the planning of invincible-agent's next release; it is not deferred. `proposed`
 - **Remedy:** the switch defaults on once those preconditions are met, so a graph or vector read is decided per object unless a deployment opts out. `proposed`
 - **Note:** the chart says the switch does nothing for the data-analyst read path, which the gateway decides (`templates/configmap.yaml:388-397`). That path is [need to know](flows/need-to-know.md), not this row.
 - **Issue:** not filed.
@@ -78,15 +79,16 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Owner:** invincible-agent, whose engines hold the readers, and the SDK, whose result shape would have to carry the receipt.
 - **Remedy:** each reader returns, with its result, the person it read for, the decision it read under and a version of what it read. The version would use the dataset receipt's own fields (`as_of`, `as_of_source`, `as_of_unavailable`; dag-tools `dag_tools/cortex_data/client.py:23-32`). The person and the decision would need fields the dataset receipt does not have: it carries no principal, and its `allowed_columns` and `row_filters` are the narrowing a decision produced, not the decision. `proposed`
 - **Note:** the person is already on every read as provenance, but not on any receipt. The version would not appear for free: the table of version readers ships empty (row 5), so a receipt reusing those fields would say the version is unavailable until a reader exists for that store.
-- **Placement (provisional, 2026-11-18):** the architect places this row jointly with the SDK and invincible-agent, to be recorded as an invincible-agent decision that these records cite. Until an owner is named, no work starts on it. `proposed`
+- **Placement (2026-11-18):** the architect placed this row jointly with the SDK and invincible-agent, to be recorded as an invincible-agent decision that these records cite, and confirmed the placement the same day. No work starts on it now. `proposed`
 - **Issue:** not filed.
 
-### 8. Decide the server end of the SDK's remote graph client
+### 8. Retire the SDK's remote graph client
 
 - **Gap:** [agent capabilities, finding 1](flows/agent-capabilities.md). The SDK ships a remote graph client that posts to a route nothing serves (supplied by the SDK's session). `not built`
 - **What already exists:** in-process readers inside engines are what ships and is used today; the remote client was built after them, and has no production caller (supplied by the SDK's session). `built`
-- **Owner:** the build-or-retire call belongs to the owner of the invincible-agent item for generic mesh gateway routes, which the remote client waits on. That item is open, at low priority, and has not moved in three weeks. The SDK holds the client, and declines to build a server end without a scheduled consumer or to retire the client on its own (supplied by the SDK's session).
-- **Remedy:** either build the route, behind a decision point as the dataset path has one, or retire the client and record in-process readers inside engines as the shape. `proposed`, stalled.
+- **Decision:** retire the client (the architect's ruling, 2026-11-18). It has no route and no production caller, and in-process readers are what ships. Before the ruling, the SDK had declined to build a server end without a scheduled consumer or to retire the client on its own (supplied by the SDK's session). `accepted`
+- **Owner:** the SDK and invincible-agent, each for its own part.
+- **Remedy:** the SDK marks the client deprecated in its next patch release and removes it in its next minor release, with a note that in-process readers are the supported shape. invincible-agent closes its open item for generic mesh gateway routes as not planned; the item reopens when a named consumer needs a remote route, and that route is then designed behind a decision point. `accepted`; no code does it yet.
 - **Issue:** not filed.
 
 ### 9. No placeholder on a served path
@@ -136,4 +138,5 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Minted SQL accounts are never removed | dag-tools `dag_tools/domain_broker/sql_minting.py:22-33` | not stated | — | `not built` |
 | An unsent check payload; a stale warning | dag-tools `dag_tools/central_gateway/main.py:325`, `subject_gauge.py:310-316` | not stated | — | `built` |
 | The client's mesh token as a SQL password | dag-tools `dag_tools/cortex_data/client.py:315`, `:339` | not stated | no test | `built` |
-| The twelve remedies | this note | none | — | `proposed` |
+| The twelve remedies, except row 8 | this note | none | — | `proposed` |
+| Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |
