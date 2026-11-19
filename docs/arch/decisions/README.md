@@ -43,6 +43,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4s.md](dag-tools-s4s.md) | §4s documents to tables | 33 |
 | [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md) | §4n classification propagation, §4o ticket identity, §4o-1 refusal reasons, §4k-1 refusal fixture | 31 |
 | [dag-tools-s4k-s4j.md](dag-tools-s4k-s4j.md) | §4k contract mapping, §4j read audit and tagged warehouse | 37 |
+| [dag-tools-s4i-s4h-s4g.md](dag-tools-s4i-s4h-s4g.md) | §4i dbt to DataHub publishing, §4h verdict, §4g-1 probe status, §4g0 probe runner, §4g0a synthetic coverage rollup, §4g2 round-trip probe | 32 (one bullet of §4g2 lists tests and states no decision) |
 
 ## Where the numbered series already holds a decision
 
