@@ -1,14 +1,14 @@
 # What is not established: the merged list
 
-This page gathers, in one place, every fact these records leave open. Each record keeps its own "Not established" section. This page merges them, removes duplicates, and groups each fact by what would settle it. Every entry links to each record that carries it.
+This page gathers, in one place, every fact these records leave open. Most records keep their own "Not established" section. The overview, the roadmap note, the alignment records and the dag-tools decision records keep none, and state an open fact, where they have one, in a status line. This page merges both, removes duplicates, and groups each fact by what would settle it. Every entry links to each record that carries it.
 
 **This page settles nothing and carries no claim of its own.** An entry here has no status. The claim beside it in the linked record keeps that record's status, and the record holds where the two differ. Statuses are those of [the README](README.md), and line numbers are at the pins listed there. The record shape is provisional.
 
 ## How the list was built
 
 - **Sources.**
-  - Every "Not established" section in this directory: 186 items in 43 records.
-  - Thirteen lines in nine files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole.
+  - Every "Not established" section in this directory: 183 items in 43 records.
+  - Seventeen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole.
   - Items 1 to 35 of the lane's twice-daily reports, each of which already comes from a record.
 - **Merged.** One fact carried by several records is one entry, and it links to each of them.
 - **Grouped by what would settle it:**
@@ -25,7 +25,7 @@ This page gathers, in one place, every fact these records leave open. Each recor
 1. **Most of what is open is a deployment fact.** Group 1 holds 35 entries. A component record describes what the chart and code provide by default and what a deployment may set. It never describes a particular deployment, so these entries stay open by design. A deployment's own record could close them.
 2. **Nothing is `measured`, and two of the reasons are decisions, not facts.** Group 3 lists the runs that would change that. Group 4 asks the owner whether an in-process run recorded by continuous integration counts, and where a recorded run would be kept.
 3. **The read path's open facts sit at policy and the catalog.** These are which policy Topaz runs, what its answer carries, and how the catalog's ownership data is kept correct. The read decision depends on all three, as [the overview](overview.md#how-the-services-depend-on-each-other) shows.
-4. **The invincible-agent decision records carry most of the partial reads.** Group 6 lists them. Ten of those ADRs carry a header that disagrees with the code at the pin, in one direction or the other.
+4. **The invincible-agent decision records carry most of the partial reads.** Group 6 lists them. Ten of those ADRs carry a header that claims less than the code at the pin does.
 
 ## 1. Facts of a deployment
 
@@ -163,6 +163,6 @@ A clause leaves the tables above only by moving here, never by deletion. The ent
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record | none; an entry is not established |
-| 186 section items in 43 records | the "Not established" sections of the records in this directory at the #104 head | — | a count of the items under those headings | — |
-| Thirteen further lines in nine files | [dag-tools §3.3](decisions/dag-tools-s1-s3.md); [§4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9 | — | the lines that say "not established" outside a section | — |
+| 183 section items in 43 records | the "Not established" sections of the records in this directory at the #104 head | — | a count of the items under those headings | — |
+| Seventeen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), finding 3 and item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
 | No claim is `measured` | the status columns of the records in this directory | — | none found | — |
