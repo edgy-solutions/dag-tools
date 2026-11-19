@@ -70,12 +70,16 @@ How closely is one of:
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
 | [components/contract-mapping.md](components/contract-mapping.md) | component | draft |
+| [components/dagster.md](components/dagster.md) | component | draft |
 | [components/datahub-lineage.md](components/datahub-lineage.md) | component | draft |
+| [components/datahub.md](components/datahub.md) | component | draft |
 | [components/dbt-project.md](components/dbt-project.md) | component | draft |
+| [components/dbt.md](components/dbt.md) | component | draft |
 | [components/dlt-pipeline.md](components/dlt-pipeline.md) | component | draft |
 | [components/document-tables.md](components/document-tables.md) | component | draft |
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/grist-ingest.md](components/grist-ingest.md) | component | draft |
+| [components/hasura.md](components/hasura.md) | component | draft |
 | [components/keycloak.md](components/keycloak.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
 | [components/minio.md](components/minio.md) | component | draft |
