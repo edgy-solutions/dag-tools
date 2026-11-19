@@ -125,7 +125,7 @@ These are settled by the session that owns the fact.
 | L4 | What the invincible-agent chart's catalog seed job and policy-sync job write or read. Both run scripts outside this repo. | invincible-agent | [DataHub](components/datahub.md) |
 | L5 | What the decision records cited by the policy comments say, and what the ADR-0025 flip plan lists as unbuilt. | invincible-agent | [need to know](flows/need-to-know.md); [agent capabilities](flows/agent-capabilities.md) |
 | L6 | What provenance-telemetry emits, where it lands, and whether a trace reaches from an agent's answer to the store read. | the perf lane | [agent capabilities](flows/agent-capabilities.md) |
-| L7 | The SDK's lines, which were supplied and not read here. The reasons for entries 1, 2, 4 and 5. Whether the line numbers of entries 1 to 4 still hold at the later pin. Tests for entries 1 and 4. | the SDK | [SDK decisions](decisions/sdk.md); [agent capabilities](flows/agent-capabilities.md); [big data](flows/big-data.md) |
+| L7 | The SDK's lines, which were supplied and not read here. The reasons for entries 1, 2, 4 and 5. Tests for entries 1 and 4. | the SDK | [SDK decisions](decisions/sdk.md); [agent capabilities](flows/agent-capabilities.md); [big data](flows/big-data.md) |
 | L8 | Whether pub-tools' records match its code line by line. | pub-tools | [pub-tools pointer](decisions/pub-tools.md) |
 | L9 | Whether the downstream repositories surveyed tag their assets for runnability as the class matrix expects. | each downstream repository | [sustainment walkthrough](walkthroughs/sustainment.md) |
 | L10 | Whether the contract-mapping example's contract is current with its upstream copy. A test compares them only when the upstream copy is on the machine. | invincible-agent | [contract mapping](components/contract-mapping.md) |
@@ -147,7 +147,16 @@ These are settled by a further read at the pin.
 | C9 | invincible-agent ADRs checked only in part, from greps, comments, headers or file names rather than a full read: 0004, 0005, 0008, 0009, 0014, 0017, 0018, 0019 and 0023. | [ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) |
 | C10 | invincible-agent ADRs checked only in part: 0027, 0031, 0035, 0037, 0039, 0044, 0045, 0047 and 0048. Two of the findings are worth naming. ADR-0031's matching functions have a second copy in the ontology service. The ADR-0044 status of settings-profile pinning on the telemetry store is open. | [ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) |
 | C11 | invincible-agent ADRs checked only in part: 0049, 0050, 0051, 0052, 0053, 0054, 0055, 0060, 0061, 0063, 0064, 0067, 0070, 0071 and 0072. Among the open items are ADR-0049's status itself, which of ADR-0064's six steps are complete, ADR-0052's open items as the ADR states them, and the SDK types ADR-0060 names, which are in another repository. ADR-0072 also leaves open how the live view behaves with more than one replica. | [ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) |
-| C12 | invincible-agent ADR parts not located at the pin. These are ADR-0004 steps A, B, D, E and F; ADR-0005, 0006, 0008, 0009, 0015, 0016, 0019, 0021 and 0022; ADR-0025, 0026, 0028, 0030, 0033, 0034, 0036, 0038, 0040, 0041, 0042, 0045, 0046, 0047 and 0048; and ADR-0062 and 0065. One test that ADR-0006 names does not exist at the pin. ADR-0010's tracing does not match its plan, so it stays `proposed`. | the three invincible-agent decision files: [0001 to 0024](decisions/invincible-agent-adr-0001-0024.md), [0025 to 0048](decisions/invincible-agent-adr-0025-0048.md), [0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) |
+| C12 | invincible-agent ADR parts not located at the pin. These are ADR-0004 steps A, B, D, E and F; ADR-0005, 0006, 0008, 0009, 0015, 0016, 0019, 0021 and 0022; ADR-0025, 0026, 0028, 0030, 0033, 0034, 0036, 0038, 0040, 0041, 0042, 0045, 0046, 0047 and 0048; and ADR-0062 and 0065. ADR-0010's tracing does not match its plan, so it stays `proposed`. | the three invincible-agent decision files: [0001 to 0024](decisions/invincible-agent-adr-0001-0024.md), [0025 to 0048](decisions/invincible-agent-adr-0025-0048.md), [0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) |
+
+## Answered since this list was published
+
+A clause leaves the tables above only by moving here, never by deletion. The entry it belonged to stays open while it holds any other clause, so the count of entries is unchanged.
+
+| # | Clause as published | Answer | Where it lives |
+|---|---|---|---|
+| L7 | Whether the line numbers of entries 1 to 4 still hold at the later pin. | 24 of the 25 line ranges are unchanged at the later SDK pin. The one that moved is `remote_clients.py:58`, now `:69`. | the scope note in [SDK decisions](decisions/sdk.md) |
+| C12 | One test that ADR-0006 names does not exist at the pin. | It exists at the pin, at tests/routing/test_substrate_invariants.py:914, and needs a live graph store. The source-declaration rule is `built` on that guard. | ADR-0006 in [invincible-agent decisions 0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) |
 
 ## Sources
 

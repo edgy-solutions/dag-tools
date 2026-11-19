@@ -8,7 +8,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **The chart deploys no Topaz, and the gateway is the only caller.** No template in the dag-tools chart creates a Topaz service. The gateway reads the engine's address from two variables in turn, with a code default naming an in-cluster service. No other module in this repo calls the engine. `built`
+1. **The chart deploys no Topaz, and the gateway is the only caller.** The gateway reads the engine's address from two variables in turn, with a code default naming an in-cluster service. No other module in this repo calls the engine. `built` No template in the dag-tools chart creates a Topaz service. `not built`
 2. **One decision per read, at a fixed policy path.** For each read the gateway posts one request to the engine's decision route, naming a fixed policy path, the dataset URN as the resource, the principal as the identity and a read permission. The identity is passed as a plain value the gateway states; the engine is not asked to establish it from a token. A principal that names nobody is denied before any call. `built`
 3. **The caller's own bearer token is sent to the engine.** The request's authorization header carries the token the reader presented to the gateway, not a credential of the gateway's own. Under the default `observe` posture that token has not been verified by the gateway (see [the gateway record](central-gateway.md), finding 3). `built`
 4. **An optional key is sent as a tenant header.** When `TOPAZ_AUTHORIZER_API_KEY` is set, its value goes in a tenant header on every call. The chart passes it through the gateway's `envFrom`. Nothing else authenticates the gateway to the engine. `built`
@@ -66,7 +66,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Gateway paths are u
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No Topaz in the chart; address from two variables | `helm/dag-tools/templates/` (no Topaz template); `main.py:72-73` | not stated | — | `built` |
+| No Topaz in the chart; address from two variables | `helm/dag-tools/templates/` (no Topaz template); `main.py:72-73` | not stated | — | `built`; the absence `not built` |
 | One call per read; fixed path; identity stated by the gateway; empty principal denied | `main.py:238`, `:287-292`, `:308-322`, `:498` | not stated | `test_gateway_verified_identity.py`: `test_enforce_refuses_and_never_calls_topaz`; `test_gateway_one_resolution.py`: `test_a_refusal_from_the_one_resolution_reaches_neither_topaz_nor_the_broker`; `test_gateway_entitlement_claim_follows_env.py`: `test_missing_claim_still_fails_closed` | `built` |
 | Caller's token forwarded | `main.py:405`, `:419`, `:295-298` | not stated | no test | `built` |
 | Tenant header; chart `envFrom` | `main.py:299-300`; `helm/dag-tools/values.yaml:181-185` | not stated | no test | `built` |

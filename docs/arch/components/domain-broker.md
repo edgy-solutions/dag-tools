@@ -8,7 +8,7 @@ This record covers what the code and the dag-tools image provide by default, and
 
 ## Findings
 
-1. **It ships in the user-deployment image, and no dag-tools chart template deploys it.** The image carries the broker's dependencies through the `broker` extra. Its own comments say a chart overrides the container command to start the broker. No template under the dag-tools chart does so. `built`
+1. **It ships in the user-deployment image, and no dag-tools chart template deploys it.** The image carries the broker's dependencies through the `broker` extra, and the image expects a chart to override the container command to start the broker. `built` No template under the dag-tools chart does so. `not built`
 2. **It finds its datasets by importing the definitions module a deployment names.** The module is named as `module` or `module:attribute`. The import runs in the background after startup. Until it finishes, `/ready` answers 503 and `/health` reports `loading`. If the import fails, `/ready` stays 503, `/health` reports the error, and the broker does not register with the gateway. `/health` answers 200 in every state. `built`
 3. **With no module named, it serves two placeholder datasets.** It logs a warning and populates one SQL and one object-store entry with made-up locations, then registers them like any others. No test covers this default. `built`
 4. **It registers what it loaded, and repeats.** It posts its address and its URNs to the gateway's register route with a service credential. The first post follows the load, and later ones run every two minutes by default. A failed post is logged and retried on the next round. The gateway keeps each route for five minutes ([gateway, finding 10](central-gateway.md)). `built`
@@ -94,7 +94,7 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Ships in the user-deployment image; command overridden by a chart; no dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built` |
+| Ships in the user-deployment image; command overridden by a chart; no dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built`; the absence `not built` |
 | Background import; `/ready` 503 until loaded or after a failure; no registration after a failure | `main.py:693-723`, `:1013-1075`, `:1097-1165` | not stated | `test_broker_load_failure.py`: `test_ready_is_503_while_still_loading`, `test_health_surfaces_the_import_error`, `test_ready_is_503_after_a_failed_import`, `test_a_failed_import_does_not_register`, `test_a_successful_load_registers_its_assets` | `built` |
 | Placeholder datasets when no module is named | `main.py:42`, `:802-818` | not stated | no test | `built` |
 | Registers, then every two minutes by default | `main.py:963-1010` | not stated | `test_internal_doors.py`: `test_the_broker_register_call_sends_the_service_token` | `built` |
