@@ -169,7 +169,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 18. Labels as a decision input
 
-- **Gap:** [need to know, finding 3](flows/need-to-know.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. Labels are published to the catalog as metadata. The decision path does not read them, and the policy rails that would carry a clearance are empty. Labels are `built` as metadata and `proposed` as a decision input.
+- **Gap:** [need to know, finding 3](flows/need-to-know.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. Labels are published to the catalog as metadata. The decision path does not read them, and the policy rails that would carry a clearance are empty. `built` as metadata; `proposed` as a decision input
 - **What already exists:** label publishing for sources and for derived datasets, each label set carrying the digest of the document that ratified it. `built`
 - **Owner:** not named. The rails are policy's, in invincible-agent; their reader would be a later dag-tools step, which invincible-agent ADR-0064 describes (cited in code, not read here).
 - **Remedy:** a reader of the rails, and a decision that consults a column's label and the person's clearance, reading each dimension by its declared kind. `proposed`
@@ -177,8 +177,8 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 19. The probes code location in the chart
 
-- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:13`, `:34`, `:65`). Neither chart has an entry for it. `not built`
-- **What already exists:** the location, which loads empty when the probes directory variable is unset, and the status check that reports it absent from a workspace. `built`
+- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`). Neither chart has an entry for it. `built`; the absence `not built`
+- **What already exists:** the location, which loads empty when the probes directory variable is unset (`definitions.py:56-57`), and the status check that reports it absent from a workspace. `built`
 - **Owner:** dag-tools.
 - **Remedy:** the dag-tools chart offers the probes code location as an entry a deployment turns on, off by default. `proposed`
 - **Issue:** not filed.
@@ -207,6 +207,6 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | No worker probe; registration failure only logged | dag-tools `helm/dag-tools/templates/restate-worker.yaml:1-98`; `dag_tools/restate_handlers/serve.py:75-112` | not stated | no test | `built` |
 | Query tag unsigned; ticket id minted per request and logged | dag-tools `dag_tools/audit/tag.py:71-79`, `:123-146`; `dag_tools/domain_broker/ticket_identity.py:218`; `dag_tools/central_gateway/main.py:591-597` | dag-tools AGENTS.md §4j, §4o | `test_the_tag_carries_the_principal_the_asset_and_the_run`, `test_two_resolves_of_one_urn_get_different_ticket_ids` | `built` |
 | Labels published, not read at decision time | [need to know, finding 3](flows/need-to-know.md) | cited in code: invincible-agent ADR-0064 (not read) | `test_the_published_label_set_says_which_document_ratified_it` | `built` as metadata; `proposed` as a decision input |
-| Probes code location built, in neither chart | dag-tools `dag_tools/probes_location/definitions.py:13`, `:34`, `:65` | dag-tools AGENTS.md §4g1 | `test_definitions_module_yields_empty_defs_when_env_unset` | `built`; the chart entry `not built` |
+| Probes code location built, in neither chart | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built`; the absence `not built` |
 | The nineteen remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |

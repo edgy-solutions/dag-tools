@@ -43,8 +43,8 @@ Each step names the part of the tooling that does it and the records it relies o
 
 - **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md). No row: what is missing is a recorded run, not a change.
 - **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10). Remedy: [roadmap row 19](../ROADMAP.md).
-- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer. It does not produce staging data on its own (§4e.5, §4f.11). No row: closing it through the documented mechanisms is the operator's, by those decisions.
-- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.5). A change in a metadata value passes. No row: key-only parity is the decision (§4h.1), which allows value comparison only behind an opt-in flag.
+- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer (§4f.9). It does not produce staging data on its own (§4e.5, §4f.11). No row: closing it through the documented mechanisms is the operator's, by those decisions.
+- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.4). A change in a metadata value passes. No row: key-only parity is the decision (§4h.1).
 
 ## Not established from code
 
