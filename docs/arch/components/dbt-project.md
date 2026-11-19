@@ -70,5 +70,6 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are
 | A failed publish is logged, not raised | `component.py:220-224` | AGENTS.md §4i | no test of the swallowing itself | `built` |
 | Process-wide registry; no caller of `register_prefix`; a matching source appends to the map's list | `dag_tools/utils/translation_registry.py:12-21`, `:41-44`, `:56-62`; `dag_tools/components/datahub_lineage/component.py:63` | not stated | no test | `built` |
 | Op sizing from a variable prefix | `component.py:30-50`, `:52-88` | not stated | `test_k8s_env_prefix.py`: `test_dbt_component_get_op_spec_injects_env_prefix`, `test_dbt_component_survives_a_missing_private_hook` | `built` |
-| Demo-only wiring; no chart wiring | `dag_tools/user_deployment/definitions.py:61-67`, `:232`, `:246`; `dag_tools/user_deployment/demo_dbt_assets.py:143-234` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources` | `built` |
+| Demo-only wiring | `dag_tools/user_deployment/definitions.py:61-67`, `:232`, `:246`; `dag_tools/user_deployment/demo_dbt_assets.py:143-234` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources` | `built` |
+| No chart wiring | `helm/dag-tools/templates/` (no dbt template) | not stated | — | `not built` |
 | No ticket, no label | `component.py:102-224` | not stated | — | `built` |
