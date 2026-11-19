@@ -52,7 +52,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | asset definitions and run context | `dag_tools/components/dbt_project/component.py:90-100`, `:105-108`; `test_demo_dbt_surface.py`: `test_demo_asset_keys_go_through_the_normalization_registry` | `built` |
 | CO-DBT | calls | child process of the dbt command line | none | three commands into one target directory | `dag_tools/components/dbt_project/component.py:123-158`; `test_dbt_datahub_artifacts.py`: `test_dbt_artifacts_are_not_scattered_across_target_directories` | `built` |
-| CO-DATAHUB | writes | the catalog's ingestion command run as a child process | token from config or the environment, none when absent | build artifacts, recipe with the token | `dag_tools/components/dbt_project/component.py:181-218`; `test_dbt_datahub_artifacts.py`: `test_recipe_carries_the_datahub_token_from_the_environment`, `test_recipe_omits_the_token_when_there_is_none` | `built` |
+| CO-DATAHUB | calls | the catalog's ingestion command run as a child process | token from config or the environment, none when absent | build artifacts, recipe with the token | `dag_tools/components/dbt_project/component.py:181-218`; `test_dbt_datahub_artifacts.py`: `test_recipe_carries_the_datahub_token_from_the_environment`, `test_recipe_omits_the_token_when_there_is_none` | `built` |
 | CO-DATAHUB-LINEAGE | writes | in-process | none | key prefixes in a shared process-wide map | `dag_tools/utils/translation_registry.py:12-21`, `:41-44`, `:56-62`; `dag_tools/components/datahub_lineage/component.py:63`; no test | `built` |
 
 ## Place in the mesh
