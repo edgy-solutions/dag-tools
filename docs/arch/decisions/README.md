@@ -10,7 +10,9 @@ These records list the decisions that dag-tools states in `AGENTS.md`. Each deci
 
 A decision is addressed by its census section and its bullet's position in that section. For example, `AGENTS.md §4, bullet 3` is the third top-level bullet of section 4 at the pin. Headings in these files carry the same address in short form, such as `§4.3`.
 
-The census has 307 top-level bullets at the pin, across 35 sections (section 7 has none).
+The census has 307 top-level bullets at the pin, across 35 sections. A 36th, section 7, has none.
+
+Two sections carry the heading `4a`: the OTel to API sync section and the shared inventory contract section. They are addressed as `§4a (OTel)` and `§4a (inventory)`.
 
 ## Why these are not numbered
 
@@ -38,7 +40,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 
 | Census section | Numbered record or ruling |
 |---|---|
-| §4a shared inventory contract (evolution rules) | [ADR-0004](../../adr/ADR-0004-inventory-schema-evolves-additively-only.md) |
+| §4a (inventory) shared inventory contract (evolution rules) | [ADR-0004](../../adr/ADR-0004-inventory-schema-evolves-additively-only.md) |
 | §4b registry (pointer written last) | [ADR-0005](../../adr/ADR-0005-registry-writes-the-pointer-last.md) |
 | §4l, §4m asset of record | [ADR-0002](../../adr/ADR-0002-physical-urn-is-the-catalog-urn.md) |
 | §1 no names from below | [rulings.md](../../rulings.md), 2026-11-04, widened 2026-11-05 |
