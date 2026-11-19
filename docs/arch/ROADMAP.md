@@ -106,9 +106,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 - **Gap:** [domain broker, finding 10](components/domain-broker.md). The ClickHouse users and Postgres roles the broker mints are refused once they expire, and are never dropped (`dag_tools/domain_broker/sql_minting.py:22-33`). `not built`
 - **Owner:** dag-tools.
-- **Remedy:** a sweep drops minted accounts whose lifetime has passed, using the identity that created them. `proposed`
+- **Remedy:** a sweep drops minted accounts whose lifetime has passed, using the identity that created them. A Postgres policy names its role, so the sweep drops the policy before the role. `proposed`
 - **Issue:** not filed.
-- **Note:** each engine sets the expiry in the statement that creates the account (`dag_tools/domain_broker/sql_minting.py:200-201`, `:324-325`), so the server refuses a login after it. An expired account stays in the engine's catalog of users or roles. The broker mints one account per SQL ticket, with a default lifetime of 900 seconds (`dag_tools/domain_broker/main.py:270`; `sql_minting.py:113`), plus one row policy when the decision carries a row filter (`sql_minting.py:212-218`, `:338-341`). A Postgres policy names its role, so a sweep drops the policy before the role. `built`
+- **Note:** each engine sets the expiry in the statement that creates the account (`dag_tools/domain_broker/sql_minting.py:200-201`, `:324-325`), so the server refuses a login after it. An expired account stays in the engine's catalog of users or roles. The broker mints one account per SQL ticket, with a default lifetime of 900 seconds (`sql_minting.py:113`), plus one row policy when the decision carries a row filter (`sql_minting.py:212-218`, `:338-341`). `built`
 - **Not established:** Postgres applies an expiry only to password sign-in. Whether a deployment's client-authentication rules let a minted role sign in some other way, such as trust, peer or certificate, is a deployment fact this repo cannot settle.
 
 ### 11. The gateway says what it does
