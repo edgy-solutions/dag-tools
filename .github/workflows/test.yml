@@ -293,3 +293,44 @@ jobs:
         run: |
           docker ps -a || true
           docker compose -f dag_tools_tests/dbt_datahub_e2e/docker-compose.yaml logs || true
+
+  # Does `uv.lock` still describe `pyproject.toml`?
+  #
+  # Nothing asked that until now, and the lockfile went stale for three
+  # releases: #60 added dependencies and left the lock behind, and #63 is
+  # what brought it back in line -- as a side effect of unrelated work,
+  # noticed by a person rather than by CI. A stale lock is silent in every
+  # job in this file, because none of them install from it: the suite
+  # resolves fresh (`uv pip install -e ".[all]"`), so the lock can describe
+  # a different dependency set than the one the tests actually ran against,
+  # indefinitely. Whoever installs with `uv sync` gets that other set.
+  #
+  # `uv lock --check` answers exactly that question and changes nothing: it
+  # exits 0 when the lock is current and 1 naming `uv lock` as the fix when
+  # it is not. It is given the network rather than `--offline`, because an
+  # offline resolve on a cold runner can fail for want of a cache entry --
+  # a failure about the runner wearing this check's name.
+  #
+  # NOT `continue-on-error`. The compat-floor job above is non-blocking
+  # because it guards a version this project does not formally support; a
+  # lockfile that disagrees with the project file is a defect in this
+  # commit, and a gate nobody has to obey is how the last one lasted three
+  # releases.
+  lockfile:
+    name: Lockfile matches pyproject
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Check the lockfile against the project file
+        run: |
+          if ! uv lock --check; then
+            echo "::error::uv.lock does not match pyproject.toml. Run 'uv lock' and"
+            echo "::error::commit the result, in the same commit as the dependency change."
+            exit 1
+          fi
