@@ -16,13 +16,13 @@ This record covers the decisions in `AGENTS.md` sections 1 to 3 at the component
   - a driver in the telemetry component;
   - a platform fallback in the dbt project component.
 
-  None names a project. The component records list such defaults without quoting them.
+  None names a project. The time-column default names a column, so it is an open item under the ruling as widened on 2026-11-05. The driver and platform defaults name no database object, so they are not on that ruling's list. The component records list such defaults without quoting them.
 
 ### §1.2 Resources and IO managers take their configuration at run time
 
 - **Decision.** Every resource, IO manager and sensor takes its configuration through Dagster's configurable classes, so a deployment can inject its own values.
 - **Why.** Configuration fixed in code cannot be set by a downstream project.
-- **Status.** `built`. Nine classes in eight files subclass Dagster's configurable resource or IO manager classes.
+- **Status.** `built`. Twelve classes in eleven files subclass Dagster's configurable resource or IO manager classes.
 
   One component does not supply what its resource needs. The S3 arrow component binds its resource with no arguments, although the resource has four required fields ([S3 sensor record](../components/s3-sensor.md), finding 8). That component does not build at all (finding 10).
 
@@ -78,7 +78,7 @@ This record covers the decisions in `AGENTS.md` sections 1 to 3 at the component
 ### §3.3 The two writes are separate durable steps
 
 - **Decision.** The notification and the update each run in their own durable step, so each completes independently even if the other system fails.
-- **Status.** `built`, with one exception. The local update is bounded with the shared retry options. The callback push raises on any status that is not a success and carries no retry options. So the push is retried for as long as its retry policy allows. That retry policy is not established from code.
+- **Status.** `built`, with one exception. The local update is bounded with the shared retry options. The callback push raises on any status that is not a success and carries no retry options. The service declares no retry policy of its own. So no configured policy bounds the push.
 
 ### §3.4 Database clients are created once, not in a loop
 
@@ -95,7 +95,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | §1.1 no project names; generic defaults remain | `dag_tools/otel_api_sync/spec.py:224-226`; `dag_tools/components/otel_api_sync/component.py:99`; `dag_tools/components/dbt_project/component.py:129` | AGENTS.md §1; rulings.md 2026-11-04 | no test of absence | `built` |
-| §1.2 configurable resources and IO managers | `dag_tools/io_managers/cortex_io_manager.py`, `s3.py`, `sql.py`; `dag_tools/resources/arrow.py`, `duckdb.py`, `grist.py`, `s3.py`, `warehouse.py` | AGENTS.md §1 | — | `built` |
+| §1.2 configurable resources and IO managers | `dag_tools/io_managers/arrow.py`, `cortex_io_manager.py`, `delta.py`, `duckdb.py`, `s3.py`, `sql.py`; `dag_tools/resources/arrow.py`, `duckdb.py`, `grist.py`, `s3.py`, `warehouse.py` | AGENTS.md §1 | — | `built` |
 | §1.2 arrow component binds no arguments | `dag_tools/components/s3_sensor/arrow_component.py:64-66`; `dag_tools/resources/arrow.py:10-81` | AGENTS.md §1 | no test | `not built` |
 | §2.1 GA component API | `dag_tools/components/restate_api_sync/component.py:7-9`; no match for the deprecated package in `dag_tools/` or `pyproject.toml` | AGENTS.md §2 | — | `built` |
 | §2.2 fifteen triple-inheritance components | `dag_tools/components/*/component.py` (for example `restate_api_sync/component.py:17`, `restate_dlt_sync/component.py:347`, `warehouse_source/component.py:466`); `s3_sensor/*_component.py` | AGENTS.md §2 | — | `built` |
@@ -104,5 +104,5 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 | §2.4 YAML configuration | each component's attributes | AGENTS.md §2; rulings.md 2026-11-04 | see the component records | `built` |
 | §2.5 factory functions | `dag_tools/components/contract_mapping/component.py:374`; `document_tables/component.py:372`; `read_audit/component.py:170`; `warehouse_source/component.py:330`; `restate_api_sync/component.py:84`; `restate_dlt_sync/component.py:543`, `:756`, `:782`, `:811` | AGENTS.md §2 | — | `built` |
 | §3.1, §3.2 outbox; every transition through one function | `sap_induction/service.py:23`, `:58-105`; transitions at `:118`, `:137`, `:178`, `:180`, `:186` | AGENTS.md §3 | no test of the transitions | `built` |
-| §3.3 two steps; push unbounded and raising | `sap_induction/service.py:79`, `:82`, `:101-104` | AGENTS.md §3 | `test_restate_db_retry.py`: `test_every_connecting_step_in_the_handlers_carries_a_bound` (the update step only) | `built` |
+| §3.3 two steps; push unbounded and raising | `sap_induction/service.py:23`, `:79`, `:82`, `:101-104` | AGENTS.md §3 | `test_restate_db_retry.py`: `test_every_connecting_step_in_the_handlers_carries_a_bound` (the update step only) | `built` |
 | §3.4 one database client per worker; per-step connections elsewhere | `sap_induction/service.py:13-20`, `:33`, `:39`; `oracle_ack.py:115`; `oracle_control.py:43`, `:332`, `:389`; `api_sync.py:173` | AGENTS.md §3 | no test | `built` |

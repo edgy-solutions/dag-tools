@@ -14,7 +14,7 @@ This record covers the decisions in `AGENTS.md` sections 5 and 6 at the componen
   - component attributes.
 - **Why.** One configuration surface means a deployment configures every tool the same way.
 - **Where else.** [rulings.md](../../rulings.md), 2026-11-04, holds the decision that everything built here is a component configured from YAML.
-- **Status.** `built`. The component records list each component's attributes and which of them are required. They cite this section where the required settings are the configuration: the dlt pipeline, Grist ingest, both Restate dispatch components and the S3 sensor.
+- **Status.** `built`. The component records list each component's attributes and which of them are required. Six component records cite this section, where the required settings are the configuration: the dlt pipeline, Grist ingest, the telemetry-to-API sync, both Restate dispatch components and the S3 sensor.
 
 ### §5.2 Tool configuration is wrapped, not passed through
 
