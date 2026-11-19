@@ -110,6 +110,13 @@ it back are named.
 
   **The refusal vocabulary is unchanged.** `identity.REASONS`, its status mapping and every HTTP status are exactly as before: a token this process cannot verify *is* unverified, and a process-level problem does not belong in a per-token answer. No signature, export or default changes, and a deployment already serving verifiable tokens sees no difference.
 
+- **CI fails when `uv.lock` does not record the version in `pyproject.toml`.** The test
+  workflow runs `uv lock --check`, so a version bump that leaves the lockfile behind is
+  caught on the commit that makes it rather than on the next, unrelated one. The lockfile
+  records this project's own version alongside every dependency's, and `uv lock --check`
+  exits 1 when the two disagree. No library change: no signature, export or default, and
+  **no credential was added to CI**.
+
 ### Fixed
 
 - **The central gateway image rejected every RS256 token.** Its Dockerfile installed bare
