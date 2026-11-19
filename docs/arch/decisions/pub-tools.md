@@ -9,7 +9,7 @@ pub-tools records its own decisions, as numbered decision records in its own rep
 | | |
 |---|---|
 | Repository | pub-tools |
-| Commit | `21bc4db758f2465d35122e3a9f9ee8aeb4fab1f9`, the head of its stacked pull requests #6 and #7, which are not yet merged. After the merge, the paths on its default branch are the same. |
+| Commit | `ad981b119dc00dc34ab2d187456bf6f4b4205bbb`, the head of its stacked pull requests #6 and #7, which are not yet merged. The stack was rebased on its default branch; the `docs/arch` tree is `e1a8a6a6525ad96c10adc49ebde0fc9809a9077b` at this commit and at `21bc4db758f2465d35122e3a9f9ee8aeb4fab1f9`, where it was first read. After the merge, the paths on its default branch are the same. |
 | Index | `docs/arch/decisions/README.md`, one line per record, giving the record's number, title and status |
 | Records | `docs/arch/decisions/ADR-NNNN-*.md`, ADR-0001 to ADR-0045. Each has a status, the decision, why, its consequences and its evidence. |
 | Evidence pins | Each record cites pub-tools code at `90fba4a`, the pub-tools pin in [the README](../README.md), with a test name or "no test". dag-tools references are at `a99779f`, and invincible-agent references at `6b3e8efd`. |
@@ -35,6 +35,6 @@ pub-tools records a run that is reported only in a commit message as `built`, wi
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| 45 records and one index at the commit | pub-tools `docs/arch/decisions/` at `21bc4db`, file list read through the hosting service's API | — | 45 `ADR-*` files and `README.md` | — |
-| Status counts | pub-tools `docs/arch/decisions/README.md` at `21bc4db`, status markers counted | — | 36, 8 and 1 | — |
+| 45 records and one index at the commit | pub-tools `docs/arch/decisions/` at `ad981b1`, file list read through the hosting service's API | — | 45 `ADR-*` files and `README.md` | — |
+| Status counts | pub-tools `docs/arch/decisions/README.md` at `ad981b1`, status markers counted | — | 36, 8 and 1 | — |
 | Evidence pins and the commit-message rule | supplied by the owning session, 2026-11-19 | — | — | — |
