@@ -65,6 +65,6 @@ Each repository's decisions are addressed in its own way. A decision number is a
 
 | Repository | Record | How a decision is addressed | Decisions |
 |---|---|---|---|
-| invincible-agent | follows in the next batches | by its own ADR number, as "invincible-agent ADR-NNNN" | — |
+| invincible-agent | [ADR-0001 to ADR-0024](invincible-agent-adr-0001-0024.md), [ADR-0025 to ADR-0048](invincible-agent-adr-0025-0048.md), [ADR-0049 to ADR-0072](invincible-agent-adr-0049-0072.md) | by its own ADR number, as "invincible-agent ADR-NNNN" | 68 ADR files; four numbers in the range have none |
 | iagent-mesh-sdk | [sdk.md](sdk.md) | `SDK.N`, numbered in that record only; the SDK has no committed census | 8 |
 | pub-tools | [pub-tools.md](pub-tools.md), a pointer | by its own ADR number, as "pub-tools ADR-NNNN", in its own records | 45, recorded there |
