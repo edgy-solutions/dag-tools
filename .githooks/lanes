@@ -3,3 +3,4 @@
 # A row is never removed. A closed lane gets a comment on its row.
 dag-tools   lane/01 lane/01-*
 doc2table   lane/doc2table lane/doc2table-*
+arch        lane/arch lane/arch-*   # architecture records for the arch-kit (registered 2026-11-18)
