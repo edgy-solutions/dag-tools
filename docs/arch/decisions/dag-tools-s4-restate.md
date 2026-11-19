@@ -16,7 +16,7 @@ This record covers the decisions in `AGENTS.md` section 4 at the component-recor
 
 - **Decision.** A deployment chooses which handlers run, and where Restate is, through three environment variables. The worker registers itself with Restate on startup.
 - **Why.** A deployment changes values, not code.
-- **Status.** `built`. The worker reads the selection and refuses an unknown key by name. It then registers its advertised address with the Restate admin endpoint. Tests cover the selection, but no test covers the registration.
+- **Status.** `built`. The worker reads the selection and refuses an unknown key by name. It then registers its advertised address with the Restate admin endpoint. Tests in the default suite cover the selection. The registration has no test in the default suite; it is covered by the docker-gated end-to-end harness, which runs behind an environment gate.
 
 ## Failure handling inside a durable step
 
@@ -51,7 +51,7 @@ This record covers the decisions in `AGENTS.md` section 4 at the component-recor
 
 - **Decision.** A handler validates its payload as the first act inside its durable step. A bad payload raises the library's own malformed-payload refusal, which is terminal. The refusal names every bad field and carries no value from any of them.
 - **Why.** A refusal raised before any step fails the whole invocation. Restate retries a failed invocation with no bound, so the invocation never ends. The worst case is a list of ids sent as a string. A string looks like a list, so the update would run one character at a time and change the wrong rows.
-- **Status.** `built`. All three payload handlers are converted. A structural test walks the handler package and fails if any payload handler reads its payload outside a step. It names the handlers it expects, and a planted-defect control proves it can see the defect.
+- **Status.** `built`. All three handler modules are converted. A structural test walks the handler package and fails if any payload handler reads its payload outside a step. It names the handlers it expects, and a planted-defect control proves it can see the defect.
 
 ### §4.6 A handler with two steps refuses in both
 
@@ -123,7 +123,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 |---|---|---|---|---|
 | §4.1 registry and shared image | `serve.py:35-41`, `:60-72` | AGENTS.md §4 | `test_restate_worker_services.py`: `test_the_registry_is_not_empty`, `test_every_registered_service_imports_and_exposes_a_service`, `test_every_registered_service_is_documented_in_the_chart` | `built` |
 | §4.2 selection by environment; unknown key refused | `serve.py:46-56` | AGENTS.md §4 | `test_restate_worker_services.py`: `test_the_chart_default_is_a_valid_selection`, `test_selecting_the_pdm_pair_builds`, `test_an_unknown_key_is_refused_by_name` | `built` |
-| §4.2 self-registration | `serve.py:43`, `:75-112`, `:115-139` | AGENTS.md §4 | no test | `built` |
+| §4.2 self-registration | `serve.py:43`, `:75-112`, `:115-139` | AGENTS.md §4 | no test in the default suite; covered by the docker-gated e2e harness: `restate_e2e_harness.py:163`, `:203-213`; `test_restate_concurrency_e2e.py:18`, `:22-26` | `built` |
 | §4.3 status as data; classification outside the step | `api_call_plan.py:355-368`, `:431-432`, `:606`, `:622`, `:652`, `:726`, `:731` | AGENTS.md §4 | `test_otel_api_sync_executor.py`: `test_retryable_status_raises_so_restate_retries`, `test_status_with_a_fallback_does_not_raise` | `built` |
 | §4.4 bounded and terminal on damage | `db_retry.py:119-122`, `:138-139`, `:187-190`, `:197`, `:223`, `:256`, `:298`, `:337`; callers `oracle_ack.py:151-154`, `oracle_control.py:354-357`, `:411-414`, `api_sync.py:187-190`, `sap_induction/service.py:101-104` | AGENTS.md §4 | `test_restate_db_retry.py`: `test_a_wrong_password_causes_one_login_attempt_not_a_loop`, `test_without_the_guard_a_wrong_password_would_loop`, `test_an_unrecognised_failure_is_bounded_rather_than_endless`, `test_a_restarting_listener_is_retried_because_that_is_the_point`, `test_an_async_action_is_guarded_too`, `test_the_terminal_message_carries_nothing_from_the_drivers_text`, `test_every_connecting_step_in_the_handlers_carries_a_bound`, `test_the_real_ack_handler_makes_one_login_attempt_on_a_wrong_password` | `built` |
 | §4.5 payload refused inside the step | `db_retry.py:78`, `:162`; `oracle_control.py:82`, `:105`, `:252-268` | AGENTS.md §4 | `test_restate_payload_refusal.py`: `test_a_malformed_payload_costs_one_invocation_not_a_loop`, `test_the_old_shape_would_loop_at_the_invocation_level`, `test_the_refusal_happens_inside_the_step_not_before_it`, `test_a_string_of_ids_is_refused_rather_than_flipping_the_wrong_rows`, `test_the_refusal_carries_no_value_from_the_payload`, `test_every_problem_is_reported_at_once`, `test_a_well_formed_payload_still_updates_and_commits`, `test_the_stats_row_is_still_written_when_one_is_asked_for`, `test_every_payload_handler_refuses_inside_its_step`, `test_control_the_check_finds_a_payload_read_before_the_step` | `built` |

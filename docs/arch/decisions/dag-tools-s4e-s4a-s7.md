@@ -91,14 +91,14 @@ The survey loads every code location of a repository at a commit, records what l
 
 - **Decision.** Each sensor, schedule and asset check is read in its own error handler; a failure is logged and the item is skipped. A failing code location is recorded, not raised.
 - **Why.** One bad definition would otherwise hide every other definition in the repository.
-- **Status.** `built`. A test pins the per-location case; no test pins the per-item case.
+- **Status.** `built`.
 
 ### §4c.4 One schema per artifact, each with its own version
 
 - **Decision.** Each survey artifact has its own pydantic model and its own schema version constant. Every model ignores unknown fields. Fields are only added.
 - **Why.** Readers on an older release must still read artifacts written by a newer one.
 - **Where else.** The same rule for the asset inventory is §4a.2.
-- **Status.** `built`. No test pins the per-artifact tolerance of unknown fields.
+- **Status.** `built`.
 
 ## §4b Qualification registry
 
