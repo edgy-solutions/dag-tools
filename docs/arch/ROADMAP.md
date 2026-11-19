@@ -78,6 +78,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Owner:** invincible-agent, whose engines hold the readers, and the SDK, whose result shape would have to carry the receipt.
 - **Remedy:** each reader returns, with its result, the person it read for, the decision it read under and a version of what it read. The version would use the dataset receipt's own fields (`as_of`, `as_of_source`, `as_of_unavailable`; dag-tools `dag_tools/cortex_data/client.py:23-32`). The person and the decision would need fields the dataset receipt does not have: it carries no principal, and its `allowed_columns` and `row_filters` are the narrowing a decision produced, not the decision. `proposed`
 - **Note:** the person is already on every read as provenance, but not on any receipt. The version would not appear for free: the table of version readers ships empty (row 5), so a receipt reusing those fields would say the version is unavailable until a reader exists for that store.
+- **Placement (provisional, 2026-11-18):** the architect places this row jointly with the SDK and invincible-agent, to be recorded as an invincible-agent decision that these records cite. Until an owner is named, no work starts on it. `proposed`
 - **Issue:** not filed.
 
 ### 8. Decide the server end of the SDK's remote graph client
