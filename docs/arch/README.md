@@ -76,8 +76,12 @@ How closely is one of:
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/grist-ingest.md](components/grist-ingest.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
+| [components/otel-api-sync.md](components/otel-api-sync.md) | component | draft |
+| [components/restate-api-sync.md](components/restate-api-sync.md) | component | draft |
+| [components/restate-dlt-sync.md](components/restate-dlt-sync.md) | component | draft |
 | [components/restate-server.md](components/restate-server.md) | component | draft |
 | [components/restate-worker.md](components/restate-worker.md) | component | draft |
+| [components/s3-sensor.md](components/s3-sensor.md) | component | draft |
 | [components/systemlink-source.md](components/systemlink-source.md) | component | draft |
 | [components/warehouse-source.md](components/warehouse-source.md) | component | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
