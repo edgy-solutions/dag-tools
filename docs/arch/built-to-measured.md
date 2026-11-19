@@ -116,32 +116,35 @@ A candidate test is named for each. Writing it would give the claim a test, and 
 
 ## Where "no test" is written
 
-Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted.
+Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted. Fifty records carry 282 such lines.
 
 | Record | Lines | Record | Lines |
 |---|---|---|---|
-| [S3 sensor](components/s3-sensor.md) | 15 | [warehouse source](components/warehouse-source.md) | 4 |
-| [restate API sync](components/restate-api-sync.md) | 14 | [document tables](components/document-tables.md) | 3 |
-| [Grist ingest](components/grist-ingest.md) | 13 | [classification propagation](components/classification-propagation.md) | 3 |
-| [OTel API sync](components/otel-api-sync.md) | 13 | [DataHub](components/datahub.md) | 3 |
-| [restate dlt sync](components/restate-dlt-sync.md) | 6 | [Keycloak](components/keycloak.md) | 3 |
-| [contract mapping](components/contract-mapping.md) | 5 | [MinIO](components/minio.md) | 3 |
-| [dbt project](components/dbt-project.md) | 5 | [Dagster](components/dagster.md) | 2 |
-| [dlt pipeline](components/dlt-pipeline.md) | 5 | [read audit](components/read-audit.md) | 2 |
-| [Topaz](components/topaz.md) | 5 | [tagged warehouse](components/tagged-warehouse.md) | 2 |
-| [DataHub lineage](components/datahub-lineage.md) | 4 | [central gateway](components/central-gateway.md) | 1 |
-| [domain broker](components/domain-broker.md) | 4 | [SystemLink source](components/systemlink-source.md) | 1 |
-| [mesh data client](components/mesh-data-client.md) | 4 | [big data](flows/big-data.md) | 3 |
-| [Restate server](components/restate-server.md) | 4 | [need to know](flows/need-to-know.md) | 2 |
-| [Restate worker](components/restate-worker.md) | 4 | [roadmap](ROADMAP.md) | 7 |
-| [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
-| [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 10 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
-| [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 8 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
-| [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
-| [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
-| [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
-| [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
-| [pub-tools](decisions/pub-tools.md) | 1 | | |
+| [Grist ingest](components/grist-ingest.md) | 17 | [tagged warehouse](components/tagged-warehouse.md) | 3 |
+| [S3 sensor](components/s3-sensor.md) | 17 | [SystemLink source](components/systemlink-source.md) | 2 |
+| [restate API sync](components/restate-api-sync.md) | 16 | [Redpanda](components/redpanda.md) | 1 |
+| [OTel API sync](components/otel-api-sync.md) | 14 | [big data](flows/big-data.md) | 3 |
+| [dlt pipeline](components/dlt-pipeline.md) | 9 | [need to know](flows/need-to-know.md) | 2 |
+| [Restate worker](components/restate-worker.md) | 9 | [evidence walkthrough](walkthroughs/evidence.md) | 1 |
+| [classification propagation](components/classification-propagation.md) | 8 | [not-established list](not-established.md) | 1 |
+| [contract mapping](components/contract-mapping.md) | 8 | [overview](overview.md) | 1 |
+| [mesh data client](components/mesh-data-client.md) | 8 | [roadmap](ROADMAP.md) | 7 |
+| [restate dlt sync](components/restate-dlt-sync.md) | 8 | [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 |
+| [Restate server](components/restate-server.md) | 8 | [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 10 |
+| [DataHub lineage](components/datahub-lineage.md) | 7 | [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 8 |
+| [DataHub](components/datahub.md) | 6 | [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 |
+| [dbt project](components/dbt-project.md) | 6 | [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 |
+| [warehouse source](components/warehouse-source.md) | 6 | [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 |
+| [central gateway](components/central-gateway.md) | 5 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
+| [document tables](components/document-tables.md) | 5 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
+| [MinIO](components/minio.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
+| [Topaz](components/topaz.md) | 5 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
+| [domain broker](components/domain-broker.md) | 4 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
+| [JupyterHub](components/jupyterhub.md) | 4 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
+| [Keycloak](components/keycloak.md) | 4 | [dag-tools §4i, §4h, §4g](decisions/dag-tools-s4i-s4h-s4g.md) | 1 |
+| [Dagster](components/dagster.md) | 3 | [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 |
+| [read audit](components/read-audit.md) | 3 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
+| [Superset](components/superset.md) | 3 | [pub-tools](decisions/pub-tools.md) | 1 |
 
 ## Not established
 
@@ -158,3 +161,4 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 | Groups A to E | the records named in each row | as each row | as each row | `built`, as each record |
 | Three group-D tests replace a live service with a fake | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
 | No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list | — |
+| 282 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
