@@ -63,7 +63,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a sensor, a job and a partitioned asset | `dag_tools/components/grist_ingest/component.py:107-150`; no test | `built` |
 | CO-GRIST | calls | HTTP | bearer token from the component file | GET routes for workspaces, tables and a document download | `dag_tools/resources/grist.py:61-125`; no test | `built` |
-| none: a SQL database | writes | SQL through a database driver | user and password from the component file | one table per partition key | `dag_tools/io_managers/sql.py:175-178, :232-234`; no test | `built` |
+| XE-SQL-DATABASE | writes | SQL through a database driver | user and password from the component file | one table per partition key | `dag_tools/io_managers/sql.py:175-178, :232-234`; no test | `built` |
 | CO-DATAHUB-LINEAGE | writes | in-process output metadata | none | destination name and column schema | `dag_tools/io_managers/sql.py:271-299`; no test | `built` |
 
 ## Place in the mesh
@@ -74,7 +74,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component, loaded by the code location only when a config file is named; the sensor starts stopped | — |
 | Sign-in | a bearer token to Grist and a database user and password to the destination, both from the component's YAML (which may refer to environment variables) | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from Grist to the pod and from the pod to the destination database; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where a producer's data enters the mesh | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where a producer's data enters the mesh | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none; it reads with one token and writes with one database account | — |
 | Services served | the destination tables advertise their platform and columns for the catalog sensor | [DoD S3](../alignment/dod-dmra.md) |
 

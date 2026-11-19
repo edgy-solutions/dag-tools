@@ -65,7 +65,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | CO-DAGSTER | is called by | in-process | none | a run of the observable source asset | `dag_tools/components/warehouse_source/component.py:347-368`; no test | `built` |
 | CO-TAGGED-WAREHOUSE | calls | in-process | none from the component; the resource holds its own | count and schema reads; any resource with the two read methods is accepted | `dag_tools/components/warehouse_source/component.py:390-405`; no test | `built` |
 | CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | dataset metadata and per-column label terms | `dag_tools/components/warehouse_source/component.py:169-188, :191-215, :427-443`; `test_an_empty_token_is_never_sent_as_a_credential`, `test_a_catalog_failure_FAILS_the_materialization` | `built` |
-| none: a mounted classification document | reads | file read | none | the dimensions and values labels are validated against | `dag_tools/components/warehouse_source/component.py:139-166`; `test_an_absent_document_loads_and_then_fails_the_run_naming_the_path` | `built` |
+| XE-CLASSIFICATION-DOC | reads | file read | none | the dimensions and values labels are validated against | `dag_tools/components/warehouse_source/component.py:139-166`; `test_an_absent_document_loads_and_then_fails_the_run_naming_the_path` | `built` |
 
 ## Place in the mesh
 
@@ -75,7 +75,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a YAML component; the warehouse resource is bound by key; the label set is validated against a mounted document | — |
 | Sign-in | none to the catalog beyond a token; none to the warehouse beyond the resource's own credential and query tag | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct to the warehouse through the resource and direct to the catalog; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where a producer declares and labels its own source | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where a producer declares and labels its own source | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | publishes the labels a later access decision could read; it makes no access decision itself | [NATO R3](../alignment/nato-dcra.md) |
 | Services served | the catalog entry and per-column labels for a source dataset, and the catalog's record of the observing asset | [DoD S3](../alignment/dod-dmra.md), [S4](../alignment/dod-dmra.md), [S12](../alignment/dod-dmra.md) |
 

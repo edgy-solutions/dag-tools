@@ -67,10 +67,10 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a run of the one asset that checks the mapping | `dag_tools/components/contract_mapping/component.py:438-448`; no test | `built` |
-| none: a contract file | reads | file read | none | the contract document or one selected from a bundle | `dag_tools/components/contract_mapping/component.py:100-162`; no test | `built` |
-| none: a contract endpoint | calls | HTTP | only the headers a deployment sets | a plain GET for the served contract | `dag_tools/components/contract_mapping/component.py:165-187`; `test_a_served_contract_is_fetched_at_materialization` | `built` |
+| XE-CONTRACT-FILE | reads | file read | none | the contract document or one selected from a bundle | `dag_tools/components/contract_mapping/component.py:100-162`; no test | `built` |
+| XE-CONTRACT-SERVICE | calls | HTTP | only the headers a deployment sets | a plain GET for the served contract | `dag_tools/components/contract_mapping/component.py:165-187`; `test_a_served_contract_is_fetched_at_materialization` | `built` |
 | CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | a read of the source's schema aspect, when switched on | `dag_tools/components/contract_mapping/component.py:222-279`; no test | `built` |
-| none: a dbt project directory | writes | file write | none | model, schema and test files | `dag_tools/components/contract_mapping/component.py:322-351`; `test_nothing_is_written_when_the_render_fails` | `built` |
+| XE-DBT-PROJECT-DIR | writes | file write | none | model, schema and test files | `dag_tools/components/contract_mapping/component.py:322-351`; `test_nothing_is_written_when_the_render_fails` | `built` |
 
 ## Place in the mesh
 
@@ -80,7 +80,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component configured in YAML; the asset it builds writes files into a dbt project that a deployment builds separately | — |
 | Sign-in | none to the mesh; a served contract gets only the headers the deployment configures; the catalog read uses a configured or environment token | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | none; it moves no data, and the gateway and broker are not on its path | — |
-| Plane | data management, where shared lifecycle components run | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: where shared lifecycle components run | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; it refuses mappings that disagree with their contract, which is input validation | — |
 | Services served | translation into the contract's form once, at the producer; quality tests that fail under the contract's own rule ids | [DoD S14](../alignment/dod-dmra.md), [S13](../alignment/dod-dmra.md) |
 

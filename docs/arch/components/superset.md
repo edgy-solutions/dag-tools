@@ -38,8 +38,8 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: an agent engine in the invincible-agent chart | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; invincible-agent `helm/invincible-agent/values.yaml:662`; no test | `built` |
-| none: a SQL database | reads | SQL | not established | rows, through Superset's own database connections | no code at either pin shows it; no test | `not built` |
+| XE-AGENT-ENGINE | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; invincible-agent `helm/invincible-agent/values.yaml:662`; no test | `built` |
+| XE-SQL-DATABASE | reads | SQL | not established | rows, through Superset's own database connections | no code at either pin shows it; no test | `not built` |
 | CO-GATEWAY | calls | none | none | nothing; a read through Superset is not decided, ticketed or audited | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (no gateway call in it); no test | `not built` |
 
 ## Place in the mesh
@@ -50,7 +50,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | an external service; the invincible-agent chart passes its address and an empty token to the agent engines | — |
 | Sign-in | a bearer token from a chart secret, empty by default | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | Superset reads its own database connections; nothing passes through the gateway | — |
-| Plane | analytical: insight for decisions | [NATO L4](../alignment/nato-dcra.md) |
+| Plane | `analytical-data`: insight for decisions | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | none built | — |
 | Services served | none of the fifteen at the pin | — |
 

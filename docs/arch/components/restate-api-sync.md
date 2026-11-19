@@ -65,7 +65,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | one message per staged row: route, table, key and the whole row | `dag_tools/components/restate_api_sync/component.py:133-142`, `:160`; no test | `built` |
-| none: a staging SQL database | reads | SQL through a database driver | connection URL from the process environment | every row of the staged table | `dag_tools/components/restate_api_sync/component.py:92-109`; no test | `built` |
+| XE-STAGING-DB | reads | SQL through a database driver | connection URL from the process environment | every row of the staged table | `dag_tools/components/restate_api_sync/component.py:92-109`; no test | `built` |
 
 ## Place in the mesh
 
@@ -75,7 +75,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component with an extraction step and a dispatch asset per table; the address and the staging credential are set by the deployment | — |
 | Sign-in | none to Restate; a database URL from the process environment for the staging read | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from Dagster to the staging database and to the Restate ingress; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' rows are pushed out to a consumer's API | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' rows are pushed out to a consumer's API | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none; the handler's refusals are input validation | — |
 | Services served | delivery of records to an API as a registered, retried exchange, started from Dagster | [DoD S7](../alignment/dod-dmra.md) |
 

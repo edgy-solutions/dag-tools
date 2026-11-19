@@ -47,8 +47,8 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DBT-PROJECT | is called by | child process of the dbt command line | none | build, freshness and docs commands | `dag_tools/components/dbt_project/component.py:123-158`; `test_dbt_empty_staging.py`: `test_resolved_cli_args_reach_only_the_build_invocation` | `built` |
-| none: a SQL warehouse | reads | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | models and tests over tables | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
-| none: a SQL warehouse | writes | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | built models | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
+| XE-SQL-WAREHOUSE | reads | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | models and tests over tables | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
+| XE-SQL-WAREHOUSE | writes | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | built models | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
 
 ## Place in the mesh
 
@@ -58,7 +58,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | run by a component in a Dagster code location; no chart deploys a project | — |
 | Sign-in | the warehouse credential in the project's profile, from the environment | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | inside the warehouse; no data leaves it through dbt | — |
-| Plane | data management and the analytical layer: curated models | [NATO L3](../alignment/nato-dcra.md), [NATO L4](../alignment/nato-dcra.md) |
+| Plane | `analytical-data`: curated models for decisions. Running the transformation is a shared lifecycle service | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | none built | — |
 | Services served | data quality tests, mediation between source and contract shapes, and lineage from its manifest | [DoD S13](../alignment/dod-dmra.md), [DoD S14](../alignment/dod-dmra.md), [DoD S4](../alignment/dod-dmra.md) |
 

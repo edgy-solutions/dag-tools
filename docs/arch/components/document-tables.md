@@ -76,11 +76,11 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a partitioned asset per bundle | `dag_tools/components/document_tables/component.py:372-376`; no test | `built` |
-| none: an S3-compatible object store | reads | S3 API | none passed; the client's default credential chain | bundles of documents | `dag_tools/documents/sources.py:612-618, :699-702`; `test_s3_credentials_are_never_passed_by_the_source` | `built` |
-| none: a Lance destination store | writes | Lance library | storage options set by the deployment | table rows | `dag_tools/documents/lance_writer.py:192-200`; `test_storage_options_reach_every_lance_entry_point_and_are_never_logged` | `built` |
-| none: a Lance destination store | reads | Lance library | storage options set by the deployment | existing table schemas | `dag_tools/documents/lance_writer.py:192-200`; no test | `built` |
+| XE-OBJECT-STORE | reads | S3 API | none passed; the client's default credential chain | bundles of documents | `dag_tools/documents/sources.py:612-618, :699-702`; `test_s3_credentials_are_never_passed_by_the_source` | `built` |
+| XE-LANCE-STORE | writes | Lance library | storage options set by the deployment | table rows | `dag_tools/documents/lance_writer.py:192-200`; `test_storage_options_reach_every_lance_entry_point_and_are_never_logged` | `built` |
+| XE-LANCE-STORE | reads | Lance library | storage options set by the deployment | existing table schemas | `dag_tools/documents/lance_writer.py:192-200`; no test | `built` |
 | CO-DATAHUB-LINEAGE | writes | in-process output metadata | none | row count, location and column schema | `dag_tools/components/document_tables/component.py:259-266`; `test_the_column_names_survive_to_the_datahub_schema_extractor` | `built` |
-| person: an operator | is called by | command line | none | a profile command | `dag_tools/documents/cli.py:28-69`; `test_report_only_reads_no_bundle` | `built` |
+| RL-OPERATOR | is called by | command line | none | a profile command | `dag_tools/documents/cli.py:28-69`; `test_report_only_reads_no_bundle` | `built` |
 
 ## Place in the mesh
 
@@ -90,7 +90,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a YAML component in a code location; one partition per bundle, a discovery sensor, a maintenance job | [DoD P3](../alignment/dod-dmra.md) |
 | Sign-in | none; the source uses the store client's default credential chain and the destination uses `storage_options` | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct between the run, the bundle store and the destination; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where a producer's documents become tables as they arrive | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where a producer's documents become tables as they arrive | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; it refuses bad configuration and rejects bad documents, which is input validation, not access control | — |
 | Services served | mediation of documents into a table shape; checks kept with the asset; column schema and location emitted as metadata for the catalog path | [DoD S14](../alignment/dod-dmra.md), [S13](../alignment/dod-dmra.md), [S4](../alignment/dod-dmra.md) |
 

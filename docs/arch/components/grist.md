@@ -51,7 +51,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | an external service; the invincible-agent chart can mount an ingest configuration into the dag-tools code location, off by default | — |
 | Sign-in | a static token from the component's configuration | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | Grist API to the code location to the warehouse; not through the gateway | — |
-| Plane | operational: a source of data people produce | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: a source of data people produce | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none built | — |
 | Services served | data exchange from a source into the warehouse | [DoD S7](../alignment/dod-dmra.md) |
 

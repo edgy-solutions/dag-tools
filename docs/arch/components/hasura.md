@@ -40,7 +40,7 @@ No connection is built at this pin: nothing in the code or the chart refers to t
 | How the mesh wires it | not wired | — |
 | Sign-in | none | — |
 | Data path | none | — |
-| Plane | not established | — |
+| Plane | not established: nothing wires it into the mesh at either pin, so no plane is assigned | — |
 | Security role | none | — |
 | Services served | none at the pin | — |
 

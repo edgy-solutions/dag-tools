@@ -66,13 +66,67 @@ How closely is one of:
 
 `how closely` describes the correspondence; `status` describes the thing that corresponds. A row can be `close` and `proposed`, if the intent matches and nothing is built.
 
+## Planes
+
+The mesh places each component in one of four planes. The four are the ones the NATO DCRA names in Appendix 14 (its technical architecture), ¶1. The definitions below are this README's own words; the alignment rows are in [the DCRA alignment](alignment/nato-dcra.md#data-planes-appendix-14).
+
+| Plane | Holds | DCRA | Alignment row |
+|---|---|---|---|
+| `infrastructure` | the compute, storage, network and foundation services that every other plane runs on | Appendix 14, ¶2–4 | [L1](alignment/nato-dcra.md) |
+| `operational-data` | the systems that produce and use data in day-to-day work, and the parts that read data out of them or write back to them | Appendix 14, ¶5–7 | [L2](alignment/nato-dcra.md) |
+| `data-management` | the shared services that govern data across its life: catalog, lineage, contracts, access decisions and transformation | Appendix 14, ¶8–9 | [L3](alignment/nato-dcra.md) |
+| `analytical-data` | where data is explored and analysed, and turned into insight for decisions | Appendix 14, ¶10 | [L4](alignment/nato-dcra.md) |
+
+Each component record's Plane row names exactly one plane, in backticks, and then says why. A component that also carries work of a second plane says so in that explanation; it is still placed in one. A component that nothing wires into the mesh has no plane, and its row says `not established`.
+
 ## Ids and connections
 
 Each component record carries an id beginning `CO-` in its title line, and each flow record an id beginning `FL-`. Other records refer to a component or a flow by that id. An id does not change once it is pushed.
 
-A component record's "Connections" table has one row per connection, read from that record's side. The first cell is the other party's id. A party with no record of its own is written `none:` followed by a description of it, and a person is written `person:` followed by a role. The direction cell holds one of four words: `calls` (this side sends the request), `is called by` (the other side sends it), and `reads` or `writes` (this side moves data out of, or into, a party that keeps it). A party that keeps data draws each such row from its own side as `is called by`. When a caller can reach any store of a kind and the records do not say which one a deployment runs, the caller draws the store as a `none:` party, and no store record lists that caller.
+A component record's "Connections" table has one row per connection, read from that record's side. The first cell is the other party's id, and it holds that id and nothing else. A party with no record of its own has an id beginning `XE-` (an outside system or element), and a person has one beginning `RL-` (a role). Both are defined once, in the table below. An `XE-` id names a kind of party, not one instance of it: two rows naming `XE-POSTGRES` may mean two different databases. Anything that qualifies the party goes in What passes. The direction cell holds one of four words: `calls` (this side sends the request), `is called by` (the other side sends it), and `reads` or `writes` (this side moves data out of, or into, a party that keeps it). A party that keeps data draws each such row from its own side as `is called by`. When a caller can reach any store of a kind and the records do not say which one a deployment runs, the caller draws the store by its `XE-` id, and no store record lists that caller.
 
-A flow record's step table numbers its steps and names the parties of each step in the same way.
+A flow record's step table numbers its steps and names the parties of each step in the same way. The Actor and Target cells each hold one id.
+
+| Id | Names |
+|---|---|
+| `XE-AGENT-ENGINE` | an agent engine in the invincible-agent chart |
+| `XE-AGENT-READER` | an agent engine's in-process graph or vector reader |
+| `XE-CALLBACK-API` | a callback endpoint that a durable handler notifies |
+| `XE-CLASSIFICATION-DOC` | the classification document a deployment mounts |
+| `XE-CLICKHOUSE` | a ClickHouse database |
+| `XE-CODE-LOCATION` | a Dagster code-location server |
+| `XE-CONSUMER` | a consumer of a dataset: a notebook, an agent, an asset or SDK code |
+| `XE-CONTRACT-FILE` | a contract file |
+| `XE-CONTRACT-SERVICE` | an endpoint that serves contracts |
+| `XE-DAGSTER-STORAGE` | the Postgres database Dagster keeps runs and events in |
+| `XE-DATASET-BACKEND` | the store that holds a dataset, any one of `XE-OBJECT-STORE`, `XE-POSTGRES` or `XE-CLICKHOUSE`; used where a step does not depend on which |
+| `XE-DBT-PROJECT-DIR` | a dbt project directory |
+| `XE-DEFINITIONS-MODULE` | a deployment's Dagster definitions module |
+| `XE-DLT-DESTINATION` | the destination a dlt pipeline loads into |
+| `XE-DUCKDB-RESOURCE` | a DuckDB resource in a code location |
+| `XE-HISTORY-EXPORT` | an exported file of warehouse query history |
+| `XE-HISTORY-RESOURCE` | a resource that reads warehouse query history |
+| `XE-IO-MANAGER` | an IO manager in a code location |
+| `XE-KNOWLEDGE-STORE` | a graph or vector store |
+| `XE-LANCE-STORE` | a Lance destination store |
+| `XE-OBJECT-STORE` | an S3-compatible object store a deployment names; `CO-MINIO` is one |
+| `XE-ODATA-SERVICE` | a source system's OData service |
+| `XE-POSTGRES` | a Postgres database that holds a dataset |
+| `XE-PROJECTOR` | the invincible-agent projector |
+| `XE-QUAL-TOOLING` | the qualification tooling, including its registry client |
+| `XE-ROUTE-CACHE` | the gateway's in-process table of broker routes |
+| `XE-SDK` | the SDK |
+| `XE-SOURCE-DB` | a source database a pipeline reads |
+| `XE-SQL-DATABASE` | a SQL database |
+| `XE-SQL-WAREHOUSE` | a deployment's SQL warehouse |
+| `XE-STAGING-DB` | a staging SQL database |
+| `XE-SYSTEMLINK-API` | a test-results source's HTTP API |
+| `XE-TARGET-API` | the API a durable handler sends rows to |
+| `XE-TOKEN-DELIVERY` | a mechanism that delivers a user's token to a notebook |
+| `XE-TOKEN-SERVICE` | an object store's token service |
+| `XE-VOLUME` | a persistent volume |
+| `RL-OPERATOR` | a person operating a deployment |
+| `RL-PERSON` | a person on whose behalf data is read |
 
 ## Records
 

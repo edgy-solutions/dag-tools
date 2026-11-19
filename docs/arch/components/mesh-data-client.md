@@ -67,9 +67,9 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-GATEWAY | calls | HTTP | bearer token | a dataset URN; back comes a ticket | `dag_tools/cortex_data/client.py:188-205`; `test_authorize_endpoint_shape` | `built` |
 | CO-KEYCLOAK | calls | HTTP | client-credentials grant, used when no token is handed in | service credentials; back comes a token | `dag_tools/cortex_data/client.py:89-112`, `:146-159`; `test_cortex_client_m2m_env` | `built` |
-| none: an object store | reads | object-store scan | the ticket's credential; an unsigned scan when the ticket carries none | the table's data, narrowed in the client | `dag_tools/cortex_data/client.py:236-356`; no test | `built` |
-| none: a Postgres database | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:315`; no test | `built` |
-| none: a ClickHouse database | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:339`; no test | `built` |
+| XE-OBJECT-STORE | reads | object-store scan | the ticket's credential; an unsigned scan when the ticket carries none | the table's data, narrowed in the client | `dag_tools/cortex_data/client.py:236-356`; no test | `built` |
+| XE-POSTGRES | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:315`; no test | `built` |
+| XE-CLICKHOUSE | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:339`; no test | `built` |
 | CO-DAGSTER | is called by | in-process | none | a URN in; a frame out, through a read-only IO manager | `dag_tools/cortex_data/client.py:59-63`; `dag_tools/io_managers/cortex_io_manager.py:145-153`, `:155-173`; no test | `built` |
 
 ## Place in the mesh
@@ -80,7 +80,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | imported into the consumer's process; finds the gateway by an address it is given; in dag-tools, through the read-only IO manager | — |
 | Sign-in | a bearer token, either handed in or fetched by client credentials from the identity provider; the person read for travels as a header beside it | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | it is the data path: bytes move from the store to this process, never through the gateway or broker | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | analytical, where agents and notebooks read; it reaches the data management plane only through the gateway's API | [NATO L4](../alignment/nato-dcra.md), [L3](../alignment/nato-dcra.md) |
+| Plane | `analytical-data`: where agents and notebooks read. It reaches the data-management plane only through the gateway's API | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | enforcement point, for the narrowing it applies itself | [NATO R1](../alignment/nato-dcra.md) |
 | Services served | data exchange; the receipt's ticket id is a unique identifier for the read | [DoD S7, S1](../alignment/dod-dmra.md) |
 

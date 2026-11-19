@@ -61,7 +61,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | an external service; the invincible-agent chart passes its address and an optional token | — |
 | Sign-in | a token from each component's config or `DATAHUB_TOKEN`, or none | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | metadata only; no data passes through it | — |
-| Plane | data management: the catalog of what exists and where it came from | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: the catalog of what exists and where it came from | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | holds the labels a policy information point would read; dag-tools makes no decision from it | [NATO R3](../alignment/nato-dcra.md) |
 | Services served | identifiers, the catalog, lineage and labels | [DoD S1](../alignment/dod-dmra.md), [DoD S3](../alignment/dod-dmra.md), [DoD S4](../alignment/dod-dmra.md), [DoD S12](../alignment/dod-dmra.md) |
 

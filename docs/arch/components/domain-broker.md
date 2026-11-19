@@ -71,10 +71,10 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-GATEWAY | calls | HTTP | client-credentials bearer token | the broker's address and its URNs, repeated on an interval | `dag_tools/domain_broker/main.py:963-1010`; `test_the_broker_register_call_sends_the_service_token` | `built` |
 | CO-GATEWAY | is called by | HTTP | service-door caller list, posture observe by default | the URN, allowed columns, row filters and subject in; a ticket out | `dag_tools/domain_broker/main.py:1168-1189`; `test_enforce_with_no_list_refuses_everyone` | `built` |
-| none: a deployment's definitions module | reads | in-process | none | the datasets and their advertised coordinates | `dag_tools/domain_broker/main.py:693-723`, `:1013-1075`, `:1097-1165`; `test_a_successful_load_registers_its_assets` | `built` |
-| none: the object-store token service | calls | token-service API | minting identity read from the environment in a fixed order | a request for a credential scoped to one prefix | `dag_tools/domain_broker/main.py:153-224`, `:226-296`; `test_sts_identity_prefers_the_purpose_named_pair` | `built` |
-| none: a ClickHouse database | writes | SQL through a database driver | not established | a new read-only account with column grants and an expiry | `dag_tools/domain_broker/sql_minting.py:112-116`, `:152-243`; `test_ch_credential_expires` | `built` |
-| none: a Postgres database | writes | SQL through a database driver | not established | a new login role with table grants and an expiry | `dag_tools/domain_broker/sql_minting.py:246-363`; `test_pg_credential_expires_and_is_table_scoped` | `built` |
+| XE-DEFINITIONS-MODULE | reads | in-process | none | the datasets and their advertised coordinates | `dag_tools/domain_broker/main.py:693-723`, `:1013-1075`, `:1097-1165`; `test_a_successful_load_registers_its_assets` | `built` |
+| XE-TOKEN-SERVICE | calls | token-service API | minting identity read from the environment in a fixed order | a request for a credential scoped to one prefix | `dag_tools/domain_broker/main.py:153-224`, `:226-296`; `test_sts_identity_prefers_the_purpose_named_pair` | `built` |
+| XE-CLICKHOUSE | writes | SQL through a database driver | not established | a new read-only account with column grants and an expiry | `dag_tools/domain_broker/sql_minting.py:112-116`, `:152-243`; `test_ch_credential_expires` | `built` |
+| XE-POSTGRES | writes | SQL through a database driver | not established | a new login role with table grants and an expiry | `dag_tools/domain_broker/sql_minting.py:246-363`; `test_pg_credential_expires_and_is_table_scoped` | `built` |
 
 ## Place in the mesh
 
@@ -84,7 +84,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | ships in the dag-tools user-deployment image and loads the definitions module a deployment names; registers its URNs with the gateway; the gateway calls its resolve route | — |
 | Sign-in | no user signs in to it; the gateway calls it through the service door; it presents a client-credentials token when it registers; it mints with admin identities read from its environment | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | none: it hands out a location and a credential, and the client reads | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational: producers run their own broker | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: producers run their own broker | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | enforcement point: it mints a credential scoped to one dataset, or refuses | [NATO R1](../alignment/nato-dcra.md) |
 | Services served | data exchange; a unique id on every ticket; performance analytics, by its exposure counts; instrumentation, by `/health` and `/ready` | [DoD S7, S1, S10, S15](../alignment/dod-dmra.md) |
 

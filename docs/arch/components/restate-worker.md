@@ -65,11 +65,11 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | its advertised address, posted for registration | `dag_tools/restate_handlers/serve.py:43`, `:75-112`, `:115-139`; no test | `built` |
 | CO-RESTATE | is called by | HTTP | none: the worker's port checks no caller | handler invocations carrying a job payload | `dag_tools/restate_handlers/serve.py:72`; `helm/dag-tools/templates/restate-worker.yaml:47-56`; no test | `built` |
-| none: a SQL database | writes | SQL through a database driver | user and password from the environment; absent credentials refused at once | acknowledgements, control rows and requests written back | `dag_tools/restate_handlers/oracle_ack.py:98-100`, `:115`, `:151-154`; `dag_tools/restate_handlers/api_sync.py:146-155`; `test_a_wrong_password_causes_one_login_attempt_not_a_loop` | `built` |
-| none: the target API | calls | HTTP | not established | a delivered record or a rendered call | `dag_tools/restate_handlers/api_sync.py:115-116`, `:137`, `:164`; `dag_tools/restate_handlers/api_call_plan.py:110`; `test_the_acking_step_carries_a_bound_and_the_http_step_does_not` | `built` |
-| none: a source system's OData service | calls | HTTP | user and password from the environment | an induction request | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
-| none: a callback endpoint | calls | HTTP | not established | a state change pushed to a callback API | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
-| none: a SQL database | writes | SQL through a database driver | not established | the local record of each state change | `dag_tools/restate_handlers/sap_induction/db_client.py:14`; no test | `built` |
+| XE-SQL-DATABASE | writes | SQL through a database driver | user and password from the environment; absent credentials refused at once | acknowledgements, control rows and requests written back | `dag_tools/restate_handlers/oracle_ack.py:98-100`, `:115`, `:151-154`; `dag_tools/restate_handlers/api_sync.py:146-155`; `test_a_wrong_password_causes_one_login_attempt_not_a_loop` | `built` |
+| XE-TARGET-API | calls | HTTP | not established | a delivered record or a rendered call | `dag_tools/restate_handlers/api_sync.py:115-116`, `:137`, `:164`; `dag_tools/restate_handlers/api_call_plan.py:110`; `test_the_acking_step_carries_a_bound_and_the_http_step_does_not` | `built` |
+| XE-ODATA-SERVICE | calls | HTTP | user and password from the environment | an induction request | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
+| XE-CALLBACK-API | calls | HTTP | not established | a state change pushed to a callback API | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
+| XE-SQL-DATABASE | writes | SQL through a database driver | not established | the local record of each state change | `dag_tools/restate_handlers/sap_induction/db_client.py:14`; no test | `built` |
 
 ## Place in the mesh
 
@@ -79,7 +79,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | one shared image, handlers selected by environment, registered with the server by the worker itself on startup | — |
 | Sign-in | none on its own port; to each backend, with a credential from its environment | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct between the worker and each backend; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' systems are written back to | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' systems are written back to | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; it refuses malformed payloads and absent credentials, which is input validation, not access control | — |
 | Services served | delivery of records to a consumer's API as a registered, retried exchange; the plan executor's rendering of telemetry into a consumer's request shape is done on the Dagster side | [DoD S7](../alignment/dod-dmra.md), [S14](../alignment/dod-dmra.md) |
 

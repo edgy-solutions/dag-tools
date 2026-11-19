@@ -57,8 +57,8 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | runs of the dlt assets | `dag_tools/asset_wrappers/dlt_assets_factory.py:605-620`; no test | `built` |
-| none: a source database | reads | SQL through a database driver | credential from config or the environment | the tables the pipeline copies | `dag_tools/asset_wrappers/dlt_assets_parsing.py:236-242, :304-310`; no test | `built` |
-| none: a destination store | writes | dlt destination connection | not established | the copied tables | `dag_tools/asset_wrappers/dlt_assets_parsing.py:85-124`; no test | `built` |
+| XE-SOURCE-DB | reads | SQL through a database driver | credential from config or the environment | the tables the pipeline copies | `dag_tools/asset_wrappers/dlt_assets_parsing.py:236-242, :304-310`; no test | `built` |
+| XE-DLT-DESTINATION | writes | dlt destination connection | not established | the copied tables | `dag_tools/asset_wrappers/dlt_assets_parsing.py:85-124`; no test | `built` |
 | CO-SYSTEMLINK-SOURCE | calls | in-process | none | the source kind chosen by an exact registered type | `dag_tools/asset_wrappers/source_kinds.py:134-157`; `test_a_near_miss_of_a_registered_kind_fails_naming_it` | `built` |
 | CO-DATAHUB-LINEAGE | writes | in-process asset metadata | none | metadata naming the source platform | `dag_tools/asset_wrappers/dlt_assets_factory.py:605-620`; no test | `built` |
 
@@ -70,7 +70,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a YAML component in a code location, sharing one dlt resource with the other dlt-based components | — |
 | Sign-in | to the source and the destination, with a credential from its config or environment; nothing is presented to the mesh | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from the source to the destination; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' tables are read out | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' tables are read out | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; the redacted dump and the message-free run row limit what leaks, which is hygiene, not access control | — |
 | Services served | moves producer data into a store a consumer reads; the run row records each run | [DoD S7](../alignment/dod-dmra.md), [S13](../alignment/dod-dmra.md) |
 

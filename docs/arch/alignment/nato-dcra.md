@@ -43,6 +43,8 @@ Every row here is an element of Appendix 9, so each falls under dcra:A9.
 
 The DCRA places the planes in Appendix 14, its technical architecture, which is not one of its 13 capabilities. Each row's Capability is therefore `none`. Which capabilities a plane carries is not established.
 
+The mesh's plane list, and the plane each component is placed in, is in [the README](../README.md#planes).
+
 | # | Element | Capability | What corresponds | How closely | Status | Evidence |
 |---|---|---|---|---|---|---|
 | L1 | Infrastructure plane (¶2 to ¶4): the shared foundation, compute and storage that the other planes run on | none | The platform chart deploys the graph, vector and RDF stores as StatefulSets, each switched on in values. Dagster runs the pipelines. One shared Restate worker image runs the durable handlers, chosen by environment variable. | `partial`: the chart is one platform, deployed once per installation, not a federated foundation. Object storage and the catalog are external to the chart. | `built` | invincible-agent `helm/invincible-agent/templates/infrastructure.yaml:124-128`, `:197-201`, `:287-291`; `helm/invincible-agent/values.yaml:2077`, `:2096`, `:2129`; dag-tools `Dockerfile.restate-worker`; `dag_tools/restate_handlers/serve.py:35` |

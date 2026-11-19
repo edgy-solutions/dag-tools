@@ -63,7 +63,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component in a code location; the shipped code location loads one only in demo mode | — |
 | Sign-in | the dbt profile's credential to the warehouse; a DataHub token from config or the environment | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | dbt reads and writes the warehouse directly; the DataHub tool posts to the catalog; the gateway and broker are not on it | — |
-| Plane | data management and analytical: transformation and catalog metadata | [NATO L3](../alignment/nato-dcra.md), [NATO L4](../alignment/nato-dcra.md) |
+| Plane | `data-management`: transformation and catalog metadata. The curated models it builds are read in the analytical-data plane | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none | — |
 | Services served | catalog entries, and lineage from sources to models with column lineage | [DoD S3](../alignment/dod-dmra.md), [DoD S4](../alignment/dod-dmra.md) |
 
