@@ -100,7 +100,7 @@ Every ticket the broker returns carries an identity: a ticket id, the time of is
 - **Decision.** Version readers are registered per source type, and the registry ships empty. A reader that raises, declines or returns an unusable value yields an absent `as_of` with a distinct reason. An integer converts to text; a boolean, an empty string or a structured value is refused.
 - **Why.** Reading a table-format version is input and output against a store nothing here can exercise; a reader that cannot be tested is not shipped. The version is metadata about the read, whereas the credential is the read.
 - **Where else.** A reader for any table format is `not built`; the per-source-type count on the health body is how the gap is seen.
-- **Status.** `built`.
+- **Status.** `built`; readers `not built`.
 
 ### §4o.5 The consumer's receipt is an allowlist
 
@@ -215,7 +215,7 @@ The accepted fixture shows what a governed read should take. This fixture plants
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. `cpc` is `dag_tools/components/classification_propagation/component.py`, `cps` is `dag_tools/components/classification_propagation/schema.py`, `tid` is `dag_tools/domain_broker/ticket_identity.py`, `brk` is `dag_tools/domain_broker/main.py`, `cli` is `dag_tools/cortex_data/client.py`, `gw` is `dag_tools/central_gateway/main.py`, `idn` is `dag_tools/central_gateway/identity.py`, `rg` is `dag_tools/central_gateway/refusal_gauge.py`, `fix` is `dag_tools/user_deployment/demo_ev_refusal.py`. Test abbreviations: `tcp` is `test_classification_propagation.py`, `twp` is `test_warehouse_source_propagation.py`, `tti` is `test_ticket_identity.py`, `ttr` is `test_ticket_receipt.py`, `tgr` is `test_gateway_refusal_reasons.py`, `ter` is `test_demo_ev_refusal.py`.
+All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. `cpc` is `dag_tools/components/classification_propagation/component.py`, `cps` is `dag_tools/components/classification_propagation/schema.py`, `tid` is `dag_tools/domain_broker/ticket_identity.py`, `brk` is `dag_tools/domain_broker/main.py`, `cli` is `dag_tools/cortex_data/client.py`, `gw` is `dag_tools/central_gateway/main.py`, `idn` is `dag_tools/central_gateway/identity.py`, `rg` is `dag_tools/central_gateway/refusal_gauge.py`, `fix` is `dag_tools/user_deployment/demo_ev_refusal.py`. Test abbreviations: `tcp` is `test_classification_propagation.py`, `twp` is `test_warehouse_source_propagation.py`, `tti` is `test_ticket_identity.py`, `ttr` is `test_ticket_receipt.py`, `tgr` is `test_gateway_refusal_reasons.py`, `ter` is `test_demo_ev_refusal.py`. An em dash in the Source column means the decision is the test's own reading of the contract's rules, so the test cited under Evidence is also its source.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
