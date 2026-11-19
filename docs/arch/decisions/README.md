@@ -42,6 +42,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4r-s4l-s4m.md](dag-tools-s4r-s4l-s4m.md) | §4r curated slice, §4l classification dimensions file, §4m warehouse source | 37 |
 | [dag-tools-s4s.md](dag-tools-s4s.md) | §4s documents to tables | 33 |
 | [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md) | §4n classification propagation, §4o ticket identity, §4o-1 refusal reasons, §4k-1 refusal fixture | 31 |
+| [dag-tools-s4k-s4j.md](dag-tools-s4k-s4j.md) | §4k contract mapping, §4j read audit and tagged warehouse | 37 |
 
 ## Where the numbered series already holds a decision
 
@@ -49,7 +50,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 |---|---|
 | §4a (inventory) shared inventory contract (evolution rules) | [ADR-0004](../../adr/ADR-0004-inventory-schema-evolves-additively-only.md) |
 | §4b registry (pointer written last) | [ADR-0005](../../adr/ADR-0005-registry-writes-the-pointer-last.md) |
-| §4l, §4m asset of record | [ADR-0002](../../adr/ADR-0002-physical-urn-is-the-catalog-urn.md) |
+| §4k, §4l, §4m asset of record | [ADR-0002](../../adr/ADR-0002-physical-urn-is-the-catalog-urn.md) |
 | §1 no names from below | [rulings.md](../../rulings.md), 2026-11-04, widened 2026-11-05 |
 | §2, §5 everything is a component configured from YAML | [rulings.md](../../rulings.md), 2026-11-04 |
 
