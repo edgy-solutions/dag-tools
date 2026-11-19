@@ -39,6 +39,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4o2-s8.md](dag-tools-s4o2-s8.md) | §4o-2 gateway image signature support, §8 release images | 13 (one bullet of §8 lists tests and states no decision) |
 | [dag-tools-s4p.md](dag-tools-s4p.md) | §4p dlt source kinds and per-pipeline schedules | 16 |
 | [dag-tools-s4q.md](dag-tools-s4q.md) | §4q SystemLink source kind | 15 |
+| [dag-tools-s4r-s4l-s4m.md](dag-tools-s4r-s4l-s4m.md) | §4r curated slice, §4l classification dimensions file, §4m warehouse source | 37 |
 
 ## Where the numbered series already holds a decision
 
