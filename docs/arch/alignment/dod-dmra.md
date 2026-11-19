@@ -11,7 +11,7 @@ This record sets the mesh against the principles and services of the DoD data me
 | Name | Chief Digital and Artificial Intelligence Office (CDAO), *Data Mesh Reference Architecture* |
 | Edition | version 2.6, March 2024 |
 | Terms | Public. Cited by element name and section only. No figure or passage is copied, and each element's meaning is given here in this record's own words. The document is not committed. |
-| Elements used | §4 "Principles": the four generic mesh principles and the fifth principle the reference adds. §3 "Tactical Structure": the fifteen services. §4 "Capability Patterns": items 1 to 15, one per service. |
+| Elements used | §4 "Principles": the four generic mesh principles and the fifth principle the reference adds. §3 "Tactical Structure": the fifteen services. §4 "Capability Patterns": items 1 to 15, one per service. The Capability column is read against a second reference: NATO DCRA v2, AC/322-D(2025)0056, Appendices 1 to 13, by title only. |
 
 ## Summary
 
@@ -78,3 +78,4 @@ The DMRA does not cite the DCRA's capabilities. Each Capability value in this re
 | No metrics library or collector | dag-tools `dag_tools/central_gateway/`, `dag_tools/domain_broker/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `not built` |
 | Row-count check fails on an absent count | dag-tools `dag_tools/components/dlt_pipeline/row_count_check.py:56-78` | AGENTS.md §4p | `test_an_absent_rows_loaded_fails_the_check` | `built` |
 | Read audit coverage is `None` on an empty window | dag-tools `dag_tools/audit/reads.py:146-150` | AGENTS.md §4j | `test_coverage_is_none_when_nothing_was_read` | `built` |
+| Capability values | each element's name and description in this reference, read against NATO DCRA v2, Appendices 1 to 13, by title | none | — | `proposed` |
