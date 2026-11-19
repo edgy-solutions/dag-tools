@@ -74,5 +74,5 @@ This record sets the mesh against the principles and services of the DoD data me
 | Derived label is the join of its inputs | dag-tools `dag_tools/warehouse_source/dimensions.py:312`; `propagate.py:190-227` | AGENTS.md §4m, §4n | `test_composition_is_the_join_of_one_order_in_every_type` | `built` |
 | No retire or recall; `removed=False` only | dag-tools `dag_tools/components/warehouse_source/component.py:231`; `dag_tools/components/datahub_lineage/component.py:206` | none | — | `not built` |
 | No metrics library or collector | dag-tools `dag_tools/central_gateway/`, `dag_tools/domain_broker/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `not built` |
-| Row-count check fails on an absent count | dag-tools `dag_tools/components/dlt_pipeline/row_count_check.py:56-66` | AGENTS.md §4p | `test_an_absent_rows_loaded_fails_the_check` | `built` |
+| Row-count check fails on an absent count | dag-tools `dag_tools/components/dlt_pipeline/row_count_check.py:56-78` | AGENTS.md §4p | `test_an_absent_rows_loaded_fails_the_check` | `built` |
 | Read audit coverage is `None` on an empty window | dag-tools `dag_tools/audit/reads.py:146-150` | AGENTS.md §4j | `test_coverage_is_none_when_nothing_was_read` | `built` |
