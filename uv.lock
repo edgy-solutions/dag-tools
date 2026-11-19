@@ -1721,7 +1721,7 @@ wheels = [
 
 [[package]]
 name = "edgy-dag-tools"
-version = "0.16.1"
+version = "0.17.0"
 source = { editable = "." }
 dependencies = [
     { name = "clickhouse-connect" },

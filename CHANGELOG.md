@@ -10,7 +10,7 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.17.0 — 2026-11-18
 
 
 ### Added
@@ -40,6 +40,7 @@ it back are named.
   - `only_unreferenced` on a member table keeps only members no file column resolved to, counted as `members_kept` / `members_skipped`.
   - The profiler writes structural paths with the engine's own spelling, and a run whose `expected_paths` differ only in key quoting says so once per bundle.
   - Bundle names containing `[`, `]`, `@`, `$` or spaces work for local and S3 sources.
+  - Known limits at this release: **XML and JSON are the only formats**, and **throughput is below the 20,000 rows/s target** -- XML runs at 13k to 16k rows/s and JSON at roughly 70-80% of that rate on the same manifest, so both benches fail under `DAGTOOLS_BENCH=1`. The coercion rules were not loosened to reach the target; whether to build a compiled evaluator is a later decision. A changed bundle that already has a partition is not rediscovered and has to be re-materialised by hand, S3 as a source is tested against a simulated bucket only, and Lance on S3 is unmeasured (keep `write_concurrency` at 1 there).
 - `qual init --image-record-template REPO=TEMPLATE` and `--image-record REPO=PATH_OR_URL` (both repeatable) declare where a pin's image record is read from; the manifest moves to schema 6 (`InventoryPin.image_record`, additive; a v5 manifest still loads) and the preflight report to schema 4 (`RepoShaCheck.outcome` gains `record_failed`, plus `image_record_source` and `image_record_problem`). A pin with a declared record fails preflight if the record is absent, unreadable, changed, unparseable or names another commit, with no fallback to tag matching. A pin that declares a record must carry a full 40-character lowercase `git_sha`, or `qual init` refuses it and names the survey stage; pins with no record declared are unaffected. `create_qualification` and `run_preflight` gain keyword-only parameters with defaults; nothing existing changes.
 
 ### Changed
@@ -62,6 +63,8 @@ it back are named.
   WARNING naming the location instead of discarding that location's metadata.
 
 - **Behaviour change: `registry read-image-record` and `qual init` now refuse a malformed image record they previously accepted** (an empty image list, a malformed or uppercase digest, a repository carrying a tag or digest, a repository listed twice, a naive `recorded_at`, a missing or unknown `schema_version`), raising `ImageRecordInvalid` (a `ValueError`) listing every problem instead of a pydantic `ValidationError`. `record-image` applies the same rules and writes canonical bytes. The model and `parse_image_reference` moved to `dag_tools.qual.image_record`; the old import paths still work.
+
+- **`limits.page_size` on the SystemLink Test Monitor source loses the ceiling this library invented.** It carried `le=1000` while the server declares no maximum and accepted a far larger `take`, so a deployment that had measured its own server could not configure what it measured: the load failed against a bound naming nothing the server said. Only positivity is validated now (`ge=1`), which is a property of the request rather than a reading of any server. The conservative default is unchanged, so a deployment that configured nothing sees no difference -- this only widens what is accepted.
 
 ### Added
 
@@ -103,6 +106,17 @@ it back are named.
   mechanism rides the runner's own `GITHUB_TOKEN`, with `contents: write` scoped to the two jobs
   that write a record.
 
+- **The central gateway measures its own signature support at startup, and a process that cannot verify a signed token is not ready.** The other half of the fault recorded under Fixed below: that entry repairs the image and checks it at build time, this makes a running process say so about itself. At startup the gateway signs and verifies a token with each algorithm in `GATEWAY_JWT_ALGORITHMS` -- a round trip, not a registry lookup, because an algorithm can be registered and broken -- and sorts each into one of four buckets. `unsupported` (the library does not register it) and `failed` (registered, a key minted, the round trip did not come back) make `/ready` refuse, before Redis, because Redis is usually fine at the same moment and comes back by itself where an image does not. `verified` and `unexercised` (registered, and this check knows no key family for it) do not refuse, so a future algorithm cannot make a working gateway unready over this check's own ignorance; neither does a check that threw, which is logged at ERROR instead, because an instrument may never break the thing it measures. A **partial** answer is not ready: a gateway able to verify one of two configured algorithms refuses every token its issuer actually mints. `/health` stays 200 and carries the verdict under `signature_support`, since a pod held out of service answers no probe an operator reads and restarting fixes nothing here. The question is asked **once**, in the lifespan: the library is baked into the image and the algorithm list arrives as an environment variable, populated once at process start, so the answer cannot change under a probe and a fix takes a restart, which re-runs it. Keys are minted in memory for the check alone and are never logged, published or sent, and the check reaches no network -- one that needed the issuer reachable would report an outage somewhere else as an image fault.
+
+  **The refusal vocabulary is unchanged.** `identity.REASONS`, its status mapping and every HTTP status are exactly as before: a token this process cannot verify *is* unverified, and a process-level problem does not belong in a per-token answer. No signature, export or default changes, and a deployment already serving verifiable tokens sees no difference.
+
+- **CI fails when `uv.lock` does not record the version in `pyproject.toml`.** The test
+  workflow runs `uv lock --check`, so a version bump that leaves the lockfile behind is
+  caught on the commit that makes it rather than on the next, unrelated one. The lockfile
+  records this project's own version alongside every dependency's, and `uv lock --check`
+  exits 1 when the two disagree. No library change: no signature, export or default, and
+  **no credential was added to CI**.
+
 ### Fixed
 
 - **The central gateway image rejected every RS256 token.** Its Dockerfile installed bare
@@ -126,6 +140,12 @@ it back are named.
   configured algorithm cannot be verified by the installed library. The refusal reason is
   unchanged: it is still `token_invalid`, so `/health`'s refusal counts and the HTTP statuses
   are exactly as before. No signature, export or default changes.
+
+- **The SystemLink backfill sizing pass pulled and discarded one row of real data per part.** It asked for `take: 1` with `returnCount`; it asks for `take: 0`, which makes moving nothing a property of the request. It also named `limits.page_size` when the server refused it, while the body carried its own hardcoded `take` -- a refusal sending an operator to change a setting that never appears in the request. It names `returnCount`, the one thing the body sends that a server can refuse.
+
+- **A 400 on a multi-id steps batch named `limits.step_filter` whatever the cause**, so an over-long or-chain sent the operator to change the *form* -- whose only other value a server refusing the form refuses too, a dead end while the right diagnosis was available. The batch is re-issued **once** with a single id, the simplest filter this kind can build: accepted means the length was the cause and the message names `limits.step_batch_default` / `limits.step_batch_max` and the size that failed, refused means the form was and the message is today's. Both arms raise. A 400 is never split the way a 504 is, a single-id batch is not probed because nothing is left to tell apart, and the probe does not count as a batch sent. New setting `limits.step_batch_max` (default 20, the longest or-chain a server has answered); the spike gains an opt-in `--chain-ladder` so a deployment can measure its own and raise it in YAML.
+
+- **Two workflows each attached a file to a tag's release by creating one, so every tag also got a second, empty release.** `generate_release_notes` is set on one of the two writers, so which release those notes reached was an accident of ordering: v0.16.0's went to a draft nobody sees and left the published release with no body at all, and v0.16.1 came out the other way round. A release's body is the one thing on a release that cannot be reconstructed afterwards from its assets. The wheel workflow is now the one creator, because it is the one that generates those notes; the chart workflow waits for that release and uploads into it with `gh release upload`, which writes to the release `gh release view` resolves and therefore cannot mint a second one however the race goes. It waits and then **fails** rather than skipping, because a chart silently absent from a release is what a downstream `oci://` dependency discovers later. The two empty drafts from v0.16.0 and v0.16.1 have been deleted and v0.16.0's generated notes moved onto its published release. No library change: no signature, export or default, and **no credential was added to CI**.
 
 ## 0.16.1 — 2026-11-16
 
