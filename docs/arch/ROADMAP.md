@@ -48,6 +48,8 @@ The remedies proposed for gaps the flow records found, in the order they would r
 ### 5. A version on every read
 
 - **Gap:** [big data, finding 8](flows/big-data.md). The receipt has an `as_of` field, and the table of version readers ships empty (`dag_tools/domain_broker/ticket_identity.py:110`). `built`
+- **Who fills it:** the domain broker (`ticket_identity.py:149-194`). The client only copies the field onto the receipt (`dag_tools/cortex_data/client.py:45-56`). **Owner: dag-tools.**
+- **Waiting on it:** invincible-agent #375 cites the receipt's as-of in a finance agent's answer, and claims none when the receipt has none.
 - **Remedy:** add a version reader for each backend in use, starting with the table formats that keep one (Delta, Iceberg). `proposed`
 
 ## Sources
