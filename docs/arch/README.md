@@ -15,7 +15,7 @@ Every claim carries exactly one status.
 | `accepted` | A decision record accepts it, and no code does it yet. | The decision record. |
 | `proposed` | It is written down as intent, but not accepted or built. | Where it is written. |
 
-A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`.
+A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`. So is an absence: a claim that a chart or the code does not provide something is `not built`, never `built`.
 
 ## Pins
 
