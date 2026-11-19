@@ -43,7 +43,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | not wired | — |
 | Sign-in | none | — |
 | Data path | none | — |
-| Plane | `data-management`: `proposed`: delivery between producers and consumers | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `infrastructure`: a message broker is a foundation service the other planes would run on | [NATO L1](../alignment/nato-dcra.md) |
 | Security role | none | — |
 | Services served | none at the pin; pub/sub is `not built`, and the mesh's pub/sub phase is `proposed` | [DoD S9](../alignment/dod-dmra.md) |
 

@@ -77,7 +77,7 @@ The mesh places each component in one of four planes. The four are the ones the 
 | `data-management` | the shared services that govern data across its life: catalog, lineage, contracts, access decisions and transformation | Appendix 14, ¶8–9 | [L3](alignment/nato-dcra.md) |
 | `analytical-data` | where data is explored and analysed, and turned into insight for decisions | Appendix 14, ¶10 | [L4](alignment/nato-dcra.md) |
 
-Each component record's Plane row names exactly one plane, in backticks, and then says why. A component that also carries work of a second plane says so in that explanation; it is still placed in one. A component that nothing wires into the mesh has no plane, and its row says `not established`.
+Each component record's Plane row names exactly one plane, in backticks, and then says why. A component that also carries work of a second plane says so in that explanation; it is still placed in one. A component that nothing wires into the mesh is placed by the role its record establishes for it. Where the record establishes no role, the component has no plane, and its row says not established.
 
 ## Ids and connections
 
@@ -115,6 +115,7 @@ A flow record's step table numbers its steps and names the parties of each step 
 | `XE-PROJECTOR` | the invincible-agent projector |
 | `XE-QUAL-TOOLING` | the qualification tooling, including its registry client |
 | `XE-ROUTE-CACHE` | the gateway's in-process table of broker routes |
+| `XE-RUN-WINDOW-EXPORT` | an exported file of run windows |
 | `XE-SDK` | the SDK |
 | `XE-SOURCE-DB` | a source database a pipeline reads |
 | `XE-SQL-DATABASE` | a SQL database |

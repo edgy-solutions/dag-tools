@@ -58,7 +58,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | run by a component in a Dagster code location; no chart deploys a project | — |
 | Sign-in | the warehouse credential in the project's profile, from the environment | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | inside the warehouse; no data leaves it through dbt | — |
-| Plane | `analytical-data`: curated models for decisions. Running the transformation is a shared lifecycle service | [NATO L4](../alignment/nato-dcra.md) |
+| Plane | `analytical-data`: the shipped dbt package builds curated models that are read for decisions, which is what the DCRA's L4 row corresponds to. Running a transformation is a data-management service, and CO-DBT-PROJECT is placed there | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | none built | — |
 | Services served | data quality tests, mediation between source and contract shapes, and lineage from its manifest | [DoD S13](../alignment/dod-dmra.md), [DoD S14](../alignment/dod-dmra.md), [DoD S4](../alignment/dod-dmra.md) |
 
