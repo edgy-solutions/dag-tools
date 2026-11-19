@@ -72,7 +72,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | The remote graph client has no handler; remote vector and ontology clients not built | SDK `remote_clients.py:36-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (client); `not built` (server end) |
-| No route for the SDK's remote clients in either repository | dag-tools and invincible-agent, whole-tree search at the pins | not stated | — | `not built` |
+| No route for the SDK's remote clients in either repository | dag-tools: the only two HTTP apps, `dag_tools/central_gateway/main.py:108` and `dag_tools/domain_broker/main.py:1094`; invincible-agent: whole-tree search at the pin | not stated | the complete dag-tools route list, none a graph or vector route: gateway `main.py:142`, `:172`, `:184`, `:374`; broker `main.py:1097`, `:1145`, `:1168` | `not built` |
 | Engine-o's graph reader implements the SDK interface, imports no driver, is read-only | invincible-agent `agent_fleet/ontology_service/mesh_graph.py:1-25`, `:158` | not stated | `test_mesh_graph_conforms.py::test_it_satisfies_the_protocol_structurally` | `built` |
 | The vector reader implements the SDK interface, imports no driver, serves two engines | invincible-agent `agent_fleet/utils/mesh_vectors.py:1-27`, `:83`; `ontology_service/main.py:1074-1076` | not stated | `test_mesh_vectors_conforms.py::test_the_SDK_conformance_suite_passes` | `built` |
 | Engine-o reads Neo4j on its posture credential | invincible-agent `ontology_service/main.py:466-468`, `:886` | not stated | — | `built` |

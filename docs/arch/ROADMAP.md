@@ -66,8 +66,8 @@ The remedies proposed for gaps the flow records found, in the order they would r
 
 - **Gap:** [agent capabilities, findings 3 and 7](flows/agent-capabilities.md). Graph and vector reads carry no ticket, receipt or version, and the store sees the engine's credential, not the person's. `not built`
 - **Owner:** invincible-agent, whose engines hold the readers, and the SDK, whose result shape would have to carry the receipt.
-- **Remedy:** each reader returns, with its result, the person it read for, the decision it read under and a version of what it read, in the same fields as the dataset receipt. `proposed`
-- **Note:** the person is already on every read as provenance. What is missing is the decision and the version.
+- **Remedy:** each reader returns, with its result, the person it read for, the decision it read under and a version of what it read. The version would use the dataset receipt's own fields (`as_of`, `as_of_source`, `as_of_unavailable`; dag-tools `dag_tools/cortex_data/client.py:23-32`). The person and the decision would need fields the dataset receipt does not have: it carries no principal, and its `allowed_columns` and `row_filters` are the narrowing a decision produced, not the decision. `proposed`
+- **Note:** the person is already on every read as provenance, but not on any receipt. The version would not appear for free: the table of version readers ships empty (row 5), so a receipt reusing those fields would say the version is unavailable until a reader exists for that store.
 
 ### 8. Decide the server end of the SDK's remote graph client
 
