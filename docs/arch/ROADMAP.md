@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 12 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 15 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -20,6 +20,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 10 | Remove expired minted SQL accounts (not filed) | a database holds no minted account past its lifetime | — (proposed; no decision yet) | — |
 | 11 | The gateway says what it does (not filed) | the gateway's code and warnings describe the gateway that runs | — (proposed; no decision yet) | — |
 | 12 | No mesh token sent to a backend (dag-tools #76) | the token meant for the gateway reaches only the gateway | — (proposed; no decision yet) | row 9 |
+| 13 | Restate's ports establish their caller (not filed) | only the mesh's own senders start a durable job, and only its own workers register | — (proposed; no decision yet) | — |
+| 14 | A pinned Restate server, and no setting read by nothing (not filed) | two installs of one chart run one Restate version, and every external Restate setting is used | — (proposed; no decision yet) | — |
+| 15 | The worker reports that it is registered (not filed) | a worker the server cannot route to is not reported ready | — (proposed; no decision yet) | — |
 
 ## Where later slices fold in
 
@@ -120,6 +123,27 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Note:** the older path is where a Postgres ticket carries no password (row 9), so the two rows close the same opening from both ends. The owner reads this row as a present exposure, not tidiness: once that path is taken, the send is unconditional in code. Whether a database receives it there depends on name resolution of the placeholder host, which the code cannot settle.
 - **Issue:** dag-tools #76.
 
+### 13. Restate's ports establish their caller
+
+- **Gap:** [Restate server, finding 5](components/restate-server.md) and [Restate worker, findings 5 and 6](components/restate-worker.md). Neither the server's ingress and admin ports nor the worker's port checks who is calling. The worker registers itself with no credential, and the Dagster components that send work send no authorization header (`dag_tools/restate_handlers/serve.py:72`, `:75-112`; `helm/dag-tools/templates/restate-server.yaml:47-54`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** the server's ports accept only callers that prove they are the mesh's senders or workers, and the worker accepts calls only from its server. Senders and the worker present that proof. Which mechanism to use is for the decision record, which would read what Restate itself offers first. `proposed`
+- **Issue:** not filed.
+
+### 14. A pinned Restate server, and no setting read by nothing
+
+- **Gap:** [Restate server, findings 6 and 7](components/restate-server.md). The in-chart server's image is tag `latest`, by value and by the helper's fallback (`helm/dag-tools/values.yaml:34-38`; `templates/_helpers.tpl:43-46`). `externalRestate.ingressUrl` resolves in a helper that no template uses, while the senders take their own address setting (`values.yaml:22-24`; `templates/_helpers.tpl:66-74`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** the chart names a Restate version, or a digest, that its tests ran against; and the ingress setting is either passed to the senders or removed. `proposed`
+- **Issue:** not filed.
+
+### 15. The worker reports that it is registered
+
+- **Gap:** [Restate worker, findings 3 and 5](components/restate-worker.md). The worker declares no probe, and a registration that gave up is only an error log line (`helm/dag-tools/templates/restate-worker.yaml:1-98`; `dag_tools/restate_handlers/serve.py:75-112`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** the worker declares a readiness probe that fails until its registration has succeeded, and a test covers registration. `proposed`
+- **Issue:** not filed.
+
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
@@ -138,5 +162,8 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Minted SQL accounts are never removed | dag-tools `dag_tools/domain_broker/sql_minting.py:22-33` | not stated | — | `not built` |
 | An unsent check payload; a stale warning | dag-tools `dag_tools/central_gateway/main.py:325`, `subject_gauge.py:310-316` | not stated | — | `built` |
 | The client's mesh token as a SQL password | dag-tools `dag_tools/cortex_data/client.py:315`, `:339` | not stated | no test | `built` |
-| The twelve remedies, except row 8 | this note | none | — | `proposed` |
+| Restate ports and registration check no caller | dag-tools `dag_tools/restate_handlers/serve.py:72`, `:75-112`; `helm/dag-tools/templates/restate-server.yaml:47-54` | not stated | no test | `built` |
+| Restate server image at `latest`; an ingress setting read by nothing | dag-tools `helm/dag-tools/values.yaml:22-24`, `:34-38`; `templates/_helpers.tpl:43-46`, `:66-74` | not stated | — | `built` |
+| No worker probe; registration failure only logged | dag-tools `helm/dag-tools/templates/restate-worker.yaml:1-98`; `dag_tools/restate_handlers/serve.py:75-112` | not stated | no test | `built` |
+| The fifteen remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |
