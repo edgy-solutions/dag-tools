@@ -94,7 +94,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| §1.1 no project names; generic defaults remain | `dag_tools/otel_api_sync/spec.py:224-226`; `dag_tools/components/otel_api_sync/component.py:99`; `dag_tools/components/dbt_project/component.py:129` | AGENTS.md §1; rulings.md 2026-11-04 | no test of absence | `built` |
+| §1.1 no project names; generic defaults remain | `dag_tools/otel_api_sync/spec.py:224-226`; `dag_tools/components/otel_api_sync/component.py:99`; `dag_tools/components/dbt_project/component.py:129` | AGENTS.md §1; rulings.md 2026-11-04 | no test of absence | `built`, with exceptions |
 | §1.2 configurable resources and IO managers | `dag_tools/io_managers/arrow.py`, `cortex_io_manager.py`, `delta.py`, `duckdb.py`, `s3.py`, `sql.py`; `dag_tools/resources/arrow.py`, `duckdb.py`, `grist.py`, `s3.py`, `warehouse.py` | AGENTS.md §1 | — | `built` |
 | §1.2 arrow component binds no arguments | `dag_tools/components/s3_sensor/arrow_component.py:64-66`; `dag_tools/resources/arrow.py:10-81` | AGENTS.md §1 | no test | `not built` |
 | §2.1 GA component API | `dag_tools/components/restate_api_sync/component.py:7-9`; no match for the deprecated package in `dag_tools/` or `pyproject.toml` | AGENTS.md §2 | — | `built` |
@@ -104,5 +104,5 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 | §2.4 YAML configuration | each component's attributes | AGENTS.md §2; rulings.md 2026-11-04 | see the component records | `built` |
 | §2.5 factory functions | `dag_tools/components/contract_mapping/component.py:374`; `document_tables/component.py:372`; `read_audit/component.py:170`; `warehouse_source/component.py:330`; `restate_api_sync/component.py:84`; `restate_dlt_sync/component.py:543`, `:756`, `:782`, `:811` | AGENTS.md §2 | — | `built` |
 | §3.1, §3.2 outbox; every transition through one function | `sap_induction/service.py:23`, `:58-105`; transitions at `:118`, `:137`, `:178`, `:180`, `:186` | AGENTS.md §3 | no test of the transitions | `built` |
-| §3.3 two steps; push unbounded and raising | `sap_induction/service.py:23`, `:79`, `:82`, `:101-104` | AGENTS.md §3 | `test_restate_db_retry.py`: `test_every_connecting_step_in_the_handlers_carries_a_bound` (the update step only) | `built` |
+| §3.3 two steps; push unbounded and raising | `sap_induction/service.py:23`, `:79`, `:82`, `:101-104` | AGENTS.md §3 | `test_restate_db_retry.py`: `test_every_connecting_step_in_the_handlers_carries_a_bound` (the update step only) | `built`, with one exception |
 | §3.4 one database client per worker; per-step connections elsewhere | `sap_induction/service.py:13-20`, `:33`, `:39`; `oracle_ack.py:115`; `oracle_control.py:43`, `:332`, `:389`; `api_sync.py:173` | AGENTS.md §3 | no test | `built` |

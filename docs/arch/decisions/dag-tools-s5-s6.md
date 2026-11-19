@@ -58,5 +58,5 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`.
 | §5.2 S3 resource dictionary unpacked | `dag_tools/components/s3_sensor/sensor_component.py:47-50`, `:157` | AGENTS.md §5 | `test_s3_sensor.py`: `test_get_client` | `built` |
 | §5.2 dbt command-line field kept | `dag_tools/components/dbt_project/component.py:21`, `:137` | AGENTS.md §5 | see the dbt project record | `built` |
 | §5.3 translation in the component | see the dlt pipeline and contract mapping records | AGENTS.md §5 | see those records | `built` |
-| §6.1 signatures pinned | `dag_tools_tests/test_dlt_source_kinds.py:220`; `dag_tools_tests/test_ticket_receipt.py:168` | AGENTS.md §6 | `test_the_legacy_entry_points_keep_their_signatures`, `test_get_dataframe_still_returns_only_a_frame` | `built` |
-| §6.2 optional keyword with a default | `dag_tools/contract_mapping/emit.py:354-357` | AGENTS.md §6 | no test of the default | `built` |
+| §6.1 signatures pinned | `dag_tools_tests/test_dlt_source_kinds.py:220`; `dag_tools_tests/test_ticket_receipt.py:168` | AGENTS.md §6 | `test_the_legacy_entry_points_keep_their_signatures`, `test_get_dataframe_still_returns_only_a_frame` | `built` where a test pins it |
+| §6.2 optional keyword with a default | `dag_tools/contract_mapping/emit.py:354-357` | AGENTS.md §6 | no test of the default | `built` where the census records a case |
