@@ -35,9 +35,35 @@ All evidence is read at these commits. A line number is valid only at its pin.
 
 Both are public. The records cite them by element name and section or paragraph number only. They copy no figure and no passage, and they state each definition in their own words. Neither document is committed here.
 
+## Alignment records
+
+An alignment record sets the mesh against an outside reference. It follows the shape the OpenDDIL lane gives:
+
+1. **The reference:** name, edition, and the terms under which it is cited. A record may cite more than one reference.
+2. **One row per reference element**, with four fields:
+   - the element's name, with its section or paragraph number;
+   - what corresponds in the mesh;
+   - how closely it corresponds;
+   - the evidence.
+
+These records add a fifth field to each row: the status of what corresponds, in the vocabulary above. The shape gives none, and this README requires one for every claim.
+
+How closely is one of:
+
+| How closely | Means |
+|---|---|
+| `close` | The mesh does what the element describes, in the role the element gives it. |
+| `partial` | The mesh does part of it. The row names the missing part. |
+| `different` | The mesh meets the same need another way. The row says how. |
+| `none` | Nothing in the mesh corresponds. |
+
+`how closely` describes the correspondence; `status` describes the thing that corresponds. A row can be `close` and `proposed`, if the intent matches and nothing is built.
+
 ## Records
 
 | Record | Kind | State |
 |---|---|---|
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
+| [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
+| [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
