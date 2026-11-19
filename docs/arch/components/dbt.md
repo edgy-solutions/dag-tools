@@ -23,9 +23,9 @@ This record covers what the chart and code provide by default, and what a deploy
 | dbt project component `project`, `cli_args` | required; the integration's default, a plain build | the project to run and the build's arguments (see [the dbt project record](dbt-project.md)) |
 | curated package variables | none; all four required | the two input relations, the numeric type and the comparator table |
 | contract mapping target directory | set by the deployment | where the rendered models and tests are written |
-| `DAG_TOOLS_DEMO_MODE` | off in code; `"true"` in the invincible-agent chart | registers the demo project |
+| demo mode | off in code; `"true"` in the invincible-agent chart | registers the demo project |
 | demo connection variables | fall back to the Dagster instance's Postgres variables | where the demo project writes |
-| `DAG_TOOLS_DEMO_DBT_TARGET_DIR` | unset; then under `DAGSTER_HOME`; then a temporary directory | where the demo project's dbt artifacts go |
+| demo dbt target directory | unset; then under `DAGSTER_HOME`; then a temporary directory | where the demo project's dbt artifacts go |
 
 ## Gaps
 
