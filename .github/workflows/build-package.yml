@@ -46,6 +46,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # THE ONE CREATOR of a release in this repository. Every other workflow that
+      # puts a file on a release waits for this one and uploads into it with
+      # `gh release upload` -- the chart tarball and the image record both do --
+      # because a second creator does not collide, it makes a second release, and
+      # which of the two a tag's generated notes land on is then an accident of
+      # ordering (measured on v0.16.0, whose published release has no body at all).
+      # This job creates it because it is the one that generates those notes.
       - name: Attach to GitHub Release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
