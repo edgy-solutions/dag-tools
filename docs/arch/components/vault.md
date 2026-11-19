@@ -9,7 +9,7 @@ This record covers what the chart and code provide by default, and what a deploy
 ## Findings
 
 1. **No code or chart in dag-tools refers to a Vault.** A search of the code and the chart at the pin finds no Vault client, address or template. `built`
-2. **The invincible-agent chart deploys no Vault either.** Its matches for the word name an identity store inside that application, with its own lifetime setting, not a Vault service. That chart is read at its own pin. `built`
+2. **The invincible-agent chart deploys no Vault either.** In that chart's templates and default values, the matches for the word name an identity store inside that application, with its own lifetime setting, not a Vault service. A deployment's own values may name a host of that kind; that is outside what this record reads. That chart is read at its own pin. `built`
 3. **Secrets reach the gateway and the worker as environment variables from Kubernetes Secrets.** Each has an `envFrom` list in the chart values, which a deployment fills with its own Secrets or ConfigMaps. The gateway's policy-engine key and the worker's database and API credentials arrive this way. `built`
 4. **Certificates arrive as a mounted Secret, a ConfigMap or inline values, exactly one.** The chart's CA setting takes one of the three and refuses more. An init container merges the certificates with the public roots. The reasons are in AGENTS.md §4. `built`
 5. **A secret delivered as a variable changes only when the process restarts.** The worker treats absent credentials as terminal for that reason. A secret that must change in place has to arrive as a mounted file and be read from that file. The reasons are in AGENTS.md §4. `built`
