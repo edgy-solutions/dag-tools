@@ -84,7 +84,7 @@ Read together, the edges show that the catalog (S3) and policy (S5, S6) carry mo
 | How a read is decided, step by step | [need to know](flows/need-to-know.md) |
 | How large data moves | [big data](flows/big-data.md) |
 | What agents can and cannot do through the mesh | [agent capabilities](flows/agent-capabilities.md) |
-| What one component is, how it is wired, how it signs in, and its plane (the planes are listed in [the README](README.md#planes)) | the component records, listed in [the README](README.md#records) |
+| What one component is, how it is wired, how it signs in, and its plane (the planes are listed with [the DCRA alignment](alignment/nato-dcra.md#plane-list)) | the component records, listed in [the README](README.md#records) |
 | Why the code is the way it is | [the decisions index](decisions/README.md) |
 | How the mesh lines up with the two references | [DoD](alignment/dod-dmra.md) and [NATO](alignment/nato-dcra.md) |
 | The remedies proposed for gaps | [the roadmap note](ROADMAP.md) |
