@@ -30,7 +30,7 @@ Every claim in these records carries one status: `measured`, `built`, `accepted`
 
 ## Services and the components that serve them
 
-The services are the fifteen of the DoD data-mesh reference, set against the mesh in [the DoD alignment record](alignment/dod-dmra.md). The status column is that record's. The last column lists the components whose records name the service in their "Services served" row.
+The services are the fifteen of the DoD data-mesh reference, set against the mesh in [the DoD alignment record](alignment/dod-dmra.md). The status column is that record's Status field; its separate "How closely" field is not carried here. The last column lists the components whose records name the service in their "Services served" row.
 
 | Service | Status | Components that name it |
 |---|---|---|
@@ -38,7 +38,7 @@ The services are the fifteen of the DoD data-mesh reference, set against the mes
 | S2 Semantic services | `built` | none; the alignment record cites an invincible-agent ontology service and the identifier rules of contract mapping |
 | S3 Federated catalog | catalog: `built`. A standard catalog form: `not built`. | [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [Grist ingest](components/grist-ingest.md), [warehouse source](components/warehouse-source.md) |
 | S4 Profiles and lineage | `built` | [Dagster](components/dagster.md), [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [warehouse source](components/warehouse-source.md) |
-| S5 Policy access control | `built` | [central gateway](components/central-gateway.md), which enforces the answer [Topaz](components/topaz.md) computes |
+| S5 Policy access control | `built` | [central gateway](components/central-gateway.md), which enforces the policy engine's answer |
 | S6 Policy administration | `built` | none; the alignment record cites invincible-agent's policy validator and seed job |
 | S7 Data exchange | `built` | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md), [mesh data client](components/mesh-data-client.md), [Keycloak](components/keycloak.md), [Topaz](components/topaz.md), [MinIO](components/minio.md), [dlt pipeline](components/dlt-pipeline.md), [S3 sensor](components/s3-sensor.md), [Grist](components/grist.md), [JupyterHub](components/jupyterhub.md), and the Restate [server](components/restate-server.md), [worker](components/restate-worker.md), [API sync](components/restate-api-sync.md) and [dlt sync](components/restate-dlt-sync.md) |
 | S8 Data product search | `built` | none; the alignment record cites invincible-agent's catalog wrapper |
@@ -47,7 +47,7 @@ The services are the fifteen of the DoD data-mesh reference, set against the mes
 | S11 Life cycle | origin and history: `built`. Retire and recall: `not built`. | [DataHub lineage](components/datahub-lineage.md) |
 | S12 Classification | as published metadata: `built`. As a decision input: `proposed`. A standard label form: `not built`. | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
 | S13 Quality | `built` | [contract mapping](components/contract-mapping.md), [Dagster](components/dagster.md), [dbt](components/dbt.md), [dlt pipeline](components/dlt-pipeline.md), [document tables](components/document-tables.md), [the SystemLink source](components/systemlink-source.md) |
-| S14 Mediation | `built`; how closely: `different` | [contract mapping](components/contract-mapping.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [OTel API sync](components/otel-api-sync.md), [Restate worker](components/restate-worker.md) |
+| S14 Mediation | `built` | [contract mapping](components/contract-mapping.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [OTel API sync](components/otel-api-sync.md), [Restate worker](components/restate-worker.md) |
 | S15 Instrumentation | probes: `built`. Metrics and tracing: `not built`. | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
 
 [Hasura](components/hasura.md), [Superset](components/superset.md) and [Vault](components/vault.md) name none of the fifteen at the pin.
