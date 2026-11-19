@@ -19,7 +19,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
    - the shared Weaviate client is constructed with no credential argument at all.
 
    No credential is minted for a read. `built`
-4. **Not every engine reads through the SDK's interfaces.** The Neo4j engine runs Cypher through its own driver and does not use `Neo4jGraph`. The registrar holds a separate Neo4j driver, because it writes. The documents engine holds no driver; it asks engine-o over HTTP. `built`
+4. **Not every engine reads through the SDK's interfaces.** The Neo4j engine runs its graph queries through its own driver and does not use `Neo4jGraph`. The registrar holds a separate Neo4j driver, because it writes. The documents engine holds no driver; it asks engine-o over HTTP. `built`
 5. **On the SDK paths a person is required, and the guard is an allowlist.** Every operation of `Neo4jGraph` and `WeaviateVectors` first calls the SDK's person guard. The guard admits a person and refuses a service or a delegate. Engine-o's verb route refuses a request that names no person, with a 400, when its SDK path is on, which it is by default. The `on_behalf_of` field cannot change the guard's decision. In the SDK the person is provenance: the SDK itself makes no access decision (supplied). `built`
 6. **The access decision is in the engines, per object, and off by default.**
    - The Weaviate and Neo4j engines ask the authorizer whether the person may read each source document (`can_read = reader | owner`). They deny by default and fail closed.

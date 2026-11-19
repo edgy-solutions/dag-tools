@@ -34,7 +34,7 @@ A contract mapping takes a raw table and a governed contract and produces the db
 
 ### §4k.5 A contract file may hold a bundle, and the expected id selects from it
 
-- **Decision.** A contract path may hold several documents separated by YAML document markers. The expected contract id selects one of them. A bundle read with no expected id fails the load and lists the ids it holds. Empty documents are dropped, so one document plus a trailing marker stays on the single-document route, and a stream with no document at all has its own refusal. Both file read sites select, at load and at run time. The served route is unchanged.
+- **Decision.** A contract path may hold several documents separated by YAML document markers. The expected contract id selects one of them. A bundle read with no expected id fails the load and lists the ids it holds. Empty documents are dropped, so one document plus a trailing marker stays on the single-document route, and a stream with no document at all has its own refusal. Both places that read the file select, at load and at run time. The served route is unchanged.
 - **Why.** A deployment governs its contracts together in one file. Reading only single documents would force a copy of one document, which is a second governed text that can drift. Taking the first document of a bundle could map against the wrong table while every column name still lines up. A second selector field was rejected: it would state the same fact twice and make the expected-id check impossible to fail on the bundle route.
 - **Where else.** No test was found for the refusal of a stream with no document.
 - **Status.** `built`.

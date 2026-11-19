@@ -176,7 +176,7 @@ One component instance turns bundles of documents into one Lance table per mappe
 ### §4s.28 Throughput is benchmarked, and the target is not met
 
 - **Decision.** A bulk benchmark for each route prints rows per second and asserts the 20,000 rows per second target only when `DAGTOOLS_BENCH` is set. The target is not to be reached by loosening a coercion rule.
-- **Why.** The census reports both routes below the target on a desktop machine, with most of the time spent in per-value evaluation, and names a compiled reader as the next step.
+- **Why.** The census reports both routes below the target on a development machine, with most of the time spent in per-value evaluation, and names a compiled reader as the next step.
 - **Where else.** The census figures have no recorded run, so the benchmark is `built`; the target is `not built`.
 - **Status.** `built`.
 
