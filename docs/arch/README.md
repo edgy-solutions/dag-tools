@@ -1,6 +1,6 @@
 # Mesh architecture records
 
-These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built.
+These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found, and every row in it is `proposed`.
 
 The records are written for [arch-kit](https://github.com/edgy-solutions/arch-kit), pinned at tag `v0.1.0` (`e0b9b3c40520440a09a4e0e6050ea5017de05848`). arch-kit v0.1.0 has no record type for a *flow* or for *alignment to an outside reference*. Until the kit or its loader declares one, these files follow the kit's view form: a title line, findings first, and a Sources table at the end. **That shape is provisional.**
 
@@ -30,13 +30,14 @@ All evidence is read at these commits. A line number is valid only at its pin.
 
 ## References
 
-- **NATO, *Data Centric Reference Architecture for the Alliance*, version 2 (AC/322-D(2025)0056), publicly disclosed.** It frames the need-to-know flow (its data-centric security appendix) and the data-product characteristics. These records name its elements and copy none of its figures.
-- **A second data mesh reference architecture** is the primary alignment for the service records. It is cited by title only once its public citation is confirmed.
+- **NATO, *Data Centric Reference Architecture for the Alliance*, version 2 (AC/322-D(2025)0056), publicly disclosed.** Its Appendix 9 (Data-Centric Security) frames the need-to-know flow.
+- **Chief Digital and Artificial Intelligence Office (CDAO), *Data Mesh Reference Architecture*, version 2.6, March 2024.** It is the primary alignment for the service and principle records.
 
-Neither reference document is committed here.
+Both are public. The records cite them by element name and section or paragraph number only. They copy no figure and no passage, and they state each definition in their own words. Neither document is committed here.
 
 ## Records
 
 | Record | Kind | State |
 |---|---|---|
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
+| [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
