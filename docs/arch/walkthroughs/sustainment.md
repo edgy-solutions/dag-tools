@@ -41,7 +41,7 @@ Each step names the part of the tooling that does it and the records it relies o
 
 ## Gaps
 
-- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in the built-to-measured list.
+- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md).
 - **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10).
 - **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer. It does not produce staging data on its own (§4e.5, §4f.11).
 - **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.5). A change in a metadata value passes.

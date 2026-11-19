@@ -19,7 +19,7 @@ The mesh lets data stay with the team that produces it, while other teams read i
 Every claim in these records carries one status: `measured`, `built`, `accepted` or `proposed`. [The README](README.md#status-vocabulary) defines each one and the evidence it needs. In brief:
 
 - **`built`** means code at the pinned commit does it. The record gives a file and line, and a test when one exists. When none exists, the record says "no test".
-- **`measured`** needs a recorded run against a running system. A test that could measure a claim is not enough. **No claim in these records is `measured` yet.**
+- **`measured`** needs a recorded run against a running system. A test that could measure a claim is not enough. **No claim in these records is `measured` yet.** [The built-to-measured list](built-to-measured.md) names the claims a recorded run could change.
 - **`accepted`** means a decision record accepts it and no code does it yet. **`proposed`** means it is written down as intent only.
 - **`not built`** marks a gap with nothing built.
 - **`—`** marks a row that carries no claim of its own, such as a pointer, a reference or a superseded entry.
@@ -90,6 +90,7 @@ Read together, the edges show that the catalog (S3) and policy (S5, S6) carry mo
 | The remedies proposed for gaps | [the roadmap note](ROADMAP.md) |
 | What a decision-maker can be shown, and what it rests on | [the evidence walkthrough](walkthroughs/evidence.md) |
 | How a Dagster upgrade is qualified | [the sustainment walkthrough](walkthroughs/sustainment.md) |
+| Which built claims a recorded run could make measured | [the built-to-measured list](built-to-measured.md) |
 
 Two walkthroughs follow a question through the records: [a decision-maker asking for evidence](walkthroughs/evidence.md) and [a sustainment case](walkthroughs/sustainment.md), the qualification of a Dagster upgrade.
 
