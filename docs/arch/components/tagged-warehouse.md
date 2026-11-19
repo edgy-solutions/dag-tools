@@ -16,7 +16,7 @@ This record covers what the chart and code provide by default, and what a deploy
 6. **The connection is named in config and checked at load, with no environment fallback.** `connection` must give a DSN, or a driver name with parts. It is resolved to a URL during validation, which builds no engine and imports no driver. No environment variable stands in for a missing connection. `built`
 7. **Nothing limits what a statement does.** The resource runs any statement it is given inside a transaction that commits. It adds no read-only setting, no row limit and no timeout. `built`
 8. **Each query builds a new engine, and none is disposed.** Every plan creates an engine from the URL and does not dispose of it, so connection pools are not reused or closed by the resource. `built`
-9. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `built`
+9. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `not built`
 
 ## Settings and defaults
 
@@ -68,4 +68,4 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are
 | Connection checked at load; no environment fallback | `dag_tools/resources/warehouse.py:77-132`; `schema.py:78-105` | AGENTS.md §4j | `test_tagged_warehouse_resource.py`: `test_a_connection_naming_nothing_is_refused_with_no_env_fallback`, `test_resolving_a_connection_does_not_import_dlt`; `test_tagged_warehouse_component.py`: `test_a_connection_naming_nothing_fails_the_load` | `built` |
 | Committing transaction; no read-only, limit or timeout | `dag_tools/resources/warehouse.py:447-457` | not stated | no test | `built` |
 | Engine per query, not disposed | `dag_tools/resources/warehouse.py:459-462` | not stated | no test | `built` |
-| Not wired by the chart or the shipped code location | no match for the component under `helm/` or `dag_tools/user_deployment/` | not stated | — | `built` |
+| Not wired by the chart or the shipped code location | no match for the component under `helm/` or `dag_tools/user_deployment/` | not stated | — | `not built` |
