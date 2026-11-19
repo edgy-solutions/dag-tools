@@ -17,6 +17,8 @@ Every claim carries exactly one status.
 
 A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`.
 
+Three cases are settled by one rule. An absence (nothing at the pin does it) is `not built`. A test behind an environment gate still counts as a test: the evidence cell names the suite it runs in, the claim stays `built`, and the claim is listed among the built claims a recorded run could make measured, until a recorded run of it exists. A run the census reports with no recorded result is `built`, and the record writes "the census reports"; it becomes `measured` only when the run's record is cited.
+
 ## Pins
 
 All evidence is read at these commits. A line number is valid only at its pin.
@@ -101,10 +103,7 @@ How closely is one of:
 | [components/topaz.md](components/topaz.md) | component | draft |
 | [components/vault.md](components/vault.md) | component | draft |
 | [components/warehouse-source.md](components/warehouse-source.md) | component | draft |
-| [decisions/README.md](decisions/README.md) | decisions index: how census decisions are addressed | draft |
-| [decisions/dag-tools-s1-s3.md](decisions/dag-tools-s1-s3.md) | decisions: dag-tools census §1 to §3 | draft |
-| [decisions/dag-tools-s4-restate.md](decisions/dag-tools-s4-restate.md) | decisions: dag-tools census §4 | draft |
-| [decisions/dag-tools-s5-s6.md](decisions/dag-tools-s5-s6.md) | decisions: dag-tools census §5 and §6 | draft |
+| [decisions/README.md](decisions/README.md) | decisions index: how census decisions are addressed, and every decision record | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
