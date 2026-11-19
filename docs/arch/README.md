@@ -68,14 +68,7 @@ How closely is one of:
 
 ## Planes
 
-The mesh places each component in one of four planes. The four are the ones the NATO DCRA names in Appendix 14 (its technical architecture), ¶1. The definitions below are this README's own words; the alignment rows are in [the DCRA alignment](alignment/nato-dcra.md#data-planes-appendix-14).
-
-| Plane | Holds | DCRA | Alignment row |
-|---|---|---|---|
-| `infrastructure` | the compute, storage, network and foundation services that every other plane runs on | Appendix 14, ¶2–4 | [L1](alignment/nato-dcra.md) |
-| `operational-data` | the systems that produce and use data in day-to-day work, and the parts that read data out of them or write back to them | Appendix 14, ¶5–7 | [L2](alignment/nato-dcra.md) |
-| `data-management` | the shared services that govern data across its life: catalog, lineage, contracts, access decisions and transformation | Appendix 14, ¶8–9 | [L3](alignment/nato-dcra.md) |
-| `analytical-data` | where data is explored and analysed, and turned into insight for decisions | Appendix 14, ¶10 | [L4](alignment/nato-dcra.md) |
+The mesh places each component in one of four planes. The plane list is with the alignment records, in [the DCRA alignment](alignment/nato-dcra.md#plane-list). It gives each plane's id, its name as the DCRA prints it, its paragraphs in Appendix 14 and its alignment row.
 
 Each component record's Plane row names exactly one plane, in backticks, and then says why. A component that also carries work of a second plane says so in that explanation; it is still placed in one. A component that nothing wires into the mesh is placed by the role its record establishes for it. Where the record establishes no role, the component has no plane, and its row says not established.
 
