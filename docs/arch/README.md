@@ -2,7 +2,7 @@
 
 These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found. Every row in it is `proposed` except the one the architect has accepted, which the note marks.
 
-The records are written for [arch-kit](https://github.com/edgy-solutions/arch-kit), pinned at tag `v0.1.0` (`e0b9b3c40520440a09a4e0e6050ea5017de05848`). arch-kit v0.1.0 has no record type for a *flow* or for *alignment to an outside reference*. Until the kit or its loader declares one, these files follow the kit's view form: a title line, findings first, and a Sources table at the end. **That shape is provisional.**
+The records are written for arch-kit, pinned at tag `v0.1.0` (`e0b9b3c40520440a09a4e0e6050ea5017de05848`). arch-kit v0.1.0 has no record type for a *flow* or for *alignment to an outside reference*. Until the kit or its loader declares one, these files follow the kit's view form: a title line, findings first, and a Sources table at the end. **That shape is provisional.**
 
 ## Status vocabulary
 
@@ -15,7 +15,7 @@ Every claim carries exactly one status.
 | `accepted` | A decision record accepts it, and no code does it yet. | The decision record. |
 | `proposed` | It is written down as intent, but not accepted or built. | Where it is written. |
 
-A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`.
+A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`. So is an absence: a claim that a chart or the code does not provide something is `not built`, never `built`.
 
 Three cases are settled by one rule. An absence (nothing at the pin does it) is `not built`. A test behind an environment gate still counts as a test: the evidence cell names the suite it runs in, the claim stays `built`, and the claim is listed among the built claims a recorded run could make measured, until a recorded run of it exists. A run the census reports with no recorded result is `built`, and the record writes "the census reports"; it becomes `measured` only when the run's record is cited.
 

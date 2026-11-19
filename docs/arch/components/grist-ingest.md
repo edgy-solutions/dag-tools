@@ -24,11 +24,11 @@ This record covers what the chart and code provide by default, and what a deploy
 
 | Setting | Default | What it does |
 |---|---|---|
-| `grist.host` | required | Grist host, no scheme |
-| `grist.org` | required | organisation whose workspaces are listed |
-| `grist.token` | required | bearer token for the Grist API |
-| `grist.scheme` | `https` | URL scheme |
-| `grist.timeout_seconds` | `30` | per-request timeout; the snapshot download waits twice this |
+| `host` in the `grist` block | required | Grist host, no scheme |
+| `org` in the `grist` block | required | organisation whose workspaces are listed |
+| `token` in the `grist` block | required | bearer token for the Grist API |
+| `scheme` in the `grist` block | `https` | URL scheme |
+| `timeout_seconds` in the `grist` block | `30` | per-request timeout; the snapshot download waits twice this |
 | `postgres.protocol`, `.host`, `.database`, `.username`, `.password` | required | destination for the SQL IO manager |
 | `postgres.port` | none | left out of the connection address when absent |
 | `postgres.schema` | none | default schema for the tables |
