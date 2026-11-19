@@ -52,7 +52,7 @@ The chart's `centralGateway.env` is empty, so the chart column reads "not set" u
 - **The principal is taken from a header by default** (findings 3, 7). This includes the deny list, which under `observe` reads the header subject first. Remedy: [roadmap row 1](../ROADMAP.md) (dag-tools #70).
 - **Delegation is not wired** (finding 5). It is the dependency of roadmap row 1.
 - **Two things in the code describe a gateway that no longer exists** (findings 9, 13): an unsent check payload and a warning that says no verification is enforced. Remedy: [roadmap row 11](../ROADMAP.md) (not filed).
-- **By default the internal routes admit any caller** (finding 12). Under `observe`, which the chart leaves in place, a caller with no token can register URNs to an address of its choosing at the gateway, or call the broker's resolve route, and is only logged. Remedy: not yet on the roadmap.
+- **By default the internal routes admit any caller** (finding 12). Under `observe`, which the chart leaves in place, a caller with no token can register URNs to an address of its choosing at the gateway, or call the broker's resolve route, and is only logged. Remedy: [roadmap row 16](../ROADMAP.md) (not filed).
 - **No test covers the deny list under `observe`** (finding 7). Roadmap row 1 would retire the posture it applies under.
 
 ## Not established from code
@@ -92,4 +92,4 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Gateway s
 | Broker call, ten-second timeout, error mapping, issued-ticket log line | `main.py:404-606`, `:568`, `:579-591` | dag-tools AGENTS.md §4o | `test_ticket_receipt.py`: `test_the_log_follows_the_VERIFIED_subject_where_it_differs_from_the_header`, `test_the_log_line_names_no_credential` | `built` |
 | Service door on both internal routes; own posture; client-credentials caller | `internal_door.py:17-21`, `:50-72`, `:98`, `:101-131`, `:143`; `helm/dag-tools/values.yaml:173-215` and `helm/dag-tools/templates/central-gateway.yaml` set no door posture | not stated | `test_internal_doors.py`: `test_observe_serves_and_logs_would_refuse`, `test_enforce_with_no_list_refuses_everyone`, `test_a_list_for_one_door_does_not_open_the_other`, `test_enforce_unconfigured_verifier_is_503`, `test_the_posture_is_independent_of_the_identity_posture`, `test_service_headers_refetches_30s_before_expiry` | `built` |
 | Retired-flag warning says no verification is enforced | `subject_gauge.py:310-316` | not stated | — | `built` |
-| Remedies | [the roadmap note](../ROADMAP.md), rows 1 and 11 | none | — | `proposed` |
+| Remedies | [the roadmap note](../ROADMAP.md), rows 1, 11 and 16 | none | — | `proposed` |
