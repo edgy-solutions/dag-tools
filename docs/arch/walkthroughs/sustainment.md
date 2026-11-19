@@ -7,7 +7,7 @@ A team that sustains the mesh wants to move Dagster to a newer version. Before t
 
 Each step names the part of the tooling that does it and the records it relies on. A step adds no claim of its own: its status is the status of the records it cites, and its evidence is theirs.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
+**This record describes; it proposes nothing.** Where a gap has a remedy, it is a row in [the roadmap note](../ROADMAP.md), marked `proposed`; none of the gaps below has such a row yet. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
 
 ## Findings
 
@@ -65,5 +65,5 @@ Each step names the part of the tooling that does it and the records it relies o
 | Staging and runs | dag-tools decisions §4f.1 to §4f.3, §4f.7, §4f.9, §4f.11 | [§4f.1](../decisions/dag-tools-s4g1-s4g-s4f.md) | as step 7 | `built` |
 | Probes and the probe location | dag-tools decisions §4g1.1, §4g0.2, §4g0.5, §4g-1.2; [Dagster](../components/dagster.md), finding 10 | [§4g0.2](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 8 | `built` |
 | Round trip | dag-tools decisions §4g2.2, §4g2.3, §4g2.5 | [§4g2.2](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 9 | `built` |
-| Verdict | dag-tools decisions §4h.1 to §4h.4, §4g0a.1, §4g0a.2 | [§4h.1](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 10 | `built` |
+| Verdict | dag-tools decisions §4h.1 to §4h.4, §4g0a.1, §4g0a.2, §4g2.5 | [§4h.1](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 10 | `built` |
 | No qualification is `measured` | the status columns of the records cited | — | none found | — |
