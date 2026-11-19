@@ -114,7 +114,7 @@ One component instance turns bundles of documents into one Lance table per mappe
 
 ### §4s.18 Opening a bundle lists only its own prefix
 
-- **Decision.** Opening one directory-tree bundle in S3 lists only that bundle's prefix. Discovery at depth 1 is one delimited listing call, and finding a zip bundle is one metadata request and no listing. Locally, discovery walks only to the bundle depth. The whole source is listed only when the root itself is the one bundle.
+- **Decision.** Opening one directory-tree bundle in S3 lists only that bundle's prefix, in two listing calls: one existence probe and one listing of the bundle. Discovery at depth 1 is one delimited listing call, and finding a zip bundle is one metadata request and no listing. Locally, discovery walks only to the bundle depth. The whole source is listed only when the root itself is the one bundle.
 - **Why.** The cost of opening one bundle must not grow with the number of bundles beside it.
 - **Where else.** The call counts are asserted against an in-process S3 double, not a real store.
 - **Status.** `built`.
@@ -175,10 +175,10 @@ One component instance turns bundles of documents into one Lance table per mappe
 
 ### §4s.28 Throughput is benchmarked, and the target is not met
 
-- **Decision.** A bulk benchmark for each route prints rows per second and asserts the 20,000 rows per second target only when `DAGTOOLS_BENCH` is set. The target is not to be reached by loosening a coercion rule.
+- **Decision.** A bulk benchmark for each route prints rows per second and asserts the 20,000 rows per second target only behind an environment gate. The target is not to be reached by loosening a coercion rule.
 - **Why.** The census reports both routes below the target on a development machine, with most of the time spent in per-value evaluation, and names a compiled reader as the next step.
 - **Where else.** The census figures have no recorded run, so the benchmark is `built`; the target is `not built`.
-- **Status.** `built`.
+- **Status.** `built` for the benchmark; the target `not built`.
 
 ### §4s.29 The mapping is checked at the load; the source and destination only in a run
 
@@ -218,7 +218,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | §4s.1 format only in the mapping | `examples/document_tables/`; `dag_tools_tests/documents_synthetic.py` | AGENTS.md §4s, bullet 1 | tm: `test_no_deployment_vocabulary_appears_in_the_library` (`:240`); tc: `test_the_examples_mapping_is_the_synthetic_mapping` (`:450`), `test_each_example_bundle_is_exactly_the_synthetic_bundle` (`:456`) | `built` |
-| §4s.2 pure engine; optional extra; lazy export | `pyproject.toml:231-246`; `dag_tools/__init__.py:9`, `:24`, `:38` | bullet 2 | tm: `test_importing_the_engine_modules_imports_no_dagster` (`:253`), control `:268`; no test of a base install | `built` |
+| §4s.2 pure engine; optional extra; lazy export | `pyproject.toml:231-250`; `dag_tools/__init__.py:9`, `:24`, `:38` | bullet 2 | tm: `test_importing_the_engine_modules_imports_no_dagster` (`:253`), control `:268`; no test of a base install | `built` |
 | §4s.3 no value at INFO; redact | eng `:1000-1003`, `:1256`, `:1302`; dt `schema.py:165` | bullet 3 | te: `test_no_log_record_at_info_or_above_carries_a_document_value` (`:912`), controls `:925`, `:932`; `test_redacted_reject_text_carries_no_document_value` (`:766`), control `:776`, `:784`, `test_redaction_does_not_hide_the_engines_own_document_errors` (`:795`) | `built` |
 | §4s.4 coercion never raises | coe `:84`, `:99-107`, `:129-136`, `:140-154`, `:190`, `:197` | bullet 4 | te: `test_int32_coercion` (`:300`), `test_int64_coercion_is_exact` (`:316`), `:351`, `test_a_timestamp_is_stored_as_a_utc_instant` (`:398`), `test_format_with_no_offset_needs_a_timezone` (`:462`), `test_no_coercer_raises_on_garbage` (`:508`), `test_a_failed_coercion_never_carries_a_value` (`:514`), `:538` | `built` |
 | §4s.5 delete then append; schema from the mapping | lw `:29-30`, `:41`, `:44`, `:192-245` (delete at `:223`) | bullet 5 | tl: `test_rerunning_a_bundle_changes_no_count_and_leaves_the_other_untouched` (`:101`), `test_begin_bundle_with_no_rows_creates_every_dataset_with_the_mapping_schema` (`:157`), `test_a_changed_column_type_raises_naming_the_column_and_deletes_nothing` (`:280`), `:295`, `:207`, `:213`, `:258`; te `:1002`; tc: `test_rematerializing_a_partition_leaves_every_count_unchanged` (`:227`) | `built` |
@@ -244,8 +244,8 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4s.25 `basename_in` | map `:142`; fil `:85-90` | bullet 25 | tf `:222`, `:236` | `built` |
 | §4s.26 member table | `dag_tools/documents/` | bullet 26 | tf `:567`, `:594`, `:692` | `built` |
 | §4s.27 profiler quotes JSON keys | `dag_tools/documents/profiler.py` | bullet 27 | tj `:522` | `built` |
-| §4s.28 throughput benchmark; target not met | `dag_tools_tests/test_documents_engine.py:942`; `dag_tools_tests/test_documents_json.py:695` | bullet 28 | te: `test_throughput_on_a_bulk_manifest` (`:942`); tj: `test_json_throughput_on_a_bulk_manifest` (`:695`); the target is asserted only with `DAGTOOLS_BENCH` set | `built`; target `not built` |
-| §4s.29 mapping at the load | dt `component.py` | bullet 29 | tc: `test_an_unknown_key_in_source_fails_the_load` (`:426`), `:431`, `test_a_mapping_with_a_validation_problem_fails_the_load` (`:436`), `test_a_missing_mapping_file_fails_the_load_naming_the_file` (`:442`) | `built` |
+| §4s.28 throughput benchmark; target not met | `dag_tools_tests/test_documents_engine.py:942`; `dag_tools_tests/test_documents_json.py:695` | bullet 28 | te: `test_throughput_on_a_bulk_manifest` (`:942`); tj: `test_json_throughput_on_a_bulk_manifest` (`:695`); the target is asserted only behind an environment gate | `built` for the benchmark; the target `not built` |
+| §4s.29 mapping at the load | dt `component.py` | bullet 29 | tc: `test_an_unknown_key_in_source_fails_the_load` (`:426`), `test_a_mapping_with_a_validation_problem_fails_the_load` (`:436`), `test_a_missing_mapping_file_fails_the_load_naming_the_file` (`:442`); tm: `test_an_unknown_type_is_refused` (`:62`), `test_an_unknown_lookup_index_is_refused` (`:68`), `test_several_problems_are_all_reported_in_one_error` (`:74`); no test that the source and destination are not contacted at the load | `built` |
 | §4s.30 partitions are bundles | dt `component.py:82`, `:91-101` | bullet 30 | tc `:168`, `:207`, `test_a_tag_that_disagrees_with_the_partition_fails_the_run` (`:215`), `test_two_bundle_keys_encoding_to_one_partition_fail_the_tick` (`:336`), `:353` | `built` |
 | §4s.31 sensor and schedule stopped | dt `schema.py:113-114`, `:140`; dt `component.py:444`, `:589` | bullet 31 | tc: `test_the_shipped_example_loads` (`:150`; the sensor is asserted stopped at `:156`), `test_a_cron_adds_a_stopped_maintenance_schedule` (`:160`), `test_the_tick_is_bounded_by_max_new_partitions_per_tick` (`:305`), `test_a_changed_bundle_of_a_known_partition_is_not_requested_again_by_the_sensor` (`:321`) | `built` |
 | §4s.32 checks warn | dt `component.py:198-222`, `:322-368` (severity at `:324`); dt `schema.py:89`, `:92`, `:98`, `:101` | bullet 32 | tc: `test_default_thresholds_fail_the_checks_as_warnings_and_the_run_succeeds` (`:243`), `:260`, `:267` | `built` |

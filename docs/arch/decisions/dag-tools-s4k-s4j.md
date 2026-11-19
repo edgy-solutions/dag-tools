@@ -192,7 +192,7 @@ The read audit compares a warehouse's query history with what Dagster ran and re
 
 - **Decision.** Planning a tagged query refuses an empty tag, and execution re-checks that the plan carries its tag at the one point that touches a connection. The refusal comes before the connection is resolved. The pipeline name stays optional, so a per-request principal is still a reachable configuration.
 - **Why.** Two layers guard against a later edit that builds a plan another way. Ordering the refusal first means a misconfigured connection cannot hide a missing principal.
-- **Where else.** The census names three tests by earlier names; the Sources table cites the names at the pin.
+- **Where else.** The census describes three tests by names no test has carried; the Sources table cites the names the tests carry at the pin.
 - **Status.** `built`.
 
 ### §4j.12 The resource tags the run, and `for_asset` narrows the tag to an asset
@@ -206,14 +206,14 @@ The read audit compares a warehouse's query history with what Dagster ran and re
 
 - **Decision.** The colons inside the generated leading comment are escaped, and nothing else. The escape is removed at compile time, so the warehouse receives the tag unchanged. Session placement is not escaped.
 - **Why.** The SQL text layer reads a colon followed by a digit as a bind parameter, and the tag's JSON contains one, so every comment-placed read failed at submission. A unit test that stubs the transport cannot see this; running the example found it.
-- **Where else.** The census names three tests by earlier names; the Sources table cites the names at the pin.
+- **Where else.** The census describes three tests by names no test has carried; the Sources table cites the names the tests carry at the pin.
 - **Status.** `built`.
 
 ### §4j.14 The connection has no environment fallback and is resolved at load
 
 - **Decision.** The `connection:` block must name a DSN or a driver name with parts, and it is resolved to a URL during validation. No environment variable stands in for a missing connection.
 - **Why.** A fallback variable would belong to whichever pipeline set it last, and a resource that silently connected elsewhere would produce a confident report about the wrong account. Resolving to a URL builds no engine and imports no driver, so the check can run at load and a typo fails the load, not a run.
-- **Where else.** The census names one test by an earlier name; the Sources table cites the name at the pin.
+- **Where else.** The census describes one test by a name no test has carried; the Sources table cites the name the test carries at the pin.
 - **Status.** `built`.
 
 ### §4j.15 The library ships no tag dialect

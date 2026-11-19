@@ -6,11 +6,11 @@ This record lists the standing decisions of the mesh SDK. The SDK has no committ
 
 Entries are addressed `SDK.N`. The numbers belong to this record only, not to any series of the SDK's.
 
-Two SDK commits are cited. Entries 1 to 4 were supplied at the SDK pin in [the README](../README.md), `d6a73783`. Entries 5 to 8, and the deprecation in entry 3, were supplied at a later SDK commit, `f1a94103`, and postdate that pin.
+Two SDK commits are cited. Entries 1 to 4 were supplied at the SDK pin in [the README](../README.md), `d6a73783`. Entries 5 to 8, and the deprecation in entry 3, were supplied at a later SDK commit, `f1a94103`, and postdate that pin. A line number holds at the commit it is given at and is not guaranteed at the other. The gate read of this record found 24 of the 25 line ranges in entries 1 to 4 unchanged at `f1a94103`. The one that moved is `remote_clients.py:58`, now `:69`, displaced by the deprecation that entry 3 cites.
 
 ### SDK.1
 
-- **Decision.** The SDK carries who a call is for and makes no access decision. Inbound, it verifies a bearer token signed with one asymmetric algorithm, against the issuers and audiences a deployment lists in environment variables. The status header it sets is a diagnostic only, and it exchanges no token. Outbound, its client attaches the authorization header. The initiator's on-behalf-of field records provenance and does not decide anything. The decision is left to the caller, which must name the person.
+- **Decision.** The SDK carries who a call is for and makes no access decision: it consults no grants. It does check the kind of identity at the boundary, where its person guard admits a person and refuses a service or a delegate. Inbound, it verifies a bearer token signed with one asymmetric algorithm, against the issuers and audiences a deployment lists in environment variables. The status header it sets is a diagnostic only, and it exchanges no token. Outbound, its client attaches the authorization header. The initiator's on-behalf-of field records provenance and does not decide anything. The decision is left to the caller, which must name the person.
 - **Why.** Not supplied.
 - **Where else.** [Agent capabilities, finding 5](../flows/agent-capabilities.md).
 - **Status.** `built`.
@@ -46,7 +46,7 @@ Two SDK commits are cited. Entries 1 to 4 were supplied at the SDK pin in [the R
 
 - **Decision.** Declared-configuration models, the workflow definition and its kin, inherit one base that forbids unknown keys and freezes the object.
 - **Why.** An unrecognised key refuses the whole object at load, rather than being dropped without notice.
-- **Where else.** dag-tools takes the same stance where an unpopped key would be ignored: [§4p](dag-tools-s4p.md).
+- **Where else.** dag-tools meets the same question where a settings model ignores unknown keys, and answers it by removing the key first; the block's own model forbids them: [§4p](dag-tools-s4p.md).
 - **Status.** `built`.
 
 ### SDK.7
@@ -64,18 +64,18 @@ Two SDK commits are cited. Entries 1 to 4 were supplied at the SDK pin in [the R
 ## Not established
 
 - The reason for entries 1, 2, 4 and 5. The session supplied the code, not the reasoning.
-- Whether the line numbers of entries 1 to 4, given at `d6a73783`, still hold at `f1a94103`.
 - Tests for entries 1 and 4. None were supplied.
 
 ## Sources
 
-All paths are in the SDK repository, as supplied by its session, and were not read here. `d6` is commit `d6a737837c3d0609ace95017c6b4b45b500ea755`. `f1` is commit `f1a941030bd68f1218ee6122750619ea08ee7276`. Paths are under `iagent_mesh/` unless they start with `tests/`.
+All paths are in the SDK repository, as supplied by its session, and were not read here. `d6` is commit `d6a737837c3d0609ace95017c6b4b45b500ea755`. `f1` is commit `f1a941030bd68f1218ee6122750619ea08ee7276`. Paths are under `iagent_mesh/` unless they start with `tests/`. The person-guard row was supplied by the gate read of this record, not by the SDK's session.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | Bearer verified; issuers and audiences from the environment; header diagnostic only; no token exchange | d6 `transport_auth.py:380`, `:442-460`, `:570`, `:585-590` | SDK.1 | not supplied | `built` |
 | Outbound authorization header | d6 `client.py:88-96`, `:146` | SDK.1 | not supplied | `built` |
 | On-behalf-of is provenance; no access decision in the SDK | d6 `interfaces.py:150`, `:255`; `delegate_identity.py:16-20`; `refusal.py:1`, `:51`; `core.py:593-619` | SDK.1 | not supplied | `built` |
+| Person guard checks the kind of identity at the boundary; no grants consulted | d6 `interfaces.py:216-243` | SDK.1 | not supplied | `built` |
 | Resolve returns a data reference; caller reads | d6 `interfaces.py:1013`, `:1076`, `:1085`; `core.py:503` | SDK.2 | `tests/test_cortex_data_client_contract.py` | `built` |
 | Remote graph client, no server end | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` (client); `not built` (server end) |
 | Graph client warns it is deprecated | f1 `remote_clients.py:43`, `:80`, `:90` | SDK.3 | `test_construction_warns_deprecated` (`tests/test_remote_clients.py:30`) | `built` |

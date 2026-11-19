@@ -51,7 +51,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A half-registered verb is unroutable, because reads need both stores to agree.
 - **Stated status.** Accepted, amended by two addenda in June.
 - **Where else.** ADR-0004, ADR-0007.
-- **Status.** Routing reads Neo4j only: `built`. Registration saga with bounded retry, read-back probe and compensating deletes: `built`. Drift-reconciliation asset: `not built`; the ADR defers it. Sole-writer claim and the source-declaration rule: `accepted`, no standing guard found.
+- **Status.** Routing reads Neo4j only: `built`. Registration saga with bounded retry, read-back probe and compensating deletes: `built`. Drift-reconciliation asset: `not built`; the ADR defers it. Sole-writer claim: `accepted`, no standing guard found. Source-declaration rule: `built`, with no guard that runs without a database: the coverage guard test_substrate_covers_routing_via_v02_saga_edges (tests/routing/test_substrate_invariants.py:914) holds it, and needs a live graph store.
 
 ## ADR-0007 Survey existing standards before minting a term
 
@@ -59,7 +59,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Homegrown terms drift from standards and are costly to retire.
 - **Stated status.** Accepted. Retroactive mappings are proposals only.
 - **Where else.** ADR-0005.
-- **Status.** Mint log: `—`, a document with eleven entries, no test. Survey rule: `accepted`; no code enforces it. Retroactive mappings: `proposed`.
+- **Status.** Mint log: `—`, a document with twelve entries, no test. Survey rule: `accepted`; no code enforces it. Retroactive mappings: `proposed`.
 
 ## ADR-0008 Generalist fallback when routing finds nothing
 
@@ -83,7 +83,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** One tracing source per concern avoids duplicate telemetry that drifts.
 - **Stated status.** Proposed.
 - **Where else.** ADR-0008.
-- **Status.** `proposed`. No instrumentation packages or entry-point spans found at the pin.
+- **Status.** `proposed` as written. There are no OpenTelemetry auto-instrumentation packages and no `traceparent` propagation at the HTTP boundary. The OpenTelemetry API and SDK are direct dependencies (pyproject.toml:26-27); the exporter distributions are not. Entry-point spans exist on a different telemetry primitive under a later ruling, carrying their own headers.
 
 ## ADR-0011 Multi-hop routing from natural language
 
@@ -115,7 +115,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A hand-kept list in a prompt drifts from the catalog and the model then trusts the stale copy.
 - **Stated status.** Accepted. Open items remain: a lint for hard-coded URNs, an audit of verb descriptions, and a register-time platform check.
 - **Where else.** [domain-broker component](../components/domain-broker.md); [ticket identity and the broker's cached coordinates](dag-tools-s4n-s4o-s4k1.md).
-- **Status.** Rule 1 `built` (the URN hint block was removed; no URN literals remain in the agent entry points), no test. Rule 2 `built` as a configuration shape (two entries), no test; the deployed copy is not established. Rule 3 `accepted` (a review rule, no code). The lint and the register-time check: `not built`.
+- **Status.** Rule 1 `built` (the URN hint block was removed; no enumerated catalog URNs remain in the agent entry points, and the scheme prefix survives in a parser at data_analyst/main.py:428-430, which ADR-0014 permits at :105), no test. Rule 2 `built` as a configuration shape (two entries), no test; the deployed copy is not established. Rule 3 `accepted` (a review rule, no code). The lint and the register-time check: `not built`.
 
 ## ADR-0015 Router regression testing at predicate search
 
@@ -204,10 +204,9 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - Checked only in part: the ADR-0004 test names are from tests/test_ontology_routing.py; their assertions were not opened to confirm they check the graph-query shape.
 - Checked only in part: ADR-0005: test_emits_full_predicate_payload (:176) also asserts domain authority for a domain prefix; two nearer tests are cited instead.
 - Checked only in part: the ADR-0008 abstain case comes from comments at sup:2906-2923, not from a test.
-- ADR-0004 steps A, B, D, E, F; ADR-0005 propose-time rejection and the prefix registry file; ADR-0006 concurrency tests, conjunctive-read guard test, doc-sync sole-writer claim, standing source-declaration coverage test; ADR-0009 identity-claims work; ADR-0008 operator doc step.
-- ADR-0006 names test_substrate_covers_routing_via_v02_saga_edges; no such function at the pin. Not cited.
-- ADR-0010: OTel packages appear only in lock files as an exporter dependency, and a trace header is parsed at wfr:683-690 through a separate telemetry package. An older trace header is still read in two services. Neither matches the ADR's plan, so it stays `proposed`.
-- Checked only in part: ADR-0014 rule 1 is judged from comments recording the removal plus absence of URN literals in agent entry points; a fuller prompt audit was not done.
+- ADR-0004 steps A, B, D, E, F; ADR-0005 propose-time rejection and the prefix registry file; ADR-0006 concurrency tests, conjunctive-read guard test, doc-sync sole-writer claim; ADR-0009 identity-claims work; ADR-0008 operator doc step.
+- ADR-0010: the OpenTelemetry API and SDK are direct dependencies at pyproject.toml:26-27, and the exporter distributions are not. Entry-point spans exist on a separate primitive (src/iagent/trace_spans.py, entered at gwy:8311, :14088 and :18072), with a parent-span header of their own. A trace header is parsed at wfr:683-690 through a separate telemetry package. An older trace header is still read in two services. Neither matches the ADR's plan, so it stays `proposed`.
+- Checked only in part: ADR-0014 rule 1 is judged from comments recording the removal plus absence of enumerated catalog URNs in agent entry points; a fuller prompt audit was not done.
 - Checked only in part: ADR-0017 "dissolve into a validator" is marked not built because the hand-kept capability file still exists with fixed expected fields; a chart normalizer file was not seen. Whether the validator now duplicates it was not examined.
 - Checked only in part: ADR-0018 asserts a log reason for the no-compatible-verbs short-circuit; the grep did not surface that exact line, so the claim rests on the route's return of UNKNOWN with no model call.
 - Checked only in part: ADR-0019 Contract B is cited to the supervisor's classify function; the test that confirms the unresolved-subject path never calls classification is the parametrized contract test, whose case list was not read.
@@ -225,22 +224,22 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0003 Per-class model variables | mem `:532-538` | ADR-0003 | no test | Phase 1: `built`. Phases 2 and 3: `accepted` |
 | ADR-0004 Predicate-graph path lookup | ont `:4296-4315`, ont `:4320`, ont `:4353-4354`, ont `:4538-4575` | ADR-0004 | test_find_tool_happy_path (:156), test_find_path_happy_two_hop (:240), test_find_path_validates_max_hops_range (:295) | Step C: `built`. Steps A, B, D, E and F: not established |
 | ADR-0005 Platform and domain authority | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | Authority marker: `built`. Propose-time check: not established. Prefix registry file: `not built` |
-| ADR-0006 Neo4j routing, saga writes | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658) | Routing and saga: `built`. Reconcile asset: `not built` |
+| ADR-0006 Neo4j routing, saga writes | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | Routing and saga: `built`. Source-declaration rule: `built`, live-substrate guard only. Sole-writer claim: `accepted`. Reconcile asset: `not built` |
 | ADR-0007 Survey before minting | reg `:18-29` | ADR-0007 | no test | Mint log: `—`. Survey rule: `accepted`. Retroactive mappings: `proposed` |
 | ADR-0008 Generalist fallback policy | sup `:70-74`, sup `:1861-1885`, sup `:2765-2893`, sup `:2998`, ana `:1107-1130` | ADR-0008 | test_matched_returns_predicate_dict (:180), test_no_match_returns_none (:228), test_http_503_returns_infra_error (:291), test_fallback_payload_for_no_match (:372), test_fallback_payload_for_low_confidence (:405), test_fallback_emits_telemetry_log_line (:435), test_threshold_default_loaded_from_env (:464) | Fallback core: `built`. Operator doc: not established |
 | ADR-0009 Retire classification axes | ont `:4405`, ont `:5452` | ADR-0009 | test_a1_infra_error_records_no_verb (:118) | Search and extraction: `built`. Identity and graph views: not established |
-| ADR-0010 OTel at the HTTP boundary | — | ADR-0010 | no test | `proposed` |
+| ADR-0010 OTel at the HTTP boundary | IA `pyproject.toml` `:26-27`; wfr `:683-690` | ADR-0010 | no test | `proposed` |
 | ADR-0011 Multi-hop routing deferred | — | ADR-0011 | no test | `proposed` |
-| ADR-0012 UI archetype rigidity | — | ADR-0012 | no test | `—`, superseded by ADR-0017 |
+| ADR-0012 UI archetype rigidity | bam `:776-781` | ADR-0012 | no test | `—`, superseded by ADR-0017 |
 | ADR-0013 capability tools per change | — | ADR-0013 | no test | `proposed` |
-| ADR-0014 no URN hints; broker local assets | brk `:72-86`; ana `:906` | ADR-0014 | no test | Rules 1 and 2: `built`. Rule 3: `accepted`. Lint: `not built` |
+| ADR-0014 no URN hints; broker local assets | brk `:72-86`; ana `:906` | ADR-0014 | no test | Rules 1 and 2: `built`; rule 2's deployed copy: not established. Rule 3: `accepted`. Lint and register-time check: `not built` |
 | ADR-0015 routing decision audit log | ont `:151-205`, `:4405-4515` | ADR-0015 | no test (the only test touching the emit replaces it) | Phase 1: `built`. Phase 2: `accepted` |
 | ADR-0016 infer off on memory writes | ana `:1543-1552`; nex `:1076-1084` | ADR-0016 | no test | Tier 0: `built`. The rest: `accepted` |
-| ADR-0017 per-verb presentation registration | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | Registry: `built`. Fallback retirement: `proposed`. Single component home: `not built` |
+| ADR-0017 per-verb presentation registration | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | Registry: `built`. Fallback retirement: `proposed`. Single component home: `not built`. Decision provenance: not established |
 | ADR-0018 classify route and compat verbs | ont `:3730`, `:6660`, `:6825-6975`; sup `:387`, `:703` | ADR-0018 | test_routing_decision (:830, live service) | `built` |
-| ADR-0019 contracts A and B in routing | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | Contracts A and B: `built`. Contracts C and D: `proposed` |
+| ADR-0019 contracts A and B in routing | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | Contract A: `built`. Contract B: `built` for two routes only. Contracts C and D: `proposed`. Dedup rule, pair identity and reference binding: not established |
 | ADR-0020 composition axis in verb walk | — | ADR-0020 | no test | `proposed` |
-| ADR-0021 door writes declared content kind | gwy `:13893`, `:13940-13945`; ing `:128`; ttl `:852` | ADR-0021 | test_ingest_declared_content_kind_lands_in_manifest_and_metadata (:308), test_ingest_refuses_event_as_a_file_kind_before_any_write (:144), test_every_file_kind_the_door_accepts_is_a_declared_leaf_of_artifact (:49) | Gateway side: `built`. Driver rules: not established |
+| ADR-0021 door writes declared content kind | gwy `:13893`, `:13940-13945`; ing `:128`; ttl `:852` | ADR-0021 | test_ingest_declared_content_kind_lands_in_manifest_and_metadata (:308), test_ingest_refuses_event_as_a_file_kind_before_any_write (:144), test_every_file_kind_the_door_accepts_is_a_declared_leaf_of_artifact (:49) | Gateway side: `built`. Driver rules: not established. Failed-stage record and kind-to-format binding: `accepted` as open items |
 | ADR-0022 owned wrapper, hand-kept type maps | dhw `:541`; etm `:64` | ADR-0022 | test_engine_a_table_inverts_datahub_to_idp (:115) | Wrapper: `built`. Porting tasks: `proposed` |
-| ADR-0023 artifact node, projector, read table | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | Write and projection: `built`. Standards edges: `not built` |
+| ADR-0023 artifact node, projector, read table | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | Write and projection: `built`. Read-sync wiring to the canvas: not established. Standards edges: `not built`. Collaborative edits: `accepted` as deferred |
 | ADR-0024 standards reserved; publish rules | — | ADR-0024 | no test | `proposed` |
