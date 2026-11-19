@@ -68,10 +68,14 @@ How closely is one of:
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
+| [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
+| [components/contract-mapping.md](components/contract-mapping.md) | component | draft |
+| [components/datahub-lineage.md](components/datahub-lineage.md) | component | draft |
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
 | [components/restate-server.md](components/restate-server.md) | component | draft |
 | [components/restate-worker.md](components/restate-worker.md) | component | draft |
+| [components/warehouse-source.md](components/warehouse-source.md) | component | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
