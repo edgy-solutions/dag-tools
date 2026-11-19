@@ -12,6 +12,10 @@ A decision is addressed by its census section and its bullet's position in that 
 
 The census has 307 top-level bullets at the pin, across 35 sections. A 36th, section 7, has none: it states one rule as a numbered list, and is recorded as one entry, `§7.1`.
 
+The count in the index below is the number of entries in each record. Where an entry records two bullets, or states no decision, the bracket says so. Two entries state none, each for a different reason: §4g2.6 lists tests, and §4f.10 points to another section.
+
+A status is qualified only where part of the decision is not built. A qualified status appears in both places, the entry's Status line and the table's Status cell, though the wording may differ. A missing test is evidence, not status: it is written in the table's Evidence cell, and the status stays `built`.
+
 Two sections carry the heading `4a`: the OTel to API sync section and the shared inventory contract section. They are addressed as `§4a (OTel)` and `§4a (inventory)`.
 
 ## Why these are not numbered
