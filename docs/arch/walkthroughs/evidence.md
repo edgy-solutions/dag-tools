@@ -8,7 +8,7 @@ A decision-maker is shown a figure computed from mesh data and asks what stands 
 
 Each step names the mesh component that answers it and the records it relies on. A step adds no claim of its own: its status is the status of the records it cites, and its evidence is theirs.
 
-**This record describes; it proposes nothing.** Where a gap has a remedy, it is a row in [the roadmap note](../ROADMAP.md), marked `proposed`; one gap below has such a row, and the others have none yet. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
+**This record describes; it proposes nothing.** Where a gap has a remedy, it is a row in [the roadmap note](../ROADMAP.md), marked `proposed`; three gaps below have such a row, and the other two are settled by a decision, which each names. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
 
 ## Findings
 
@@ -47,10 +47,10 @@ Each step names the mesh component that answers it and the records it relies on.
 ## Gaps
 
 - **The version read is unknown.** No reader ships, so a receipt cannot say which version of the dataset a figure came from. Remedy: [roadmap row 5](../ROADMAP.md).
-- **A dbt model can be missing from the catalog after a green build.** Publishing failures are swallowed by design (§4i.3), and the path is trusted only under an end-to-end run behind an environment gate with no recorded run (§4i.9).
-- **Gateway reads and warehouse reads are attributed separately.** The ticket log and the read audit are not joined, and the warehouse tag is not signed.
-- **Labels do not decide reads.** A decision-maker reading a label should not infer that it limited who read the data ([need to know](../flows/need-to-know.md), findings 1 and 3).
-- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on.
+- **A dbt model can be missing from the catalog after a green build.** Publishing failures are swallowed by design (§4i.3). The end-to-end run behind an environment gate (§4i.9) is `measured` in CI, in process, against an in-process catalog recorder; with a real catalog server it is still `built` (item A2 of [the built-to-measured list](../built-to-measured.md)). No row: swallowing is the decision.
+- **Gateway reads and warehouse reads are attributed separately.** The ticket log and the read audit are not joined, and the warehouse tag is not signed. Remedy: [roadmap row 17](../ROADMAP.md).
+- **Labels do not decide reads.** A decision-maker reading a label should not infer that it limited who read the data ([need to know](../flows/need-to-know.md), findings 1 and 3). Remedy: [roadmap row 18](../ROADMAP.md).
+- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on. No row: off by default is the decision (§4p.16), and turning it on is a deployment setting.
 
 ## Not established from code
 

@@ -32,7 +32,7 @@ This record covers what the chart and code provide by default, and what a deploy
 ## Gaps
 
 - **A read made for a person uses the pipeline's credential** (finding 4). The warehouse sees one account for every reader, and the tag is the only record of who asked. Remedy: [roadmap row 1](../ROADMAP.md) (not filed) covers verifying the principal. Nothing on the roadmap gives a person's read its own credential here.
-- **The tag is unsigned** (finding 3). Anything with a connection can write a tag that names a pipeline. Remedy: not on the roadmap.
+- **The tag is unsigned** (finding 3). Anything with a connection can write a tag that names a pipeline. Remedy: [roadmap row 17](../ROADMAP.md) (not filed).
 - **No read-only enforcement, row limit or timeout** (finding 7). Remedy: [roadmap row 4](../ROADMAP.md) (not filed) covers bounded reads.
 - **Engines are created per query and never disposed** (finding 8). Remedy: not on the roadmap.
 
