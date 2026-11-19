@@ -116,7 +116,7 @@ A candidate test is named for each. Writing it would give the claim a test, and 
 
 ## Where "no test" is written
 
-Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted. Fifty records carry 282 such lines.
+Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted. Fifty records carry 281 such lines.
 
 | Record | Lines | Record | Lines |
 |---|---|---|---|
@@ -137,11 +137,11 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 | [warehouse source](components/warehouse-source.md) | 6 | [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 |
 | [central gateway](components/central-gateway.md) | 5 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
 | [document tables](components/document-tables.md) | 5 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
-| [MinIO](components/minio.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
-| [Topaz](components/topaz.md) | 5 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
-| [domain broker](components/domain-broker.md) | 4 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
-| [JupyterHub](components/jupyterhub.md) | 4 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
-| [Keycloak](components/keycloak.md) | 4 | [dag-tools §4i, §4h, §4g](decisions/dag-tools-s4i-s4h-s4g.md) | 1 |
+| [Topaz](components/topaz.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
+| [domain broker](components/domain-broker.md) | 4 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
+| [JupyterHub](components/jupyterhub.md) | 4 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
+| [Keycloak](components/keycloak.md) | 4 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
+| [MinIO](components/minio.md) | 4 | [dag-tools §4i, §4h, §4g](decisions/dag-tools-s4i-s4h-s4g.md) | 1 |
 | [Dagster](components/dagster.md) | 3 | [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 |
 | [read audit](components/read-audit.md) | 3 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
 | [Superset](components/superset.md) | 3 | [pub-tools](decisions/pub-tools.md) | 1 |
@@ -161,4 +161,4 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 | Groups A to E | the records named in each row | as each row | as each row | `built`, as each record |
 | Three group-D tests replace a live service with a fake | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
 | No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list | — |
-| 282 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
+| 281 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
