@@ -35,7 +35,7 @@ The access decision itself is in [need to know](need-to-know.md) and is not repe
 
 Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are defined in [the README](../README.md#ids-and-connections).
 
-| # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
+| # | Actor | Action | Target | What passes | Decision or check | Evidence | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | XE-CONSUMER | asks for a dataset by URN | CO-CLIENT | the URN, directly or through `CortexPolarsIOManager` | — | dag-tools `dag_tools/cortex_data/client.py:161-171`; `dag_tools/io_managers/cortex_io_manager.py:117-153` | `built` |
 | 2 | CO-CLIENT | posts to the authorize route | CO-GATEWAY | the URN and the caller's token | a ten-second timeout | `client.py:188-205` | `built` |

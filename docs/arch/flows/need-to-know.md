@@ -54,7 +54,7 @@ Each element names the mesh component that plays it and the code that shows it.
 
 Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are defined in [the README](../README.md#ids-and-connections).
 
-| # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
+| # | Actor | Action | Target | What passes | Decision or check | Evidence | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2199` | `built` |
 | 2 | CO-CLIENT | asks for a dataset | CO-GATEWAY | the bearer token and the principal it acts for | — | dag-tools `dag_tools/cortex_data/client.py:161-205` | `built` |
