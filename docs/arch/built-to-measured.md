@@ -13,10 +13,10 @@ The README sets the bar, as the architect ruled on 2026-11-19: `measured` is rel
 1. **Eight claims are `measured` in CI, in process, at least in part:** A2, A3, B1, B2, B3, D2, D11 and D16 ([below](#measured-in-ci-in-process)). The run cited is 44398336497 at `9d89568a`, and run 44451597250 at `add5bc48` agrees. No other record carries `measured` yet. `measured`, in CI, in process
 2. **No claim about a deployed service or a real backend is measured.** The parts still `built` are a real catalog server (A2), the chart's handover of the image (A3) and a real token service (D11). `built`
 3. **Group A: two of the four ran in CI.** A2 ran in a job of its own, and A3 ran in each Python job. A1 skipped in both runs. A4 is an invincible-agent test, which dag-tools CI does not run. A1 and A4: `built`
-4. **Group B: all three passed in CI.** B1's throughput target stays `not built`; the run measures that the benchmark runs and records a rate.
-5. **Five claims need a live run that no test performs** (group C). A recorded run against a deployment is the only route to `measured` for these.
-6. **Sixteen claims have a unit test over doubles** (group D). A CI run of such a test measures the code's behaviour in process. D2, D11 and the composition part of D16 passed in the cited run. D1 skipped. The invincible-agent tests are not run by dag-tools CI, and no run of them is cited, so they stay `built`. Three of these were first listed as live tests; the tests use fakes, and the entries are corrected here.
-7. **Eighteen claims have no test at all** (group E). A candidate test would make each one `built` with a test. A CI run of it would then measure the code's behaviour in process, and nothing more.
+4. **Group B: all three passed in CI.** B1's throughput target stays `not built`; the run measures that the benchmark runs and records a rate. `measured`, in CI, in process; the target `not built`
+5. **Five claims need a live run that no test performs** (group C). A recorded run against a deployment is the only route to `measured` for these. `built`
+6. **Sixteen claims have a unit test over doubles** (group D). A CI run of such a test measures the code's behaviour in process. D2, D11 and the composition part of D16 passed in the cited run. D1 skipped. The invincible-agent tests are not run by dag-tools CI, and no run of them is cited, so they stay `built`. Three of them replace a live service with a fake. D2, D11 and the composition part of D16: `measured`, in CI, in process; the rest `built`
+7. **Eighteen claims have no test at all** (group E). A candidate test would make each one `built` with a test. A CI run of it would then measure the code's behaviour in process, and nothing more. `built`
 
 ## Measured in CI, in process
 
@@ -75,15 +75,15 @@ A run of these tests shows the code does what the claim says, against doubles. I
 | D5 | invincible-agent ADR-0033: a missing mandatory slot becomes a question, not an error response. | `test_A3_a_missing_mandatory_slot_is_an_ask_and_not_a_400` | [ADR-0033](decisions/invincible-agent-adr-0025-0048.md) |
 | D6 | invincible-agent ADR-0034: a jump from supervised to trusted is forbidden. | `test_supervised_to_trusted_is_forbidden` | [ADR-0034](decisions/invincible-agent-adr-0025-0048.md) |
 | D7 | invincible-agent ADR-0036: an overlay can delete a seeded entry. | `test_A_TOMBSTONE_REMOVES_A_SEEDED_KIND` | [ADR-0036](decisions/invincible-agent-adr-0025-0048.md) |
-| D8 | invincible-agent ADR-0038: the boundary span is emitted once across a replay. | `test_boundary_is_emitted_once_across_a_replay`. It has no live gate; it was first listed as a live test. | [ADR-0038](decisions/invincible-agent-adr-0025-0048.md) |
+| D8 | invincible-agent ADR-0038: the boundary span is emitted once across a replay. | `test_boundary_is_emitted_once_across_a_replay`. It has no live gate. | [ADR-0038](decisions/invincible-agent-adr-0025-0048.md) |
 | D9 | invincible-agent ADR-0039: a decision table is total over the inputs its domain admits. | `test_TOTALITY_every_input_the_domain_admits_has_a_row` | [ADR-0039](decisions/invincible-agent-adr-0025-0048.md) |
 | D10 | invincible-agent ADR-0042: an anonymous caller is refused a live view. | `test_an_anonymous_caller_asking_for_a_live_view_is_REFUSED` | [ADR-0042](decisions/invincible-agent-adr-0025-0048.md) |
-| D11 | invincible-agent ADR-0044: a minted credential is scoped to the asset and read-only, and a minting failure refuses the ticket. | dag-tools `test_minted_policy_is_scoped_to_the_asset_and_cannot_write` and `test_minting_failure_fails_closed`. Both replace the token service with a fake; they were first listed as live tests. | [ADR-0044](decisions/invincible-agent-adr-0025-0048.md) |
+| D11 | invincible-agent ADR-0044: a minted credential is scoped to the asset and read-only, and a minting failure refuses the ticket. | dag-tools `test_minted_policy_is_scoped_to_the_asset_and_cannot_write` and `test_minting_failure_fails_closed`. Both replace the token service with a fake. | [ADR-0044](decisions/invincible-agent-adr-0025-0048.md) |
 | D12 | invincible-agent ADR-0050: every ratified canvas template validates against its schema. | `test_every_ratified_template_validates` | [ADR-0050](decisions/invincible-agent-adr-0049-0072.md) |
 | D13 | invincible-agent ADR-0051: no measure function writes a risk acceptance. | `test_no_measure_function_writes_an_acceptance` | [ADR-0051](decisions/invincible-agent-adr-0049-0072.md) |
 | D14 | invincible-agent ADR-0052, ADR-0053: a non-person identity gets a 401 with no client built, and a measure module computes what its policy row transcribes. | `test_an_identity_that_is_not_a_person_is_a_401_and_no_client_is_built`; `test_the_module_COMPUTES_what_its_row_TRANSCRIBES` | [ADR-0052](decisions/invincible-agent-adr-0049-0072.md) |
 | D15 | invincible-agent ADR-0056: a record whose platform has no mapping row is never returned. | `test_a_record_whose_platform_has_no_mapping_row_is_never_returned` | [ADR-0056](decisions/invincible-agent-adr-0049-0072.md) |
-| D16 | invincible-agent ADR-0062, ADR-0064, ADR-0071, ADR-0072: a merge is a two-parent signed audited commit; labels compose as the join of one order; one directory client serves every request after warm-up; a live answer journals each step once. | `test_a_happy_merge_is_a_two_parent_signed_audited_commit`; dag-tools `test_composition_is_the_join_of_one_order_in_every_type`; `test_a_whole_entitlements_request_builds_no_client_after_warm_up`; `test_run_impl_journals_each_step_once_and_persists`. The last uses a fake durable context; it was first listed as a live test. | [ADR-0062](decisions/invincible-agent-adr-0049-0072.md) |
+| D16 | invincible-agent ADR-0062, ADR-0064, ADR-0071, ADR-0072: a merge is a two-parent signed audited commit; labels compose as the join of one order; one directory client serves every request after warm-up; a live answer journals each step once. | `test_a_happy_merge_is_a_two_parent_signed_audited_commit`; dag-tools `test_composition_is_the_join_of_one_order_in_every_type`; `test_a_whole_entitlements_request_builds_no_client_after_warm_up`; `test_run_impl_journals_each_step_once_and_persists`. The last uses a fake durable context. | [ADR-0062](decisions/invincible-agent-adr-0049-0072.md) |
 
 ## E. No test exists
 
@@ -94,16 +94,16 @@ A candidate test is named for each. Writing it would give the claim a test, and 
 | E1 | Every source type the producer side advertises has a minter in the broker. At the pin the two sets are equal, five types in each. | Assert the broker's minter keys equal the advertised source types (`dag_tools/domain_broker/main.py:298-308`; `dag_tools/io_managers/mesh_publishing.py:47-49`). This would not settle roadmap row 3. It would stop a new advertised type from silently using the producer's own credential. | [domain broker](components/domain-broker.md); [roadmap](ROADMAP.md) row 3 |
 | E2 | The S3 sensor's listing keeps objects after a timestamp cursor and lists again when the cursor is gone; the run key stops a duplicate. | A listing double with two objects sharing one modification time, a cursor no longer listed, and an object with no modification time (`dag_tools/components/s3_sensor/utils.py:6-52`) | [S3 sensor](components/s3-sensor.md), findings 3, 12 |
 | E3 | The S3 sensor starts stopped, and any value other than `RUNNING` means stopped. | Build the sensor with no status, with `RUNNING` and with a misspelling (`sensor_component.py:62-65`, `:73`) | [S3 sensor](components/s3-sensor.md), finding 2 |
-| E4 | OTel readiness: the order of the completion rule, missing timestamps, maximum age and quiet period. | `group_readiness` with no parseable timestamps and an unmatched completion rule, and with an unmatched rule, a quiet period of zero and no maximum age (`render.py:75-81`, `:98-99`) | [OTel API sync](components/otel-api-sync.md), finding 7 |
+| E4 | OTel readiness: the gate itself is tested (`test_otel_api_sync_render.py:347`, `:361`, `:380`); the order of the completion rule, missing timestamps, maximum age and quiet period are not. | `group_readiness` with no parseable timestamps and an unmatched completion rule, and with an unmatched rule, a quiet period of zero and no maximum age (`render.py:75-81`, `:98-99`) | [OTel API sync](components/otel-api-sync.md), finding 7 |
 | E5 | The OTel asset-metadata ledger stops re-sends. | Fill the ledger past its limit and assert which entries survive, and make the read-back raise (`ledger.py:39`, `:79`, `:83-97`) | [OTel API sync](components/otel-api-sync.md), finding 7 |
 | E6 | The OTel SQL ledger records plans for a staged pipeline. | Load and flush it against a database (`ledger.py:104-158`) | [OTel API sync](components/otel-api-sync.md), gaps |
 | E7 | The OTel oversized-plan refusal fails the run before anything is sent. | A component test with a plan over the size limit (`component.py:625-644`) | [OTel API sync](components/otel-api-sync.md), finding 7 |
 | E8 | The Restate dlt sync's scoped read-back falls back to acknowledging the whole table when the scoped read raises. | A destination lacking the load-id column; assert the fallback and that the mark does not move (`restate_dlt_sync/component.py:573-589`) | [restate dlt sync](components/restate-dlt-sync.md), finding 7 |
 | E9 | Restate API sync sends each row's key and routes a local address in-cluster. | A key column whose case differs, and a local address on another port (`restate_api_sync/component.py:133-142`, `:146`) | [restate API sync](components/restate-api-sync.md), findings 5, 8 |
-| E10 | §4r.3: the exact-decimal tolerance path raises on number text that is not finite. | Feed overflowing text to the tolerance path on the embedded database and assert the error (`sql.py:201-225`) | [§4r.3](decisions/dag-tools-s4r-s4l-s4m.md) |
+| E10 | §4r.3: the exact-decimal tolerance path raises on number text that is not finite. | Feed overflowing text to the tolerance path on the embedded database and assert the error (`sql.py:364-379`, the decimal tolerance arms; the statement is at `:201-225`) | [§4r.3](decisions/dag-tools-s4r-s4l-s4m.md) |
 | E11 | §4m.5: a job built from an all-assets selection does not include the observable source asset. | Build that job over the example and assert it has zero steps. Today this is only documented. | [§4m.5](decisions/dag-tools-s4r-s4l-s4m.md) |
 | E12 | §4l.5, §4m.17: no dimension id, value or database object is named in the warehouse source package or its components. | A vocabulary scan like `test_no_deployment_vocabulary_appears_in_the_library`, over those packages | [§4l.5](decisions/dag-tools-s4r-s4l-s4m.md) |
-| E13 | §4s.6: one writer per destination by default; two writers on one bundle would duplicate it. | Two writers interleaved on one bundle, asserting the duplicate, plus a concurrent-append count | [§4s.6](decisions/dag-tools-s4s.md) |
+| E13 | §4s.6: the pool per destination is tested (`test_document_tables_component.py:383`); the duplicate that two writers on one bundle would produce is not. | Two writers interleaved on one bundle, asserting the duplicate, plus a concurrent-append count | [§4s.6](decisions/dag-tools-s4s.md) |
 | E14 | §4s.2: a base install without the documents extra still imports the package. | In an environment without the extra, import the package and assert the lazy export fails only when used | [§4s.2](decisions/dag-tools-s4s.md) |
 | E15 | §4n.8: a derived dataset cannot be another's source. | Declare a chain over the example and assert what happens. Which outcome happens, a refusal or a missing label set, is not established. | [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md) |
 | E16 | §4n.9: a catalog block with only comments under it parses as null and fails the load. | Load the component with such a block and assert the load fails naming the attribute | [§4n.9](decisions/dag-tools-s4n-s4o-s4k1.md) |
@@ -116,32 +116,35 @@ A candidate test is named for each. Writing it would give the claim a test, and 
 
 ## Where "no test" is written
 
-Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words, per record, so it is an upper bound on the cells. Lines in this list are not counted.
+Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted. Fifty records carry 282 such lines.
 
 | Record | Lines | Record | Lines |
 |---|---|---|---|
-| [S3 sensor](components/s3-sensor.md) | 15 | [warehouse source](components/warehouse-source.md) | 4 |
-| [restate API sync](components/restate-api-sync.md) | 14 | [document tables](components/document-tables.md) | 3 |
-| [Grist ingest](components/grist-ingest.md) | 13 | [classification propagation](components/classification-propagation.md) | 3 |
-| [OTel API sync](components/otel-api-sync.md) | 13 | [DataHub](components/datahub.md) | 3 |
-| [restate dlt sync](components/restate-dlt-sync.md) | 6 | [Keycloak](components/keycloak.md) | 3 |
-| [contract mapping](components/contract-mapping.md) | 5 | [MinIO](components/minio.md) | 3 |
-| [dbt project](components/dbt-project.md) | 5 | [Dagster](components/dagster.md) | 2 |
-| [dlt pipeline](components/dlt-pipeline.md) | 5 | [read audit](components/read-audit.md) | 2 |
-| [Topaz](components/topaz.md) | 5 | [tagged warehouse](components/tagged-warehouse.md) | 2 |
-| [DataHub lineage](components/datahub-lineage.md) | 4 | [central gateway](components/central-gateway.md) | 1 |
-| [domain broker](components/domain-broker.md) | 4 | [SystemLink source](components/systemlink-source.md) | 1 |
-| [mesh data client](components/mesh-data-client.md) | 4 | [big data](flows/big-data.md) | 3 |
-| [Restate server](components/restate-server.md) | 4 | [need to know](flows/need-to-know.md) | 2 |
-| [Restate worker](components/restate-worker.md) | 4 | [roadmap](ROADMAP.md) | 7 |
-| [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 4 |
-| [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 11 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
-| [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 9 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 3 |
-| [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
-| [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
-| [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 1 |
-| [dag-tools §4p](decisions/dag-tools-s4p.md) | 1 | [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 |
-| [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 | [pub-tools](decisions/pub-tools.md) | 1 |
+| [Grist ingest](components/grist-ingest.md) | 17 | [tagged warehouse](components/tagged-warehouse.md) | 3 |
+| [S3 sensor](components/s3-sensor.md) | 17 | [SystemLink source](components/systemlink-source.md) | 2 |
+| [restate API sync](components/restate-api-sync.md) | 16 | [Redpanda](components/redpanda.md) | 1 |
+| [OTel API sync](components/otel-api-sync.md) | 14 | [big data](flows/big-data.md) | 3 |
+| [dlt pipeline](components/dlt-pipeline.md) | 9 | [need to know](flows/need-to-know.md) | 2 |
+| [Restate worker](components/restate-worker.md) | 9 | [evidence walkthrough](walkthroughs/evidence.md) | 1 |
+| [classification propagation](components/classification-propagation.md) | 8 | [not-established list](not-established.md) | 1 |
+| [contract mapping](components/contract-mapping.md) | 8 | [overview](overview.md) | 1 |
+| [mesh data client](components/mesh-data-client.md) | 8 | [roadmap](ROADMAP.md) | 7 |
+| [restate dlt sync](components/restate-dlt-sync.md) | 8 | [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 |
+| [Restate server](components/restate-server.md) | 8 | [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 10 |
+| [DataHub lineage](components/datahub-lineage.md) | 7 | [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 8 |
+| [DataHub](components/datahub.md) | 6 | [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 |
+| [dbt project](components/dbt-project.md) | 6 | [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 |
+| [warehouse source](components/warehouse-source.md) | 6 | [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 |
+| [central gateway](components/central-gateway.md) | 5 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
+| [document tables](components/document-tables.md) | 5 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
+| [MinIO](components/minio.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
+| [Topaz](components/topaz.md) | 5 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
+| [domain broker](components/domain-broker.md) | 4 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
+| [JupyterHub](components/jupyterhub.md) | 4 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
+| [Keycloak](components/keycloak.md) | 4 | [dag-tools §4i, §4h, §4g](decisions/dag-tools-s4i-s4h-s4g.md) | 1 |
+| [Dagster](components/dagster.md) | 3 | [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 |
+| [read audit](components/read-audit.md) | 3 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
+| [Superset](components/superset.md) | 3 | [pub-tools](decisions/pub-tools.md) | 1 |
 
 ## Not established
 
@@ -156,5 +159,6 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 | The CI jobs, and the end-to-end job's failure on a skip | `.github/workflows/test.yml` at `9d89568a` | — | `:27-28`, `:86-90`; `:117-118`, `:224-227`; `:245-246`, `:277-289` | `built` |
 | The runs and their outcomes | the "Tests" workflow, run 44398336497 at `9d89568a` and run 44451597250 at `add5bc48`: every job succeeded in both. Per-test outcomes come from each Python job's uploaded results and the 1.10.19 job's log. | — | the table under "Measured in CI, in process" | `measured`, in CI, in process |
 | Groups A to E | the records named in each row | as each row | as each row | `built`, as each record |
-| Three entries corrected from live to unit tests | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
+| Three group-D tests replace a live service with a fake | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
 | No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list | — |
+| 282 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
