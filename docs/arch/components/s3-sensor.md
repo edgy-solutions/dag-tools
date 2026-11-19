@@ -57,6 +57,16 @@ This record covers what the chart and code provide by default, and what a deploy
 - Which credential a deployment gives `S3Resource`, and whether it is read-only. The component sets no such limit.
 - Whether a deployment wires `S3ToFileComponent` or `S3ToArrowComponent` to the sensor, and which job name it passes as `target_job`.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| none: an object store | calls | S3 API | whatever the S3 resource resolves, with credential lookup left to the client library by default | a prefix listing, then object metadata | `dag_tools/components/s3_sensor/sensor_component.py:47-50`, `:89-95`, `:157`; `dag_tools/components/s3_sensor/utils.py:26`; `test_s3_sensor.py`: `test_get_client` | `built` |
+| CO-DAGSTER | calls | in-process | none | run requests and dynamic-partition keys | `dag_tools/components/s3_sensor/sensor_component.py:35-45`, `:122-153`; no test of `additional_target_ops` | `built` |
+| none: an object store | reads | S3 API | explicit key fields on the arrow resource | an object read as a dataset | `dag_tools/components/s3_sensor/arrow_component.py:16`, `:64-66`; `dag_tools/resources/arrow.py:10-81`; no test | `not built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

@@ -49,6 +49,16 @@ This record covers what the chart and code provide by default, and what a deploy
 - What a DataHub with authentication on returns to a request with no token, or with a wrong one.
 - Which deployments set `DATAHUB_SERVER` and `DATAHUB_TOKEN`, and whether the token is delivered as a plain value or from a secret.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a sensor tick after a run | `dag_tools/components/datahub_lineage/component.py:507-545`; no test | `built` |
+| CO-DAGSTER | reads | in-process Dagster instance API | none | run events, parent materializations and the asset graph | `dag_tools/components/datahub_lineage/component.py:507-545`; no test | `built` |
+| CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | whole aspects per dataset | `dag_tools/components/datahub_lineage/component.py:615-630, :715-731`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

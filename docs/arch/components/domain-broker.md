@@ -63,6 +63,19 @@ No dag-tools chart template deploys the broker, so there is no chart column.
 - Whether a minted object-store credential is narrower than the prefix in practice. That is the token service's and the role's behaviour; no run was recorded.
 - How many minted SQL accounts a database accumulates. That is a fact of deployments.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-GATEWAY | calls | HTTP | client-credentials bearer token | the broker's address and its URNs, repeated on an interval | `dag_tools/domain_broker/main.py:963-1010`; `test_the_broker_register_call_sends_the_service_token` | `built` |
+| CO-GATEWAY | is called by | HTTP | service-door caller list, posture observe by default | the URN, allowed columns, row filters and subject in; a ticket out | `dag_tools/domain_broker/main.py:1168-1189`; `test_enforce_with_no_list_refuses_everyone` | `built` |
+| none: a deployment's definitions module | reads | in-process | none | the datasets and their advertised coordinates | `dag_tools/domain_broker/main.py:693-723`, `:1013-1075`, `:1097-1165`; `test_a_successful_load_registers_its_assets` | `built` |
+| none: the object-store token service | calls | token-service API | minting identity read from the environment in a fixed order | a request for a credential scoped to one prefix | `dag_tools/domain_broker/main.py:153-224`, `:226-296`; `test_sts_identity_prefers_the_purpose_named_pair` | `built` |
+| none: a ClickHouse database | writes | SQL through a database driver | not established | a new read-only account with column grants and an expiry | `dag_tools/domain_broker/sql_minting.py:112-116`, `:152-243`; `test_ch_credential_expires` | `built` |
+| none: a Postgres database | writes | SQL through a database driver | not established | a new login role with table grants and an expiry | `dag_tools/domain_broker/sql_minting.py:246-363`; `test_pg_credential_expires_and_is_table_scoped` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the code shows | Alignment row |

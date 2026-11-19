@@ -40,6 +40,16 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether the demo project's target directory survives a pod restart; that depends on what a deployment mounts at `DAGSTER_HOME`.
 - What a failed source freshness command does to the run that follows it.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DBT-PROJECT | is called by | child process of the dbt command line | none | build, freshness and docs commands | `dag_tools/components/dbt_project/component.py:123-158`; `test_dbt_empty_staging.py`: `test_resolved_cli_args_reach_only_the_build_invocation` | `built` |
+| none: a SQL warehouse | reads | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | models and tests over tables | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
+| none: a SQL warehouse | writes | SQL through the dbt adapter | the warehouse credential in the project profile, from the environment | built models | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `test_demo_dbt_surface.py`: `test_demo_mode_registers_the_dbt_surface` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

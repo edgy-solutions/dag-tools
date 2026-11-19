@@ -33,16 +33,18 @@ The access decision itself is in [need to know](need-to-know.md) and is not repe
 
 ## The flow, step by step
 
-| # | Step | Component | Status | Evidence |
-|---|---|---|---|---|
-| 1 | A consumer asks for a dataset by URN: a notebook or agent through the client, an asset through the IO manager, or SDK code through the client. | `cortex_data` client; `CortexPolarsIOManager` | `built` | dag-tools `dag_tools/cortex_data/client.py:161-171`; `dag_tools/io_managers/cortex_io_manager.py:117-153` |
-| 2 | The client posts to the gateway's authorize route, with a ten-second timeout. | `cortex_data` client | `built` | `client.py:188-205` |
-| 3 | The gateway decides and asks the producer's broker for a ticket, as in [need to know](need-to-know.md), steps 3 to 9. The broker is found through a route each broker registers, which expires after five minutes. | central gateway, domain broker | `built` | `dag_tools/central_gateway/main.py:184-202`, `:374`, `:476` |
-| 4 | The broker mints a credential: an expiring object-store credential scoped by prefix, or an expiring database role. | domain broker minters | `built` | `dag_tools/domain_broker/main.py:298-307` |
-| 5 | The client reads the ticket's source type, location and credential. | `cortex_data` client | `built` | `client.py:228-235` |
-| 6 | The client reads from the store directly, by backend (finding 2). | `cortex_data` client | `built` | `client.py:260-264` (Parquet, Delta), `:266-297` (Iceberg), `:299-325` (Postgres), `:327-353` (ClickHouse), `:355-356` (any other type is refused) |
-| 7 | The client applies column and row narrowing to the frame, except for Postgres. | `cortex_data` client | `built` | `client.py:358-366` |
-| 8 | The caller collects the frame, or bounds it first (finding 5). | the consumer | `built` | invincible-agent `agent_fleet/data_analyst/main.py:19`, `:45`, `:519`, `:555-583`, `:598`, `:653-680` |
+Actors and targets are record ids. `person:` names a role, and `none:` marks a party with no record of its own.
+
+| # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
+|---|---|---|---|---|---|---|---|
+| 1 | none: a consumer (a notebook or agent, an asset, or SDK code) | asks for a dataset by URN | CO-CLIENT, directly or through `CortexPolarsIOManager` | the URN | — | dag-tools `dag_tools/cortex_data/client.py:161-171`; `dag_tools/io_managers/cortex_io_manager.py:117-153` | `built` |
+| 2 | CO-CLIENT | posts to the authorize route | CO-GATEWAY | the URN and the caller's token | a ten-second timeout | `client.py:188-205` | `built` |
+| 3 | CO-GATEWAY | decides, then asks the producer's broker for a ticket, as in [FL-NTK](need-to-know.md), steps 3 to 9 | CO-BROKER | the dataset | the broker is found through a route each broker registers, which expires after five minutes | `dag_tools/central_gateway/main.py:184-202`, `:374`, `:476` | `built` |
+| 4 | CO-BROKER | mints a credential | none: the dataset's backend | — | an expiring object-store credential scoped by prefix, or an expiring database role | `dag_tools/domain_broker/main.py:298-307` | `built` |
+| 5 | CO-CLIENT | reads the ticket | CO-CLIENT | the source type, location and credential | — | `client.py:228-235` | `built` |
+| 6 | CO-CLIENT | reads from the store directly, by backend (finding 2) | none: the dataset's backend | the minted credential; the data back | any other source type is refused | `client.py:260-264` (Parquet, Delta), `:266-297` (Iceberg), `:299-325` (Postgres), `:327-353` (ClickHouse), `:355-356` (refusal) | `built` |
+| 7 | CO-CLIENT | applies column and row narrowing to the frame | CO-CLIENT | — | skipped for Postgres | `client.py:358-366` | `built` |
+| 8 | none: the consumer | collects the frame, or bounds it first (finding 5) | none: the consumer | the frame | — | invincible-agent `agent_fleet/data_analyst/main.py:19`, `:45`, `:519`, `:555-583`, `:598`, `:653-680` | `built` |
 
 ## Gaps
 

@@ -40,6 +40,14 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether the engine checks the bearer token or the tenant header it is sent.
 - Where a deployment runs the engine and how the gateway reaches it.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-GATEWAY | is called by | HTTP | optional tenant key header, and the reader's own bearer token forwarded as presented | the dataset URN, the principal and a read permission in; allow or deny, and optionally allowed columns and row filters, back | `dag_tools/central_gateway/main.py:287-292`, `:308-322`, `:299-300`, `:405`; `test_gateway_verified_identity.py`: `test_enforce_refuses_and_never_calls_topaz` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

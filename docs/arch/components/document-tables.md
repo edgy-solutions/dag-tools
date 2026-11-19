@@ -69,6 +69,19 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether the ingest rate the documentation targets is met. The documentation says the rate it measured falls short.
 - Whether Lance reads environment variables of its own when `storage_options` is empty.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a partitioned asset per bundle | `dag_tools/components/document_tables/component.py:372-376`; no test | `built` |
+| none: an S3-compatible object store | reads | S3 API | none passed; the client's default credential chain | bundles of documents | `dag_tools/documents/sources.py:612-618, :699-702`; `test_s3_credentials_are_never_passed_by_the_source` | `built` |
+| none: a Lance destination store | writes | Lance library | storage options set by the deployment | table rows | `dag_tools/documents/lance_writer.py:192-200`; `test_storage_options_reach_every_lance_entry_point_and_are_never_logged` | `built` |
+| none: a Lance destination store | reads | Lance library | storage options set by the deployment | existing table schemas | `dag_tools/documents/lance_writer.py:192-200`; no test | `built` |
+| CO-DATAHUB-LINEAGE | writes | in-process output metadata | none | row count, location and column schema | `dag_tools/components/document_tables/component.py:259-266`; `test_the_column_names_survive_to_the_datahub_schema_extractor` | `built` |
+| person: an operator | is called by | command line | none | a profile command | `dag_tools/documents/cli.py:28-69`; `test_report_only_reads_no_bundle` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

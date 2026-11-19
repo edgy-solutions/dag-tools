@@ -62,6 +62,18 @@ This record covers what the chart and code provide by default, and what a deploy
 - How a worker is deployed and how many replicas it has. The concurrency cap multiplies by replicas.
 - The worker-side behaviour in full. It is covered by the [worker record](restate-worker.md) and was read here only through the plan it receives.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| none: a ClickHouse database | reads | ClickHouse client connection | username and password in the component's attributes | the telemetry rows | `dag_tools/components/otel_api_sync/component.py:482-492`; `dag_tools/asset_wrappers/sources/clickhouse_query.py:38-56`; no test | `built` |
+| none: a staging SQL database | writes | dlt destination connection | explicit config, else a process environment URL | the telemetry copy, and the dispatch ledger when staged | `dag_tools/components/otel_api_sync/component.py:409-464`; `dag_tools/components/otel_api_sync/ledger.py:44-158`; `test_staged_pipeline_wires_extraction_into_dispatch` | `built` |
+| none: a staging SQL database | reads | SQL through a database driver | explicit config, else a process environment URL | the staged rows for each group | `dag_tools/components/otel_api_sync/component.py:75-119`; `test_explicit_dest_config_host_beats_the_ambient_dlt_env_var` | `built` |
+| CO-RESTATE | calls | HTTP | none; the plan id is sent as an idempotency header | one rendered plan per group, one-way | `dag_tools/components/otel_api_sync/component.py:55-58`, `:660-661`, `:701-704`, `:748-783`; `test_dispatch_posts_one_plan_per_group_to_the_group_keyed_object` | `built` |
+| CO-RESTATE | calls | HTTP | none | status polls for each dispatched group | `dag_tools/components/otel_api_sync/component.py:175-276`, `:708-746`; `test_completion_check_passes_when_every_group_completed` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

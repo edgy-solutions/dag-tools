@@ -23,6 +23,15 @@ None. Neither chart nor any component has a setting for it.
 - What role Hasura is meant to play in the mesh, and which services it would serve.
 - Whether any deployment runs it alongside the mesh.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+
+No connection is built at this pin: nothing in the code or the chart refers to this component.
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

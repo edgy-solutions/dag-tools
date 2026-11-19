@@ -60,6 +60,18 @@ Component attributes in the component's YAML file. The mapping document's own se
 - Whether the output directory is part of a project that a deployment's builds then run. The component does not run dbt.
 - Whether the example's contract is current with its upstream copy. The README says it is vendored from the agent repository, and a test compares them only when the upstream copy is on the machine.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a run of the one asset that checks the mapping | `dag_tools/components/contract_mapping/component.py:438-448`; no test | `built` |
+| none: a contract file | reads | file read | none | the contract document or one selected from a bundle | `dag_tools/components/contract_mapping/component.py:100-162`; no test | `built` |
+| none: a contract endpoint | calls | HTTP | only the headers a deployment sets | a plain GET for the served contract | `dag_tools/components/contract_mapping/component.py:165-187`; `test_a_served_contract_is_fetched_at_materialization` | `built` |
+| CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | a read of the source's schema aspect, when switched on | `dag_tools/components/contract_mapping/component.py:222-279`; no test | `built` |
+| none: a dbt project directory | writes | file write | none | model, schema and test files | `dag_tools/components/contract_mapping/component.py:322-351`; `test_nothing_is_written_when_the_render_fails` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

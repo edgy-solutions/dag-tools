@@ -55,6 +55,17 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether the destination tables are read back through the mesh. Whether the catalog sensor registers them was not read for this record.
 - Whether the download endpoint's redirect is followed with the token in the header, to the address the redirect names. The code does that, and the behaviour of any particular server was not checked.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a sensor, a job and a partitioned asset | `dag_tools/components/grist_ingest/component.py:107-150`; no test | `built` |
+| CO-GRIST | calls | HTTP | bearer token from the component file | GET routes for workspaces, tables and a document download | `dag_tools/resources/grist.py:61-125`; no test | `built` |
+| none: a SQL database | writes | SQL through a database driver | user and password from the component file | one table per partition key | `dag_tools/io_managers/sql.py:175-178, :232-234`; no test | `built` |
+| CO-DATAHUB-LINEAGE | writes | in-process output metadata | none | destination name and column schema | `dag_tools/io_managers/sql.py:271-299`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

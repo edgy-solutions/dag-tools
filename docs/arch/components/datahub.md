@@ -41,6 +41,18 @@ This record covers what the chart and code provide by default, and what a deploy
 - What the invincible-agent chart's catalog seed job and its policy-sync job write or read; both run scripts outside this repo.
 - Whether a deployment sets the catalog token, and how long it lives.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DATAHUB-LINEAGE | is called by | HTTP through the catalog's client library | token from config or the environment, none when absent | whole aspects | `dag_tools/components/datahub_lineage/component.py:170-250`, `:718-728`; no test | `built` |
+| CO-DBT-PROJECT | is called by | the catalog's ingestion command as a child process | token from config or the environment, none when absent | build artifacts | `dag_tools/components/dbt_project/component.py:181-214`; `test_dbt_datahub_artifacts.py`: `test_every_artifact_the_datahub_recipe_names_is_in_the_ingest_cwd` | `built` |
+| CO-WAREHOUSE-SOURCE | is called by | HTTP through the catalog's client library | token from config or the environment, none when absent | whole aspects: dataset labels and per-column terms | `dag_tools/components/warehouse_source/component.py:169-188`, `:191-274`; `test_warehouse_source_component.py`: `test_an_empty_token_is_never_sent_as_a_credential` | `built` |
+| CO-CLASSIFICATION-PROPAGATION | is called by | HTTP through the catalog's client library | token from config or the environment, none when absent | patches adding label terms and removing the others | `dag_tools/components/classification_propagation/component.py:348-369`, `:373-392`; no test | `built` |
+| CO-CONTRACT-MAPPING | is called by | HTTP through the catalog's client library | token from config or the environment, none when absent | a read of a source's schema aspect | `dag_tools/components/contract_mapping/component.py:222-279`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

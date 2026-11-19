@@ -53,6 +53,19 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether a given warehouse's history view keeps a comment-placed tag intact, so that a tag the reader sent can be read back.
 - When a deployment runs the audit, and over which history.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | asset run and run config | `dag_tools/components/read_audit/component.py:170-233`; `test_read_audit_component.py`: `test_the_shipped_example_loads` | `built` |
+| CO-DAGSTER | reads | in-process instance read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`, `:213-223`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |
+| none: a warehouse-history resource | calls | in-process resource call | none of its own; the resource holds the warehouse credential | a history statement with bound parameters | `dag_tools/components/read_audit/component.py:144-167`, `:200-205`; `dag_tools/audit/history.py:92-148`; `test_audit_history.py`: `test_every_value_is_bound_and_none_is_interpolated` | `built` |
+| none: an exported history file | reads | file read | none | history rows | `dag_tools/components/read_audit/schema.py:25-109`; `test_read_audit_component.py`: `test_history_demands_exactly_one_topology` | `built` |
+| none: an exported run-window file | reads | file read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |
+| none: the asset's IO manager | writes | in-process | none | the full report | `dag_tools/components/read_audit/component.py:213-231`; no test of the failure text | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |
