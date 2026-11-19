@@ -66,7 +66,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-CLICKHOUSE | reads | ClickHouse client connection | username and password in the component's attributes | the telemetry rows | `dag_tools/components/otel_api_sync/component.py:482-492`; `dag_tools/asset_wrappers/sources/clickhouse_query.py:38-56`; no test | `built` |
 | XE-STAGING-DB | writes | dlt destination connection | explicit config, else a process environment URL | the telemetry copy, and the dispatch ledger when staged | `dag_tools/components/otel_api_sync/component.py:409-464`; `dag_tools/components/otel_api_sync/ledger.py:44-158`; `test_staged_pipeline_wires_extraction_into_dispatch` | `built` |

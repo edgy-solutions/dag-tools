@@ -60,7 +60,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a run of the observable source asset | `dag_tools/components/warehouse_source/component.py:347-368`; no test | `built` |
 | CO-TAGGED-WAREHOUSE | calls | in-process | none from the component; the resource holds its own | count and schema reads; any resource with the two read methods is accepted | `dag_tools/components/warehouse_source/component.py:390-405`; no test | `built` |

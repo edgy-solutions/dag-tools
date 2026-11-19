@@ -61,7 +61,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | its advertised address, posted for registration | `dag_tools/restate_handlers/serve.py:43`, `:75-112`, `:115-139`; no test | `built` |
 | CO-RESTATE | is called by | HTTP | none: the worker's port checks no caller | handler invocations carrying a job payload | `dag_tools/restate_handlers/serve.py:72`; `helm/dag-tools/templates/restate-worker.yaml:47-56`; no test | `built` |

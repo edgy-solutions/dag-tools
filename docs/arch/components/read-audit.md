@@ -57,7 +57,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | asset run and run config | `dag_tools/components/read_audit/component.py:170-233`; `test_read_audit_component.py`: `test_the_shipped_example_loads` | `built` |
 | CO-DAGSTER | reads | in-process instance read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`, `:213-223`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |

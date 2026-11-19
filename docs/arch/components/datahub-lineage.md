@@ -53,7 +53,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a sensor tick after a run | `dag_tools/components/datahub_lineage/component.py:507-545`; no test | `built` |
 | CO-DAGSTER | reads | in-process Dagster instance API | none | run events, parent materializations and the asset graph | `dag_tools/components/datahub_lineage/component.py:507-545`; no test | `built` |

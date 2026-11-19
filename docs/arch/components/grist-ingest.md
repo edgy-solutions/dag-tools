@@ -59,7 +59,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a sensor, a job and a partitioned asset | `dag_tools/components/grist_ingest/component.py:107-150`; no test | `built` |
 | CO-GRIST | calls | HTTP | bearer token from the component file | GET routes for workspaces, tables and a document download | `dag_tools/resources/grist.py:61-125`; no test | `built` |

@@ -51,7 +51,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-DAGSTER-STORAGE | writes | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |
 | XE-DAGSTER-STORAGE | reads | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |

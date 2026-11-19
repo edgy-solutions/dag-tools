@@ -39,7 +39,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-GRIST-INGEST | is called by | HTTP | static bearer token from the component's configuration | table and document reads over the REST API | `dag_tools/resources/grist.py:29-36`, `:56-57`; `test_user_deployment_grist.py`: `test_grist_builds_and_resolves_env` | `built` |
 

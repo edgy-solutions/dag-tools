@@ -54,7 +54,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-IO-MANAGER | is called by | S3 API | access key pair and endpoint required in the IO manager's config | a Delta or Arrow IO manager's files, written and read | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`; `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
 | XE-QUAL-TOOLING | is called by | S3 API | the default credential chain; optional endpoint | the registry client's immutable per-build records, with a pointer written last | `dag_tools/qual/registry/client.py:45-55`, `:62-75`; `test_registry_client.py`: `test_storage_put_immutable_refuses_overwrite` | `built` |
