@@ -8,7 +8,7 @@ This record covers the decisions in `AGENTS.md` section 4p at the component-reco
 
 ### §4p.1 Only an exact registered type selects a kind
 
-- **Decision.** A source kind is chosen only when the source's `type` setting names a registered kind exactly. Any other value falls back to the original dispatch by driver name. Three spellings that the repository's own YAML already uses resolve to that fallback silently. Any other unregistered value also falls back, with one warning per value per process.
+- **Decision.** A source kind is chosen only when the source's `type` setting names a registered kind exactly. Any other value falls back to the original dispatch by driver name. An absent `type`, and the three spellings that the repository's own YAML already uses, resolve to that fallback silently. Any other unregistered value also falls back, with one warning per value per process.
 - **Why.** The `type` setting was never read before source kinds existed, so existing YAML may hold anything there. Failing the load on an unknown value would break working configuration (census §6).
 - **Status.** `built`.
 
@@ -117,7 +117,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4p.4 validation outside the loop | wrappers `dlt_assets_parsing.py:575`, `:581`, `:590-603` | bullet 4 | kinds: `test_validate_raising_fails_create_dlt_assets_and_is_not_swallowed` | `built` |
 | §4p.5 one source builder on both paths | wrappers `dlt_assets_parsing.py:326`, `:531-540`, `:596` | bullet 5 | kinds: `test_the_kinds_build_source_is_used_on_both_paths` | `built` |
 | §4p.6 absolute path kept | `dag_tools/dlt_dev/loader.py:224`, `:241-245` | bullet 6 | dev: `test_a_posix_absolute_spec_resolves_to_an_absolute_path`, `test_the_spelling_the_error_message_offers_resolves_absolute`, `test_a_drive_letter_loses_the_url_separator` | `built` |
-| §4p.7 schedule removed first | component `component.py:57`, `:94` | bullet 7 | no test named by the census | `built` |
+| §4p.7 schedule removed first | component `component.py:57`, `:94` | bullet 7 | sched: `test_no_schedule_means_no_schedule_and_no_job`, `test_with_a_schedule_there_is_exactly_one_job_and_one_schedule`; neither is named by the census | `built` |
 | §4p.8 built in Python, stopped, own keys | component `schedule.py:27-76` | bullet 8 | sched: `test_the_schedule_is_stopped_by_default`, `test_each_job_selects_only_its_own_pipelines_keys`, `test_a_schedule_on_a_zero_asset_pipeline_fails_the_load_naming_it` | `built` |
 | §4p.9 skip guard | component `schedule.py:19-24`, `:55-61` | bullet 9 | sched: `test_a_started_run_of_the_job_skips_the_tick`, `test_a_run_of_a_different_job_does_not_skip`, `test_a_finished_run_does_not_skip` | `built` |
 | §4p.10 per-table settings | wrappers `dlt_assets_factory.py:43-87`, `:90-137`; component `component.py:61`, `:66-77` | bullet 10 | read: `test_an_unpopped_table_config_would_be_silently_ignored`, `test_a_table_config_naming_a_table_outside_sources_fails_the_load`, `test_an_explicit_hint_still_wins_over_table_config`, `test_a_table_with_no_entry_loads_exactly_as_before` | `built` |
