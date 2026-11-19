@@ -81,7 +81,8 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Ships in the user-deployment image; command overridden by a chart; no dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built` |
+| Ships in the user-deployment image; command overridden by a chart | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118` | not stated | — | `built` |
+| No dag-tools template deploys it | `helm/dag-tools/templates/`: no broker template | not stated | — | `not built` |
 | Background import; `/ready` 503 until loaded or after a failure; no registration after a failure | `main.py:693-723`, `:1013-1075`, `:1097-1165` | not stated | `test_broker_load_failure.py`: `test_ready_is_503_while_still_loading`, `test_health_surfaces_the_import_error`, `test_ready_is_503_after_a_failed_import`, `test_a_failed_import_does_not_register`, `test_a_successful_load_registers_its_assets` | `built` |
 | Placeholder datasets when no module is named | `main.py:42`, `:802-818` | not stated | no test | `built` |
 | Registers, then every two minutes by default | `main.py:963-1010` | not stated | `test_internal_doors.py`: `test_the_broker_register_call_sends_the_service_token` | `built` |
