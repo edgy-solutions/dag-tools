@@ -24,7 +24,7 @@ Every claim in these records carries one status: `measured`, `built`, `accepted`
 - **`not built`** marks a gap with nothing built.
 - **`—`** marks a row that carries no claim of its own, such as a pointer, a reference or a superseded entry.
 - **Mixed findings** are written in parts, as "X: `built`. Y: `not built`". A component can be built while one of its uses is only proposed.
-- **Alignment rows carry two fields.** How closely the mesh corresponds to an outside element (`close`, `partial`, `different` or `none`) is separate from the status of what corresponds. A row can be `close` and `proposed`.
+- **Alignment rows carry three fields of their own.** How closely the mesh corresponds to an outside element (`close`, `partial`, `different` or `none`) is separate from the status of what corresponds. A row can be `close` and `proposed`. The third, Capability, names the NATO DCRA capability the element falls under, as `dcra:A1` to `dcra:A13` or `none`.
 - **Pins.** Every file and line is read at a pinned commit, listed in [the README](README.md#pins). A line number is valid only at its pin.
 - **Not established.** Where code, charts and tests do not settle a fact, the record says "not established" rather than guessing.
 
