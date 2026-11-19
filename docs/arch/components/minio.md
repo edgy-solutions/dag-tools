@@ -69,7 +69,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`.
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | No object store in the chart | `helm/dag-tools/templates/` (no store template) | not stated | — | `built` |
-| Explicit key pair and endpoint; HTTP off; renames not marked safe | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`, `:357-359`; `dag_tools/io_managers/arrow.py:34-39` | not stated | `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
+| Explicit key pair and endpoint; HTTP off; renames not marked safe | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`, `:357-359`; `dag_tools/io_managers/arrow.py:36-41` | not stated | `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
 | Bucket creation on | `dag_tools/io_managers/delta.py:141-143`; `dag_tools/io_managers/arrow.py:51-54`, `:135-141`; `dag_tools/resources/arrow.py:10`, `:29`, `:32` | not stated | no test | `built` |
 | Arrow resource: same fields; constructed unset | `dag_tools/resources/arrow.py:64-81`; `dag_tools/components/s3_sensor/arrow_component.py:65` | not stated | no test | `built` |
 | Ticket carries region and endpoint only | `dag_tools/io_managers/delta.py:229-246`, `:298-302`; `dag_tools/io_managers/arrow.py:370` | invincible-agent ADR-0044 | `test_mesh_publishable_mixin.py`: `test_one_hook_produces_a_complete_ticket`, `test_the_mixin_offers_no_way_to_supply_credentials`, `test_fqdn_endpoint_passes_the_broker_check` | `built` |
