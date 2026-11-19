@@ -15,7 +15,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 5 | A version on every read (dag-tools #74) | a receipt says which version of the dataset was read | — (proposed; no decision yet) | — |
 | 6 | Engine read decisions on by default (not filed) | a graph or vector read returns only what the person may read | — (proposed; no decision yet) | the preconditions invincible-agent's chart names for the switch |
 | 7 | A receipt on graph and vector reads (not filed) | a graph or vector answer says what was read, for whom, and which version | — (proposed; no decision yet) | row 5, for the version |
-| 8 | Decide the server end of the SDK's remote graph client (not filed) | an agent outside an engine reaches the graph only through a route that decides | — (proposed; no decision yet) | row 6 |
+| 8 | Decide the server end of the SDK's remote graph client (not filed) | an agent outside an engine reaches the graph only through a route that decides, or the remote client is retired | — (proposed; stalled, no decision yet) | row 6; an open invincible-agent item for generic mesh gateway routes |
 | 9 | No placeholder on a served path (not filed) | a registered dataset and an issued ticket are real or refused | — (proposed; no decision yet) | — |
 | 10 | Remove expired minted SQL accounts (not filed) | a database holds no minted account past its lifetime | — (proposed; no decision yet) | — |
 | 11 | The gateway says what it does (not filed) | the gateway's code and warnings describe the gateway that runs | — (proposed; no decision yet) | — |
@@ -83,8 +83,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 ### 8. Decide the server end of the SDK's remote graph client
 
 - **Gap:** [agent capabilities, finding 1](flows/agent-capabilities.md). The SDK ships a remote graph client that posts to a route nothing serves (supplied by the SDK's session). `not built`
-- **Owner:** the SDK.
-- **Remedy:** either build the route, behind a decision point as the dataset path has one, or retire the client and record in-process readers inside engines as the shape. `proposed`
+- **What already exists:** in-process readers inside engines are what ships and is used today; the remote client was built after them, and has no production caller (supplied by the SDK's session). `built`
+- **Owner:** the build-or-retire call belongs to the owner of the invincible-agent item for generic mesh gateway routes, which the remote client waits on. That item is open, at low priority, and has not moved in three weeks. The SDK holds the client, and declines to build a server end without a scheduled consumer or to retire the client on its own (supplied by the SDK's session).
+- **Remedy:** either build the route, behind a decision point as the dataset path has one, or retire the client and record in-process readers inside engines as the shape. `proposed`, stalled.
 - **Issue:** not filed.
 
 ### 9. No placeholder on a served path
