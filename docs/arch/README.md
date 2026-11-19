@@ -10,7 +10,7 @@ Every claim carries exactly one status.
 
 | Status | Means | Evidence it needs |
 |---|---|---|
-| `measured` | A recorded run against a running system showed it. | The record of the run. Having a test that could measure it is not enough. |
+| `measured` | A recorded run showed it. A run measures what it exercises: an in-process run in continuous integration measures the code's own behaviour, and is cited as "in CI, in process". A claim about a deployed service or a real backend needs a run against that service or backend, and stays `built` until one is recorded. | The record of the run. A continuous-integration run id is accepted today. Having a test that could measure it is not enough. |
 | `built` | Code at the pinned commit does it. | A file and line. A test that pins it, when one exists; when none does, the row says so. |
 | `accepted` | A decision record accepts it, and no code does it yet. | The decision record. |
 | `proposed` | It is written down as intent, but not accepted or built. | Where it is written. |
