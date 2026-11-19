@@ -19,7 +19,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 9 | No placeholder on a served path (not filed) | a registered dataset and an issued ticket are real or refused | — (proposed; no decision yet) | — |
 | 10 | Remove expired minted SQL accounts (not filed) | a database holds no minted account past its lifetime | — (proposed; no decision yet) | — |
 | 11 | The gateway says what it does (not filed) | the gateway's code and warnings describe the gateway that runs | — (proposed; no decision yet) | — |
-| 12 | No mesh token sent to a backend (not filed) | the token meant for the gateway reaches only the gateway | — (proposed; no decision yet) | row 9 |
+| 12 | No mesh token sent to a backend (dag-tools #76) | the token meant for the gateway reaches only the gateway | — (proposed; no decision yet) | row 9 |
 
 ## Where later slices fold in
 
@@ -114,11 +114,11 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 12. No mesh token sent to a backend
 
-- **Gap:** [mesh data client, finding 9](components/mesh-data-client.md). For Postgres and ClickHouse, the client uses its own mesh token as the database password when the ticket carries none (`dag_tools/cortex_data/client.py:315`, `:339`). No test reaches either branch. `built`
+- **Gap:** [mesh data client, finding 9](components/mesh-data-client.md). The client uses its own mesh token as the database password when the ticket carries no password (Postgres, `dag_tools/cortex_data/client.py:315`) or neither a password nor a token (ClickHouse, `:339`). It is the same bearer token the client presents to the gateway (`:189-191`). On the broker's older path the ticket carries a placeholder token and no password, so it is Postgres that receives the mesh token; no path in this repo issues a ClickHouse ticket with neither. No test reaches either branch. `built`
 - **Owner:** dag-tools.
 - **Remedy:** the client refuses a SQL ticket that carries no password, rather than sending a token meant for the gateway; and a test reaches each SQL branch. `proposed`
-- **Note:** the older path is where a SQL ticket carries no password (row 9), so the two rows close the same opening from both ends.
-- **Issue:** not filed.
+- **Note:** the older path is where a Postgres ticket carries no password (row 9), so the two rows close the same opening from both ends. The owner reads this row as a present exposure, not tidiness: once that path is taken, the send is unconditional in code. Whether a database receives it there depends on name resolution of the placeholder host, which the code cannot settle.
+- **Issue:** dag-tools #76.
 
 ## Sources
 
