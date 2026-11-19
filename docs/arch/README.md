@@ -24,6 +24,7 @@ All evidence is read at these commits. A line number is valid only at its pin.
 | Source | Pin | Read status |
 |---|---|---|
 | dag-tools | `9d89568a70a54482ef9ee0b3d6502555f6b0c4d1` | read directly |
+| dag-tools (component records) | `add5bc48021fe6d2c79c24c31072142fc93c8179` | read directly |
 | invincible-agent | `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` | read directly, file by file, for the claims cited |
 | iagent-mesh-sdk | `d6a737837c3d0609ace95017c6b4b45b500ea755` | facts supplied by the owning session; not read here |
 | pub-tools | `90fba4a` | facts supplied by the owning session; not read here |
@@ -66,6 +67,9 @@ How closely is one of:
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
+| [components/central-gateway.md](components/central-gateway.md) | component | draft |
+| [components/domain-broker.md](components/domain-broker.md) | component | draft |
+| [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
