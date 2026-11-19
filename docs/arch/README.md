@@ -76,7 +76,9 @@ How closely is one of:
 | [components/document-tables.md](components/document-tables.md) | component | draft |
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/grist-ingest.md](components/grist-ingest.md) | component | draft |
+| [components/keycloak.md](components/keycloak.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
+| [components/minio.md](components/minio.md) | component | draft |
 | [components/otel-api-sync.md](components/otel-api-sync.md) | component | draft |
 | [components/read-audit.md](components/read-audit.md) | component | draft |
 | [components/restate-api-sync.md](components/restate-api-sync.md) | component | draft |
@@ -86,6 +88,8 @@ How closely is one of:
 | [components/s3-sensor.md](components/s3-sensor.md) | component | draft |
 | [components/systemlink-source.md](components/systemlink-source.md) | component | draft |
 | [components/tagged-warehouse.md](components/tagged-warehouse.md) | component | draft |
+| [components/topaz.md](components/topaz.md) | component | draft |
+| [components/vault.md](components/vault.md) | component | draft |
 | [components/warehouse-source.md](components/warehouse-source.md) | component | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
