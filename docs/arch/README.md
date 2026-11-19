@@ -70,6 +70,8 @@ How closely is one of:
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
+| [walkthroughs/evidence.md](walkthroughs/evidence.md) | walkthrough: a decision-maker asking for evidence | draft |
+| [walkthroughs/sustainment.md](walkthroughs/sustainment.md) | walkthrough: qualifying a Dagster upgrade | draft |
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
 | [components/contract-mapping.md](components/contract-mapping.md) | component | draft |
