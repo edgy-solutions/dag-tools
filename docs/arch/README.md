@@ -151,6 +151,7 @@ A role is what a person does in the mesh, not who the person is, and one person 
 | [walkthroughs/sustainment.md](walkthroughs/sustainment.md) | walkthrough: qualifying a Dagster upgrade | draft |
 | [built-to-measured.md](built-to-measured.md) | list: built claims and the test or run that could make each measured | draft |
 | [not-established.md](not-established.md) | list: every fact the records do not establish, merged and grouped by what would settle it | draft |
+| [glossary.md](glossary.md) | glossary: one line per mesh term a reader meets in these records | draft |
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
 | [components/contract-mapping.md](components/contract-mapping.md) | component | draft |
