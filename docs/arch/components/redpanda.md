@@ -19,7 +19,7 @@ None. Neither chart nor any component has a setting for it.
 
 ## Gaps
 
-- **Nothing in the mesh is wired to a publish and subscribe service** (findings 1 to 3). Neither chart deploys a broker and no dag-tools component speaks to one; the invincible-agent build plan records that a broker already runs beside the mesh for other tools. Delivery is a read a consumer asks for, not a record pushed to a subscriber, and no published object is registered for subscription under access control. Remedy: not on the roadmap.
+- **Nothing in the mesh is wired to a publish and subscribe service** (findings 1 to 3). Neither chart deploys a broker and no dag-tools component speaks to one; the invincible-agent build plan records that a broker already runs beside the mesh for other tools. Delivery is a read a consumer asks for, not a record pushed to a subscriber, and no published object is registered for subscription under access control. Remedy: not on the roadmap. Status: `proposed`.
 
 ## Not established from code
 

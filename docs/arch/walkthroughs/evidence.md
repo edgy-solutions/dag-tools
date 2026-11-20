@@ -32,7 +32,7 @@ Each step names the mesh component that answers it and the records it relies on.
 | 7 | Who may read it? | One explicit grant on one dataset, `can_read`, decided by Topaz. Grants are reviewed files carrying the grantor and a reason. Labels, persona and domain are not consulted. | central gateway; Topaz | `built` | as cited in the need-to-know flow, steps 5 and 6 | [need to know](../flows/need-to-know.md), findings 1 and 3 and the policy administration row; [Topaz](../components/topaz.md) |
 | 8 | Who did read it, through the gateway? | Each ticket carries its own id, minted per request. The gateway's issue line names the principal through the same expression the broker payload uses. The receipt a consumer keeps is an allowlist of ticket fields. | central gateway; domain broker; mesh data client | `built` | `test_the_log_follows_the_VERIFIED_subject_where_it_differs_from_the_header`; `test_two_resolves_of_one_urn_get_different_ticket_ids`; `test_the_receipt_is_an_allowlist_so_a_new_ticket_field_is_not_published` | [§4o.3, §4o.5, §4o.6](../decisions/dag-tools-s4n-s4o-s4k1.md); [central gateway](../components/central-gateway.md); [mesh data client](../components/mesh-data-client.md) |
 | 9 | Who did read it, in the warehouse? | The read audit attributes each read by its tag, then by a single run window. What it cannot explain is published in three parts, and an empty window carries no coverage figure. The tag is not signed, and a person's tag does not change the credential. | read audit; tagged warehouse | `built` | `test_the_metadata_decomposes_the_gap`; `test_a_multi_asset_run_cannot_attribute`; `test_coverage_is_none_when_nothing_was_read` | [§4j.5, §4j.6](../decisions/dag-tools-s4k-s4j.md); [read audit](../components/read-audit.md), finding 5; [tagged warehouse](../components/tagged-warehouse.md), finding 4 |
-| 10 | Which version was read? | The ticket keeps the data's version apart from the time of issue, and an absent version is counted per source type on the health route rather than filled with the issue time. No reader of a version ships, so every ticket today carries an absent version. | domain broker | mechanism: `built`. Readers: `not built`. | `test_an_absent_as_of_is_not_the_issue_time`; `test_no_as_of_reader_ships_by_default` | [§4o.1, §4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md); [domain broker](../components/domain-broker.md); [roadmap row 5](../ROADMAP.md) |
+| 10 | Which version was read? | The ticket keeps the data's version apart from the time of issue, and an absent version is counted per source type on the health route rather than filled with the issue time. No reader of a version ships, so every ticket today carries an absent version. | domain broker | `built` | `test_an_absent_as_of_is_not_the_issue_time`; `test_no_as_of_reader_ships_by_default` | [§4o.1, §4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md); [domain broker](../components/domain-broker.md); [roadmap row 5](../ROADMAP.md) |
 
 ## Roles in the NATO frame
 
@@ -46,11 +46,11 @@ Each step names the mesh component that answers it and the records it relies on.
 
 ## Gaps
 
-- **The version read is unknown.** No reader ships, so a receipt cannot say which version of the dataset a figure came from. Remedy: [roadmap row 5](../ROADMAP.md).
-- **A dbt model can be missing from the catalog after a green build.** Publishing failures are swallowed by design (§4i.3). The end-to-end run behind an environment gate (§4i.9) is `measured` in CI, in process, against an in-process catalog recorder; with a real catalog server it is still `built` (item A2 of [the built-to-measured list](../built-to-measured.md)). No row: swallowing is the decision.
-- **Gateway reads and warehouse reads are attributed separately.** The ticket log and the read audit are not joined, and the warehouse tag is not signed. Remedy: [roadmap row 17](../ROADMAP.md).
-- **Labels do not decide reads.** A decision-maker reading a label should not infer that it limited who read the data ([need to know](../flows/need-to-know.md), findings 1 and 3). Remedy: [roadmap row 18](../ROADMAP.md).
-- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on. No row: off by default is the decision (§4p.16), and turning it on is a deployment setting.
+- **The version read is unknown.** No reader ships, so a receipt cannot say which version of the dataset a figure came from. Remedy: [roadmap row 5](../ROADMAP.md). Status: `built`.
+- **A dbt model can be missing from the catalog after a green build.** Publishing failures are swallowed by design (§4i.3). The end-to-end run behind an environment gate (§4i.9) is measured in CI, in process, against an in-process catalog recorder; with a real catalog server it is still built (item A2 of [the built-to-measured list](../built-to-measured.md)). No row: swallowing is the decision. Status: `built`.
+- **Gateway reads and warehouse reads are attributed separately.** The ticket log and the read audit are not joined, and the warehouse tag is not signed. Remedy: [roadmap row 17](../ROADMAP.md). Status: `built`.
+- **Labels do not decide reads.** A decision-maker reading a label should not infer that it limited who read the data ([need to know](../flows/need-to-know.md), findings 1 and 3). Remedy: [roadmap row 18](../ROADMAP.md). Status: `built`.
+- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on. No row: off by default is the decision (§4p.16), and turning it on is a deployment setting. Status: `accepted`.
 
 ## Not established from code
 
@@ -71,5 +71,13 @@ Each step names the mesh component that answers it and the records it relies on.
 | Who may read | [need to know](../flows/need-to-know.md) | as cited there | as cited there | `built` |
 | Ticket identity, principal and receipt | dag-tools decisions §4o.3, §4o.5, §4o.6 | [§4o.3](../decisions/dag-tools-s4n-s4o-s4k1.md) | as step 8 | `built` |
 | Warehouse read attribution | dag-tools decisions §4j.5, §4j.6; [read audit](../components/read-audit.md) | [§4j.5](../decisions/dag-tools-s4k-s4j.md) | as step 9 | `built` |
-| Version mechanism and absent readers | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | mechanism: `built`. Readers: `not built`. |
-| No step is `measured` | the status columns of the records cited | — | none found | — |
+| Version mechanism | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | `built` |
+| Version readers | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | `not built` |
+
+### Rows that carry no status
+
+These rows count or point at records, or name a decision that is superseded or decides nothing here. None is a claim about the mesh, so none carries a status.
+
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| No step is `measured` | the status columns of the records cited | — | none found |

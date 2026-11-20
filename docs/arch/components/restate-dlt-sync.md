@@ -59,10 +59,10 @@ Fixed in code:
 
 ## Gaps
 
-- **An acknowledgement run is green when chunks failed** (finding 7). The failure is a log line and a metadata count, and the run succeeds, so an operator watching run status alone sees nothing. The mark is held, so the keys are re-sent next cycle. `test_a_failed_dispatch_holds_the_mark` pins the held mark, not an alert. Remedy: not on the roadmap.
-- **A destination without dlt's load-id column is acknowledged in full on every cycle** (finding 7). The fallback logs a warning and the run is green, so the repeat is visible only in the log. No test covers the fallback. Remedy: not on the roadmap.
-- **No credential or identity is sent to the Restate ingress** (finding 5). Every post is a plain request with a JSON body. Whether the ingress checks a caller is set outside this component. Remedy: [roadmap row 13](../ROADMAP.md) (not filed).
-- **The shipped schema file is not used by the component** (finding 3). `schema.py` defines a root and a pipeline model, and nothing at the pin imports them; the component validates through its own fields and `config.py`. A reader who takes `schema.py` as the contract would read a stricter and different one. No test. Remedy: not on the roadmap.
+- **An acknowledgement run is green when chunks failed** (finding 7). The failure is a log line and a metadata count, and the run succeeds, so an operator watching run status alone sees nothing. The mark is held, so the keys are re-sent next cycle. `test_a_failed_dispatch_holds_the_mark` pins the held mark, not an alert. Remedy: not on the roadmap. Status: `built`.
+- **A destination without dlt's load-id column is acknowledged in full on every cycle** (finding 7). The fallback logs a warning and the run is green, so the repeat is visible only in the log. No test covers the fallback. Remedy: not on the roadmap. Status: `built`.
+- **No credential or identity is sent to the Restate ingress** (finding 5). Every post is a plain request with a JSON body. Whether the ingress checks a caller is set outside this component. Remedy: [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
+- **The shipped schema file is not used by the component** (finding 3). `schema.py` defines a root and a pipeline model, and nothing at the pin imports them; the component validates through its own fields and `config.py`. A reader who takes `schema.py` as the contract would read a stricter and different one. No test. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

@@ -77,10 +77,12 @@ All paths are in the SDK repository, as supplied by its session, and were not re
 | On-behalf-of is provenance; no access decision in the SDK | d6 `interfaces.py:150`, `:255`; `delegate_identity.py:16-20`; `refusal.py:1`, `:51`; `core.py:593-619` | SDK.1 | not supplied | `built` |
 | Person guard checks the kind of identity at the boundary; no grants consulted | d6 `interfaces.py:216-243` | SDK.1 | not supplied | `built` |
 | Resolve returns a data reference; caller reads | d6 `interfaces.py:1013`, `:1076`, `:1085`; `core.py:503` | SDK.2 | `tests/test_cortex_data_client_contract.py` | `built` |
-| Remote graph client, no server end | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` (client); `not built` (server end) |
+| Remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` |
+| A server end for the remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `not built` |
 | Graph client warns it is deprecated | f1 `remote_clients.py:43`, `:80`, `:90` | SDK.3 | `test_construction_warns_deprecated` (`tests/test_remote_clients.py:30`) | `built` |
 | Retire the graph client | roadmap row 8; architect's ruling 2026-11-18 | SDK.3 | — | `accepted` |
-| Vector interface only; no remote vector or ontology client | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `built` (interface); `not built` (clients) |
+| Vector interface | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `built` |
+| Remote vector and ontology clients | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `not built` |
 | No read conformance | d6 `interfaces.py:373-374`; `conformance.py:725` | SDK.4 | not supplied | `not built` |
 | Attestation is a closed set of two values | f1 `ingest.py:507` | SDK.5 | `test_attestation_is_a_closed_literal_not_an_open_string` (`tests/test_ingest.py:592`) | `built` |
 | Declared models forbid unknown keys and freeze | f1 `workflow_definition.py:86` | SDK.6 | `test_the_definition_itself_rejects_an_unknown_top_level_key` (`tests/test_workflow_definition.py:100`) | `built` |

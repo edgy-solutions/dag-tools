@@ -29,8 +29,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The demo project writes into the Dagster instance's database by default** (finding 4). Remedy: not on the roadmap.
-- **Only the Postgres adapter ships** (finding 7). A deployment on another warehouse supplies its own adapter. Remedy: not on the roadmap.
+- **The demo project writes into the Dagster instance's database by default** (finding 4). Remedy: not on the roadmap. Status: `built`.
+- **Only the Postgres adapter ships** (finding 7). A deployment on another warehouse supplies its own adapter. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

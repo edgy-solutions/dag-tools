@@ -155,10 +155,17 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| What `measured` requires | [the README](README.md#status-vocabulary); the architect's ruling of 2026-11-19 | — | the vocabulary table | — |
+| What `measured` requires | [the README](README.md#status-vocabulary); the architect's ruling of 2026-11-19 | — | the vocabulary table | `accepted` |
 | The CI jobs, and the end-to-end job's failure on a skip | `.github/workflows/test.yml` at `9d89568a` | — | `:27-28`, `:86-90`; `:117-118`, `:224-227`; `:245-246`, `:277-289` | `built` |
 | The runs and their outcomes | the "Tests" workflow, run 44398336497 at `9d89568a` and run 44451597250 at `add5bc48`: every job succeeded in both. Per-test outcomes come from each Python job's uploaded results and the 1.10.19 job's log. | — | the table under "Measured in CI, in process" | `measured`, in CI, in process |
 | Groups A to E | the records named in each row | as each row | as each row | `built`, as each record |
 | Three group-D tests replace a live service with a fake | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
-| No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list | — |
-| 281 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
+
+### Rows that carry no status
+
+These rows count or point at records, or name a decision that is superseded or decides nothing here. None is a claim about the mesh, so none carries a status.
+
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list |
+| 281 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case |

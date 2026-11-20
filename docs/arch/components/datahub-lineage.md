@@ -39,8 +39,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **An asset with no declared platform is registered on the Dagster platform** (finding 5). AGENTS.md §4l says the asset of record is the physical platform's dataset and never a Dagster-platform one. This component does not meet it for these assets, or for parents with no physical location. Remedy: not on the roadmap.
-- **No test pins the default write path or the token reaching the client** (findings 4, 5 and 7). Tests cover the platform tables, the sensor build and status, the code location's wiring and the helpers. None runs the extractor, and none checks what is sent to DataHub. Remedy: not on the roadmap.
+- **An asset with no declared platform is registered on the Dagster platform** (finding 5). AGENTS.md §4l says the asset of record is the physical platform's dataset and never a Dagster-platform one. This component does not meet it for these assets, or for parents with no physical location. Remedy: not on the roadmap. Status: `built`.
+- **No test pins the default write path or the token reaching the client** (findings 4, 5 and 7). Tests cover the platform tables, the sensor build and status, the code location's wiring and the helpers. None runs the extractor, and none checks what is sent to DataHub. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

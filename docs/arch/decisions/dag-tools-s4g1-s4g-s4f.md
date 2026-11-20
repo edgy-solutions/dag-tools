@@ -214,7 +214,15 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4f.5 no field selected that its type lacks | gql `:296-306` | bullet 5 | tgc: `test_launch_mutation_does_not_select_message_on_fieldless_error_types` (`:212`); tgv (see §4g.5) | `built` |
 | §4f.6 location and job from the manifest | rrn `:369-370`; rln `:136-138` | bullet 6 | trn: `test_run_side_threads_manifest_location_and_job_into_launch` (`:171`) | `built` |
 | §4f.7 launched alone; widened on refusal | rln `:128-158`, `:215`, `:302`; gql `:143`, `:395-400` | bullet 7 | tlp: `test_a_subsettable_dbt_op_does_not_drag_in_the_whole_project` (`:142`), `test_the_whole_project_is_not_launched_through_the_real_entrypoint` (`:151`), `test_a_refused_partial_selection_is_retried_with_the_op_mates` (`:196`), `test_other_launch_failures_are_not_retried` (`:219`) | `built` |
-| §4f.8 upstreams not materialized by the qualification run | rln `:128`; rcp `:408` | bullet 8 | tqs: `test_q2_selection_is_unchanged_by_stage` (`:681`) | `built`; seeder assets `not built` |
+| §4f.8 upstreams not materialized by the qualification run | rln `:128`; rcp `:408` | bullet 8 | tqs: `test_q2_selection_is_unchanged_by_stage` (`:681`) | `built` |
+| §4f.8 seeder assets | rln `:128`; rcp `:408` | bullet 8 | tqs: `test_q2_selection_is_unchanged_by_stage` (`:681`) | `not built` |
 | §4f.9 staging overrides resolved once per side; recursive merge | rst `:40`, `:53`, `:75-130`, `:133-152`, `:190-195`; rrn `:296-303`; rln `:115-125`; prn `:287`, `:384`; rrt `:371`, `:501` | bullet 9 | tso: `test_the_pointer_itself_never_reaches_run_config` (`:71`), `test_launched_run_config_has_only_keys_dagster_accepts` (`:85`), `test_an_unresolved_pointer_raises_instead_of_launching` (`:110`), `test_merge_is_recursive_so_a_per_rep_block_does_not_drop_siblings` (`:212`), `test_probe_launch_does_not_put_the_pointer_in_run_config` (`:267`), `test_probe_launch_refuses_an_unresolved_pointer` (`:282`) | `built` |
-| §4f.10 pointer to §4g2 | rrt | bullet 10 | the §4g2 tests in [dag-tools-s4i-s4h-s4g.md](dag-tools-s4i-s4h-s4g.md) | — |
 | §4f.11 staging pass in its own slot | lay `:214-230`; sst `:28`, `:62-98`; spl `:77-90`, `:136-166`, `:244-278`; srn `:97-152`, `:173-201`, `:323-344`, `:387-422`; rrn `:400-437`; vvd `:153`, `:392`, `:528` | bullet 11 | tqs: `test_stage_run_tags_carry_purpose_and_no_class_hash` (`:342`), `test_unresolved_staging_pointer_raises_instead_of_launching` (`:324`), `test_empty_launch_info_refuses_to_launch` (`:387`), `test_q2_selection_is_unchanged_by_stage` (`:681`), `test_q6_status_is_identical_with_and_without_stage_artifacts` (`:644`), `test_stage_status_never_reaches_blocking_issues` (`:667`), `test_two_partition_definitions_launch_as_two_runs_in_dependency_order` (`:435`), `test_a_failed_group_skips_only_the_groups_that_depend_on_it` (`:456`), `test_passed_is_sacred_for_the_same_selection_hash` (`:508`), `test_changed_selection_hash_launches_again` (`:518`) | `built` |
+
+### Rows that carry no status
+
+These rows count or point at records, or name a decision that is superseded or decides nothing here. None is a claim about the mesh, so none carries a status.
+
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| §4f.10 pointer to §4g2 | rrt | bullet 10 | the §4g2 tests in [dag-tools-s4i-s4h-s4g.md](dag-tools-s4i-s4h-s4g.md) |

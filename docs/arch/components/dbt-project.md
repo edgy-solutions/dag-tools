@@ -33,10 +33,10 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The DataHub token is left in a file on disk** (finding 4). Anyone who can read the dbt target directory can read the token. Remedy: not on the roadmap.
-- **The DataHub tool receives every variable in the process environment** (finding 5). That includes credentials it does not need. Remedy: not on the roadmap.
-- **A failed publish is visible only in the run log** (finding 6). A run whose catalog publish failed shows as successful. Remedy: not on the roadmap.
-- **Asset keys depend on a process-wide registry, and a source matching a prefix changes it** (finding 7). The second such source in a process gets a key that includes the first source's parts. No test covers it. Remedy: not on the roadmap.
+- **The DataHub token is left in a file on disk** (finding 4). Anyone who can read the dbt target directory can read the token. Remedy: not on the roadmap. Status: `built`.
+- **The DataHub tool receives every variable in the process environment** (finding 5). That includes credentials it does not need. Remedy: not on the roadmap. Status: `built`.
+- **A failed publish is visible only in the run log** (finding 6). A run whose catalog publish failed shows as successful. Remedy: not on the roadmap. Status: `built`.
+- **Asset keys depend on a process-wide registry, and a source matching a prefix changes it** (finding 7). The second such source in a process gets a key that includes the first source's parts. No test covers it. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
@@ -81,5 +81,6 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are
 | A failed publish is logged, not raised | `component.py:220-224` | AGENTS.md §4i | no test of the swallowing itself | `built` |
 | Process-wide registry; no caller of `register_prefix`; a matching source appends to the map's list | `dag_tools/utils/translation_registry.py:12-21`, `:41-44`, `:56-62`; `dag_tools/components/datahub_lineage/component.py:63` | not stated | no test | `built` |
 | Op sizing from a variable prefix | `component.py:30-50`, `:52-88` | not stated | `test_k8s_env_prefix.py`: `test_dbt_component_get_op_spec_injects_env_prefix`, `test_dbt_component_survives_a_missing_private_hook` | `built` |
-| Demo-only wiring; no chart wiring | `dag_tools/user_deployment/definitions.py:61-67`, `:232`, `:246`; `dag_tools/user_deployment/demo_dbt_assets.py:143-234` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources` | `built`; the absence `not built` |
+| Demo-only wiring | `dag_tools/user_deployment/definitions.py:61-67`, `:232`, `:246`; `dag_tools/user_deployment/demo_dbt_assets.py:143-234` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources` | `built` |
+| No chart wiring | `dag_tools/user_deployment/definitions.py:61-67`, `:232`, `:246`; `dag_tools/user_deployment/demo_dbt_assets.py:143-234` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources` | `not built` |
 | No ticket, no label | `component.py:102-224` | not stated | — | `not built` |

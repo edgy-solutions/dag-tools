@@ -26,8 +26,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The Grist token is static and outside the mesh's identity** (finding 5). Remedy: not on the roadmap.
-- **The read from Grist is not decided or audited by the mesh** (finding 6). Remedy: not on the roadmap.
+- **The Grist token is static and outside the mesh's identity** (finding 5). Remedy: not on the roadmap. Status: `built`.
+- **The read from Grist is not decided or audited by the mesh** (finding 6). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

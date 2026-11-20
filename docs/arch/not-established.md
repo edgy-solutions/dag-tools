@@ -7,7 +7,7 @@ This page gathers, in one place, every fact these records leave open. Most recor
 ## How the list was built
 
 - **Sources.**
-  - Every "Not established" section in this directory: 182 items in 43 records.
+  - Every "Not established" or "Could not establish" section in this directory: 193 items in 45 records.
   - Sixteen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole. The "Connections" tables of ten component records carry sixteen more lines, each with "not established" in a row's Sign-in cell; those lines are not entries here.
   - Items 1 to 35 of the lane's twice-daily reports, each of which already comes from a record.
 - **Merged.** One fact carried by several records is one entry, and it links to each of them.
@@ -161,11 +161,11 @@ A clause leaves the tables above only by moving here, never by deletion. The ent
 
 ## Sources
 
-| Claim | Source | Decision | Evidence | Status |
-|---|---|---|---|---|
-| Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record | none; an entry is not established |
-| 182 section items in 43 records | the "Not established" sections of the records in this directory at the #111 head (`16da9650`); 183 at the #104 head, before the built-to-measured list's own section lost an item | — | a count of the items under those headings | — |
-| Sixteen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
-| Sixteen connections-table lines in ten component records | the "Connections" tables of [central gateway](components/central-gateway.md), [dlt pipeline](components/dlt-pipeline.md), [domain broker](components/domain-broker.md), [JupyterHub](components/jupyterhub.md), [MinIO](components/minio.md), [Redpanda](components/redpanda.md), [Restate dlt sync](components/restate-dlt-sync.md), [Restate worker](components/restate-worker.md), [Superset](components/superset.md), [SystemLink source](components/systemlink-source.md) | — | a count of the table lines that say "not established" | — |
-| No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list | — |
-| X1 and X2 closed | the architect's ruling of 2026-11-19: an in-process CI run measures what it exercises, and a run id is accepted today | — | — | — |
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record |
+| 193 section items in 45 records | the top-level bullets of the "Not established" and "Could not establish" sections of the records in this directory, counted after every claim and gap was given one status; 182 in 43 records at the #111 head (`16da9650`) | — | a count of the items under those headings |
+| Sixteen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section |
+| Sixteen connections-table lines in ten component records | the "Connections" tables of [central gateway](components/central-gateway.md), [dlt pipeline](components/dlt-pipeline.md), [domain broker](components/domain-broker.md), [JupyterHub](components/jupyterhub.md), [MinIO](components/minio.md), [Redpanda](components/redpanda.md), [Restate dlt sync](components/restate-dlt-sync.md), [Restate worker](components/restate-worker.md), [Superset](components/superset.md), [SystemLink source](components/systemlink-source.md) | — | a count of the table lines that say "not established" |
+| No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list |
+| X1 and X2 closed | the architect's ruling of 2026-11-19: an in-process CI run measures what it exercises, and a run id is accepted today | — | — |
