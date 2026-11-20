@@ -20,6 +20,41 @@ This record covers what the chart and code provide by default, and what a deploy
 10. **A catalog failure fails the materialization, and a dry run emits nothing.** The sends are not caught. `dry_run` records the whole label set in the asset's metadata and sends nothing. A test pins the failure and the empty-token case. A test pins the dry run. `built`
 11. **The label set published records which document ratified it.** The properties carry the document's source path and a short digest of its bytes, the access mode, the owner and the label origin. The same facts appear in the observation metadata. The per-column `cell_predicate` is published as written and never interpreted. `built`
 
+## Where it exists and what its example proves
+
+Commits are named in full. A release is a version tag whose release page carries the built wheel. The wheel holds the component and not its example, which stays in the repository under `examples/`. Each `measured` row cites the Tests workflow run 44451597250 at the records pin. Every test such a row names ran in process and passed in both test jobs: the current Dagster and the 1.10.19 compatibility floor. A row saying what the example does not prove, or what a deployment must still configure, describes a condition of the code and carries that condition's status. A value a deployment must configure is required or has no default, and neither the chart nor the shipped code location supplies it. Supplying it is the deployment's job, not a remedy, so no roadmap row follows from it.
+
+### Commit and release
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The component and its example were first committed at `50f11c86e93232f47500b21631873da23288b58a`. | the commit that adds `dag_tools/components/warehouse_source/` and `examples/warehouse_source/` | `built` |
+| 2 | Merged to master by PR #24, merge commit `dfc6b09ebb9965401a69ef184c930a20817f30a5`, on 2026-11-07 (UTC). | the pull request's merge commit; master contains it | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 4 | A component file names it as `type: dag_tools.WarehouseSourceComponent`; the package root exports the class. | `dag_tools/__init__.py:13, :33` | `built` |
+
+### What the example proves, and what it does not
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The example loads as a code location with one observable source asset, read through a tagged warehouse resource (CO-TAGGED-WAREHOUSE). | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_the_shipped_example_loads_and_builds_one_source_asset` | `measured` |
+| 2 | Observing the source counts its rows and names its columns without moving a row. It records an as-of that is not the observation time, and names the document and digest that ratified the labels. | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_observing_the_example_counts_and_names_without_moving_a_row` | `measured` |
+| 3 | A column the example leaves unlabelled is published at the strictest value in every dimension, and counted. | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_the_unlabelled_column_is_published_most_restrictive_and_counted` | `measured` |
+| 4 | A value with no ratifier is reported rather than refused. With `require_ratified` on, the publish is refused and names the values. | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_an_unratified_value_is_reported_rather_than_refused`, `test_require_ratified_refuses_the_publish_and_names_the_values` | `measured` |
+| 5 | A label the document does not declare, and an asset of record on the Dagster platform, each fail the load. The observation takes no run config. | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_a_label_the_document_does_not_declare_fails_the_LOAD`, `test_a_dagster_platform_urn_fails_the_load`, `test_the_observe_function_takes_no_run_config` | `measured` |
+| 6 | Not proved: a send to a catalog. The example names no catalog server, so it emits nothing. The send's own tests replace the catalog client with a stand-in. | Tests run 44451597250, both test jobs; `test_warehouse_source_component.py`: `test_the_example_emits_nothing_because_it_names_no_catalog`, `test_a_catalog_failure_FAILS_the_materialization`; no test sends to a running catalog | `built` |
+
+### What a deployment must still configure
+
+| # | A deployment must still configure | What the example uses instead | Evidence | Status |
+|---|---|---|---|---|
+| 1 | The source itself: the dataset's URN on its physical platform, its relation, owner, access and label origin. | a dataset in a local sqlite file | Settings `source`; `examples/warehouse_source/dagster_home/components/source/component.yaml:15` | `built` |
+| 2 | A label on each column, from values the policy's dimensions document declares. An unlisted column takes the strictest value. | labels on all but one column | Settings `source.columns`; `examples/warehouse_source/dagster_home/components/source/component.yaml:43` | `built` |
+| 3 | A bound resource with a real connection, normally a tagged warehouse resource. | a tagged warehouse resource over a local sqlite file | Settings `resource_key`; `examples/warehouse_source/dagster_home/components/source/component.yaml:121` | `built` |
+| 4 | The policy's dimensions document, mounted where the setting or its environment variable names. dag-tools ships none. | a stand-in document beside the example | Settings `classification.dimensions_file`; `examples/warehouse_source/classification/dimensions.yaml` | `built` |
+| 5 | The catalog server and its token. | nothing; no server is named, so nothing is emitted | Settings `catalog.*`; `examples/warehouse_source/dagster_home/components/source/component.yaml:102` | `built` |
+| 6 | A schedule or job that names the asset's key. A selection of all assets does not include a source asset. | none | Settings; AGENTS.md §4m | `built` |
+
 ## Settings and defaults
 
 | Setting | Default | What it does |

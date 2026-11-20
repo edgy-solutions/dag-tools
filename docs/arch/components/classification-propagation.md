@@ -20,6 +20,39 @@ This record covers what the chart and code provide by default, and what a deploy
 10. **One dataset's failure does not stop the others, and a failing dataset is retried without a new materialization.** Each dataset runs in its own `try`. A failure is logged, and recorded once per materialization as an observation on the derived asset with `classification_propagated` false and the error text. The cursor keeps a storage id and a status per dataset. A dataset is skipped only when its newest materialization has already been published. A cursor that cannot be read is reset. Tests: `test_one_dataset_failing_does_not_stop_the_others`, `test_a_failure_is_recorded_against_the_asset_rather_than_only_logged`, `test_a_failing_dataset_is_retried_without_a_re_materialization`, `test_an_unchanged_materialization_is_not_republished`, `test_an_unreadable_cursor_is_reset_rather_than_crashed_on`. `built`
 11. **It connects straight to the catalog with a token from config or the environment, and a catalog failure fails the dataset.** With no catalog server set, nothing is sent and every decision is still recorded. With a server set and `dry_run` off, it opens a catalog client and sends the patches; a send error fails that dataset. The token is the configured one, else the standard catalog token variable; an empty value is not sent. It presents no other identity, and the central gateway and the domain broker are not on this path. With `dry_run` on, nothing reaches the catalog even when a server is set. Tests: `test_dry_run_records_the_whole_decision_and_emits_nothing`, `test_with_a_catalog_configured_the_tick_emits_what_it_recorded`, `test_emit_sends_every_proposal_and_counts_them`. No test covers the token resolution. `built`
 
+## Where it exists and what its example proves
+
+Commits are named in full. A release is a version tag whose release page carries the built wheel. The wheel holds the component and not its example, which stays in the repository under `examples/`. Each `measured` row cites the Tests workflow run 44451597250 at the records pin. Every test such a row names ran in process and passed in both test jobs: the current Dagster and the 1.10.19 compatibility floor. A row saying what the example does not prove, or what a deployment must still configure, describes a condition of the code and carries that condition's status. A value a deployment must configure is required or has no default, and neither the chart nor the shipped code location supplies it. Supplying it is the deployment's job, not a remedy, so no roadmap row follows from it.
+
+### Commit and release
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The component and its example were first committed at `f6ae3f68caa351a7f0acf6fed1393983423c5037`. | the commit that adds `dag_tools/components/classification_propagation/` and `examples/warehouse_source/dagster_home/` | `built` |
+| 2 | Merged to master by PR #26, merge commit `893b402d84814c8d39cdbfd261eeb08a15cff0e1`, on 2026-11-08 (UTC). | the pull request's merge commit; master contains it | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 4 | A component file names it as `type: dag_tools.ClassificationPropagationComponent`; the package root exports the class. | `dag_tools/__init__.py:22` | `built` |
+
+### What the example proves, and what it does not
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The example builds one sensor, stopped, and materializes nothing. | Tests run 44451597250, both test jobs; `test_classification_propagation.py`: `test_the_shipped_example_builds_one_sensor_and_materializes_nothing` | `measured` |
+| 2 | Propagation reads a source it only observed (CO-WAREHOUSE-SOURCE). It publishes one derived column composed from its lineage, and one composed and then widened by a declared downgrade, with the rule, the owner and the derived label recorded. A third column, with no declared lineage, takes the table's ceiling, including the source's unlabelled column. | Tests run 44451597250, both test jobs; `test_classification_propagation.py`: `test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED` | `measured` |
+| 3 | A declared downgrade is checked against the dimensions document at load. | Tests run 44451597250, both test jobs; `test_classification_propagation.py`: `test_a_declared_downgrade_is_validated_against_the_document_at_load` | `measured` |
+| 4 | With no document mounted, the code location still loads and the tick fails. | Tests run 44451597250, both test jobs; `test_classification_propagation.py`: `test_the_code_location_loads_with_no_document_mounted` | `measured` |
+| 5 | Not proved: a send to a catalog. The example names no catalog, so every decision is recorded on the derived asset and nothing is sent. The send's own tests replace the catalog client with a recorder. | `examples/warehouse_source/dagster_home/components/propagation/component.yaml:83`; `test_classification_propagation.py`: `test_emit_sends_every_proposal_and_counts_them`; no test sends to a running catalog | `built` |
+
+### What a deployment must still configure
+
+| # | A deployment must still configure | What the example uses instead | Evidence | Status |
+|---|---|---|---|---|
+| 1 | Each derived dataset: its asset key, its URN on its physical platform, its declared sources, and any standing downgrade rules, each with an owner and a reason. | one derived dataset over a local sqlite file | Settings `datasets`; `examples/warehouse_source/dagster_home/components/propagation/component.yaml:15`, `:50` | `built` |
+| 2 | Derived assets that declare their column lineage and schema. A column with no declared lineage takes the table's ceiling. | a derived asset of the example's own that declares both | `examples/warehouse_source/dagster_home/derived.py:86`, `:93` | `built` |
+| 3 | The policy's dimensions document, mounted where the setting or its environment variable names. | a stand-in document beside the example | Settings `classification.dimensions_file` | `built` |
+| 4 | The catalog server and its token. | nothing; the catalog key is left out, so nothing is sent | Settings `catalog.*`; `examples/warehouse_source/dagster_home/components/propagation/component.yaml:83` | `built` |
+| 5 | Turning the sensor on. It ships stopped. | stopped | Settings `default_status`; `examples/warehouse_source/dagster_home/components/propagation/component.yaml:102` | `built` |
+
 ## Settings and defaults
 
 | Setting | Default | What it does |
