@@ -36,7 +36,7 @@ Every row here is an element of Appendix 9, so each falls under dcra:A9.
 | R5 | ICAM (¶6): identity, credential and access management as one service family | dcra:A9 | Keycloak issues identities, the gateway verifies them, and Topaz decides access, as in R6 to R9. | `partial`, as rows R6 to R9. | `built` | rows R6 to R9 |
 | R6 | Authorization and access control (¶7): deciding and enforcing what an identity may do | dcra:A9 | The decision and information points above. | `different`: access control is an explicit grant of a relation on a dataset, not a rule evaluated over the subject's and the data's attributes. Labels exist but are not inputs to the decision. The relation is built; labels as a decision input are proposed. | `built` | rows R2, R3; invincible-agent `policy/classification/dimensions.yaml:1-12` |
 | R7 | Authentication (¶8): proving who is asking | dcra:A9 | The Keycloak realm issues tokens. The gateway verifies them against JWKS or a static key, checking issuer and audience. | `close` | `built` | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`; dag-tools `dag_tools/central_gateway/identity.py:398-444` |
-| R8 | Digital certificates (¶9): issuing and managing certificates | dcra:A9 | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `none` | `not built` | invincible-agent `helm/invincible-agent/values.yaml:2268-2283` |
+| R8 | Digital certificates (¶9): issuing and managing certificates | dcra:A9 | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `none` | `built` | invincible-agent `helm/invincible-agent/values.yaml:2268-2283` |
 | R9 | Digital identity (¶10): what an identity is and carries | dcra:A9 | The Keycloak realm gives one authorization-id claim and two realm roles. Service clients carry a fixed authorization id. Group, persona and domain come from the directory, not the token. | `partial`: the identity carries no attributes. | `built` | invincible-agent `helm/invincible-agent/templates/keycloak-configmap.yaml:2`, `:240-255`, `:279-286` |
 
 ## Plane list
@@ -78,11 +78,11 @@ Each plane's id is in [the plane list](#plane-list).
 | Policy validated before any write | invincible-agent `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:48`, `:252-255` | none read | — | `built` |
 | Labels and validator-only rails | invincible-agent `policy/classification/dimensions.yaml:1-12`; `topaz-configmap.yaml:352-392` | cited in file: gov ruling 2026-11-06 | — | `built` |
 | Labels as an input to the decision | invincible-agent `policy/classification/dimensions.yaml:1-12`; `topaz-configmap.yaml:352-392` | cited in file: gov ruling 2026-11-06 | — | `proposed` |
-| No certificate service | invincible-agent `helm/invincible-agent/templates/` searched; `values.yaml:2268-2283` | none | — | `not built` |
+| No certificate service | invincible-agent `helm/invincible-agent/templates/` searched; `values.yaml:2268-2283` | none | — | `built` |
 | Graph, vector and RDF stores in the chart | invincible-agent `helm/invincible-agent/templates/infrastructure.yaml:124-128`, `:197-201`, `:287-291` | none read | — | `built` |
-| SDK vector client | SDK `interfaces.py:724`; `remote_clients.py:36-41`, `:58` | none | supplied by the SDK session | `not built` |
+| No SDK remote vector client | SDK `interfaces.py:724`; `remote_clients.py:36-41`, `:58` | none | supplied by the SDK session | `built` |
 | A gateway handler for the SDK graph client | SDK `interfaces.py:724`; `remote_clients.py:36-41`, `:58` | none | supplied by the SDK session | `proposed` |
-| No DCAT, no standard label form | both repositories searched | lane rule | — | `not built` |
+| No DCAT, no standard label form | both repositories searched | lane rule | — | `built` |
 
 ### Rows that carry no status
 

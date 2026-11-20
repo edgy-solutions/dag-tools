@@ -100,13 +100,13 @@ There are 18 edges among the fifteen services: 15 `built` and 3 `proposed`. S3 h
 | Ticket id minted per request | dag-tools `dag_tools/domain_broker/ticket_identity.py:197-219`; `dag_tools/domain_broker/main.py:1185` | AGENTS.md §4o | `test_two_resolves_of_one_urn_get_different_ticket_ids` | `built` |
 | Topaz `can_read = reader \| owner` | invincible-agent `helm/invincible-agent/templates/topaz-configmap.yaml:159-164` | cited in code: invincible-agent ADR-0025 (not read) | — | `built` |
 | Catalog search gated by domain, flag default off | invincible-agent `agent_fleet/datahub_wrapper/main.py:417`, `:428`, `:479` | cited in code: invincible-agent ADR-0025 (not read) | — | `built` |
-| No message broker in either repository | dag-tools `dag_tools/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `not built` |
+| No message broker in either repository | dag-tools `dag_tools/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `built` |
 | Mesh pub/sub phase | architect's instruction, relayed 2026-11-18 | none | — | `proposed` |
-| No DCAT output | both repositories searched for `dcat`; the only hits were unrelated words | lane rule | — | `not built` |
+| No DCAT output | both repositories searched for `dcat`; the only hits were unrelated words | lane rule | — | `built` |
 | Labels published as glossary terms | dag-tools `dag_tools/components/warehouse_source/component.py:213-243` | AGENTS.md §4m | `test_every_term_on_a_column_reaches_the_field_it_labels` | `built` |
 | Derived label is the join of its inputs | dag-tools `dag_tools/warehouse_source/dimensions.py:312`; `propagate.py:190-227` | AGENTS.md §4m, §4n | `test_composition_is_the_join_of_one_order_in_every_type` | `built` |
-| No retire or recall; `removed=False` only | dag-tools `dag_tools/components/warehouse_source/component.py:231`; `dag_tools/components/datahub_lineage/component.py:206` | none | — | `not built` |
-| No metrics library or collector | dag-tools `dag_tools/central_gateway/`, `dag_tools/domain_broker/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `not built` |
+| No retire or recall; `removed=False` only | dag-tools `dag_tools/components/warehouse_source/component.py:231`; `dag_tools/components/datahub_lineage/component.py:206` | none | — | `built` |
+| No metrics library or collector | dag-tools `dag_tools/central_gateway/`, `dag_tools/domain_broker/` searched; invincible-agent `helm/invincible-agent/templates/` searched | none | — | `built` |
 | Row-count check fails on an absent count | dag-tools `dag_tools/components/dlt_pipeline/row_count_check.py:56-78` | AGENTS.md §4p | `test_an_absent_rows_loaded_fails_the_check` | `built` |
 | Read audit coverage is `None` on an empty window | dag-tools `dag_tools/audit/reads.py:146-150` | AGENTS.md §4j | `test_coverage_is_none_when_nothing_was_read` | `built` |
 | Capability values | each element's name and description in this reference, read against NATO DCRA v2, Appendices 1 to 13, by title | none | — | `proposed` |

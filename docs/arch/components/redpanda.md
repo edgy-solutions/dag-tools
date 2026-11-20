@@ -8,8 +8,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **dag-tools has no message-broker client and no broker in its chart.** No component, resource or chart template names Redpanda or a Kafka client. `not built`
-2. **No invincible-agent chart template deploys a broker.** No template at the pin names Redpanda or Kafka. `not built`
+1. **dag-tools has no message-broker client and no broker in its chart.** No component, resource or chart template names Redpanda or a Kafka client. `built`
+2. **No invincible-agent chart template deploys a broker.** No template at the pin names Redpanda or Kafka. `built`
 3. **The mesh's only asynchronous hand-off is not a subscription.** The OTel API sync component sends a call plan to Restate one way, and Restate runs it as a durable workflow. Nothing subscribes to it, and nothing registers it as a published object (see [the DoD alignment](../alignment/dod-dmra.md), row S9). `built`
 4. **Invincible-agent names Redpanda as a planned successor to an interim mechanism in its projector.** Its plans and the projector's code mention it; they are cited by path only. Nothing at either pin builds it. `proposed`
 
@@ -19,7 +19,7 @@ None. Neither chart nor any component has a setting for it.
 
 ## Gaps
 
-- **Nothing in the mesh is wired to a publish and subscribe service** (findings 1 to 3). Neither chart deploys a broker and no dag-tools component speaks to one; the invincible-agent build plan records that a broker already runs beside the mesh for other tools. Delivery is a read a consumer asks for, not a record pushed to a subscriber, and no published object is registered for subscription under access control. Remedy: not on the roadmap. Status: `proposed`.
+- **Nothing in the mesh is wired to a publish and subscribe service** (findings 1 to 3). Neither chart deploys a broker and no dag-tools component speaks to one; the invincible-agent build plan records that a broker already runs beside the mesh for other tools. Delivery is a read a consumer asks for, not a record pushed to a subscriber, and no published object is registered for subscription under access control. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
@@ -45,7 +45,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Data path | none | — |
 | Plane | `infrastructure`: a message broker is a foundation service the other planes would run on | [NATO L1](../alignment/nato-dcra.md) |
 | Security role | none | — |
-| Services served | none at the pin; pub/sub is `not built`, and the mesh's pub/sub phase is `proposed` | [DoD S9](../alignment/dod-dmra.md) |
+| Services served | none at the pin; no pub/sub is built, and the mesh's pub/sub phase is `proposed` | [DoD S9](../alignment/dod-dmra.md) |
 
 ## Sources
 
@@ -53,7 +53,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No broker client or template in dag-tools | whole repo (no match for `redpanda`, any case; no Kafka client among the dependencies in `pyproject.toml`); `helm/dag-tools/templates/` | not stated | — | `not built` |
-| No broker template in invincible-agent | invincible-agent `templates/` (no match for `redpanda` or `kafka`, any case) | not stated | — | `not built` |
+| No broker client or template in dag-tools | whole repo (no match for `redpanda`, any case; no Kafka client among the dependencies in `pyproject.toml`); `helm/dag-tools/templates/` | not stated | — | `built` |
+| No broker template in invincible-agent | invincible-agent `templates/` (no match for `redpanda` or `kafka`, any case) | not stated | — | `built` |
 | One-way send to Restate | `dag_tools/components/otel_api_sync/component.py:58` | AGENTS.md §4a | see [the OTel API sync record](otel-api-sync.md) | `built` |
 | Planned in invincible-agent | invincible-agent `docs/plans/projector-build-plan.md`; `src/iagent/projector/__init__.py`; `src/iagent/projector/apply_loop.py` | not stated | — | `proposed` |
