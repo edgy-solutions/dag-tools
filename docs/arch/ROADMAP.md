@@ -82,7 +82,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 7. A receipt on graph and vector reads
 
-- **Gap:** [agent capabilities, findings 3 and 7](flows/agent-capabilities.md). Graph and vector reads carry no ticket, receipt or version, and the store sees the engine's credential, not the person's. `not built`
+- **Gap:** [agent capabilities, findings 3 and 7](flows/agent-capabilities.md). Graph and vector reads carry no ticket, receipt or version, and the store sees the engine's credential, not the person's. `built`
 - **Owner:** invincible-agent, whose engines hold the readers, and the SDK, whose result shape would have to carry the receipt.
 - **Remedy:** each reader returns, with its result, the person it read for, the decision it read under and a version of what it read. The version would use the dataset receipt's own fields (`as_of`, `as_of_source`, `as_of_unavailable`; dag-tools `dag_tools/cortex_data/client.py:23-32`). The person and the decision would need fields the dataset receipt does not have: it carries no principal, and its `allowed_columns` and `row_filters` are the narrowing a decision produced, not the decision. `proposed`
 - **Note:** the person is already on every read as provenance, but not on any receipt. The version would not appear for free: the table of version readers ships empty (row 5), so a receipt reusing those fields would say the version is unavailable until a reader exists for that store.
@@ -91,7 +91,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 8. Retire the SDK's remote graph client
 
-- **Gap:** [agent capabilities, finding 1](flows/agent-capabilities.md). The SDK ships a remote graph client that posts to a route nothing serves (supplied by the SDK's session). `not built`
+- **Gap:** [agent capabilities, finding 1](flows/agent-capabilities.md). The SDK ships a remote graph client that posts to a route nothing serves (supplied by the SDK's session). `built`
 - **What already exists:** in-process readers inside engines are what ships and is used today; the remote client was built after them, and has no production caller (supplied by the SDK's session). `built`
 - **Decision:** retire the client (the architect's ruling, 2026-11-18). It has no route and no production caller, and in-process readers are what ships. Before the ruling, the SDK had declined to build a server end without a scheduled consumer or to retire the client on its own (supplied by the SDK's session). `accepted`
 - **Owner:** the SDK and invincible-agent, each for its own part.
@@ -107,7 +107,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 10. Remove expired minted SQL accounts
 
-- **Gap:** [domain broker, finding 10](components/domain-broker.md). The ClickHouse users and Postgres roles the broker mints are refused once they expire, and are never dropped (`dag_tools/domain_broker/sql_minting.py:22-33`). `not built`
+- **Gap:** [domain broker, finding 10](components/domain-broker.md). The ClickHouse users and Postgres roles the broker mints are refused once they expire, and are never dropped (`dag_tools/domain_broker/sql_minting.py:22-33`). `built`
 - **Owner:** dag-tools.
 - **Remedy:** a sweep drops minted accounts whose lifetime has passed, using the identity that created them. A Postgres policy names its role, so the sweep drops the policy before the role. `proposed`
 - **Issue:** not filed.
@@ -177,7 +177,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 19. The probes code location in the chart
 
-- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`). Neither chart has an entry for it. `built`; the absence `not built`
+- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`). Neither chart has an entry for it. `built`; the absence `built`
 - **What already exists:** the location, which loads empty when the probes directory variable is unset (`definitions.py:56-57`), and the status check that reports it absent from a workspace. `built`
 - **Owner:** dag-tools.
 - **Remedy:** the dag-tools chart offers the probes code location as an entry a deployment turns on, off by default. `proposed`
@@ -195,10 +195,10 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | SQL reads are the whole table, eagerly | dag-tools `dag_tools/cortex_data/client.py:318`, `:323`, `:352-353` | not stated | no test reaches either call | `built` |
 | No version reader ships | dag-tools `dag_tools/domain_broker/ticket_identity.py:110` | dag-tools AGENTS.md §4o | `test_no_as_of_reader_ships_by_default` | `built` |
 | Engine read checks default off in code and chart | invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944` | cited in chart: invincible-agent ADR-0025 (not read) | `test_the_control_with_auth_OFF_both_paths_keep_EVERY_chunk` | `built` |
-| Graph and vector reads carry no ticket, receipt or version | invincible-agent `agent_fleet/ontology_service/mesh_graph.py`, `agent_fleet/utils/mesh_vectors.py`: no match at the pin | not stated | — | `not built` |
-| The remote graph client has no server end | SDK `remote_clients.py:40-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `not built` (server end) |
+| Graph and vector reads carry no ticket, receipt or version | invincible-agent `agent_fleet/ontology_service/mesh_graph.py`, `agent_fleet/utils/mesh_vectors.py`: no match at the pin | not stated | — | `built` |
+| The remote graph client has no server end | SDK `remote_clients.py:40-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (server end) |
 | Placeholder datasets; the older path's fixed token and lifetime | dag-tools `dag_tools/domain_broker/main.py:42`, `:802-818`, `:1273-1360` | not stated | no test of the SQL branch | `built` |
-| Minted SQL accounts are never removed | dag-tools `dag_tools/domain_broker/sql_minting.py:22-33` | not stated | — | `not built` |
+| Minted SQL accounts are never removed | dag-tools `dag_tools/domain_broker/sql_minting.py:22-33` | not stated | — | `built` |
 | An unsent check payload; a stale warning | dag-tools `dag_tools/central_gateway/main.py:325`, `subject_gauge.py:310-316` | not stated | — | `built` |
 | The client's mesh token as a SQL password | dag-tools `dag_tools/cortex_data/client.py:315`, `:339` | not stated | no test | `built` |
 | Restate ports and registration check no caller | dag-tools `dag_tools/restate_handlers/serve.py:72`, `:75-112`; `helm/dag-tools/templates/restate-server.yaml:47-54` | not stated | no test | `built` |
@@ -209,6 +209,6 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Labels published as metadata | [need to know, finding 3](flows/need-to-know.md) | cited in code: invincible-agent ADR-0064 (not read) | `test_the_published_label_set_says_which_document_ratified_it` | `built` |
 | Labels as a decision input | [need to know, finding 3](flows/need-to-know.md) | cited in code: invincible-agent ADR-0064 (not read) | `test_the_published_label_set_says_which_document_ratified_it` | `proposed` |
 | Probes code location built | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
-| Probes code location in neither chart | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `not built` |
+| Probes code location in neither chart | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
 | The nineteen remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |

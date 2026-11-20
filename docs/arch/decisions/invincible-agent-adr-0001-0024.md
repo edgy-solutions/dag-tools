@@ -43,7 +43,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A platform-minted term and a domain-owned term need different rules for who may add them.
 - **Stated status.** Accepted.
 - **Where else.** ADR-0007.
-- **Status.** Authority marker on registered predicates: `built`. Rejection of unknown domain URIs at the proposal stage: not established. Prefix registry file named by the ADR: `not built`.
+- **Status.** Authority marker on registered predicates: `built`. Rejection of unknown domain URIs at the proposal stage: not established. Prefix registry file named by the ADR: `proposed`.
 
 ## ADR-0006 DataHub for proposals, Neo4j for runtime routing
 
@@ -51,7 +51,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A half-registered verb is unroutable, because reads need both stores to agree.
 - **Stated status.** Accepted, amended by two addenda in June.
 - **Where else.** ADR-0004, ADR-0007.
-- **Status.** Routing reads Neo4j only: `built`. Registration saga with bounded retry, read-back probe and compensating deletes: `built`. Drift-reconciliation asset: `not built`; the ADR defers it. Sole-writer claim: `accepted`, no standing guard found. Source-declaration rule: `built`, with no guard that runs without a database: the coverage guard test_substrate_covers_routing_via_v02_saga_edges (tests/routing/test_substrate_invariants.py:914) holds it, and needs a live graph store.
+- **Status.** Routing reads Neo4j only: `built`. Registration saga with bounded retry, read-back probe and compensating deletes: `built`. Drift-reconciliation asset: `proposed`; the ADR defers it. Sole-writer claim: `accepted`, no standing guard found. Source-declaration rule: `built`, with no guard that runs without a database: the coverage guard test_substrate_covers_routing_via_v02_saga_edges (tests/routing/test_substrate_invariants.py:914) holds it, and needs a live graph store.
 
 ## ADR-0007 Survey existing standards before minting a term
 
@@ -115,7 +115,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A hand-kept list in a prompt drifts from the catalog and the model then trusts the stale copy.
 - **Stated status.** Accepted. Open items remain: a lint for hard-coded URNs, an audit of verb descriptions, and a register-time platform check.
 - **Where else.** [domain-broker component](../components/domain-broker.md); [ticket identity and the broker's cached coordinates](dag-tools-s4n-s4o-s4k1.md).
-- **Status.** Rule 1 `built` (the URN hint block was removed; no enumerated catalog URNs remain in the agent entry points, and the scheme prefix survives in a parser at data_analyst/main.py:428-430, which ADR-0014 permits at :105), no test. Rule 2 `built` as a configuration shape (two entries), no test; the deployed copy is not established. Rule 3 `accepted` (a review rule, no code). The lint and the register-time check: `not built`.
+- **Status.** Rule 1 `built` (the URN hint block was removed; no enumerated catalog URNs remain in the agent entry points, and the scheme prefix survives in a parser at data_analyst/main.py:428-430, which ADR-0014 permits at :105), no test. Rule 2 `built` as a configuration shape (two entries), no test; the deployed copy is not established. Rule 3 `accepted` (a review rule, no code). The lint and the register-time check: `proposed`.
 
 ## ADR-0015 Router regression testing at predicate search
 
@@ -139,7 +139,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A fixed list of chart types kept in the presentation agent could not follow what each front end can actually render.
 - **Stated status.** Proposed, with a later amendment ruling the mechanism. It supersedes ADR-0012.
 - **Where else.** ADR-0012, ADR-0013, ADR-0015, ADR-0004.
-- **Status.** Mixed. Per-verb registrations: `built`. Admission, menu-scoped selection, version stamp and labelled default menu: `built`. Retiring the generic fallback verb: `proposed`. Making component exports the single home of the contract and dissolving the hand-kept capability table: `not built` (the table still exists). Persisting decision provenance and re-resolving it for other consumers: not established.
+- **Status.** Mixed. Per-verb registrations: `built`. Admission, menu-scoped selection, version stamp and labelled default menu: `built`. Retiring the generic fallback verb: `proposed`. Making component exports the single home of the contract and dissolving the hand-kept capability table: `proposed` (the table still exists). Persisting decision provenance and re-resolving it for other consumers: not established.
 
 ## ADR-0018 Symmetric subject-predicate routing
 
@@ -187,7 +187,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Answers must persist with their provenance and freshness, and the canvas needs a fast, offline-capable view.
 - **Stated status.** Proposed.
 - **Where else.** ADR-0024, ADR-0017.
-- **Status.** Mixed. Node write with idempotent merge, valid-as-of and producer edge: `built`. Projector and Postgres read table: `built`. The read-sync service deployment template exists; its wiring to the canvas is not established. The four standards edges: `not built` (reserved by the ADR). Collaborative edits and the canvas metaphor: `accepted` as deferred.
+- **Status.** Mixed. Node write with idempotent merge, valid-as-of and producer edge: `built`. Projector and Postgres read table: `built`. The read-sync service deployment template exists; its wiring to the canvas is not established. The four standards edges: `proposed` (reserved by the ADR). Collaborative edits and the canvas metaphor: `accepted` as deferred.
 
 ## ADR-0024 Standards composition and publish/promotion
 
@@ -229,11 +229,11 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0003 Per-class model variables: phases 2 and 3 | mem `:532-538` | ADR-0003 | no test | `accepted` |
 | ADR-0004 Predicate-graph path lookup | ont `:4296-4315`, ont `:4320`, ont `:4353-4354`, ont `:4538-4575` | ADR-0004 | test_find_tool_happy_path (:156), test_find_path_happy_two_hop (:240), test_find_path_validates_max_hops_range (:295) | Step C: `built`. Steps A, B, D, E and F: not established |
 | ADR-0005 Platform and domain authority: authority marker | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | `built` |
-| ADR-0005 Platform and domain authority: prefix registry file | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | `not built` |
+| ADR-0005 Platform and domain authority: prefix registry file | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | `proposed` |
 | ADR-0006 Neo4j routing, saga writes: routing and saga | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `built` |
 | ADR-0006 Neo4j routing, saga writes: source-declaration rule, live-substrate guard only | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `built` |
 | ADR-0006 Neo4j routing, saga writes: sole-writer claim | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `accepted` |
-| ADR-0006 Neo4j routing, saga writes: reconcile asset | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `not built` |
+| ADR-0006 Neo4j routing, saga writes: reconcile asset | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `proposed` |
 | ADR-0007 Survey before minting: survey rule | reg `:18-29` | ADR-0007 | no test | `accepted` |
 | ADR-0007 Survey before minting: retroactive mappings | reg `:18-29` | ADR-0007 | no test | `proposed` |
 | ADR-0008 Generalist fallback policy | sup `:70-74`, sup `:1861-1885`, sup `:2765-2893`, sup `:2998`, ana `:1107-1130` | ADR-0008 | test_matched_returns_predicate_dict (:180), test_no_match_returns_none (:228), test_http_503_returns_infra_error (:291), test_fallback_payload_for_no_match (:372), test_fallback_payload_for_low_confidence (:405), test_fallback_emits_telemetry_log_line (:435), test_threshold_default_loaded_from_env (:464) | Fallback core: `built`. Operator doc: not established |
@@ -243,14 +243,14 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0013 capability tools per change | — | ADR-0013 | no test | `proposed` |
 | ADR-0014 no URN hints; broker local assets: rules 1 and 2 | brk `:72-86`; ana `:906` | ADR-0014 | no test | `built` |
 | ADR-0014 no URN hints; broker local assets: rule 3 | brk `:72-86`; ana `:906` | ADR-0014 | no test | `accepted` |
-| ADR-0014 no URN hints; broker local assets: lint and register-time check | brk `:72-86`; ana `:906` | ADR-0014 | no test | `not built` |
+| ADR-0014 no URN hints; broker local assets: lint and register-time check | brk `:72-86`; ana `:906` | ADR-0014 | no test | `proposed` |
 | ADR-0015 routing decision audit log: phase 1 | ont `:151-205`, `:4405-4515` | ADR-0015 | no test (the only test touching the emit replaces it) | `built` |
 | ADR-0015 routing decision audit log: phase 2 | ont `:151-205`, `:4405-4515` | ADR-0015 | no test (the only test touching the emit replaces it) | `accepted` |
 | ADR-0016 infer off on memory writes: tier 0 | ana `:1543-1552`; nex `:1076-1084` | ADR-0016 | no test | `built` |
 | ADR-0016 infer off on memory writes: the rest | ana `:1543-1552`; nex `:1076-1084` | ADR-0016 | no test | `accepted` |
 | ADR-0017 per-verb presentation registration: registry | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | `built` |
 | ADR-0017 per-verb presentation registration: fallback retirement | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | `proposed` |
-| ADR-0017 per-verb presentation registration: single component home | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | `not built` |
+| ADR-0017 per-verb presentation registration: single component home | ana `:3642-3980`; mrg `:931`; adm `:188`, `:260`; cap `:54`, `:205`, `:265`, `:413` | ADR-0017 | test_an_unknown_archetype_is_refused (:59), test_a_registered_caller_selects_from_ITS_OWN_menu (:47), test_the_registration_version_is_stamped_into_the_decision (:54), test_an_UNREGISTERED_caller_gets_the_default_menu_and_it_is_LABELLED (:63), test_registered_but_unrenderable_is_DISTINCT_from_unregistered (:78) | `proposed` |
 | ADR-0018 classify route and compat verbs | ont `:3730`, `:6660`, `:6825-6975`; sup `:387`, `:703` | ADR-0018 | test_routing_decision (:830, live service) | `built` |
 | ADR-0019 contracts A and B in routing: contract A | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | `built` |
 | ADR-0019 contracts A and B in routing: contract B, two routes only | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | `built` |
@@ -261,7 +261,7 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0022 owned wrapper, hand-kept type maps: wrapper | dhw `:541`; etm `:64` | ADR-0022 | test_engine_a_table_inverts_datahub_to_idp (:115) | `built` |
 | ADR-0022 owned wrapper, hand-kept type maps: porting tasks | dhw `:541`; etm `:64` | ADR-0022 | test_engine_a_table_inverts_datahub_to_idp (:115) | `proposed` |
 | ADR-0023 artifact node, projector, read table: write and projection | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | `built` |
-| ADR-0023 artifact node, projector, read table: standards edges | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | `not built` |
+| ADR-0023 artifact node, projector, read table: standards edges | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | `proposed` |
 | ADR-0023 artifact node, projector, read table: collaborative edits, deferred | wtr `:488-495`, `:572-590`; prj `:535`; sql `:16`; elc `:32` | ADR-0023 | test_every_property_the_projector_reads_is_one_the_writer_writes (:90) | `accepted` |
 | ADR-0024 standards reserved; publish rules | — | ADR-0024 | no test | `proposed` |
 

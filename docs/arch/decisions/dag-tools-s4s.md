@@ -177,8 +177,8 @@ One component instance turns bundles of documents into one Lance table per mappe
 
 - **Decision.** A bulk benchmark for each route prints rows per second and asserts the 20,000 rows per second target only behind an environment gate. The target is not to be reached by loosening a coercion rule.
 - **Why.** The census reports both routes below the target on a development machine, with most of the time spent in per-value evaluation, and names a compiled reader as the next step.
-- **Where else.** The census figures have no recorded run, so the benchmark is `built`; the target is `not built`.
-- **Status.** `built` for the benchmark; the target `not built`.
+- **Where else.** The census figures have no recorded run, so the benchmark is `built`; whether the target is met is not established.
+- **Status.** `built` for the benchmark. Whether the target is met is listed as not established.
 
 ### §4s.29 The mapping is checked at the load; the source and destination only in a run
 
@@ -210,6 +210,10 @@ One component instance turns bundles of documents into one Lance table per mappe
 - **Why.** This is the same floor discipline as §4j. The census reports that the example loads and materializes on 1.10.19 and on 1.13.1.
 - **Where else.** The default test suite does not run on 1.10.19.
 - **Status.** `built`.
+
+## Not established
+
+- Whether the §4s.28 throughput target is met. The census reports both routes below it on a development machine with no recorded run, and continuous integration records rates without asserting the target ([the built-to-measured list](../built-to-measured.md), B1).
 
 ## Sources
 
@@ -245,7 +249,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4s.26 member table | `dag_tools/documents/` | bullet 26 | tf `:567`, `:594`, `:692` | `built` |
 | §4s.27 profiler quotes JSON keys | `dag_tools/documents/profiler.py` | bullet 27 | tj `:522` | `built` |
 | §4s.28 throughput benchmark | `dag_tools_tests/test_documents_engine.py:942`; `dag_tools_tests/test_documents_json.py:695` | bullet 28 | te: `test_throughput_on_a_bulk_manifest` (`:942`); tj: `test_json_throughput_on_a_bulk_manifest` (`:695`); the target is asserted only behind an environment gate | `built` |
-| §4s.28 throughput target met | `dag_tools_tests/test_documents_engine.py:942`; `dag_tools_tests/test_documents_json.py:695` | bullet 28 | te: `test_throughput_on_a_bulk_manifest` (`:942`); tj: `test_json_throughput_on_a_bulk_manifest` (`:695`); the target is asserted only behind an environment gate | `not built` |
+| §4s.28 throughput target asserted only behind an environment gate | `dag_tools_tests/test_documents_engine.py:942`; `dag_tools_tests/test_documents_json.py:695` | bullet 28 | te: `test_throughput_on_a_bulk_manifest` (`:942`); tj: `test_json_throughput_on_a_bulk_manifest` (`:695`); the target is asserted only behind an environment gate | `built` |
 | §4s.29 mapping at the load | dt `component.py` | bullet 29 | tc: `test_an_unknown_key_in_source_fails_the_load` (`:426`), `test_a_mapping_with_a_validation_problem_fails_the_load` (`:436`), `test_a_missing_mapping_file_fails_the_load_naming_the_file` (`:442`); tm: `test_an_unknown_type_is_refused` (`:62`), `test_an_unknown_lookup_index_is_refused` (`:68`), `test_several_problems_are_all_reported_in_one_error` (`:74`); no test that the source and destination are not contacted at the load | `built` |
 | §4s.30 partitions are bundles | dt `component.py:82`, `:91-101` | bullet 30 | tc `:168`, `:207`, `test_a_tag_that_disagrees_with_the_partition_fails_the_run` (`:215`), `test_two_bundle_keys_encoding_to_one_partition_fail_the_tick` (`:336`), `:353` | `built` |
 | §4s.31 sensor and schedule stopped | dt `schema.py:113-114`, `:140`; dt `component.py:444`, `:589` | bullet 31 | tc: `test_the_shipped_example_loads` (`:150`; the sensor is asserted stopped at `:156`), `test_a_cron_adds_a_stopped_maintenance_schedule` (`:160`), `test_the_tick_is_bounded_by_max_new_partitions_per_tick` (`:305`), `test_a_changed_bundle_of_a_known_partition_is_not_requested_again_by_the_sensor` (`:321`) | `built` |

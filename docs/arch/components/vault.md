@@ -8,8 +8,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **No code or chart in dag-tools refers to a Vault.** A search of the code and the chart at the pin finds no Vault client, address or template. `not built`
-2. **The invincible-agent chart deploys no Vault either.** In that chart's templates and default values, the matches for the word name an identity store inside that application, with its own lifetime setting, not a Vault service. A deployment's own values may name a host of that kind; that is outside what this record reads. That chart is read at its own pin. `not built`
+1. **No code or chart in dag-tools refers to a Vault.** A search of the code and the chart at the pin finds no Vault client, address or template. `built`
+2. **The invincible-agent chart deploys no Vault either.** In that chart's templates and default values, the matches for the word name an identity store inside that application, with its own lifetime setting, not a Vault service. A deployment's own values may name a host of that kind; that is outside what this record reads. That chart is read at its own pin. `built`
 3. **Secrets reach the gateway and the worker as environment variables from Kubernetes Secrets.** Each has an `envFrom` list in the chart values, which a deployment fills with its own Secrets or ConfigMaps. The gateway's policy-engine key and the worker's database and API credentials arrive this way. `built`
 4. **Certificates arrive as a mounted Secret, a ConfigMap or inline values, exactly one.** The chart's CA setting takes one of the three and refuses more. An init container merges the certificates with the public roots. The reasons are in AGENTS.md §4. `built`
 5. **A secret delivered as a variable changes only when the process restarts.** The worker treats absent credentials as terminal for that reason. A secret that must change in place has to arrive as a mounted file and be read from that file. The reasons are in AGENTS.md §4. `built`
@@ -40,7 +40,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 
-No connection is built at this pin: nothing in the code or the chart refers to this component. `not built`
+No connection is built at this pin: nothing in the code or the chart refers to this component. `built`
 
 ## Place in the mesh
 
@@ -60,8 +60,8 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No Vault in dag-tools | no match for the word under `dag_tools/` or `helm/` | not stated | — | `not built` |
-| No Vault in the invincible-agent chart | invincible-agent `helm/invincible-agent/templates/frontend.yaml:152-155`; `helm/invincible-agent/values.yaml:1890-1904` | not stated | — | `not built` |
+| No Vault in dag-tools | no match for the word under `dag_tools/` or `helm/` | not stated | — | `built` |
+| No Vault in the invincible-agent chart | invincible-agent `helm/invincible-agent/templates/frontend.yaml:152-155`; `helm/invincible-agent/values.yaml:1890-1904` | not stated | — | `built` |
 | Secrets through `envFrom` | `helm/dag-tools/templates/central-gateway.yaml:57-58`; `helm/dag-tools/templates/restate-worker.yaml:72-73`; `helm/dag-tools/values.yaml:111-113`, `:181`, `:225` | not stated | — | `built` |
 | Certificates: exactly one source, merged | `helm/dag-tools/templates/_helpers.tpl:125-153`; `helm/dag-tools/values.yaml:142-155` | AGENTS.md §4 | `test_chart_ca_certs.py`: `test_enabling_sets_both_env_vars`, `test_the_env_vars_name_the_MERGED_bundle_not_the_mounted_secret`, `test_the_merge_keeps_the_public_roots` | `built` |
 | Variable secrets change on restart; absent is terminal | `dag_tools/restate_handlers/db_retry.py` (`MissingCredentials`) | AGENTS.md §4 | `test_restate_db_retry.py` | `built` |

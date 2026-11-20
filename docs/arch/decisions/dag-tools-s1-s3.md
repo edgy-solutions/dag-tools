@@ -96,7 +96,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are u
 |---|---|---|---|---|
 | §1.1 no project names; generic defaults remain | `dag_tools/otel_api_sync/spec.py:224-226`; `dag_tools/components/otel_api_sync/component.py:99`; `dag_tools/components/dbt_project/component.py:129` | AGENTS.md §1; rulings.md 2026-11-04 | no test of absence | `built`, with exceptions |
 | §1.2 configurable resources and IO managers | `dag_tools/io_managers/arrow.py`, `cortex_io_manager.py`, `delta.py`, `duckdb.py`, `s3.py`, `sql.py`; `dag_tools/resources/arrow.py`, `duckdb.py`, `grist.py`, `s3.py`, `warehouse.py` | AGENTS.md §1 | — | `built` |
-| §1.2 arrow component binds no arguments | `dag_tools/components/s3_sensor/arrow_component.py:64-66`; `dag_tools/resources/arrow.py:10-81` | AGENTS.md §1 | no test | `not built` |
+| §1.2 arrow component binds no arguments | `dag_tools/components/s3_sensor/arrow_component.py:64-66`; `dag_tools/resources/arrow.py:10-81` | AGENTS.md §1 | no test | `built` |
 | §2.1 GA component API | `dag_tools/components/restate_api_sync/component.py:7-9`; no match for the deprecated package in `dag_tools/` or `pyproject.toml` | AGENTS.md §2 | — | `built` |
 | §2.2 fifteen triple-inheritance components | `dag_tools/components/*/component.py` (for example `restate_api_sync/component.py:17`, `restate_dlt_sync/component.py:347`, `warehouse_source/component.py:466`); `s3_sensor/*_component.py` | AGENTS.md §2 | — | `built` |
 | §2.2 dbt component subclasses the integration's own | `dag_tools/components/dbt_project/component.py:21` | AGENTS.md §2 | — | `built` |

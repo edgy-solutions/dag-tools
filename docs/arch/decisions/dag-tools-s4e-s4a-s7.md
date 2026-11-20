@@ -40,7 +40,7 @@ The class matrix groups every pinned asset into equivalence classes, so that a q
 - **Decision.** Each representative is marked as needing staged upstream data, not needing it, or unknown. An inventory that does not record upstream keys gives unknown, never "none needed". An upstream counts as needing staging when any pinned repository computes it, and "required" outranks "unknown". The matrix reports how many representatives can launch today: runnable and needing no staging. The mark changes no runnability and no launch.
 - **Why.** An inventory surveyed before the field existed would otherwise report that nothing needs staging, which reads as a clean result and is not one. Counting any repository that computes the upstream errs toward reporting too much.
 - **Where else.** The supported ways to stage data are in the [recipe](../../RECIPE.md), in its section on staging data. The staging pass is §4f.11 in [dag-tools-s4g1-s4g-s4f.md](dag-tools-s4g1-s4g-s4f.md).
-- **Status.** `built`. Generated seeder assets: `not built`.
+- **Status.** `built`. Generated seeder assets: `proposed`.
 
 ## §4d Qualification manifest
 
@@ -127,7 +127,7 @@ The registry is object storage holding the survey's inventories, per commit, and
 
 - **Decision.** Commands accept an output format option that defaults to JSON, with a table form for people.
 - **Why.** The recipe's rule is that every command is idempotent and emits machine-readable output.
-- **Status.** `built` for 12 of the 15 commands in the command module. The command that writes an image record and the two dlt development commands take no format option: `not built`. One test pins the JSON default, for the registry status command.
+- **Status.** `built` for 12 of the 15 commands in the command module. The command that writes an image record and the two dlt development commands take no format option: `built`. One test pins the JSON default, for the registry status command.
 
 ## §4a (inventory) Shared inventory contract
 
@@ -156,7 +156,7 @@ The asset inventory record is one schema used by two callers on different releas
 
 - **Decision.** The extractor never aborts because one asset is malformed. Field reads that fail record no value.
 - **Why.** The schema is mostly optional so that a missing field is safe; a crash on one asset would lose every other asset.
-- **Status.** Isolation per asset: `built`. A failing asset is logged as an error and skipped rather than recorded with empty fields. Field reads that fail return no value: `built`. The census adds a warning for each failed field read. Most field readers return no value without logging: `not built`.
+- **Status.** Isolation per asset: `built`. A failing asset is logged as an error and skipped rather than recorded with empty fields. Field reads that fail return no value: `built`. The census adds a warning for each failed field read. Most field readers return no value without logging: `built`.
 
 ## §7 Keeping the guide files in step
 
@@ -164,7 +164,7 @@ The asset inventory record is one schema used by two callers on different releas
 
 - **Decision.** Adding a new category of common tool updates, in the same change, `llms.txt` when the domain or intent changes, `.cursorrules` when the enforced stack rules change, and `README.md` to document the tools.
 - **Why.** These three files are what an agent or a developer reads first. A tool missing from them is a tool nobody is guided to use correctly.
-- **Status.** The three files exist at the pin: `built`. Nothing checks that they change together: `not built`.
+- **Status.** The three files exist at the pin: `built`. Nothing checks that they change together: `built`.
 
 ## Sources
 
@@ -177,7 +177,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4e.3 custom translator forms its own class | key `:209-225`, `:253-259`; bld `:319` | bullet 3 | tck: `test_custom_dbt_translator_segregates_assets_into_own_class` (`:182`), `test_custom_dbt_translator_detected_via_integration_libs` (`:102`), `test_custom_dbt_translator_only_attached_for_dbt_assets` (`:83`) | `built` |
 | §4e.4 runnability from tags | sel `:128-131`; key `:42-56` | bullet 4 | tcs: `test_classify_default_is_runnable` (`:23`), `test_classify_synthetic_required_via_tag` (`:30`), `test_classify_observe_only_via_tag` (`:37`), `test_classify_synthetic_wins_over_observe` (`:53`) | `built` |
 | §4e.5 staging need reported; unknown is not none | key `:59-72`, `:187`; stg `:36`; bld `:128-143`; isc `:98` | bullet 5 | tsn: `test_pre_v3_inventory_classifies_unknown_not_none_needed` (`:107`), `test_upstream_executable_in_any_repo_means_staging_required` (`:137`), `test_required_wins_over_unknown_when_both_apply` (`:164`), `test_launchable_now_counts_only_runnable_and_unstaged` (`:249`), `test_staging_need_does_not_change_runnability` (`:263`), `test_pick_representatives_without_index_yields_unknown` (`:291`) | `built` |
-| §4e.5 seeder assets | key `:59-72`, `:187`; stg `:36`; bld `:128-143`; isc `:98` | bullet 5 | tsn: `test_pre_v3_inventory_classifies_unknown_not_none_needed` (`:107`), `test_upstream_executable_in_any_repo_means_staging_required` (`:137`), `test_required_wins_over_unknown_when_both_apply` (`:164`), `test_launchable_now_counts_only_runnable_and_unstaged` (`:249`), `test_staging_need_does_not_change_runnability` (`:263`), `test_pick_representatives_without_index_yields_unknown` (`:291`) | `not built` |
+| §4e.5 seeder assets | key `:59-72`, `:187`; stg `:36`; bld `:128-143`; isc `:98` | bullet 5 | tsn: `test_pre_v3_inventory_classifies_unknown_not_none_needed` (`:107`), `test_upstream_executable_in_any_repo_means_staging_required` (`:137`), `test_required_wins_over_unknown_when_both_apply` (`:164`), `test_launchable_now_counts_only_runnable_and_unstaged` (`:249`), `test_staging_need_does_not_change_runnability` (`:263`), `test_pick_representatives_without_index_yields_unknown` (`:291`) | `proposed` |
 | §4d.1 pins frozen at creation | ini `:150-156`; bld `:62`; rss `:67` | AGENTS.md §4d, bullet 1 | tcb: `test_q1_reads_pinned_sha_not_latest` (`:244`) | `built` |
 | §4d.2 write-once manifest; explicit overwrite | ini `:77`, `:127-132`; rcl `:58`, `:89-96`, `:363-375`; qcl `:593-594`, `:645` | bullet 2 | tqi: `test_re_init_same_qual_id_raises` (`:172`), `test_allow_overwrite_bypasses_immutability` (`:187`); tqc (`:177-183`) | `built` |
 | §4d.3 Dagster family excluded | rsk `:39`, `:46`, `:67` | bullet 3 | tqr: `test_dagster_family_is_filtered_out` (`:28`), `test_lib_in_one_side_only_is_not_a_risk` (`:111`), `test_dbt_core_minor_bump_is_warning` (`:38`), `test_dbt_core_major_bump_is_major` (`:51`) | `built` |
@@ -190,11 +190,11 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4b.2 write-once artifacts | rcl `:58`, `:62`, `:80`, `:89-96`, `:102` | bullet 2 | trc: `test_storage_put_immutable_refuses_overwrite` (`:62`), `test_publish_build_is_immutable_for_same_sha` (`:124`), `test_publish_build_allow_overwrite_bypasses_immutability` (`:131`) | `built` |
 | §4b.3 pointer last | rcl `:231`, `:264-273` | bullet 3 | trc: `test_pointer_not_updated_when_artifact_write_fails` (`:143`) | `built` |
 | §4b.4 JSON by default: twelve of fifteen commands | qcl `:41`, `:180`, `:290`, `:387`, `:597`, `:787`, `:870`, `:997`, `:1098`, `:1217`, `:1295`, `:1398`, `:1455`; no option at `:235`, `:1618`, `:1657`; rcp `:61` | bullet 4 | tdc: `test_registry_status_json_default` (`:52`) | `built` |
-| §4b.4 JSON by default: three commands with no format option | qcl `:41`, `:180`, `:290`, `:387`, `:597`, `:787`, `:870`, `:997`, `:1098`, `:1217`, `:1295`, `:1398`, `:1455`; no option at `:235`, `:1618`, `:1657`; rcp `:61` | bullet 4 | tdc: `test_registry_status_json_default` (`:52`) | `not built` |
+| §4b.4 JSON by default: three commands with no format option | qcl `:41`, `:180`, `:290`, `:387`, `:597`, `:787`, `:870`, `:997`, `:1098`, `:1217`, `:1295`, `:1398`, `:1455`; no option at `:235`, `:1618`, `:1657`; rcp `:61` | bullet 4 | tdc: `test_registry_status_json_default` (`:52`) | `built` |
 | §4a.1 one schema, one extractor, two callers | isc `:47`; dbm `:445`, `:656-661`, `:847`; isp `:42-44` | AGENTS.md §4a (inventory), bullet 1 | none found | `built`; cross-version reading not established |
 | §4a.2 additive only | isc `:33`, `:57-59` | bullet 2 | tin: `test_schema_version_is_stamped_by_default` (`:28`), `test_schema_tolerates_unknown_fields` (`:33`) | `built` |
 | §4a.3 class-name registry, base-class walk, warned fallback | cls `:48`, `:127-130`, `:142`, `:152-156` | bullet 3 | tin: `test_classify_known_fqn_string` (`:65`), `test_classify_walks_mro_for_custom_subclass` (`:75`), `test_classify_substring_fallback_logs_warning` (`:90`) | `built` |
 | §4a.4 soft failure | ext `:58-70`, `:93`, `:241-247` | bullet 4 | tin: `test_extract_records_soft_fails_on_broken_spec` (`:174`) | `built` |
-| §4a.4 per-field warning | ext `:58-70`, `:93`, `:241-247` | bullet 4 | tin: `test_extract_records_soft_fails_on_broken_spec` (`:174`) | `not built` |
+| §4a.4 most field readers log no warning | ext `:58-70`, `:93`, `:241-247` | bullet 4 | tin: `test_extract_records_soft_fails_on_broken_spec` (`:174`) | `built` |
 | §7.1 three files together | `llms.txt`, `.cursorrules`, `README.md` | AGENTS.md §7 | none found | `built` |
-| §7.1 a check that the three move together | `llms.txt`, `.cursorrules`, `README.md` | AGENTS.md §7 | none found | `not built` |
+| §7.1 no check that the three move together | `llms.txt`, `.cursorrules`, `README.md` | AGENTS.md §7 | none found | `built` |

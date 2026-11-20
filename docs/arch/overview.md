@@ -37,24 +37,24 @@ The services are the fifteen of the DoD data-mesh reference, set against the mes
 | S1 Unique identifiers | `built` | [DataHub](components/datahub.md), [DataHub lineage](components/datahub-lineage.md), [domain broker](components/domain-broker.md), [mesh data client](components/mesh-data-client.md) |
 | S2 Semantic services | `built` | none; the alignment record cites an invincible-agent ontology service and the identifier rules of contract mapping |
 | S3 Federated catalog | `built` | [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [Grist ingest](components/grist-ingest.md), [warehouse source](components/warehouse-source.md) |
-| S3 Federated catalog: a standard catalog form | `not built` | none |
+| S3 Federated catalog: no standard catalog form | `built` | none |
 | S4 Profiles and lineage | `built` | [Dagster](components/dagster.md), [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [warehouse source](components/warehouse-source.md) |
 | S5 Policy access control | `built` | [central gateway](components/central-gateway.md), which enforces the policy engine's answer |
 | S6 Policy administration | `built` | none; the alignment record cites invincible-agent's policy validator and seed job |
 | S7 Data exchange | `built` | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md), [mesh data client](components/mesh-data-client.md), [Keycloak](components/keycloak.md), [Topaz](components/topaz.md), [MinIO](components/minio.md), [dlt pipeline](components/dlt-pipeline.md), [S3 sensor](components/s3-sensor.md), [Grist](components/grist.md), [JupyterHub](components/jupyterhub.md), and the Restate [server](components/restate-server.md), [worker](components/restate-worker.md), [API sync](components/restate-api-sync.md) and [dlt sync](components/restate-dlt-sync.md) |
 | S8 Data product search | `built` | none; the alignment record cites invincible-agent's catalog wrapper |
-| S9 Pub/sub | `not built` | none |
+| S9 Pub/sub: no broker or client | `built` | none |
 | S9 Pub/sub: the planned phase | `proposed` | [Redpanda](components/redpanda.md) |
 | S10 Performance analytics | `built` | [read audit](components/read-audit.md), [tagged warehouse](components/tagged-warehouse.md), [Dagster](components/dagster.md), [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
 | S11 Life cycle: origin and history | `built` | [DataHub lineage](components/datahub-lineage.md) |
-| S11 Life cycle: retire and recall | `not built` | none |
+| S11 Life cycle: no retire or recall | `built` | none |
 | S12 Classification: labels as published metadata | `built` | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
 | S12 Classification: labels as a decision input | `proposed` | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
-| S12 Classification: a standard label form | `not built` | none |
+| S12 Classification: no standard label form | `built` | none |
 | S13 Quality | `built` | [contract mapping](components/contract-mapping.md), [Dagster](components/dagster.md), [dbt](components/dbt.md), [dlt pipeline](components/dlt-pipeline.md), [document tables](components/document-tables.md), [the SystemLink source](components/systemlink-source.md) |
 | S14 Mediation | `built` | [contract mapping](components/contract-mapping.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [OTel API sync](components/otel-api-sync.md), [Restate worker](components/restate-worker.md) |
 | S15 Instrumentation: probes | `built` | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
-| S15 Instrumentation: metrics and tracing | `not built` | none |
+| S15 Instrumentation: no metrics or tracing | `built` | none |
 
 [Hasura](components/hasura.md), [Superset](components/superset.md) and [Vault](components/vault.md) name none of the fifteen at the pin.
 

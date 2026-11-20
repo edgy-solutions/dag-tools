@@ -81,12 +81,12 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 | ICAM: authentication services (¶8) | Keycloak; gateway token verification | Tokens are issued by the realm and verified at the gateway against JWKS or a static key, with the issuer and audience checked. | `built` | `keycloak.yaml:38`; `identity.py:398-444` | — |
 | ICAM: digital identity services (¶10) | Keycloak realm | One authorization-id claim. Realm roles are `user` and `admin`. Service clients carry a hardcoded authorization id. | `built` | `keycloak-configmap.yaml:2`, `:240-255`, `:279-286` | No group, persona or domain claim; those come from the directory. |
 | ICAM: authorization and access control services (¶7) | Topaz directory and policy | The decision and information points above. | `built` | as above | Access control is relationship-based on explicit grants. It is not attribute-based over security labels. |
-| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `not built` | invincible-agent `values.yaml:2268-2283` | Recorded as a gap. |
+| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `built` | invincible-agent `values.yaml:2268-2283` | Recorded as a gap. |
 
 ## Gaps
 
 - **Security labels in the standard metadata form:** not built. Labels are published in the mesh's own form (finding 3); no standard metadata form was found. Status: `built`.
-- **Labels as a decision input:** proposed. The decision reads no label. The rails that would carry clearances are written down and empty (finding 3). The access model is an explicit per-dataset relation, and it is recorded as such and not relabelled. Status: `proposed`.
+- **Labels are not a decision input.** The decision reads no label. The rails that would carry clearances are written down and empty (finding 3). The access model is an explicit per-dataset relation, and it is recorded as such and not relabelled. The remedy is [roadmap row 18](../ROADMAP.md), proposed. Status: `built`.
 - **Narrowing produced by policy:** narrowing is built at every hop, and no deployed policy produces it (finding 2). Status: `built`.
 - **Object-store narrowing:** limited to a prefix. The minter's own docstring says it takes the decision's narrowing and ignores it. Remedy: [roadmap row 2](../ROADMAP.md). Status: `built`.
 - **Backends with no minter:** they return the producer's credential. Remedy: [roadmap row 3](../ROADMAP.md). Status: `built`.
