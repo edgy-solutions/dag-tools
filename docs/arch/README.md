@@ -78,51 +78,66 @@ Each component record's Plane row names exactly one plane, in backticks, and the
 
 Each component record carries an id beginning `CO-` in its title line, and each flow record an id beginning `FL-`. Other records refer to a component or a flow by that id. An id does not change once it is pushed.
 
-A component record's "Connections" table has one row per connection, read from that record's side. The first cell is the other party's id, and it holds that id and nothing else. A party with no record of its own has an id beginning `XE-` (an outside system or element), and a person has one beginning `RL-` (a role). Both are defined once, in the table below. An `XE-` id names a kind of party, not one instance of it: two rows naming `XE-POSTGRES` may mean two different databases. Anything that qualifies the party goes in What passes. The direction cell holds one of four words: `calls` (this side sends the request), `is called by` (the other side sends it), and `reads` or `writes` (this side moves data out of, or into, a party that keeps it). A party that keeps data draws each such row from its own side as `is called by`. When a caller can reach any store of a kind and the records do not say which one a deployment runs, the caller draws the store by its `XE-` id, and no store record lists that caller.
+A component record's "Connections" table has one row per connection, read from that record's side. The first cell is the other party's id, and it holds that id and nothing else. A party with no record of its own has an id beginning `XE-` (an outside system or element), and a person has one beginning `RL-` (a role). Both are declared once, under [Element ids](#element-ids). An `XE-` id names a kind of party, not one instance of it: two rows naming `XE-POSTGRES` may mean two different databases. Anything that qualifies the party goes in What passes. The direction cell holds one of four words: `calls` (this side sends the request), `is called by` (the other side sends it), and `reads` or `writes` (this side moves data out of, or into, a party that keeps it). A party that keeps data draws each such row from its own side as `is called by`. When a caller can reach any store of a kind and the records do not say which one a deployment runs, the caller draws the store by its `XE-` id, and no store record lists that caller.
 
 A flow record's step table numbers its steps and names the parties of each step in the same way. The Actor and Target cells each hold one id.
 
-| Id | Names |
-|---|---|
-| `XE-AGENT-ENGINE` | an agent engine in the invincible-agent chart |
-| `XE-AGENT-READER` | an agent engine's in-process graph or vector reader |
-| `XE-CALLBACK-API` | a callback endpoint that a durable handler notifies |
-| `XE-CLASSIFICATION-DOC` | the classification document a deployment mounts |
-| `XE-CLICKHOUSE` | a ClickHouse database |
-| `XE-CODE-LOCATION` | a Dagster code-location server |
-| `XE-CONSUMER` | a consumer of a dataset: a notebook, an agent, an asset or SDK code |
-| `XE-CONTRACT-FILE` | a contract file |
-| `XE-CONTRACT-SERVICE` | an endpoint that serves contracts |
-| `XE-DAGSTER-STORAGE` | the Postgres database Dagster keeps runs and events in |
-| `XE-DATASET-BACKEND` | the store that holds a dataset, any one of `XE-OBJECT-STORE`, `XE-POSTGRES` or `XE-CLICKHOUSE`; used where a step does not depend on which |
-| `XE-DBT-PROJECT-DIR` | a dbt project directory |
-| `XE-DEFINITIONS-MODULE` | a deployment's Dagster definitions module |
-| `XE-DLT-DESTINATION` | the destination a dlt pipeline loads into |
-| `XE-DUCKDB-RESOURCE` | a DuckDB resource in a code location |
-| `XE-HISTORY-EXPORT` | an exported file of warehouse query history |
-| `XE-HISTORY-RESOURCE` | a resource that reads warehouse query history |
-| `XE-IO-MANAGER` | an IO manager in a code location |
-| `XE-KNOWLEDGE-STORE` | a graph or vector store |
-| `XE-LANCE-STORE` | a Lance destination store |
-| `XE-OBJECT-STORE` | an S3-compatible object store a deployment names; `CO-MINIO` is one |
-| `XE-ODATA-SERVICE` | a source system's OData service |
-| `XE-POSTGRES` | a Postgres database that holds a dataset |
-| `XE-PROJECTOR` | the invincible-agent projector |
-| `XE-QUAL-TOOLING` | the qualification tooling, including its registry client |
-| `XE-ROUTE-CACHE` | the gateway's in-process table of broker routes |
-| `XE-RUN-WINDOW-EXPORT` | an exported file of run windows |
-| `XE-SDK` | the SDK |
-| `XE-SOURCE-DB` | a source database a pipeline reads |
-| `XE-SQL-DATABASE` | a SQL database |
-| `XE-SQL-WAREHOUSE` | a deployment's SQL warehouse |
-| `XE-STAGING-DB` | a staging SQL database |
-| `XE-SYSTEMLINK-API` | a test-results source's HTTP API |
-| `XE-TARGET-API` | the API a durable handler sends rows to |
-| `XE-TOKEN-DELIVERY` | a mechanism that delivers a user's token to a notebook |
-| `XE-TOKEN-SERVICE` | an object store's token service |
-| `XE-VOLUME` | a persistent volume |
-| `RL-OPERATOR` | a person operating a deployment |
-| `RL-PERSON` | a person on whose behalf data is read |
+## Element ids
+
+Each id that names a party with no record of its own is declared here once. Kind is `outside element` for an `XE-` id and `role` for an `RL-` id.
+
+| Id | Kind | What it is |
+|---|---|---|
+| `XE-AGENT-ENGINE` | outside element | an agent engine in the invincible-agent chart |
+| `XE-AGENT-READER` | outside element | an agent engine's in-process graph or vector reader |
+| `XE-CALLBACK-API` | outside element | a callback endpoint that a durable handler notifies |
+| `XE-CI` | outside element | the dag-tools repository's continuous integration workflows |
+| `XE-CLASSIFICATION-DOC` | outside element | the classification document a deployment mounts |
+| `XE-CLICKHOUSE` | outside element | a ClickHouse database |
+| `XE-CODE-LOCATION` | outside element | a Dagster code-location server |
+| `XE-CONSUMER` | outside element | a consumer of a dataset: a notebook, an agent, an asset or SDK code |
+| `XE-CONTRACT-FILE` | outside element | a contract file |
+| `XE-CONTRACT-SERVICE` | outside element | an endpoint that serves contracts |
+| `XE-DAGSTER-STORAGE` | outside element | the Postgres database Dagster keeps runs and events in |
+| `XE-DATASET-BACKEND` | outside element | the store that holds a dataset, any one of `XE-OBJECT-STORE`, `XE-POSTGRES` or `XE-CLICKHOUSE`; used where a step does not depend on which |
+| `XE-DBT-PROJECT-DIR` | outside element | a dbt project directory |
+| `XE-DEFINITIONS-MODULE` | outside element | a deployment's Dagster definitions module |
+| `XE-DLT-DESTINATION` | outside element | the destination a dlt pipeline loads into |
+| `XE-DUCKDB-RESOURCE` | outside element | a DuckDB resource in a code location |
+| `XE-HISTORY-EXPORT` | outside element | an exported file of warehouse query history |
+| `XE-HISTORY-RESOURCE` | outside element | a resource that reads warehouse query history |
+| `XE-IO-MANAGER` | outside element | an IO manager in a code location |
+| `XE-KNOWLEDGE-STORE` | outside element | a graph or vector store |
+| `XE-LANCE-STORE` | outside element | a Lance destination store |
+| `XE-OBJECT-STORE` | outside element | an S3-compatible object store a deployment names; `CO-MINIO` is one |
+| `XE-ODATA-SERVICE` | outside element | a source system's OData service |
+| `XE-POSTGRES` | outside element | a Postgres database that holds a dataset |
+| `XE-PROJECTOR` | outside element | the invincible-agent projector |
+| `XE-QUAL-TOOLING` | outside element | the qualification tooling, including its registry client |
+| `XE-ROUTE-CACHE` | outside element | the gateway's in-process table of broker routes |
+| `XE-RUN-WINDOW-EXPORT` | outside element | an exported file of run windows |
+| `XE-SDK` | outside element | the SDK |
+| `XE-SOURCE-DB` | outside element | a source database a pipeline reads |
+| `XE-SQL-DATABASE` | outside element | a SQL database |
+| `XE-SQL-WAREHOUSE` | outside element | a deployment's SQL warehouse |
+| `XE-STAGING-DB` | outside element | a staging SQL database |
+| `XE-SYSTEMLINK-API` | outside element | a test-results source's HTTP API |
+| `XE-TARGET-API` | outside element | the API a durable handler sends rows to |
+| `XE-TOKEN-DELIVERY` | outside element | a mechanism that delivers a user's token to a notebook |
+| `XE-TOKEN-SERVICE` | outside element | an object store's token service |
+| `XE-VOLUME` | outside element | a persistent volume |
+
+### Roles
+
+A role is what a person does in the mesh, not who the person is, and one person may act in several. The roles are named after the actors the DoD reference lists in §3, "DMRA Use Cases and Actors/Roles". Each definition is in these records' own words. A walkthrough step's Actor cell holds one of these ids, and so does a flow step's Actor or Target cell when a person acts. The reference's Domain Team, Data Engineer and Enabling Team have no id. A domain team's product work is written under `RL-OWNER`, and an id for any of the three is added when a record has a step that one performs.
+
+| Id | Kind | What it is | Actor in the DoD reference |
+|---|---|---|---|
+| `RL-CONSUMER` | role | a person who reads a data product, or a figure made from one, and may ask what stands behind it. The decision-maker of WT-EVIDENCE acts in this role | Data Consumer (§3) |
+| `RL-OPERATOR` | role | the platform operator: a person who builds or operates the mesh platform, including a deployment of it. Sets what the chart and code leave to a deployment, maintains the builds of its images, and runs the qualification tooling | Data Platform Engineer (§3) |
+| `RL-OWNER` | role | the data product owner: accountable for one data product, and writes the configuration it is built from, such as its source declaration, its contract mapping and its pipeline settings | Data Product Owner, within the Domain Team (§3) |
+| `RL-PERSON` | role | a consumer as the read path sees one: a person on whose behalf data is read, under that person's verified identity. A flow step that turns on the identity names this id rather than `RL-CONSUMER` | Data Consumer (§3) |
+| `RL-STEWARD` | role | accountable for a governance decision about data, such as widening a column's label or ratifying a classification value | Data Governance Group (§3); the reference also names a data steward under quality management (§4, item 13) |
 
 ## Records
 
