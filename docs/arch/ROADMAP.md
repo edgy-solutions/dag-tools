@@ -177,7 +177,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 19. The probes code location in the chart
 
-- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`). Neither chart has an entry for it. `built`; the absence `built`
+- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`). Neither chart has an entry for it. `built`
 - **What already exists:** the location, which loads empty when the probes directory variable is unset (`definitions.py:56-57`), and the status check that reports it absent from a workspace. `built`
 - **Owner:** dag-tools.
 - **Remedy:** the dag-tools chart offers the probes code location as an entry a deployment turns on, off by default. `proposed`
@@ -196,7 +196,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | No version reader ships | dag-tools `dag_tools/domain_broker/ticket_identity.py:110` | dag-tools AGENTS.md §4o | `test_no_as_of_reader_ships_by_default` | `built` |
 | Engine read checks default off in code and chart | invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944` | cited in chart: invincible-agent ADR-0025 (not read) | `test_the_control_with_auth_OFF_both_paths_keep_EVERY_chunk` | `built` |
 | Graph and vector reads carry no ticket, receipt or version | invincible-agent `agent_fleet/ontology_service/mesh_graph.py`, `agent_fleet/utils/mesh_vectors.py`: no match at the pin | not stated | — | `built` |
-| The remote graph client has no server end | SDK `remote_clients.py:40-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (server end) |
+| The remote graph client has no server end | SDK `remote_clients.py:40-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (no server end) |
 | Placeholder datasets; the older path's fixed token and lifetime | dag-tools `dag_tools/domain_broker/main.py:42`, `:802-818`, `:1273-1360` | not stated | no test of the SQL branch | `built` |
 | Minted SQL accounts are never removed | dag-tools `dag_tools/domain_broker/sql_minting.py:22-33` | not stated | — | `built` |
 | An unsent check payload; a stale warning | dag-tools `dag_tools/central_gateway/main.py:325`, `subject_gauge.py:310-316` | not stated | — | `built` |
