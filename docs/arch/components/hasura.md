@@ -9,6 +9,7 @@ This record covers what the chart and code provide by default, and what a deploy
 ## Findings
 
 1. **No code, chart or configuration names Hasura at either pin.** A case-insensitive search of the dag-tools repo finds no mention. The same search of the invincible-agent chart finds none, and neither does a search of the rest of that repo. `built`
+2. **As a point of use, an API layer is protected only by its own role-based access, and its reads produce no gateway receipt.** Nothing at either pin wires one (finding 1), so nothing places the gateway on its path. A deployment that adds an API layer adds a read path whose only protection is that layer's own roles. This is the condition today, recorded as it is; the remedy is roadmap row 22, `proposed` ([need to know, finding 7](../flows/need-to-know.md)). `built`
 
 ## Settings and defaults
 
@@ -42,6 +43,7 @@ No connection is built at this pin: nothing in the code or the chart refers to t
 | Data path | none | — |
 | Plane | not established: nothing wires it into the mesh at either pin, so no plane is assigned | — |
 | Security role | none | — |
+| Protected by | its own role-based access, where a deployment adds one; no gateway receipt | [need to know, finding 7](../flows/need-to-know.md) |
 | Services served | none at the pin | — |
 
 ## Sources
@@ -52,3 +54,4 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 |---|---|---|---|---|
 | No mention in dag-tools | whole repo (no match for `hasura`, any case) | not stated | — | `built` |
 | No mention in invincible-agent | invincible-agent `helm/invincible-agent/` and the rest of the repo (no match for `hasura`, any case) | not stated | — | `built` |
+| Protected by its own roles, with no gateway receipt | finding 1; [need to know, finding 7](../flows/need-to-know.md) | not stated | — | `built` |
