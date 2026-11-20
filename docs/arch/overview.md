@@ -36,19 +36,25 @@ The services are the fifteen of the DoD data-mesh reference, set against the mes
 |---|---|---|
 | S1 Unique identifiers | `built` | [DataHub](components/datahub.md), [DataHub lineage](components/datahub-lineage.md), [domain broker](components/domain-broker.md), [mesh data client](components/mesh-data-client.md) |
 | S2 Semantic services | `built` | none; the alignment record cites an invincible-agent ontology service and the identifier rules of contract mapping |
-| S3 Federated catalog | catalog: `built`. A standard catalog form: `not built`. | [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [Grist ingest](components/grist-ingest.md), [warehouse source](components/warehouse-source.md) |
+| S3 Federated catalog | `built` | [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [Grist ingest](components/grist-ingest.md), [warehouse source](components/warehouse-source.md) |
+| S3 Federated catalog: a standard catalog form | `not built` | none |
 | S4 Profiles and lineage | `built` | [Dagster](components/dagster.md), [DataHub](components/datahub.md), [dbt project](components/dbt-project.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [warehouse source](components/warehouse-source.md) |
 | S5 Policy access control | `built` | [central gateway](components/central-gateway.md), which enforces the policy engine's answer |
 | S6 Policy administration | `built` | none; the alignment record cites invincible-agent's policy validator and seed job |
 | S7 Data exchange | `built` | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md), [mesh data client](components/mesh-data-client.md), [Keycloak](components/keycloak.md), [Topaz](components/topaz.md), [MinIO](components/minio.md), [dlt pipeline](components/dlt-pipeline.md), [S3 sensor](components/s3-sensor.md), [Grist](components/grist.md), [JupyterHub](components/jupyterhub.md), and the Restate [server](components/restate-server.md), [worker](components/restate-worker.md), [API sync](components/restate-api-sync.md) and [dlt sync](components/restate-dlt-sync.md) |
 | S8 Data product search | `built` | none; the alignment record cites invincible-agent's catalog wrapper |
-| S9 Pub/sub | `not built`; the pub/sub phase is `proposed` | [Redpanda](components/redpanda.md), itself `proposed` |
+| S9 Pub/sub | `not built` | none |
+| S9 Pub/sub: the planned phase | `proposed` | [Redpanda](components/redpanda.md) |
 | S10 Performance analytics | `built` | [read audit](components/read-audit.md), [tagged warehouse](components/tagged-warehouse.md), [Dagster](components/dagster.md), [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
-| S11 Life cycle | origin and history: `built`. Retire and recall: `not built`. | [DataHub lineage](components/datahub-lineage.md) |
-| S12 Classification | as published metadata: `built`. As a decision input: `proposed`. A standard label form: `not built`. | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
+| S11 Life cycle: origin and history | `built` | [DataHub lineage](components/datahub-lineage.md) |
+| S11 Life cycle: retire and recall | `not built` | none |
+| S12 Classification: labels as published metadata | `built` | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
+| S12 Classification: labels as a decision input | `proposed` | [classification propagation](components/classification-propagation.md), [warehouse source](components/warehouse-source.md), [DataHub](components/datahub.md), [Topaz](components/topaz.md) |
+| S12 Classification: a standard label form | `not built` | none |
 | S13 Quality | `built` | [contract mapping](components/contract-mapping.md), [Dagster](components/dagster.md), [dbt](components/dbt.md), [dlt pipeline](components/dlt-pipeline.md), [document tables](components/document-tables.md), [the SystemLink source](components/systemlink-source.md) |
 | S14 Mediation | `built` | [contract mapping](components/contract-mapping.md), [dbt](components/dbt.md), [document tables](components/document-tables.md), [OTel API sync](components/otel-api-sync.md), [Restate worker](components/restate-worker.md) |
-| S15 Instrumentation | probes: `built`. Metrics and tracing: `not built`. | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
+| S15 Instrumentation: probes | `built` | [central gateway](components/central-gateway.md), [domain broker](components/domain-broker.md) |
+| S15 Instrumentation: metrics and tracing | `not built` | none |
 
 [Hasura](components/hasura.md), [Superset](components/superset.md) and [Vault](components/vault.md) name none of the fifteen at the pin.
 
@@ -73,7 +79,7 @@ One service depends on another when it cannot do its job without what the other 
 | S13 Quality | S14 Mediation | Contract tests are generated from the contract mapping. | `built` | [contract mapping](components/contract-mapping.md); [DoD S13, S14](alignment/dod-dmra.md) |
 | S14 Mediation | S2 Semantic services | Local identifier spellings are normalized by a declared rule document, per contract rather than as a service. | `built` | [DoD S2, S14](alignment/dod-dmra.md) |
 | S10 Analytics | S15 Instrumentation | The gateway's and broker's counts are read from their `/health` routes. | `built` | [central gateway](components/central-gateway.md); [DoD S10, S15](alignment/dod-dmra.md) |
-| S9 Pub/sub | S5 Policy access control | A subscription would need an access decision of its own. Nothing subscribes today. | `not built`; pub/sub is `proposed` | [DoD S9](alignment/dod-dmra.md); [Redpanda](components/redpanda.md) |
+| S9 Pub/sub | S5 Policy access control | A subscription would need an access decision of its own. Nothing subscribes today. | `proposed` | [DoD S9](alignment/dod-dmra.md); [Redpanda](components/redpanda.md) |
 
 Read together, the edges show that the catalog (S3) and policy (S5, S6) carry most of the weight. A read depends on policy, and policy depends on the catalog being right about owners. How that ownership data is kept correct is listed as not established in [the need-to-know flow](flows/need-to-know.md).
 
@@ -97,9 +103,9 @@ Two walkthroughs follow a question through the records: [a decision-maker asking
 
 ## Sources
 
-| Claim | Source | Decision | Evidence | Status |
-|---|---|---|---|---|
-| Services and their statuses | [DoD alignment](alignment/dod-dmra.md), services S1 to S15 | — | the evidence in each row there | as each row there |
-| Components per service | the "Services served" row of each component record | — | as each record | — |
-| Dependency edges | the records named in each row above | — | as each record | as each row above |
-| No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list | — |
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| Services and their statuses | [DoD alignment](alignment/dod-dmra.md), services S1 to S15 | — | the evidence in each row there |
+| Components per service | the "Services served" row of each component record | — | as each record |
+| Dependency edges | the records named in each row above | — | as each record |
+| No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list |

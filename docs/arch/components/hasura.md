@@ -16,7 +16,7 @@ None. Neither chart nor any component has a setting for it.
 
 ## Gaps
 
-- **Nothing wires Hasura into the mesh** (finding 1). Remedy: not on the roadmap.
+- **Nothing wires Hasura into the mesh** (finding 1). Remedy: not on the roadmap. Status: `accepted`.
 
 ## Not established from code
 

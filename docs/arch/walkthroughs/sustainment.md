@@ -41,10 +41,10 @@ Each step names the part of the tooling that does it and the records it relies o
 
 ## Gaps
 
-- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md). No row: what is missing is a recorded run, not a change.
-- **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10). Remedy: [roadmap row 19](../ROADMAP.md).
-- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer (§4f.9). It does not produce staging data on its own (§4e.5, §4f.11). No row: closing it through the documented mechanisms is the operator's, by those decisions.
-- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.4). A change in a metadata value passes. No row: key-only parity is the decision (§4h.1).
+- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is measured. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md). No row: what is missing is a recorded run, not a change. Status: `built`.
+- **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10). Remedy: [roadmap row 19](../ROADMAP.md). Status: `built`.
+- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer (§4f.9). It does not produce staging data on its own (§4e.5, §4f.11). No row: closing it through the documented mechanisms is the operator's, by those decisions. Status: `accepted`.
+- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.4). A change in a metadata value passes. No row: key-only parity is the decision (§4h.1). Status: `accepted`.
 
 ## Not established from code
 
@@ -66,4 +66,11 @@ Each step names the part of the tooling that does it and the records it relies o
 | Probes and the probe location | dag-tools decisions §4g1.1, §4g0.2, §4g0.5, §4g-1.2; [Dagster](../components/dagster.md), finding 10 | [§4g0.2](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 8 | `built` |
 | Round trip | dag-tools decisions §4g2.2, §4g2.3, §4g2.5 | [§4g2.2](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 9 | `built` |
 | Verdict | dag-tools decisions §4h.1 to §4h.4, §4g0a.1, §4g0a.2, §4g2.5 | [§4h.1](../decisions/dag-tools-s4i-s4h-s4g.md) | as step 10 | `built` |
-| No qualification is `measured` | the status columns of the records cited | — | none found | — |
+
+### Rows that carry no status
+
+These rows count or point at records, or name a decision that is superseded or decides nothing here. None is a claim about the mesh, so none carries a status.
+
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| No qualification is `measured` | the status columns of the records cited | — | none found |

@@ -263,4 +263,11 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4g2.3 freshness and partition | rrt `:66`, `:84`, `:397-426`, `:456-480` | bullets 3-4 | trr: `test_a_rep_that_did_not_pass_skips_its_roundtrip` (`:129`), `test_rematerialized_upstream_skips_instead_of_loading_stale_output` (`:139`), `test_partition_comes_from_the_q2_record_not_last_partition_key` (`:149`), `test_old_record_without_partition_reads_the_run_tag` (`:164`), `test_undeterminable_partition_skips_it_does_not_fail` (`:173`); trg: `test_roundtrip_loads_the_partition_it_was_given` (`:83`) | `built` |
 | §4g2.4 two values compared | vdf `:212` | bullet 5 | tvt: `test_type_divergence_is_red_even_with_accept_flag` (`:97`), `test_columns_divergence_is_red` (`:108`), `test_loaded_len_difference_does_not_block` (`:182`) | `built` |
 | §4g2.5 buckets; exit status unchanged | vvd `:333-345`, `:723-780`; qcl `:905-946`, `:1196-1199` | bullet 6 | tvt: `test_one_side_failed_is_red_even_with_accept_flag` (`:116`), `test_both_sides_failed_is_uncovered_not_red` (`:125`), `test_failed_opposite_a_side_that_never_ran_is_uncovered_not_red` (`:139`), `test_missing_roundtrip_blocks_go_without_accept_flag` (`:156`), `test_not_applicable_classes_never_block` (`:168`); trr: `test_absent_probes_location_records_nothing_and_does_not_fail_qual_run` (`:247`), `test_roundtrip_launches_the_probe_alone_on_the_probes_location` (`:201`); trg: `test_dbt_and_io_managerless_classes_get_no_probe_and_are_listed` (`:163`), `test_time_window_and_multi_partition_classes_get_notes` (`:182`); no test of the exit status | `built` |
-| §4g2.6 regression list | trr, trg, tvt | bullet 7 | the round-trip tests above | — |
+
+### Rows that carry no status
+
+These rows count or point at records, or name a decision that is superseded or decides nothing here. None is a claim about the mesh, so none carries a status.
+
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| §4g2.6 regression list | trr, trg, tvt | bullet 7 | the round-trip tests above |

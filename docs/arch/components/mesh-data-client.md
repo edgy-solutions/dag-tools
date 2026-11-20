@@ -48,10 +48,10 @@ The read-only IO manager takes the gateway address, the service credentials and 
 
 ## Gaps
 
-- **SQL reads move the whole table before anything narrows or limits them** (finding 7). Remedy: [roadmap row 4](../ROADMAP.md) (dag-tools #73).
-- **The receipt's version is empty until a version reader exists** (finding 10). That is the broker's gap ([broker, finding 11](domain-broker.md)). Remedy: [roadmap row 5](../ROADMAP.md) (dag-tools #74).
-- **The client can send its mesh token to a backend as a password** (finding 9). A token meant for the gateway reaches a database, and on the older path the database sees either that token or a fixed placeholder. Neither branch is tested. Remedy: [roadmap row 12](../ROADMAP.md) (not filed), with [row 9](../ROADMAP.md) (not filed) for the placeholder.
-- **Narrowing applied in the client binds only callers that use the client** (findings 7, 8). For the object store, it is the only place narrowing happens. Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71).
+- **SQL reads move the whole table before anything narrows or limits them** (finding 7). Remedy: [roadmap row 4](../ROADMAP.md) (dag-tools #73). Status: `built`.
+- **The receipt's version is empty until a version reader exists** (finding 10). That is the broker's gap ([broker, finding 11](domain-broker.md)). Remedy: [roadmap row 5](../ROADMAP.md) (dag-tools #74). Status: `built`.
+- **The client can send its mesh token to a backend as a password** (finding 9). A token meant for the gateway reaches a database, and on the older path the database sees either that token or a fixed placeholder. Neither branch is tested. Remedy: [roadmap row 12](../ROADMAP.md) (not filed), with [row 9](../ROADMAP.md) (not filed) for the placeholder. Status: `built`.
+- **Narrowing applied in the client binds only callers that use the client** (findings 7, 8). For the object store, it is the only place narrowing happens. Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71). Status: `built`.
 
 ## Not established from code
 

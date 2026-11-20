@@ -33,8 +33,8 @@ pub-tools records a run that is reported only in a commit message as `built`, wi
 
 ## Sources
 
-| Claim | Source | Decision | Evidence | Status |
-|---|---|---|---|---|
-| 45 records and one index at the commit | pub-tools `docs/arch/decisions/` at `ad981b1`, file list read through the hosting service's API | — | 45 `ADR-*` files and `README.md` | — |
-| Status counts | pub-tools `docs/arch/decisions/README.md` at `ad981b1`, status markers counted | — | 36, 8 and 1 | — |
-| Evidence pins and the commit-message rule | supplied by the owning session, 2026-11-19 | — | — | — |
+| Claim | Source | Decision | Evidence |
+|---|---|---|---|
+| 45 records and one index at the commit | pub-tools `docs/arch/decisions/` at `ad981b1`, file list read through the hosting service's API | — | 45 `ADR-*` files and `README.md` |
+| Status counts | pub-tools `docs/arch/decisions/README.md` at `ad981b1`, status markers counted | — | 36, 8 and 1 |
+| Evidence pins and the commit-message rule | supplied by the owning session, 2026-11-19 | — | — |

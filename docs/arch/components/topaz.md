@@ -28,10 +28,10 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The reader's bearer token reaches the engine** (finding 3). A token meant for the gateway is presented to a second service. [Roadmap row 12](../ROADMAP.md) (dag-tools #76) covers a mesh token sent to a database backend, not to the policy engine. Remedy: not on the roadmap.
-- **No test covers the non-200 denial or the tenant header** (findings 4 and 5). Remedy: not on the roadmap.
-- **The denial log carries part of the engine's response body** (finding 6). Remedy: not on the roadmap.
-- **The directory-check body is dead code** (finding 8). Remedy: not on the roadmap.
+- **The reader's bearer token reaches the engine** (finding 3). A token meant for the gateway is presented to a second service. [Roadmap row 12](../ROADMAP.md) (dag-tools #76) covers a mesh token sent to a database backend, not to the policy engine. Remedy: not on the roadmap. Status: `built`.
+- **No test covers the non-200 denial or the tenant header** (findings 4 and 5). Remedy: not on the roadmap. Status: `built`.
+- **The denial log carries part of the engine's response body** (finding 6). Remedy: not on the roadmap. Status: `built`.
+- **The directory-check body is dead code** (finding 8). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
@@ -66,7 +66,8 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Gateway paths are u
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No Topaz in the chart; address from two variables | `helm/dag-tools/templates/` (no Topaz template); `main.py:72-73` | not stated | — | `built`; the absence `not built` |
+| Address from two variables | `helm/dag-tools/templates/` (no Topaz template); `main.py:72-73` | not stated | — | `built` |
+| No Topaz in the chart | `helm/dag-tools/templates/` (no Topaz template); `main.py:72-73` | not stated | — | `not built` |
 | One call per read; fixed path; identity stated by the gateway; empty principal denied | `main.py:238`, `:287-292`, `:308-322`, `:498` | not stated | `test_gateway_verified_identity.py`: `test_enforce_refuses_and_never_calls_topaz`; `test_gateway_one_resolution.py`: `test_a_refusal_from_the_one_resolution_reaches_neither_topaz_nor_the_broker`; `test_gateway_entitlement_claim_follows_env.py`: `test_missing_claim_still_fails_closed` | `built` |
 | Caller's token forwarded | `main.py:405`, `:419`, `:295-298` | not stated | no test | `built` |
 | Tenant header; chart `envFrom` | `main.py:299-300`; `helm/dag-tools/values.yaml:181-185` | not stated | no test | `built` |

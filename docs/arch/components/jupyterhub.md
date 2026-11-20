@@ -27,9 +27,9 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Nothing deploys JupyterHub or sets a notebook's environment** (findings 1 and 2). Remedy: not on the roadmap.
-- **Nothing delivers a user's token to a notebook, and the client does not refresh one** (findings 4 and 6). Remedy: not on the roadmap.
-- **A notebook that sets no user token reads with the service's entitlements** (finding 4). Remedy: not on the roadmap.
+- **Nothing deploys JupyterHub or sets a notebook's environment** (findings 1 and 2). Remedy: not on the roadmap. Status: `built`.
+- **Nothing delivers a user's token to a notebook, and the client does not refresh one** (findings 4 and 6). Remedy: not on the roadmap. Status: `built`.
+- **A notebook that sets no user token reads with the service's entitlements** (finding 4). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

@@ -38,11 +38,11 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Each client names its credential differently** (findings 2, 5, 6, 7, 8 and 9). The IO managers and the Arrow resource take it in config, DuckDB in config or from the standard variables, the demo and dlt read the standard variables, and the sensor, the document tables and the registry use the default chain. A deployment configures one store several ways. Remedy: not on the roadmap.
-- **Plain HTTP is a setting, and the demo infers it from the address** (findings 2 and 5). Remedy: not on the roadmap.
-- **A write, or a read through the Arrow resource, may create a bucket** (finding 3). A misspelt bucket name produces a new bucket rather than an error. Remedy: not on the roadmap.
-- **A demo credential left unset fails at the first read or write** (finding 5). Remedy: not on the roadmap.
-- **A narrowing reaches an object-store read only at the client** (finding 4). The minted credential is scoped to a prefix, not to columns or rows. Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71).
+- **Each client names its credential differently** (findings 2, 5, 6, 7, 8 and 9). The IO managers and the Arrow resource take it in config, DuckDB in config or from the standard variables, the demo and dlt read the standard variables, and the sensor, the document tables and the registry use the default chain. A deployment configures one store several ways. Remedy: not on the roadmap. Status: `built`.
+- **Plain HTTP is a setting, and the demo infers it from the address** (findings 2 and 5). Remedy: not on the roadmap. Status: `built`.
+- **A write, or a read through the Arrow resource, may create a bucket** (finding 3). A misspelt bucket name produces a new bucket rather than an error. Remedy: not on the roadmap. Status: `built`.
+- **A demo credential left unset fails at the first read or write** (finding 5). Remedy: not on the roadmap. Status: `built`.
+- **A narrowing reaches an object-store read only at the client** (finding 4). The minted credential is scoped to a prefix, not to columns or rows. Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71). Status: `built`.
 
 ## Not established from code
 

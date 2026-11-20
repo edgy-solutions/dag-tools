@@ -40,15 +40,15 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Rows are posted to the Restate ingress with no credential** (finding 5). Anything that can reach the ingress can start the handler with a payload of its choosing. Remedy: [roadmap row 13](../ROADMAP.md) (not filed).
-- **A rejected or failed post is invisible to Dagster** (finding 7). A run in which every post failed still shows as successful, with warnings in its log. Remedy: not on the roadmap.
-- **Every materialization re-sends every staged row** (finding 3). The API receives the same rows again each time. Remedy: not on the roadmap.
-- **The acknowledgement's table and column names come from the payload unchecked** (finding 12). Only their presence is checked, and the sender is not identified. Remedy: not on the roadmap; who may send is [roadmap row 13](../ROADMAP.md) (not filed).
-- **The post to the target API has no timeout** (finding 10). Remedy: not on the roadmap.
-- **The component has no test of its own** (finding 13). Remedy: not on the roadmap.
-- **A key of zero or empty text can be sent as no key** (finding 8). The handler refuses the row and Dagster does not see it. Remedy: not on the roadmap.
-- **The in-cluster rewrite can leave a local address unchanged while logging that it changed it** (finding 5). Remedy: not on the roadmap.
-- **The handler writes state on an unkeyed service** (finding 14). No test against a Restate server covers it. Remedy: not on the roadmap.
+- **Rows are posted to the Restate ingress with no credential** (finding 5). Anything that can reach the ingress can start the handler with a payload of its choosing. Remedy: [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
+- **A rejected or failed post is invisible to Dagster** (finding 7). A run in which every post failed still shows as successful, with warnings in its log. Remedy: not on the roadmap. Status: `built`.
+- **Every materialization re-sends every staged row** (finding 3). The API receives the same rows again each time. Remedy: not on the roadmap. Status: `built`.
+- **The acknowledgement's table and column names come from the payload unchecked** (finding 12). Only their presence is checked, and the sender is not identified. Remedy: not on the roadmap; who may send is [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
+- **The post to the target API has no timeout** (finding 10). Remedy: not on the roadmap. Status: `built`.
+- **The component has no test of its own** (finding 13). Remedy: not on the roadmap. Status: `built`.
+- **A key of zero or empty text can be sent as no key** (finding 8). The handler refuses the row and Dagster does not see it. Remedy: not on the roadmap. Status: `built`.
+- **The in-cluster rewrite can leave a local address unchanged while logging that it changed it** (finding 5). Remedy: not on the roadmap. Status: `built`.
+- **The handler writes state on an unkeyed service** (finding 14). No test against a Restate server covers it. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

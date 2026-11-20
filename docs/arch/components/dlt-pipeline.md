@@ -40,8 +40,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **One unit's instantiation failure is printed and skipped** (finding 7). Failures other than a kind's own validation do not stop the load, so a pipeline can load with fewer assets, or none, and the only sign is a printed line. Remedy: not on the roadmap.
-- **An unknown or failing destination falls back to a bare `filesystem` name with a printed message** (finding 5). Where that destination then writes depends on dlt's own configuration, which was not read. No test covers the fallback. Remedy: not on the roadmap.
+- **One unit's instantiation failure is printed and skipped** (finding 7). Failures other than a kind's own validation do not stop the load, so a pipeline can load with fewer assets, or none, and the only sign is a printed line. Remedy: not on the roadmap. Status: `built`.
+- **An unknown or failing destination falls back to a bare `filesystem` name with a printed message** (finding 5). Where that destination then writes depends on dlt's own configuration, which was not read. No test covers the fallback. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

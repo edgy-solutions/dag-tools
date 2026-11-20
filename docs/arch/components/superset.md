@@ -23,8 +23,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **A read through Superset is outside the mesh's access path** (finding 5). Such a read is not decided by the gateway, not ticketed by the broker and not reconciled by the read audit. Remedy: not on the roadmap.
-- **dag-tools has no Superset wiring** (finding 1). Remedy: not on the roadmap.
+- **A read through Superset is outside the mesh's access path** (finding 5). Such a read is not decided by the gateway, not ticketed by the broker and not reconciled by the read audit. Remedy: not on the roadmap. Status: `built`.
+- **dag-tools has no Superset wiring** (finding 1). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

@@ -57,7 +57,7 @@ Source attributes are under `source_config`. `table_prefix`, `dest_schema` and `
 
 ## Gaps
 
-- **A read goes straight to the SystemLink server and not through the mesh** (findings 3 and 4). No ticket is issued, and the central gateway and domain broker narrow nothing. Remedy: not on the roadmap.
+- **A read goes straight to the SystemLink server and not through the mesh** (findings 3 and 4). No ticket is issued, and the central gateway and domain broker narrow nothing. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
