@@ -148,6 +148,7 @@ A role is what a person does in the mesh, not who the person is, and one person 
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
 | [flows/source-to-use.md](flows/source-to-use.md) | flow | draft |
+| [flows/label-propagation.md](flows/label-propagation.md) | flow | draft |
 | [walkthroughs/evidence.md](walkthroughs/evidence.md) | walkthrough: a decision-maker asking for evidence | draft |
 | [walkthroughs/sustainment.md](walkthroughs/sustainment.md) | walkthrough: qualifying a Dagster upgrade | draft |
 | [built-to-measured.md](built-to-measured.md) | list: built claims and the test or run that could make each measured | draft |

@@ -57,7 +57,7 @@ A labelled source has labels a person decided. A derived column's label is a con
 
 - **Decision.** A derived dataset cannot be another's source. The limit is documented in the example README.
 - **Why.** The sensor records its decision as an observation against the derived asset and reads its sources' published label sets; it is not built to read its own output as an input.
-- **Where else.** No test declares a chain, so whether a chained declaration is refused or reads no label set is not established. A dataset that lists itself as its source is refused at load.
+- **Where else.** No test declares a chain. Read from code, a chained declaration is refused at the tick: the sensor expects each source column entry to carry `labels`, and its own observation writes `label`, so the dataset fails and nothing is published for it ([label propagation](../flows/label-propagation.md), finding 8). A dataset that lists itself as its source is refused at load.
 - **Status.** `built`, including the documented limit: no chaining.
 
 ### §4n.9 A YAML block key with only comments under it parses as null
