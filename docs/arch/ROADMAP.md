@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 19 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 24 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -27,6 +27,11 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 17 | One signed attribution for every read (not filed) | a read the audit counts as explained was made by the principal its tag names, and a read made under a ticket joins that ticket | — (proposed; no decision yet) | row 1 |
 | 18 | Labels as a decision input (not filed) | a person reads a labelled column only where the label and the person's clearance allow it | — (proposed; no decision yet) | — |
 | 19 | The probes code location in the chart (not filed) | a qualification can cover the classes that need a probe without a hand-written deployment entry | — (proposed; no decision yet) | — |
+| 20 | A joined source-to-use report (not filed) | a read of a source can be followed through lineage to each read of a dataset built from it, and each of those reads names the decision it was made under | — (proposed; no decision yet) | row 17 |
+| 21 | Dashboards authorized through the decision point (not filed) | a dashboard tool's read of mesh data is decided at the gateway and leaves a gateway receipt | — (proposed; no decision yet) | row 24 |
+| 22 | An API layer authorized through the decision point (not filed) | an API layer's read of mesh data is decided at the gateway and leaves a gateway receipt | — (proposed; no decision yet) | — |
+| 23 | Propagation across more than one step (not filed) | a dataset built from a derived dataset carries a label composed from the label that dataset carries | — (proposed; no decision yet) | — |
+| 24 | The documented pattern for a dashboard tool to authorize through the mesh (not filed) | an operator can wire a dashboard tool to the decision point from the client documentation alone | — (proposed; no decision yet) | — |
 
 ## Where later slices fold in
 
@@ -183,6 +188,48 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Remedy:** the dag-tools chart offers the probes code location as an entry a deployment turns on, off by default. `proposed`
 - **Issue:** not filed.
 
+### 20. A joined source-to-use report
+
+- **Gap:** [source to use, finding 8](flows/source-to-use.md). The read audit reads query history and run windows, the lineage sensor reads materializations and the asset graph, and the ticket line goes to the gateway's log. No code reads any two of them together, and the ticket line does not carry the narrowing the decision set (`dag_tools/central_gateway/main.py:558-563`, `:590-596`). `built`
+- **What already exists:** each of the three records on its own: the read audit's attribution of source reads (`dag_tools/audit/reads.py:154-213`), lineage in the asset graph and the catalog (`dag_tools/components/datahub_lineage/component.py:294-344`), and the ticket line with the client's receipt. `built`
+- **Owner:** dag-tools.
+- **Remedy:** a report that follows a source read through lineage to each gateway read of a dataset built from it, naming the person and the decision of each read. It needs the decision's columns and row filters on the receipt, and a key shared by the read tag and the ticket. `proposed`
+- **Depends on:** row 17, for the shared key.
+- **Issue:** not filed.
+
+### 21. Dashboards authorized through the decision point
+
+- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). An agent engine calls a dashboard tool's API directly, with the chart's bearer token, which is empty by default (invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`). The gateway does not decide the read, and no gateway receipt is written. `built`
+- **What already exists:** the gateway's authorize route and the client that calls it (`dag_tools/central_gateway/main.py:404-405`). What the dashboard tool's own roles permit is not established from code. `built`
+- **Owner:** not named. The caller is invincible-agent's; the decision point is dag-tools'.
+- **Remedy:** a dashboard tool's reads of mesh data are decided at the gateway, and each leaves a gateway receipt. `proposed`
+- **Depends on:** row 24, for the documented pattern.
+- **Issue:** not filed.
+
+### 22. An API layer authorized through the decision point
+
+- **Gap:** [Hasura, finding 1](components/hasura.md); [source to use, finding 7](flows/source-to-use.md). Nothing at either pin wires an API layer, so a deployment that adds one adds a read path the gateway does not decide. `built`
+- **What already exists:** the gateway's authorize route and the client that calls it (`dag_tools/central_gateway/main.py:404-405`). `built`
+- **Owner:** not named.
+- **Remedy:** an API layer's reads of mesh data are decided at the gateway, and each leaves a gateway receipt. `proposed`
+- **Issue:** not filed.
+
+### 23. Propagation across more than one step
+
+- **Gap:** [classification propagation](components/classification-propagation.md), Not established from code. AGENTS.md §4n says a derived dataset cannot be another's source. The schema refuses only a dataset that lists itself as a source (`dag_tools/components/classification_propagation/schema.py:184-190`; no test), and no check refusing a chain was found. `built`
+- **What already exists:** propagation one step from declared, labelled sources, recorded as an observation against the derived asset (`component.py:495-517`, `:594-605`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** a derived dataset may name another derived dataset as a source, whose published decision is read as that source's label set, and a cycle is refused. `proposed`
+- **Issue:** not filed.
+
+### 24. The documented pattern for a dashboard tool to authorize through the mesh
+
+- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). No document at the dag-tools pin outside these records mentions a dashboard tool. `built`
+- **What already exists:** the client's authorize call and its receipt (`dag_tools/cortex_data/client.py:23-56`, `:161-171`). `built`
+- **Owner:** the SDK, in its client documentation.
+- **Remedy:** the SDK's client documentation describes how a dashboard tool authorizes each read through the decision point and keeps the receipt. `proposed`
+- **Issue:** not filed.
+
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
@@ -210,5 +257,10 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Labels as a decision input | [need to know, finding 3](flows/need-to-know.md) | cited in code: invincible-agent ADR-0064 (not read) | `test_the_published_label_set_says_which_document_ratified_it` | `proposed` |
 | Probes code location built | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
 | Probes code location in neither chart | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
-| The nineteen remedies, except row 8 | this note | none | — | `proposed` |
+| No joined source-to-use report | dag-tools `dag_tools/audit/`, `dag_tools/components/datahub_lineage/`, `dag_tools/central_gateway/` searched | not stated | — | `built` |
+| A dashboard tool is called directly | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` | not stated | no test | `built` |
+| Nothing wires an API layer | [Hasura, finding 1](components/hasura.md) | not stated | — | `built` |
+| Only a self-listed source is refused | dag-tools `dag_tools/components/classification_propagation/schema.py:184-190` | dag-tools AGENTS.md §4n | no test | `built` |
+| No dashboard pattern documented | dag-tools repository searched outside `docs/arch/` | not stated | — | `built` |
+| The twenty-four remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |
