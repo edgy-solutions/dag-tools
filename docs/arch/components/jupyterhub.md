@@ -14,6 +14,7 @@ This record covers what the chart and code provide by default, and what a deploy
 4. **A notebook can name its user through `CORTEX_USER_TOKEN`.** Outside a request, the client takes the user's token from that variable. With the variable unset, a notebook that names no subject reads as the service, because every constructed client already holds the service opt-in (see [the data client record](mesh-data-client.md), findings 3 and 4). The client does not refresh the user's token. `built`
 5. **A notebook's read goes through the gateway like any other.** The client authorizes each read with the gateway and then reads the data itself (see [the data client record](mesh-data-client.md), findings 5 and 7). Nothing in that path knows the caller is a notebook. `built`
 6. **How a user's token reaches a notebook is the subject of an invincible-agent plan.** The plan is cited by path only. Nothing at either pin delivers the token. `proposed`
+7. **As a point of use, a notebook is protected by the gateway's decision.** Each read is authorized at the gateway through the data client (finding 5), and the gateway logs the ticket. Whose read the decision is about depends on the token the notebook's environment carries (finding 4). `built`
 
 ## Settings and defaults
 
@@ -58,6 +59,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Data path | notebook to the gateway for a ticket, then to the store; the same as any client | — |
 | Plane | `analytical-data`: exploration by people | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | none of its own; the gateway decides each read | — |
+| Protected by | the gateway's decision on each read, through the data client; the gateway logs the ticket | [need to know, finding 7](../flows/need-to-know.md) |
 | Services served | none of its own; it consumes data exchange through the client | [DoD S7](../alignment/dod-dmra.md) |
 
 ## Sources
@@ -72,3 +74,4 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 | User token rung, no refresh | `dag_tools/cortex_data/identity.py:34`, `:213-215` (no refresh in that module) | not stated | see [the data client record](mesh-data-client.md) | `built` |
 | Reads go through the gateway | see [the data client record](mesh-data-client.md), findings 5 and 7 | not stated | see that record | `built` |
 | Token delivery plan | invincible-agent `docs/plans/jupyter-user-token-data-access.md` | not stated | — | `proposed` |
+| Protected by the gateway's decision | finding 5; [need to know, finding 7](../flows/need-to-know.md) | not stated | — | `built` |

@@ -21,6 +21,7 @@ This record covers what the code and the dag-tools chart provide by default, and
 11. **The broker call carries the decision and a service credential.** The gateway posts the URN, the allowed columns, the row filters and the subject to the broker's resolve route, with a ten-second timeout. A broker 404 becomes a 404; any other failure becomes a 502. Each issued ticket is logged with its id, subject, URN and version. `built`
 12. **Both internal routes sit behind a service door, with its own posture.** The broker's resolve route and the gateway's register route each check the calling service against a list for that route. The door's posture defaults to `observe` and is set separately from the identity posture. Under `observe`, a caller the door would refuse, including one with no token, is logged as `would_refuse` and served. The chart does not set the door's posture, so the default applies. Under `enforce`, an empty list refuses every caller and a door with no verifier configured answers 503. On the calling side, a service token is fetched by client credentials and refreshed thirty seconds before it expires. With no credentials configured, the caller sends no token rather than failing. `built`
 13. **A startup warning about two retired flags is out of date.** When either retired flag is set, the gateway warns that it is ignored and that no verification is enforced. Verification can now be enforced, by the identity posture (finding 3). `built`
+14. **It protects two points of use, and not the others.** Agent answers built from dataset reads and notebook reads reach it through the data client, are decided here and leave a ticket line. A dashboard tool's reads and an API layer's reads do not reach it; each is protected only by the tool's own roles and leaves no receipt. An agent answer built from a graph or vector read does not reach it either ([need to know, finding 7](../flows/need-to-know.md)). `built`
 
 ## Settings and defaults
 
@@ -85,6 +86,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Data path | none: it carries the decision and the ticket, never the data | [DoD S7](../alignment/dod-dmra.md) |
 | Plane | `data-management`: access to the shared services goes through its API | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | enforcement point: it refuses before any data path is resolved | [NATO R1](../alignment/nato-dcra.md) |
+| Points of use protected | agent answers built from dataset reads, and notebooks; not a dashboard tool, an API layer, or graph and vector reads | [need to know, finding 7](../flows/need-to-know.md) |
 | Services served | data exchange; policy access control, by enforcing the engine's answer; performance analytics, by its refusal counts; instrumentation, by `/health` and `/ready` | [DoD S7, S5, S10, S15](../alignment/dod-dmra.md) |
 
 ## Sources
@@ -107,3 +109,4 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Gateway s
 | Service door on both internal routes; own posture; client-credentials caller | `internal_door.py:17-21`, `:50-72`, `:98`, `:101-131`, `:143`; `helm/dag-tools/values.yaml:173-215` and `helm/dag-tools/templates/central-gateway.yaml` set no door posture | not stated | `test_internal_doors.py`: `test_observe_serves_and_logs_would_refuse`, `test_enforce_with_no_list_refuses_everyone`, `test_a_list_for_one_door_does_not_open_the_other`, `test_enforce_unconfigured_verifier_is_503`, `test_the_posture_is_independent_of_the_identity_posture`, `test_service_headers_refetches_30s_before_expiry` | `built` |
 | Retired-flag warning says no verification is enforced | `subject_gauge.py:310-316` | not stated | — | `built` |
 | Remedies | [the roadmap note](../ROADMAP.md), rows 1, 11 and 16 | none | — | `proposed` |
+| Points of use it protects, and those it does not | [need to know, finding 7](../flows/need-to-know.md) | not stated | — | `built` |
