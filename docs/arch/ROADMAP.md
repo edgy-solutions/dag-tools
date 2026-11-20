@@ -174,7 +174,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 18. Labels as a decision input
 
-- **Gap:** [need to know, finding 3](flows/need-to-know.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. Labels are published to the catalog as metadata. The decision path does not read them, and the policy rails that would carry a clearance are empty. `built` as metadata; `proposed` as a decision input
+- **Gap:** [need to know, finding 3](flows/need-to-know.md); [label propagation, findings 9 and 10](flows/label-propagation.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. Labels are published to the catalog as metadata. The decision path does not read them, and the policy rails that would carry a clearance are empty. `built` as metadata; `proposed` as a decision input
 - **What already exists:** label publishing for sources and for derived datasets, each label set carrying the digest of the document that ratified it. `built`
 - **Owner:** not named. The rails are policy's, in invincible-agent; their reader would be a later dag-tools step, which invincible-agent ADR-0064 describes (cited in code, not read here).
 - **Remedy:** a reader of the rails, and a decision that consults a column's label and the person's clearance, reading each dimension by its declared kind. `proposed`
@@ -216,7 +216,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 23. Propagation across more than one step
 
-- **Gap:** [classification propagation](components/classification-propagation.md), Not established from code. AGENTS.md §4n says a derived dataset cannot be another's source. The schema refuses only a dataset that lists itself as a source (`dag_tools/components/classification_propagation/schema.py:184-190`; no test), and no check refusing a chain was found. `built`
+- **Gap:** [label propagation, finding 8](flows/label-propagation.md); [classification propagation](components/classification-propagation.md), Gaps. AGENTS.md §4n says a derived dataset cannot be another's source. The schema refuses only a dataset that lists itself (`dag_tools/components/classification_propagation/schema.py:184-190`). A chain still fails closed: the sensor reads a source's `columns` entries for `labels`, and its own observation on a derived dataset writes them with `label`, so a derived dataset named as a source fails and nothing is published for the dataset built from it (`component.py:123-151`, `:417-450`). No test covers it. `built`
 - **What already exists:** propagation one step from declared, labelled sources, recorded as an observation against the derived asset (`component.py:495-517`, `:594-605`). `built`
 - **Owner:** dag-tools.
 - **Remedy:** a derived dataset may name another derived dataset as a source, whose published decision is read as that source's label set, and a cycle is refused. `proposed`

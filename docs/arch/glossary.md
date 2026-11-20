@@ -14,7 +14,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | catalog | The shared register of datasets, their lineage and their labels. In the mesh it is DataHub | CO-DATAHUB; CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; AL-DMRA |
 | central gateway | The mesh's single entry point for a dataset read. It settles who the read is for, asks the policy engine, finds the broker that serves the dataset and hands back that broker's ticket. The data itself does not pass through it | CO-GATEWAY; FL-NTK; FL-BIG |
 | chart | A Helm package that deploys a set of services. A component record describes what a chart provides and what a deployment may set, never one deployment | CO-DAGSTER; CO-RESTATE; CO-RESTATE-WORKER; CO-SUPERSET |
-| classification | The labels a column carries, one per dimension, read against a single document of dimensions that policy owns | CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; AL-DMRA |
+| classification | The labels a column carries, one per dimension, read against a single document of dimensions that policy owns | CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; AL-DMRA; FL-LABEL-PROPAGATION |
 | clearance | What a person may read on one dimension. On the ordered dimension it is a ceiling: the cleared value and every value below it | FL-NTK |
 | code location | A unit of Dagster definitions that Dagster loads and serves on its own. A producer runs its pipelines in one | CO-DAGSTER; CO-DATAHUB-LINEAGE; CO-GRIST-INGEST |
 | component | A part of the mesh that has a record of its own and an id beginning CO-. The dag-tools library's building blocks configured in YAML are among them | [README, Ids and connections](README.md#ids-and-connections) |
@@ -33,7 +33,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | document table | A table built from a bundle of XML or JSON documents through a mapping file | CO-DOCUMENT-TABLES; CO-MINIO |
 | domain | The part of the organization that answers for its own data and its own pipelines | AL-DMRA |
 | domain broker | The producer-side service that registers the producer's datasets with the gateway and, for one read, returns a ticket. It holds and serves no data | CO-BROKER; FL-NTK; FL-BIG |
-| downgrade | A declared rule, with a named owner and a reason, that widens a derived column's label. It is the only way a label is loosened | CO-CLASSIFICATION-PROPAGATION; WT-EVIDENCE; RL-STEWARD |
+| downgrade | A declared rule, with a named owner and a reason, that widens a derived column's label. It is the only way a label is loosened | CO-CLASSIFICATION-PROPAGATION; WT-EVIDENCE; RL-STEWARD; FL-LABEL-PROPAGATION |
 | durable step | A step whose result is written to a journal, so that a retry or a restart does not do it again | CO-RESTATE; CO-RESTATE-WORKER |
 | enforcement point | A place where an access decision is applied: the gateway before any data path, the broker and the store on the data path, and the agent services outside the data read | FL-NTK; CO-GATEWAY; CO-CLIENT; AL-DCRA |
 | execution group | The telemetry rows that belong to one execution, gathered so that their calls are rendered and sent together | CO-OTEL-API-SYNC |
@@ -50,7 +50,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | ingest run | One row per source run, failed or not, holding its counts and the kind of error, never the error's message | CO-SYSTEMLINK-SOURCE; WT-EVIDENCE |
 | inventory | The list of a repository's assets and their properties at one commit, made by a survey | WT-SUSTAIN |
 | journal | The durable engine's log of completed steps, replayed after a restart | CO-RESTATE; CO-OTEL-API-SYNC |
-| label | The value a column carries on one dimension of classification, published to the catalog | CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; FL-NTK; AL-DMRA |
+| label | The value a column carries on one dimension of classification, published to the catalog | CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; FL-NTK; AL-DMRA; FL-LABEL-PROPAGATION |
 | lake | No record describes a lake. The word appears only inside a catalog platform name. The stores the records describe are object stores and warehouses | CO-DATAHUB-LINEAGE |
 | lineage | The record of which datasets, and which columns, another was computed from | CO-DATAHUB-LINEAGE; CO-DATAHUB; FL-SOURCE-TO-USE; WT-EVIDENCE |
 | materialization | A Dagster run's production of an asset's data, and the event that records it | CO-CONTRACT-MAPPING; CO-CLASSIFICATION-PROPAGATION; CO-DATAHUB-LINEAGE |
@@ -101,6 +101,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | status words | `measured`, `built`, `accepted` and `proposed`; every claim carries exactly one. A gap carries the status of the condition it describes | [README, Status vocabulary](README.md#status-vocabulary) |
 | steward | The role accountable for a governance decision about data | RL-STEWARD |
 | survey | Loading each repository's code locations at a commit and recording an inventory. If any location fails to load, nothing is published | WT-SUSTAIN |
+| table max | The label a derived column takes when no lineage says which source columns it read: the composition of every labelled column of every declared source | CO-CLASSIFICATION-PROPAGATION; FL-LABEL-PROPAGATION |
 | ticket | What the broker returns for one read of one dataset: the source type, the physical location and, where the backend allows it, a credential minted for that read alone. It also carries an id and the time it was issued | CO-BROKER; CO-CLIENT; FL-BIG; WT-EVIDENCE |
 | token | A signed statement of identity, issued by the identity provider and carried with a request | CO-KEYCLOAK; CO-GATEWAY; CO-CLIENT; CO-JUPYTERHUB |
 | URN | A dataset's identifier in the catalog. A consumer names the dataset it wants by its URN | CO-GATEWAY; CO-DATAHUB; CO-CONTRACT-MAPPING; FL-BIG |
