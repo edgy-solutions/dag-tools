@@ -18,6 +18,40 @@ This record covers what the chart and code provide by default, and what a deploy
 8. **Each query builds a new engine, and none is disposed.** Every plan creates an engine from the URL and does not dispose of it, so connection pools are not reused or closed by the resource. `built`
 9. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `not built`
 
+## Where it exists and what its example proves
+
+Commits are named in full. A release is a version tag whose release page carries the built wheel. The wheel holds the component and not its example, which stays in the repository under `examples/`. Each `measured` row cites the Tests workflow run 44451597250 at the records pin. Every test such a row names ran in process and passed in both test jobs: the current Dagster and the 1.10.19 compatibility floor. A row saying what the example does not prove, or what a deployment must still configure, describes a condition of the code and carries that condition's status. A value a deployment must configure is required or has no default, and neither the chart nor the shipped code location supplies it. Supplying it is the deployment's job, not a remedy, so no roadmap row follows from it.
+
+### Commit and release
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The component and its example were first committed at `cee7df91373e437941f3760f52a4cd7ee9735f04`. | the commit that adds `dag_tools/components/tagged_warehouse/` and `examples/tagged_warehouse/` | `built` |
+| 2 | Merged to master by PR #20, merge commit `5995b5d09c5dd65ef18cbe6833bc594568c314ed`, on 2026-11-06 (UTC). | the pull request's merge commit; master contains it | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 4 | A component file names it as `type: dag_tools.TaggedWarehouseComponent`; the package root exports the class. | `dag_tools/__init__.py:12, :32` | `built` |
+
+### What the example proves, and what it does not
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The example loads as a code location whose one resource is this component's and whose one asset is the read audit, under the key its component file names. | Tests run 44451597250, both test jobs; `test_tagged_warehouse_component.py`: `test_the_shipped_example_loads`, `test_the_component_contributes_a_resource_and_no_assets`, `test_the_resource_key_in_the_yaml_is_the_key_the_resource_lands_under` | `measured` |
+| 2 | The read audit runs unchanged over this resource, by its key, against a local sqlite file with no credential. It explains one read by asset key, reports one untagged read, and reports one read carrying another tool's tag as not a pipeline. | Tests run 44451597250, both test jobs; `test_tagged_warehouse_component.py`: `test_the_resource_drops_in_under_an_unchanged_read_audit` | `measured` |
+| 3 | The tag in the example's history rows is the tag the shipped resource builds, so the writer and the reader of the tag cannot drift apart. | Tests run 44451597250, both test jobs; `test_tagged_warehouse_component.py`: `test_the_tag_in_the_fixture_is_the_tag_the_resource_sends` | `measured` |
+| 4 | A session statement that does not bind the tag, and a connection that names nothing, each fail the code location's load rather than a run. | Tests run 44451597250, both test jobs; `test_tagged_warehouse_component.py`: `test_a_tag_statement_without_the_bound_tag_fails_the_load_not_the_run`, `test_a_connection_naming_nothing_fails_the_load` | `measured` |
+| 5 | The example writes its environment references in the form the 1.10.19 floor resolves. | Tests run 44451597250, both test jobs; `test_tagged_warehouse_component.py`: `test_the_example_names_env_vars_the_way_the_floor_resolves_them` | `measured` |
+| 6 | Not proved: that a warehouse records the tag in its own query history. sqlite keeps no query history, so the history the example's audit reads is a fixture, and no test runs the resource against a warehouse that keeps one. | `examples/tagged_warehouse/seed.py`; no such test in `test_tagged_warehouse_component.py` or `test_tagged_warehouse_resource.py` | `built` |
+
+### What a deployment must still configure
+
+| # | A deployment must still configure | What the example uses instead | Evidence | Status |
+|---|---|---|---|---|
+| 1 | The tag placement its warehouse supports; for session placement, the warehouse's own statement that binds the tag. The library ships no statement for any warehouse. | comment placement | Settings `tag.placement`, `tag.statement`; `examples/tagged_warehouse/dagster_home/components/warehouse/component.yaml:22` | `built` |
+| 2 | A connection to the warehouse, as a URL or in parts, and the warehouse account it signs in as. | a local sqlite file | Settings `connection.*`; `examples/tagged_warehouse/dagster_home/components/warehouse/component.yaml:49` | `built` |
+| 3 | The pipeline name that becomes the tag's principal, or a `for_user` call on every read. | a pipeline name of its own | Settings `principal.pipeline_name`; `examples/tagged_warehouse/dagster_home/components/warehouse/component.yaml:33` | `built` |
+| 4 | A `for_asset` call in each asset whose reads should be attributed to it, and a `for_user` call with the verified identity on a read made for a person. Without `for_asset` a read is tagged with its run only, which the audit resolves only when the run selected one asset. | nothing; the example's only asset is the read audit, and the README shows the call | `examples/tagged_warehouse/README.md:60`, `:66`; Findings | `built` |
+| 5 | Its own code location wiring the component. | the example's own code location | Findings, item 9 | `built` |
+
 ## Settings and defaults
 
 | Setting | Default | What it does |

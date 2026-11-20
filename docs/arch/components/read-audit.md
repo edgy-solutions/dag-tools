@@ -21,6 +21,38 @@ This record covers what the chart and code provide by default, and what a deploy
 11. **Run windows come from a file, from the Dagster instance, or both.** The instance read takes up to `limit` run records. If that read fails, a warning is logged and no instance windows are used. The audit then runs with fewer windows and more reads in the gap. `built`
 12. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `not built`
 
+## Where it exists and what its example proves
+
+Commits are named in full. A release is a version tag whose release page carries the built wheel. The wheel holds the component and not its example, which stays in the repository under `examples/`. Each `measured` row cites the Tests workflow run 44451597250 at the records pin. Every test such a row names ran in process and passed in both test jobs: the current Dagster and the 1.10.19 compatibility floor. A row saying what the example does not prove, or what a deployment must still configure, describes a condition of the code and carries that condition's status. A value a deployment must configure is required or has no default, and neither the chart nor the shipped code location supplies it. Supplying it is the deployment's job, not a remedy, so no roadmap row follows from it.
+
+### Commit and release
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The component and its example were first committed at `c4cb3d665873b55562967d43f6ca3621419ec825`. | the commit that adds `dag_tools/components/read_audit/` and `examples/read_audit/` | `built` |
+| 2 | Merged to master by PR #17, merge commit `0cb4fb70812129b7f51fa9e1ad80d5491df51dbf`, on 2026-11-05 (UTC). | the pull request's merge commit; master contains it | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 4 | A component file names it as `type: dag_tools.ReadAuditComponent`; the package root exports the class. | `dag_tools/__init__.py:11, :26` | `built` |
+
+### What the example proves, and what it does not
+
+| # | Claim | Evidence | Status |
+|---|---|---|---|
+| 1 | The example loads as a code location whose one asset is the read audit. | Tests run 44451597250, both test jobs; `test_read_audit_component.py`: `test_the_shipped_example_loads` | `measured` |
+| 2 | Over an exported history and exported run windows, the audit materializes with no row failures, explains four of the nine relations read, and reports coverage as four ninths. | Tests run 44451597250, both test jobs; `test_read_audit_component.py`: `test_the_example_materializes_and_reports_its_gap` | `measured` |
+| 3 | The unexplained reads are published in three parts, ambiguous, untagged and not a pipeline, and the example has at least one of each. | Tests run 44451597250, both test jobs; `test_read_audit_component.py`: `test_the_example_materializes_and_reports_its_gap`, `test_the_metadata_decomposes_the_gap` | `measured` |
+| 4 | A malformed history block fails the code location's load rather than a run. | Tests run 44451597250, both test jobs; `test_read_audit_component.py`: `test_a_malformed_history_block_fails_the_load_not_the_run` | `measured` |
+| 5 | Not proved: reading a warehouse's own query history, or run windows from a Dagster instance. The example reads both from files and turns the instance read off. CO-TAGGED-WAREHOUSE's example reads its history through a resource, from rows it seeded itself. | `examples/read_audit/dagster_home/components/read_audit/component.yaml:31`, `:43`, `:44` | `built` |
+
+### What a deployment must still configure
+
+| # | A deployment must still configure | What the example uses instead | Evidence | Status |
+|---|---|---|---|---|
+| 1 | The history source: the key of a resource that can run the history query, with the history relation and the five column names its warehouse uses. No name has a default. | an exported history file | Settings `history.*`; `examples/read_audit/dagster_home/components/read_audit/component.yaml:31` | `built` |
+| 2 | Run windows read from its own Dagster instance. | an exported run-window file, with the instance read off | Settings `runs.*`; `examples/read_audit/dagster_home/components/read_audit/component.yaml:43`, `:44` | `built` |
+| 3 | A schedule or sensor that materializes the audit. The component ships neither. | none | Settings | `built` |
+| 4 | Its own code location wiring the component. | the example's own code location | Findings, item 12 | `built` |
+
 ## Settings and defaults
 
 | Setting | Default | What it does |
