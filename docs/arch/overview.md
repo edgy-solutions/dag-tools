@@ -60,28 +60,9 @@ The services are the fifteen of the DoD data-mesh reference, set against the mes
 
 ## How the services depend on each other
 
-One service depends on another when it cannot do its job without what the other provides. Each edge below is stated in the record it cites, and carries that record's status.
+The dependency table among the fifteen services is in AL-DMRA, under [How the services depend on each other](alignment/dod-dmra.md#how-the-services-depend-on-each-other): one row per edge, each with its own status and its evidence by record id, and a row for each service that depends on none of the others.
 
-| Service | Depends on | Why | Status | Records |
-|---|---|---|---|---|
-| S7 Data exchange | S5 Policy access control | The gateway asks Topaz before it asks any broker for a ticket. A refusal stops the read. | `built` | [need to know](flows/need-to-know.md), steps 5 to 7; [DoD S5, S7](alignment/dod-dmra.md) |
-| S7 Data exchange | S1 Identifiers | A read names its dataset by catalog URN, and each ticket gets its own id. | `built` | [DoD S1](alignment/dod-dmra.md); [domain broker](components/domain-broker.md) |
-| S5 Policy access control | S6 Policy administration | Grants are reviewed files; a seed job syncs them to Topaz only after the validator passes. | `built` | [DoD S6](alignment/dod-dmra.md) |
-| S5 Policy access control | S3 Catalog | The Topaz directory's dataset objects and owner relations are synced from the catalog. | `built` | [need to know](flows/need-to-know.md), roles in the NATO frame |
-| S5 Policy access control | S12 Classification | Labels as an input to the read decision. Today the decision reads relations only. | `proposed` | [need to know](flows/need-to-know.md), findings; [DoD S5, S12](alignment/dod-dmra.md) |
-| S12 Classification | S4 Lineage | A derived column's label is composed from the labels of the columns its lineage names. | `built` | [classification propagation](components/classification-propagation.md); [DoD S4, S12](alignment/dod-dmra.md) |
-| S12 Classification | S3 Catalog | Labels are published to the catalog, for sources and for derived datasets. | `built` | [warehouse source](components/warehouse-source.md); [classification propagation](components/classification-propagation.md) |
-| S4 Lineage | S3 Catalog | Lineage from Dagster and dbt is published to the catalog. | `built` | [DataHub lineage](components/datahub-lineage.md); [DoD S4](alignment/dod-dmra.md) |
-| S1 Identifiers | S3 Catalog | A dataset's identifier is its catalog URN on the physical platform. | `built` | [DoD S1](alignment/dod-dmra.md); [warehouse source](components/warehouse-source.md) |
-| S8 Search | S3 Catalog | The catalog wrapper searches the catalog. | `built` | [DoD S8](alignment/dod-dmra.md) |
-| S8 Search | S5 Policy access control | A per-domain `can_view` check when a deployment turns it on; otherwise a gate in code. | `built` | [DoD S8](alignment/dod-dmra.md) |
-| S11 Life cycle | S4 Lineage | Origin is read from lineage. | `built` | [DoD S11](alignment/dod-dmra.md) |
-| S13 Quality | S14 Mediation | Contract tests are generated from the contract mapping. | `built` | [contract mapping](components/contract-mapping.md); [DoD S13, S14](alignment/dod-dmra.md) |
-| S14 Mediation | S2 Semantic services | Local identifier spellings are normalized by a declared rule document, per contract rather than as a service. | `built` | [DoD S2, S14](alignment/dod-dmra.md) |
-| S10 Analytics | S15 Instrumentation | The gateway's and broker's counts are read from their `/health` routes. | `built` | [central gateway](components/central-gateway.md); [DoD S10, S15](alignment/dod-dmra.md) |
-| S9 Pub/sub | S5 Policy access control | A subscription would need an access decision of its own. Nothing subscribes today. | `proposed` | [DoD S9](alignment/dod-dmra.md); [Redpanda](components/redpanda.md) |
-
-Read together, the edges show that the catalog (S3) and policy (S5, S6) carry most of the weight. A read depends on policy, and policy depends on the catalog being right about owners. How that ownership data is kept correct is listed as not established in [the need-to-know flow](flows/need-to-know.md).
+Read together, the edges show that the catalog (S3) and policy (S5, S6) carry most of the weight. A read depends on policy, and policy depends on the catalog being right about owners. How that ownership data is kept correct is listed as not established in FL-NTK.
 
 ## Where to read next
 
