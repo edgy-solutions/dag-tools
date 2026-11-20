@@ -16,14 +16,14 @@ The mesh lets data stay with the team that produces it, while other teams read i
 
 ## How to read the statuses
 
-Every claim in these records carries one status: `measured`, `built`, `accepted`, `proposed` or, for an absence, `not built`. [The README](README.md#status-vocabulary) defines each one and the evidence it needs. In brief:
+Every claim in these records carries one of four statuses: `measured`, `built`, `accepted` or `proposed`. [The README](README.md#status-vocabulary) defines each one and the evidence it needs. In brief:
 
 - **`built`** means code at the pinned commit does it. The record gives a file and line, and a test when one exists. When none exists, the record says "no test".
 - **`measured`** needs a recorded run of what the claim is about. An in-process run in continuous integration measures the code's own behaviour, and is cited as "in CI, in process". A claim about a deployed service or a real backend needs a run against that service or backend. A test that could measure a claim is not enough. [The built-to-measured list](built-to-measured.md) names eight claims `measured` in CI, in process, at least in part, and the claims a further run could change. **No other record carries `measured` yet**; each is updated when it is revisited.
 - **`accepted`** means a decision record accepts it and no code does it yet. **`proposed`** means it is written down as intent only.
-- **`not built`** marks a gap with nothing built.
+- **A gap** carries the status of the condition it describes, so an absence established from code is `built`. The remedy is a separate roadmap row, usually `proposed`. Something that could not be established is listed as not established and carries no status.
 - **`—`** marks a row that carries no claim of its own, such as a pointer, a reference or a superseded entry.
-- **Mixed findings** are written in parts, as "X: `built`. Y: `not built`". A component can be built while one of its uses is only proposed.
+- **Mixed findings** are written in parts, as "X: `built`. Y: `proposed`". A component can be built while one of its uses is only proposed.
 - **Alignment rows add two fields to the outside shape.** The first is the status of what corresponds, which is separate from how closely the mesh corresponds to an outside element (`close`, `partial`, `different` or `none`). A row can be `close` and `proposed`. The second, Capability, names the NATO DCRA capability the element falls under, as `dcra:A1` to `dcra:A13` or `none`.
 - **Pins.** Every file and line is read at a pinned commit, listed in [the README](README.md#pins). A line number is valid only at its pin.
 - **Not established.** Where code, charts and tests do not settle a fact, the record says "not established" rather than guessing.
