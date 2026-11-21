@@ -66,7 +66,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | outside element | A party with no record of its own, named by an id beginning XE-. The id names a kind of party, not one instance | [README, Element ids](README.md#element-ids) |
 | pin | A full commit sha at which evidence is read; a line number holds only at its pin. In a qualification, the commit a manifest fixes each repository at | [README, Pins](README.md#pins); WT-SUSTAIN |
 | plan | A set of calls rendered in full before anything is sent, so that a dry run shows its exact bytes. A contract mapping also builds a plan, of the columns it writes | CO-OTEL-API-SYNC; CO-RESTATE-WORKER; CO-CONTRACT-MAPPING |
-| plane | One of four layers the mesh places each component in. Each component sits in exactly one | AL-DCRA; [README, Planes](README.md#planes) |
+| plane | One of four layers the mesh places each component in. Each component record names exactly one, or says not established where the record establishes no role for the component | AL-DCRA; [README, Planes](README.md#planes) |
 | plane `analytical-data` | Where data is explored and analysed and turned into insight | AL-DCRA |
 | plane `data-management` | The shared services that govern data through its life: catalog, lineage, contracts, access decisions and transformation | AL-DCRA |
 | plane `infrastructure` | Compute, storage, network and the foundation services every other plane runs on | AL-DCRA |
