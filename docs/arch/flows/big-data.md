@@ -48,11 +48,11 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 ## Gaps
 
-- **Bounded reads from SQL backends:** not built. The read is the whole table, held in memory (findings 2, 3). Remedy: [roadmap row 4](../ROADMAP.md). Status: `built`.
+- **No bounded reads from SQL backends.** The read is the whole table, held in memory (findings 2, 3). Remedy: [roadmap row 4](../ROADMAP.md). Status: `built`.
 - **A consumer's size gate cannot prevent the transfer from a SQL backend:** the transfer has already happened inside the client (finding 5). Roadmap row 4 would close this too. Status: `built`.
 - **No timeout on the data read** (finding 4). Remedy: roadmap row 4. Status: `built`.
-- **Version of the data read:** not built for every backend (finding 8). The field exists and the client passes it through. The broker fills it only when a producer advertises a version. The side expected to fill it is the domain broker's version readers. **Owner: dag-tools.** The consumer waiting on it is the finance agent's answer provenance (invincible-agent #375). Remedy: [roadmap row 5](../ROADMAP.md). Status: `built`.
-- **No streaming or columnar transport on the read side:** not built (findings 3, 9). Roadmap row 4 proposes batched reads; a columnar transport is not proposed. Status: `built`.
+- **The version of the data read is not filled for every backend** (finding 8). The field exists and the client passes it through. The broker fills it only when a producer advertises a version. The side expected to fill it is the domain broker's version readers. **Owner: dag-tools.** The consumer waiting on it is an agent's answer provenance (invincible-agent #375). Remedy: [roadmap row 5](../ROADMAP.md). Status: `built`.
+- **No streaming or columnar transport on the read side** (findings 3, 9). Roadmap row 4 proposes batched reads; a columnar transport is not proposed. Status: `built`.
 - **The IO manager reads as the service and can derive a `dagster`-platform URN** (finding 6). The second conflicts with the physical-URN rule; it is a fallback only. Status: `built`.
 - **No test reads a real backend through the client** (finding 10). Status: `built`.
 
