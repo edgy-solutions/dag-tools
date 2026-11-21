@@ -44,6 +44,17 @@ This record covers what the chart and code provide by default, and what a deploy
 - What happens to the run when source freshness reports an error. The dagster-dbt library's defaults decide that, not this repo.
 - Which warehouse a deployment's dbt profile points at, and with what credential.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | asset definitions and run context | `dag_tools/components/dbt_project/component.py:90-100`, `:105-108`; `test_demo_dbt_surface.py`: `test_demo_asset_keys_go_through_the_normalization_registry` | `built` |
+| CO-DBT | calls | child process of the dbt command line | none | three commands into one target directory | `dag_tools/components/dbt_project/component.py:123-158`; `test_dbt_datahub_artifacts.py`: `test_dbt_artifacts_are_not_scattered_across_target_directories` | `built` |
+| CO-DATAHUB | calls | the catalog's ingestion command run as a child process | token from config or the environment, none when absent | build artifacts, recipe with the token | `dag_tools/components/dbt_project/component.py:181-218`; `test_dbt_datahub_artifacts.py`: `test_recipe_carries_the_datahub_token_from_the_environment`, `test_recipe_omits_the_token_when_there_is_none` | `built` |
+| CO-DATAHUB-LINEAGE | writes | in-process | none | key prefixes in a shared process-wide map | `dag_tools/utils/translation_registry.py:12-21`, `:41-44`, `:56-62`; `dag_tools/components/datahub_lineage/component.py:63`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

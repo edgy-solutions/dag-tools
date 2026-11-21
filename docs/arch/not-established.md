@@ -8,7 +8,7 @@ This page gathers, in one place, every fact these records leave open. Most recor
 
 - **Sources.**
   - Every "Not established" section in this directory: 183 items in 43 records.
-  - Seventeen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole.
+  - Seventeen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole. The "Connections" tables of ten component records carry sixteen more lines, each with "not established" in a row's Sign-in cell; those lines are not entries here.
   - Items 1 to 35 of the lane's twice-daily reports, each of which already comes from a record.
 - **Merged.** One fact carried by several records is one entry, and it links to each of them.
 - **Grouped by what would settle it:**
@@ -165,4 +165,5 @@ A clause leaves the tables above only by moving here, never by deletion. The ent
 | Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record | none; an entry is not established |
 | 183 section items in 43 records | the "Not established" sections of the records in this directory at the #104 head | — | a count of the items under those headings | — |
 | Seventeen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), finding 3 and item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
+| Sixteen connections-table lines in ten component records | the "Connections" tables of [central gateway](components/central-gateway.md), [dlt pipeline](components/dlt-pipeline.md), [domain broker](components/domain-broker.md), [JupyterHub](components/jupyterhub.md), [MinIO](components/minio.md), [Redpanda](components/redpanda.md), [Restate dlt sync](components/restate-dlt-sync.md), [Restate worker](components/restate-worker.md), [Superset](components/superset.md), [SystemLink source](components/systemlink-source.md) | — | a count of the table lines that say "not established" | — |
 | No claim is `measured` | the status columns of the records in this directory | — | none found | — |

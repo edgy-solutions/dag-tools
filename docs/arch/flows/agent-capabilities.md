@@ -40,16 +40,18 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 
 ## The flow, step by step
 
-| # | Step | Component | Status | Evidence |
-|---|---|---|---|---|
-| 1 | An agent or route needs a graph or vector answer for a person. | an engine route | `built` | invincible-agent `agent_fleet/ontology_service/main.py:6584-6593`, `:6605-6607` |
-| 2 | The engine builds an SDK `Initiator` for the person and refuses a request that names none. | engine | `built` | `main.py:6613-6622` |
-| 3 | The engine calls its in-process reader: `Neo4jGraph` or `WeaviateVectors`. | engine; reader | `built` | `main.py:6633`; `agent_fleet/utils/mesh_vectors.py:215-238` |
-| 4 | The reader calls the SDK's person guard. | reader; SDK | `built` | `agent_fleet/ontology_service/mesh_graph.py:188-200`; `mesh_vectors.py:119-131` |
-| 5 | The reader queries the store through the engine's driver, on the engine's credential. | reader; store | `built` | `main.py:466-468`, `:886`; `agent_fleet/utils/weaviate_utils.py:33-40` |
-| 6 | The reader returns a result marked answered, empty, failed or unreachable. A vector search that lost its embedding says so. | reader | `built` | `mesh_graph.py:1-25`; `mesh_vectors.py:1-27` |
-| 7 | When `ENABLE_AGENTIC_AUTH` is on, the engine asks the authorizer per document or class and drops what the person may not see. Off by default. | engine; authorizer | `built` | `agent_fleet/weaviate_expert/service.py:96`, `:110-148`, `:338`, `:602`; `main.py:226-240` |
-| 8 | The engine answers. Nothing on the answer says which version was read or under which decision. | engine | `not built` | finding 7 |
+Actors and targets are record ids. `person:` names a role, and `none:` marks a party with no record of its own.
+
+| # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
+|---|---|---|---|---|---|---|---|
+| 1 | none: an engine route | needs a graph or vector answer for a person | none: the engine | the person's request | — | invincible-agent `agent_fleet/ontology_service/main.py:6584-6593`, `:6605-6607` | `built` |
+| 2 | none: the engine | builds an SDK `Initiator` for the person | none: the engine | — | a request that names no person is refused | `main.py:6613-6622` | `built` |
+| 3 | none: the engine | calls its in-process reader, `Neo4jGraph` or `WeaviateVectors` | none: the reader | the `Initiator` and the query | — | `main.py:6633`; `agent_fleet/utils/mesh_vectors.py:215-238` | `built` |
+| 4 | none: the reader | calls the SDK's person guard | none: the SDK | the `Initiator` | the guard checks that a person is named | `agent_fleet/ontology_service/mesh_graph.py:188-200`; `mesh_vectors.py:119-131` | `built` |
+| 5 | none: the reader | queries the store through the engine's driver | none: a graph or vector store | the query, on the engine's credential | — | `main.py:466-468`, `:886`; `agent_fleet/utils/weaviate_utils.py:33-40` | `built` |
+| 6 | none: the reader | returns a marked result | none: the engine | a result marked answered, empty, failed or unreachable; a vector search that lost its embedding says so | — | `mesh_graph.py:1-25`; `mesh_vectors.py:1-27` | `built` |
+| 7 | none: the engine | asks for a decision per document or class, and drops what the person may not see | CO-TOPAZ | the person and the document or class | only when agentic authorization is on, which is off by default | `agent_fleet/weaviate_expert/service.py:96`, `:110-148`, `:338`, `:602`; `main.py:226-240` | `built` |
+| 8 | none: the engine | answers | person: the person | the answer; nothing on it says which version was read or under which decision | — | finding 7 | `not built` |
 
 ## Gaps
 

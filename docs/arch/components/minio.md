@@ -50,6 +50,19 @@ This record covers what the chart and code provide by default, and what a deploy
 - Which credential names a deployment sets for each client, and whether they are the same key.
 - Whether a deployment's store refuses plain HTTP.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| none: a Delta or Arrow IO manager in a code location | is called by | S3 API | access key pair and endpoint required in the IO manager's config | the writer's files, written and read | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`; `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
+| none: the qualification registry client | is called by | S3 API | the default credential chain; optional endpoint | immutable per-build records, with a pointer written last | `dag_tools/qual/registry/client.py:45-55`, `:62-75`; `test_registry_client.py`: `test_storage_put_immutable_refuses_overwrite` | `built` |
+| none: a DuckDB resource | is called by | S3 API | not established | files read through an endpoint split into a host and a TLS flag | `dag_tools/resources/duckdb.py:90-98`; `test_duckdb_resource.py`: `test_split_endpoint` | `built` |
+| none: a demo IO manager registered only in demo mode | is called by | S3 API | standard key and secret from the environment; an unset one becomes empty | demo files written and read | `dag_tools/user_deployment/definitions.py:62-67`, `:233-256`; no test of an unset key | `built` |
+
+CO-CLIENT, CO-S3-SENSOR, CO-DOCUMENT-TABLES and CO-DLT-PIPELINE also reach an S3-compatible store, through their own configuration. Their records draw that store as a `none:` party rather than as this component, because which store a deployment runs is still open in this record. They are therefore not rows here.
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

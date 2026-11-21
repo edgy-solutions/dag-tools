@@ -27,6 +27,14 @@ None. Neither chart nor any component has a setting for it.
 - How a subscription would be authorized, and by which decision point.
 - Whether a published object would be registered in the catalog.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| none: the invincible-agent projector | is called by | Kafka protocol | not established | not established | invincible-agent `docs/plans/projector-build-plan.md`; invincible-agent `src/iagent/projector/apply_loop.py`; no test | `proposed` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

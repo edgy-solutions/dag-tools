@@ -67,6 +67,18 @@ Source attributes are under `source_config`. `table_prefix`, `dest_schema` and `
 - Whether the operator probe `dag_tools/systemlink/spike.py` matches any server. No run against a real server was read.
 - Whether anything publishes these tables to the catalog. The kind declares one upstream asset spec and no catalog call was found in the kind or the engine (`systemlink.py:446`, `:466`).
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DLT-PIPELINE | is called by | in-process | none | the source kind dispatch | `dag_tools/asset_wrappers/source_kinds.py:28, :129`; no test | `built` |
+| none: the source's HTTP API | calls | HTTP | API key in a request header | three read-only POST query routes | `dag_tools/systemlink/client.py:130-140`; `test_the_key_is_sent_in_the_header_only` | `built` |
+| none: a SQL warehouse | reads | SQL through the dlt client | not established | stored ids and versions | `dag_tools/asset_wrappers/sources/systemlink.py:348-364`; `test_the_first_run_stores_everything_and_the_second_stores_nothing_new` | `built` |
+| none: a SQL warehouse | writes | dlt destination connection | not established | results, steps, products and a run row | `dag_tools/asset_wrappers/sources/systemlink.py:587-599`; `test_the_ingest_run_row_counts_the_run` | `built` |
+| CO-DAGSTER | is called by | in-process | none | jobs and asset checks | `dag_tools/asset_wrappers/sources/systemlink.py:473-474, :488-491`; `test_the_schedule_targets_incremental_and_no_name_job_exists` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

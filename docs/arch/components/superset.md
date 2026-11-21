@@ -32,6 +32,16 @@ This record covers what the chart and code provide by default, and what a deploy
 - What role or account Superset's token stands for, and how long it lives.
 - Which databases Superset connects to, and with which credentials.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| none: an agent engine in the invincible-agent chart | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; invincible-agent `helm/invincible-agent/values.yaml:662`; no test | `built` |
+| none: a SQL database | reads | SQL | not established | rows, through Superset's own database connections | no code at either pin shows it; no test | `not built` |
+| CO-GATEWAY | calls | none | none | nothing; a read through Superset is not decided, ticketed or audited | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (no gateway call in it); no test | `not built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

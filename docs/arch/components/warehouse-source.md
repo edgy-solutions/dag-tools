@@ -56,6 +56,17 @@ This record covers what the chart and code provide by default, and what a deploy
 - How a deployment schedules the observation. The component ships no schedule.
 - What the catalog does with an earlier publish. Each publish sends the editable schema aspect whole, carrying only the current terms, and only for columns that have terms (`dag_tools/components/warehouse_source/component.py:236-255`). Whether that drops an earlier, stricter term, or a person's edit on the same aspect, is the catalog's behaviour and was not read.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a run of the observable source asset | `dag_tools/components/warehouse_source/component.py:347-368`; no test | `built` |
+| CO-TAGGED-WAREHOUSE | calls | in-process | none from the component; the resource holds its own | count and schema reads; any resource with the two read methods is accepted | `dag_tools/components/warehouse_source/component.py:390-405`; no test | `built` |
+| CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | dataset metadata and per-column label terms | `dag_tools/components/warehouse_source/component.py:169-188, :191-215, :427-443`; `test_an_empty_token_is_never_sent_as_a_credential`, `test_a_catalog_failure_FAILS_the_materialization` | `built` |
+| none: a mounted classification document | reads | file read | none | the dimensions and values labels are validated against | `dag_tools/components/warehouse_source/component.py:139-166`; `test_an_absent_document_loads_and_then_fails_the_run_naming_the_path` | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

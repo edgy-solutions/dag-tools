@@ -64,6 +64,14 @@ How closely is one of:
 
 `how closely` describes the correspondence; `status` describes the thing that corresponds. A row can be `close` and `proposed`, if the intent matches and nothing is built.
 
+## Ids and connections
+
+Each component record carries an id beginning `CO-` in its title line, and each flow record an id beginning `FL-`. Other records refer to a component or a flow by that id. An id does not change once it is pushed.
+
+A component record's "Connections" table has one row per connection, read from that record's side. The first cell is the other party's id. A party with no record of its own is written `none:` followed by a description of it, and a person is written `person:` followed by a role. The direction cell holds one of four words: `calls` (this side sends the request), `is called by` (the other side sends it), and `reads` or `writes` (this side moves data out of, or into, a party that keeps it). A party that keeps data draws each such row from its own side as `is called by`. When a caller can reach any store of a kind and the records do not say which one a deployment runs, the caller draws the store as a `none:` party, and no store record lists that caller.
+
+A flow record's step table numbers its steps and names the parties of each step in the same way.
+
 ## Records
 
 | Record | Kind | State |

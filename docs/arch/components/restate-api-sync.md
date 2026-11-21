@@ -58,6 +58,15 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether a deployment attaches the dispatch asset to a schedule or sensor.
 - What the Restate server does when a plain service's handler sets state, and whether the invocation then fails after its two steps have run (finding 14).
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-RESTATE | calls | HTTP | none | one message per staged row: route, table, key and the whole row | `dag_tools/components/restate_api_sync/component.py:133-142`, `:160`; no test | `built` |
+| none: a staging SQL database | reads | SQL through a database driver | connection URL from the process environment | every row of the staged table | `dag_tools/components/restate_api_sync/component.py:92-109`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

@@ -51,6 +51,19 @@ This record covers what the chart and code provide by default, and what a deploy
 - Whether the catalog runs with token authentication on. The code sends a token when it has one.
 - How the derived asset's builder attaches column lineage and a column schema. The sensor reads both from the asset's own metadata and fails a dataset that has neither.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | a sensor tick | `dag_tools/components/classification_propagation/component.py:529-541`; no test | `built` |
+| CO-DAGSTER | reads | in-process Dagster instance API | none | materializations and observations from the event log | `dag_tools/components/classification_propagation/component.py:482-526`; no test | `built` |
+| CO-WAREHOUSE-SOURCE | reads | in-process Dagster instance API | none | the label set a source published in its newest observation | `dag_tools/components/classification_propagation/component.py:482-526`; `test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED` | `built` |
+| CO-DAGSTER | writes | in-process Dagster instance API | none | an observation on the derived asset | `dag_tools/components/classification_propagation/component.py:544-640`; no test | `built` |
+| CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | two patch aspects per dataset | `dag_tools/components/classification_propagation/component.py:373-414`; no test | `built` |
+| none: a mounted classification document | reads | file read | none | the dimensions and values, read every tick | `dag_tools/components/classification_propagation/component.py:544-554, :700-717`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

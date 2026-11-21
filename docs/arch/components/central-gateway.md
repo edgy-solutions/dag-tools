@@ -61,6 +61,20 @@ The chart's `centralGateway.env` is empty, so the chart column reads "not set" u
 - How many gateway replicas a deployment runs, and whether they share one cache. The chart's default is two replicas and one cache address.
 - Whether any deployment sets a posture other than the default. A deployment's settings are not described here.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-TOPAZ | calls | HTTP | the caller's bearer token forwarded; an optional tenant header | the dataset URN, the principal and a read permission; back come allowed columns and row filters | `dag_tools/central_gateway/main.py:72-73`, `:238-402`, `:295-300`, `:346`; no test | `built` |
+| CO-BROKER | calls | HTTP | client-credentials bearer token for the service door | the URN, allowed columns, row filters and subject; back comes a ticket | `dag_tools/central_gateway/main.py:404-606`; `dag_tools/central_gateway/internal_door.py:143`; `test_service_headers_refetches_30s_before_expiry` | `built` |
+| CO-BROKER | is called by | HTTP | service-door caller list, posture observe by default | the broker's address and the URNs it serves | `dag_tools/central_gateway/internal_door.py:50-72`, `:98`; `dag_tools/central_gateway/main.py:214-236`; `test_observe_serves_and_logs_would_refuse` | `built` |
+| CO-CLIENT | is called by | HTTP | bearer token verified by the gateway under enforce; the principal a header names under observe, the default | a dataset URN in; a ticket out | `dag_tools/central_gateway/identity.py:179-196`; `dag_tools/central_gateway/main.py:468-494`; `test_posture_parse` | `built` |
+| none: a route cache | writes | in-process | not established | each URN against the broker's address | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
+| none: a route cache | reads | in-process | not established | the broker address for a URN | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
+| CO-KEYCLOAK | calls | HTTP | none | the keys that verify a signed token | `dag_tools/central_gateway/identity.py:212`, `:256-257`, `:301-315`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the code and chart show | Alignment row |

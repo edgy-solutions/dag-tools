@@ -37,6 +37,17 @@ This record covers what the chart and code provide by default, and what a deploy
 - How a user's token would reach a notebook, and how long it would live.
 - Whether a notebook in a deployment reads as the user or as a service.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-CLIENT | calls | in-process | the notebook's environment, which nothing at the pin sets | the notebook imports the library | `docs/cortex-data-client.md:25-27`; no test | `not built` |
+| CO-GATEWAY | calls | HTTP | developer token, or a token from the client credentials exchange; a user token from the environment names the user | authorization of a read, answered with a ticket | `dag_tools/cortex_data/client.py:88-112`; `dag_tools/cortex_data/identity.py:34`, `:213-215`; no test here | `built` |
+| CO-KEYCLOAK | calls | HTTP | client id and secret | a service token request | `dag_tools/cortex_data/client.py:88-112`; no test here | `built` |
+| none: a mechanism that delivers a user's token to a notebook | is called by | not established | not established | a user's token | invincible-agent `docs/plans/jupyter-user-token-data-access.md`; no test | `proposed` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

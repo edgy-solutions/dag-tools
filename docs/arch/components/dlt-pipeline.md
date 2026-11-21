@@ -50,6 +50,18 @@ This record covers what the chart and code provide by default, and what a deploy
 - Where dlt writes when the destination falls back to the bare `filesystem` name (gap 2).
 - What the lineage component does with the catalog metadata; that is a separate record.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-DAGSTER | is called by | in-process | none | runs of the dlt assets | `dag_tools/asset_wrappers/dlt_assets_factory.py:605-620`; no test | `built` |
+| none: a source database | reads | SQL through a database driver | credential from config or the environment | the tables the pipeline copies | `dag_tools/asset_wrappers/dlt_assets_parsing.py:236-242, :304-310`; no test | `built` |
+| none: a destination store | writes | dlt destination connection | not established | the copied tables | `dag_tools/asset_wrappers/dlt_assets_parsing.py:85-124`; no test | `built` |
+| CO-SYSTEMLINK-SOURCE | calls | in-process | none | the source kind chosen by an exact registered type | `dag_tools/asset_wrappers/source_kinds.py:134-157`; `test_a_near_miss_of_a_registered_kind_fails_naming_it` | `built` |
+| CO-DATAHUB-LINEAGE | writes | in-process asset metadata | none | metadata naming the source platform | `dag_tools/asset_wrappers/dlt_assets_factory.py:605-620`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

@@ -43,6 +43,19 @@ This record covers what the chart and code provide by default, and what a deploy
 - What the admin port lets a caller read or change beyond registration, such as journal or state contents. That is Restate's own behaviour, and it was not read here.
 - How the journal volume is backed up, and how long the journal is kept.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-RESTATE-WORKER | is called by | HTTP | none | the worker's advertised address, posted for registration | `dag_tools/restate_handlers/serve.py:75-112`; no test | `built` |
+| CO-RESTATE-WORKER | calls | HTTP | none | handler invocations carrying a job payload | `helm/dag-tools/templates/restate-worker.yaml:47-56`; no test | `built` |
+| CO-OTEL-API-SYNC | is called by | HTTP | none; an idempotency key is the one header sent | one rendered plan per group | `dag_tools/components/otel_api_sync/component.py:58`, `:218-224`, `:760-770`; `test_dispatch_posts_one_plan_per_group_to_the_group_keyed_object` | `built` |
+| CO-RESTATE-API-SYNC | is called by | HTTP | none | one message per staged row | `dag_tools/components/restate_api_sync/component.py:130-160`; no test | `built` |
+| CO-RESTATE-DLT-SYNC | is called by | HTTP | none | acknowledgement chunks and request or control-row calls | `dag_tools/components/restate_dlt_sync/component.py:290`, `:342`; `test_the_send_suffix_is_stripped` | `built` |
+| none: a persistent volume | writes | file system | none | the journal | `helm/dag-tools/templates/restate-server.yaml:59`, `:76-82`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

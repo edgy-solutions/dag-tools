@@ -57,6 +57,20 @@ This record covers what the chart and code provide by default, and what a deploy
 - Which callers can reach the worker's port. The chart ships no network policy, and a deployment's own was not read.
 - What the image contains. Its build file was not read for this record.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-RESTATE | calls | HTTP | none | its advertised address, posted for registration | `dag_tools/restate_handlers/serve.py:43`, `:75-112`, `:115-139`; no test | `built` |
+| CO-RESTATE | is called by | HTTP | none: the worker's port checks no caller | handler invocations carrying a job payload | `dag_tools/restate_handlers/serve.py:72`; `helm/dag-tools/templates/restate-worker.yaml:47-56`; no test | `built` |
+| none: a SQL database | writes | SQL through a database driver | user and password from the environment; absent credentials refused at once | acknowledgements, control rows and requests written back | `dag_tools/restate_handlers/oracle_ack.py:98-100`, `:115`, `:151-154`; `dag_tools/restate_handlers/api_sync.py:146-155`; `test_a_wrong_password_causes_one_login_attempt_not_a_loop` | `built` |
+| none: the target API | calls | HTTP | not established | a delivered record or a rendered call | `dag_tools/restate_handlers/api_sync.py:115-116`, `:137`, `:164`; `dag_tools/restate_handlers/api_call_plan.py:110`; `test_the_acking_step_carries_a_bound_and_the_http_step_does_not` | `built` |
+| none: a source system's OData service | calls | HTTP | user and password from the environment | an induction request | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
+| none: a callback endpoint | calls | HTTP | not established | a state change pushed to a callback API | `dag_tools/restate_handlers/sap_induction/config.py:29-31`, `:76-91`; no test | `built` |
+| none: a SQL database | writes | SQL through a database driver | not established | the local record of each state change | `dag_tools/restate_handlers/sap_induction/db_client.py:14`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the chart and code show | Alignment row |

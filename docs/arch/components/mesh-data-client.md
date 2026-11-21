@@ -59,6 +59,19 @@ The read-only IO manager takes the gateway address, the service credentials and 
 - Whether any Postgres deployment applies the decision in the database for a read on the older path. The client skips its own narrowing for Postgres on every path.
 - Which processes outside dag-tools use the client, and with which identity. The SDK's use of it is recorded in [agent capabilities](../flows/agent-capabilities.md) as supplied by the SDK's session.
 
+## Connections
+
+One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
+
+| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CO-GATEWAY | calls | HTTP | bearer token | a dataset URN; back comes a ticket | `dag_tools/cortex_data/client.py:188-205`; `test_authorize_endpoint_shape` | `built` |
+| CO-KEYCLOAK | calls | HTTP | client-credentials grant, used when no token is handed in | service credentials; back comes a token | `dag_tools/cortex_data/client.py:89-112`, `:146-159`; `test_cortex_client_m2m_env` | `built` |
+| none: an object store | reads | object-store scan | the ticket's credential; an unsigned scan when the ticket carries none | the table's data, narrowed in the client | `dag_tools/cortex_data/client.py:236-356`; no test | `built` |
+| none: a Postgres database | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:315`; no test | `built` |
+| none: a ClickHouse database | reads | SQL through a database driver | the credential the ticket carries | the whole table, eagerly | `dag_tools/cortex_data/client.py:236-356`, `:339`; no test | `built` |
+| CO-DAGSTER | is called by | in-process | none | a URN in; a frame out, through a read-only IO manager | `dag_tools/cortex_data/client.py:59-63`; `dag_tools/io_managers/cortex_io_manager.py:145-153`, `:155-173`; no test | `built` |
+
 ## Place in the mesh
 
 | Aspect | What the code shows | Alignment row |
