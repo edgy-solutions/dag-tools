@@ -1,0 +1,20 @@
+{
+  "git_sha": "c6ac123bff7eb7a871963578ec0a93fbf9c8fe9b",
+  "images": [
+    {
+      "digest": "sha256:debbde391e54e41c2760a560b7e6bc8d50badaf65f59364cb6cf976afd23e656",
+      "repository": "ghcr.io/edgy-solutions/dag-tools/central-gateway"
+    },
+    {
+      "digest": "sha256:5422ecb4b5108cb943ac048c29a86c99cc235283f852f88d7ce43012b10186c3",
+      "repository": "ghcr.io/edgy-solutions/dag-tools/restate-worker"
+    },
+    {
+      "digest": "sha256:afa0af2e25d81e50260c00b2770904b9b778d7f5d8274145f1c37b2d2f3369eb",
+      "repository": "ghcr.io/edgy-solutions/dag-tools/user-deployment"
+    }
+  ],
+  "recorded_at": "2026-11-21T16:51:23.792289Z",
+  "repo": "dag-tools",
+  "schema_version": 1
+}
