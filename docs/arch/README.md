@@ -1,6 +1,6 @@
 # Mesh architecture records
 
-These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found, and every row in it is `proposed`.
+These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found. Every row in it is `proposed` except the one the architect has accepted, which the note marks.
 
 The records are written for arch-kit, pinned at tag `v0.1.0` (`e0b9b3c40520440a09a4e0e6050ea5017de05848`). arch-kit v0.1.0 has no record type for a *flow* or for *alignment to an outside reference*. Until the kit or its loader declares one, these files follow the kit's view form: a title line, findings first, and a Sources table at the end. **That shape is provisional.**
 
@@ -70,6 +70,8 @@ How closely is one of:
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
+| [components/restate-server.md](components/restate-server.md) | component | draft |
+| [components/restate-worker.md](components/restate-worker.md) | component | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |
