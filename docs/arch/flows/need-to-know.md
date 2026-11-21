@@ -103,7 +103,7 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 
 ## Gaps
 
-- **No security labels in a standard metadata form.** Labels are published in the mesh's own form (finding 3); no standard metadata form was found. Status: `built`.
+- **No security labels in a standard metadata form.** Labels are published in the mesh's own form (finding 3); no standard metadata form was found ([DoD S12](../alignment/dod-dmra.md), [NATO L2](../alignment/nato-dcra.md)). Status: `built`.
 - **Labels are not a decision input.** The decision reads no label. The rails that would carry clearances are written down and empty (finding 3). The access model is an explicit per-dataset relation, and it is recorded as such and not relabelled. The remedy is [roadmap row 18](../ROADMAP.md), proposed. Status: `built`.
 - **Narrowing produced by policy:** narrowing is built at every hop, and no deployed policy produces it (finding 2). Status: `built`.
 - **Object-store narrowing:** limited to a prefix. The minter's own docstring says it takes the decision's narrowing and ignores it. Remedy: [roadmap row 2](../ROADMAP.md). Status: `built`.
