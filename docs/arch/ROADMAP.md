@@ -45,7 +45,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Gap:** [need to know, finding 4](flows/need-to-know.md). Under `observe`, the code default, the gateway uses the named principal as given (`dag_tools/central_gateway/identity.py:178-197`, `:588-608`). `built`
 - **What already exists:** the gateway counts what `enforce` would have refused, separately from what it did refuse, and reports both on `/health` (`dag_tools/central_gateway/refusal_gauge.py:20-53`; `main.py:142-170`). `built`
 - **Remedy:** a deployment moves `GATEWAY_IDENTITY_POSTURE` to `enforce` once the would-refuse counts read zero over a period it chooses. Before that, the delegation seam (`identity.py:270-285`) gets a reader of the policy rail that lists which services may act for a person, so those services are not refused. `proposed`
-- **Depends on:** the delegate rail, which policy owns in invincible-agent. Its reader in dag-tools is not built.
+- **Depends on:** the delegate rail, which policy owns in invincible-agent. dag-tools has no reader for it at the pin.
 - **Issue:** dag-tools #70.
 
 ### 2. Refuse what the object store cannot narrow
