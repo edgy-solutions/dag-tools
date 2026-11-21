@@ -11,7 +11,7 @@ This record sets the mesh against the principles and services of the DoD data me
 | Name | Chief Digital and Artificial Intelligence Office (CDAO), *Data Mesh Reference Architecture* |
 | Edition | version 2.6, March 2024 |
 | Terms | Public. Cited by element name and section only. No figure or passage is copied, and each element's meaning is given here in this record's own words. The document is not committed. |
-| Elements used | §4 "Principles": the four generic mesh principles and the fifth principle the reference adds. §3 "Tactical Structure": the fifteen services. §4 "Capability Patterns": items 1 to 15, one per service. The Capability column is read against a second reference: NATO DCRA v2, AC/322-D(2025)0056, Appendices 1 to 13, by title only. |
+| Elements used | §4 "Principles": the four generic mesh principles and the fifth principle the reference adds. §3 "Tactical Structure": the fifteen services. §4 "DMRA Use Cases and Actors/Roles": the actors the role ids are named after (see the README's Roles table). §4 "Capability Patterns": items 1 to 15, one per service. The Capability column is read against a second reference: NATO DCRA v2, AC/322-D(2025)0056, Appendices 1 to 13, by title only. |
 
 ## Summary
 
