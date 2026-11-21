@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 16 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 19 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -24,6 +24,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 14 | A pinned Restate server, and no setting read by nothing (not filed) | two installs of one chart run one Restate version, and every external Restate setting is used | — (proposed; no decision yet) | — |
 | 15 | The worker reports that it is registered (not filed) | a worker the server cannot route to is not reported ready | — (proposed; no decision yet) | — |
 | 16 | The internal doors admit only listed services by default (not filed) | only a listed service registers a route at the gateway or calls the broker's resolve route | — (proposed; no decision yet) | — |
+| 17 | One signed attribution for every read (not filed) | a read the audit counts as explained was made by the principal its tag names, and a read made under a ticket joins that ticket | — (proposed; no decision yet) | row 1 |
+| 18 | Labels as a decision input (not filed) | a person reads a labelled column only where the label and the person's clearance allow it | — (proposed; no decision yet) | — |
+| 19 | The probes code location in the chart (not filed) | a qualification can cover the classes that need a probe without a hand-written deployment entry | — (proposed; no decision yet) | — |
 
 ## Where later slices fold in
 
@@ -155,6 +158,31 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Remedy:** the chart sets the door to `enforce`, with each route's list of services, once the `would_refuse` lines read zero over a period the deployment chooses; or the code default moves to `enforce`. Which of the two is for the decision record. It could be filed together with row 1, which moves the identity posture the same way. `proposed`
 - **Issue:** not filed.
 
+### 17. One signed attribution for every read
+
+- **Gap:** [read audit, finding 5](components/read-audit.md); [tagged warehouse, finding 3](components/tagged-warehouse.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. The query tag is compact JSON carrying a principal, an optional asset key, an optional run id and a schema version, with no signature (`dag_tools/audit/tag.py:71-79`, `:123-146`). A read that carries a forged pipeline tag counts as explained. The gateway logs each ticket with its id (`dag_tools/central_gateway/main.py:591-597`). The client that reads a ticket's backend sets no query tag, so the ticket log and the read audit share no key. `built`
+- **What already exists:** the tag and its encoder, and a ticket id minted per request (`dag_tools/domain_broker/ticket_identity.py:218`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** the tag carries a signature that the read audit checks, and a read made under a ticket carries the ticket id in its tag. A tag that fails the check is reported as its own cause, not counted as explained. How the key is held, and which component sets the tag on a ticket read, are for the decision record. `proposed`
+- **Depends on:** row 1 for a person's reads, because a tag set from an unverified principal would sign a name nobody checked.
+- **Issue:** not filed.
+
+### 18. Labels as a decision input
+
+- **Gap:** [need to know, finding 3](flows/need-to-know.md); [evidence walkthrough](walkthroughs/evidence.md), Gaps. Labels are published to the catalog as metadata. The decision path does not read them, and the policy rails that would carry a clearance are empty. Labels are `built` as metadata and `proposed` as a decision input.
+- **What already exists:** label publishing for sources and for derived datasets, each label set carrying the digest of the document that ratified it. `built`
+- **Owner:** not named. The rails are policy's, in invincible-agent; their reader would be a later dag-tools step, which invincible-agent ADR-0064 describes (cited in code, not read here).
+- **Remedy:** a reader of the rails, and a decision that consults a column's label and the person's clearance, reading each dimension by its declared kind. `proposed`
+- **Issue:** not filed.
+
+### 19. The probes code location in the chart
+
+- **Gap:** [Dagster, finding 10](components/dagster.md); [sustainment walkthrough](walkthroughs/sustainment.md), Gaps. The probes code location is built and loads whatever probe modules its directory holds (`dag_tools/probes_location/definitions.py:13`, `:34`, `:65`). Neither chart has an entry for it. `not built`
+- **What already exists:** the location, which loads empty when the probes directory variable is unset, and the status check that reports it absent from a workspace. `built`
+- **Owner:** dag-tools.
+- **Remedy:** the dag-tools chart offers the probes code location as an entry a deployment turns on, off by default. `proposed`
+- **Issue:** not filed.
+
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
@@ -177,5 +205,8 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Restate server image at `latest`; an ingress setting read by nothing | dag-tools `helm/dag-tools/values.yaml:22-24`, `:34-38`; `templates/_helpers.tpl:43-46`, `:66-74` | not stated | — | `built` |
 | Internal doors serve a refused caller under `observe`, the default; chart sets no posture | dag-tools `dag_tools/central_gateway/internal_door.py:17-21`, `:50-72`, `:101-131`; `helm/dag-tools/values.yaml:173-215` | not stated | `test_internal_doors.py`: `test_observe_serves_and_logs_would_refuse` | `built` |
 | No worker probe; registration failure only logged | dag-tools `helm/dag-tools/templates/restate-worker.yaml:1-98`; `dag_tools/restate_handlers/serve.py:75-112` | not stated | no test | `built` |
-| The sixteen remedies, except row 8 | this note | none | — | `proposed` |
+| Query tag unsigned; ticket id minted per request and logged | dag-tools `dag_tools/audit/tag.py:71-79`, `:123-146`; `dag_tools/domain_broker/ticket_identity.py:218`; `dag_tools/central_gateway/main.py:591-597` | dag-tools AGENTS.md §4j, §4o | `test_the_tag_carries_the_principal_the_asset_and_the_run`, `test_two_resolves_of_one_urn_get_different_ticket_ids` | `built` |
+| Labels published, not read at decision time | [need to know, finding 3](flows/need-to-know.md) | cited in code: invincible-agent ADR-0064 (not read) | `test_the_published_label_set_says_which_document_ratified_it` | `built` as metadata; `proposed` as a decision input |
+| Probes code location built, in neither chart | dag-tools `dag_tools/probes_location/definitions.py:13`, `:34`, `:65` | dag-tools AGENTS.md §4g1 | `test_definitions_module_yields_empty_defs_when_env_unset` | `built`; the chart entry `not built` |
+| The nineteen remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |

@@ -7,7 +7,7 @@ A team that sustains the mesh wants to move Dagster to a newer version. Before t
 
 Each step names the part of the tooling that does it and the records it relies on. A step adds no claim of its own: its status is the status of the records it cites, and its evidence is theirs.
 
-**This record describes; it proposes nothing.** Where a gap has a remedy, it is a row in [the roadmap note](../ROADMAP.md), marked `proposed`; none of the gaps below has such a row yet. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
+**This record describes; it proposes nothing.** Where a gap has a remedy, it is a row in [the roadmap note](../ROADMAP.md), marked `proposed`; one gap below has such a row; each of the other three is either a run rather than a change, or settled by a decision, which each names. Statuses are those of [the README](../README.md), and line numbers are at the pins listed there. The record shape is provisional.
 
 ## Findings
 
@@ -41,10 +41,10 @@ Each step names the part of the tooling that does it and the records it relies o
 
 ## Gaps
 
-- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md).
-- **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10).
-- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer. It does not produce staging data on its own (§4e.5, §4f.11).
-- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.5). A change in a metadata value passes.
+- **No recorded qualification.** Every step is tested in isolation, and no qualification against a running deployment is recorded, so none of this is `measured`. The tests that could make it so are listed in [the built-to-measured list](../built-to-measured.md). No row: what is missing is a recorded run, not a change.
+- **The probe location is deployed by neither chart.** A deployment must add it, or every class that needs a probe stays uncovered ([Dagster](../components/dagster.md), finding 10). Remedy: [roadmap row 19](../ROADMAP.md).
+- **Staging is the operator's.** The tooling reports which classes need upstream data and resolves the operator's staging pointer. It does not produce staging data on its own (§4e.5, §4f.11). No row: closing it through the documented mechanisms is the operator's, by those decisions.
+- **Metadata values are not compared.** Parity is on keys only, except for the two round-trip shape keys (§4h.1, §4g2.5). A change in a metadata value passes. No row: key-only parity is the decision (§4h.1), which allows value comparison only behind an opt-in flag.
 
 ## Not established from code
 
