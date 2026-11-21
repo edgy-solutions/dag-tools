@@ -62,13 +62,13 @@ One service depends on another when it cannot do its job without what the other 
 | # | Service | Depends on | Why | Status | Evidence |
 |---|---|---|---|---|---|
 | 1 | S1 | S3 | A dataset's identifier is its catalog URN on the physical platform. | `built` | AL-DMRA S1; CO-WAREHOUSE-SOURCE |
-| 2 | S2 | none | The ontology service answers from its own graph, and a contract's normalizer is a rule document read by the mapping. Neither calls another of the fifteen. | `built` | AL-DMRA S2; CO-CONTRACT-MAPPING |
-| 3 | S3 | none | The catalog runs outside the chart and is reached by URL. The mesh writes into it; it calls no other of the fifteen. | `built` | AL-DMRA S3; CO-DATAHUB |
+| 2 | S2 | `none` | The ontology service answers from its own graph, and a contract's normalizer is a rule document read by the mapping. Neither calls another of the fifteen. | `built` | AL-DMRA S2; CO-CONTRACT-MAPPING |
+| 3 | S3 | `none` | The catalog runs outside the chart and is reached by URL. The mesh writes into it; it calls no other of the fifteen. | `built` | AL-DMRA S3; CO-DATAHUB |
 | 4 | S4 | S3 | Lineage from Dagster and dbt is published to the catalog. | `built` | AL-DMRA S4; CO-DATAHUB-LINEAGE |
 | 5 | S5 | S3 | The policy directory's dataset objects and owner relations are synced from the catalog. | `built` | FL-NTK, Roles in the NATO frame; CO-TOPAZ |
 | 6 | S5 | S6 | Grants are reviewed files, and the seed job syncs them to Topaz only after the validator passes. | `built` | AL-DMRA S6; CO-TOPAZ |
 | 7 | S5 | S12 | Labels as an input to the read decision. Today the decision reads relations only. | `proposed` | FL-NTK, Findings; AL-DMRA S5, S12 |
-| 8 | S6 | none | Policy files are reviewed in git and validated with no network. The seed job writes into S5's store, which is S5 depending on S6, not the reverse. | `built` | AL-DMRA S6; CO-TOPAZ |
+| 8 | S6 | `none` | Policy files are reviewed in git and validated with no network. The seed job writes into S5's store, which is S5 depending on S6, not the reverse. | `built` | AL-DMRA S6; CO-TOPAZ |
 | 9 | S7 | S1 | A read names its dataset by catalog URN, and each ticket gets its own id. | `built` | AL-DMRA S1, S7; CO-BROKER |
 | 10 | S7 | S5 | The gateway asks the policy service before it asks any broker for a ticket. A refusal stops the read. | `built` | FL-NTK steps 5 to 7; AL-DMRA S5, S7; CO-GATEWAY; CO-TOPAZ |
 | 11 | S8 | S3 | The catalog wrapper searches the catalog. | `built` | AL-DMRA S8 |
@@ -82,7 +82,7 @@ One service depends on another when it cannot do its job without what the other 
 | 19 | S12 | S6 | Every label is validated against the classification dimensions, a reviewed policy file that dag-tools reads from a mounted copy. | `built` | AL-DMRA S6, S12; CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION |
 | 20 | S13 | S14 | Contract tests are generated from the contract mapping. | `built` | AL-DMRA S13, S14; CO-CONTRACT-MAPPING |
 | 21 | S14 | S2 | Local identifier spellings are normalized by a declared rule document, per contract rather than as a service. | `built` | AL-DMRA S2, S14; CO-CONTRACT-MAPPING |
-| 22 | S15 | none | The `/health` and `/ready` routes answer from the service's own process. | `built` | AL-DMRA S15; CO-GATEWAY; CO-BROKER |
+| 22 | S15 | `none` | The `/health` and `/ready` routes answer from the service's own process. | `built` | AL-DMRA S15; CO-GATEWAY; CO-BROKER |
 
 There are 18 edges among the fifteen services: 15 `built` and 3 `proposed`. S3 has the most services depending on it, and S5 the next most.
 
