@@ -74,6 +74,7 @@ How closely is one of:
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
 | [walkthroughs/evidence.md](walkthroughs/evidence.md) | walkthrough: a decision-maker asking for evidence | draft |
 | [walkthroughs/sustainment.md](walkthroughs/sustainment.md) | walkthrough: qualifying a Dagster upgrade | draft |
+| [built-to-measured.md](built-to-measured.md) | list: built claims and the test or run that could make each measured | draft |
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
 | [components/contract-mapping.md](components/contract-mapping.md) | component | draft |
