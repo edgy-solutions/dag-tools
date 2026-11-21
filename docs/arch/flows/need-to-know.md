@@ -78,7 +78,7 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 | 8 | CO-BROKER | mints a credential for that dataset | XE-DATASET-BACKEND | — | the minter for the backend type | — | `dag_tools/domain_broker/main.py:226-308`, `dag_tools/domain_broker/sql_minting.py:164-221`, `:264-344` | `built` |
 | 9 | CO-GATEWAY | logs `TICKET_ISSUED` and returns the ticket; the client reads with it | CO-CLIENT | the ticket | — | — | `main.py:549-571`; `client.py` read paths | `built` |
 | 10 | XE-AGENT-ENGINE | answers from a dataset read through the data client | CO-CLIENT | the URN and the person read for; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: invincible-agent `agent_fleet/data_analyst/main.py:505-519` | `built` |
-| 11 | CO-JUPYTERHUB | reads a dataset from a notebook through the data client | CO-CLIENT | the URN and the token the notebook's environment carries; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: dag-tools `docs/cortex-data-client.md:25-26`; [JupyterHub, finding 5](../components/jupyterhub.md) | `built` |
+| 11 | CO-JUPYTERHUB | reads a dataset from a notebook through the data client | CO-CLIENT | the URN and the token the notebook's environment carries; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: dag-tools `docs/cortex-data-client.md:26-27`; [JupyterHub, finding 5](../components/jupyterhub.md) | `built` |
 | 12 | XE-AGENT-ENGINE | asks a dashboard tool's API for data | CO-SUPERSET | the chart's bearer token, empty by default | none in the mesh | `CO-SUPERSET` `built`; `none: the gateway is not on this path` `built` | `CO-SUPERSET`: [Superset, finding 6](../components/superset.md); `none:` invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (the caller's side only) | `built` |
 | 13 | XE-AGENT-READER | reads graph or vector objects for an answer | XE-KNOWLEDGE-STORE | the person's query; objects back | the engine's own per-object check, off by default | `none: the gateway is not on this path` `built` | `none:` [agent capabilities, findings 6 and 7](agent-capabilities.md) | `built` |
 
@@ -112,7 +112,7 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 - **Delegation:** a service may not act for a person; the seam always answers no. Roadmap row 1 depends on it. Status: `built`.
 - **Gateway code hygiene:** A second, relation-style request is built and never sent (`main.py:295-307`). If Topaz returns an empty `decisions` list, the allow flag is read before it is assigned. The resulting exception is caught and the result is a deny, so it fails closed. Status: `built`.
 - **No test pins the decision request:** neither the policy path nor `can_read` is asserted by a dag-tools test. Status: `built`.
-- **Two points of use pass no gateway, and a third passes none by default** (finding 7). A dashboard tool's reads and an API layer's reads are protected only by the tool's own roles and leave no gateway receipt. An agent answer built from a graph or vector read is protected by the engine's own check, which is off by default. Remedy: [roadmap rows 21, 22 and 24](../ROADMAP.md); graph and vector reads are in [agent capabilities](agent-capabilities.md). Status: `built`.
+- **Three points of use pass no gateway, and one of them passes no check at all by default** (finding 7). A dashboard tool's reads and an API layer's reads are protected only by the tool's own roles and leave no gateway receipt. An agent answer built from a graph or vector read is protected by the engine's own check, which is off by default. Remedy: [roadmap rows 21, 22 and 24](../ROADMAP.md); graph and vector reads are in [agent capabilities](agent-capabilities.md). Status: `built`.
 
 ## Not established from code
 
@@ -145,7 +145,7 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 | One authorization-id claim, default `email` | invincible-agent `keycloak-configmap.yaml:2`; `values.yaml:2199` | not stated | — | `built` |
 | Producer brokers run as a second pod from the producer's image | invincible-agent `helm/invincible-agent/values.yaml:1176-1186` | not stated | pub-tools tests, as reported by its owner | `built` |
 | An agent answer reads through the data client | invincible-agent `agent_fleet/data_analyst/main.py:505-519` | not stated | — | `built` |
-| A notebook reads through the data client | dag-tools `docs/cortex-data-client.md:25-26` | not stated | — | `built` |
+| A notebook reads through the data client | dag-tools `docs/cortex-data-client.md:26-27` | not stated | — | `built` |
 | A dashboard tool is called directly, with no gateway | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` | not stated | — | `built` |
 | Nothing wires an API layer | [Hasura, finding 1](../components/hasura.md) | not stated | — | `built` |
 | Graph and vector reads pass no gateway | [agent capabilities, findings 6 and 7](agent-capabilities.md) | not stated | — | `built` |
