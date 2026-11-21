@@ -35,7 +35,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Fixed classification axes need a code change for every new engine.
 - **Stated status.** Accepted.
 - **Where else.** ADR-0005, ADR-0006, ADR-0009.
-- **Status.** Step C (path and tool lookup as a plain graph query): `built`. Steps A, B, D, E, F: not established at the pin. Steps A and B live in other repositories. ADR-0009 replaces the wording of steps E and F.
+- **Status.** Step C (path and tool lookup as a plain graph query): `built`. Step E, in ADR-0009's wording (persona and domain lists derived from the registry by view functions): `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. Step F, in ADR-0009's wording (the language layer builds its target lists from those views): `built`, at IA `agent_fleet/ontology_service/main.py:4713-4717` and `:5507-5508`. Steps A and B live in other repositories, and step D was not located; all three are in the not-established list.
 
 ## ADR-0005 Two kinds of namespace for verbs and concepts
 
@@ -75,7 +75,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** The classification grid was brittle, and verbs lacked the semantic matching nouns already had.
 - **Stated status.** Proposed, with a recorded mid-course correction.
 - **Where else.** ADR-0004, ADR-0008.
-- **Status.** Hybrid predicate search endpoint, mode-and-entities extraction call, removal of the master persona, domain and intent dicts: `built`. Identity-claims work: not established. Persona and domain views as graph queries: not established.
+- **Status.** Hybrid predicate search endpoint, mode-and-entities extraction call, removal of the master persona, domain and intent dicts: `built`. Persona and domain views as graph queries: `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. The identity-claims work was not located and is in the not-established list.
 
 ## ADR-0010 OpenTelemetry tracing at the HTTP boundary
 
@@ -155,7 +155,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** The graph proves only that a verb is available for a subject, not that it answers the question, and an unprotected graph can be wiped or polluted without anyone noticing.
 - **Stated status.** Proposed.
 - **Where else.** ADR-0004, ADR-0008, ADR-0015, ADR-0018, ADR-0011.
-- **Status.** Mixed. Contract A: `built`. Contract B: `built` for the unresolved-subject and no-compatible-verb routes. Contract C: `proposed` (its self-verify and drop-detection tests are skip-marked placeholders). Contract D: `proposed` (its rejection tests are skip-marked placeholders). The dedup rule, the pair identity and the reference binding pattern: not established.
+- **Status.** Mixed. Contract A: `built`. Contract B: `built` for the unresolved-subject and no-compatible-verb routes. Contract C: `proposed` (its self-verify and drop-detection tests are skip-marked placeholders). Contract D: `proposed` (its rejection tests are skip-marked placeholders). The dedup rule: `built`, at IA `agent_fleet/ontology_service/main.py:7104-7153`. The pair identity: `built`, at IA `agent_fleet/mesh_registrar/v2_substrate.py:241`, `:287` and IA `agent_fleet/mesh_registrar/v2_saga.py:42`. The reference binding pattern: `built`, declared at IA `setup/ontologies/idp_extension.ttl:9-36`, `:57-58` and read at IA `agent_fleet/restate_analyst/main.py:3673-3675`.
 
 ## ADR-0020 Structural disambiguation at weak anchors
 
@@ -204,17 +204,16 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - Checked only in part: the ADR-0004 test names are from tests/test_ontology_routing.py; their assertions were not opened to confirm they check the graph-query shape.
 - Checked only in part: ADR-0005: test_emits_full_predicate_payload (:176) also asserts domain authority for a domain prefix; two nearer tests are cited instead.
 - Checked only in part: the ADR-0008 abstain case comes from comments at sup:2906-2923, not from a test.
-- ADR-0004 steps A, B, D, E, F; ADR-0005 propose-time rejection and the prefix registry file; ADR-0006 concurrency tests, conjunctive-read guard test, doc-sync sole-writer claim; ADR-0009 identity-claims work; ADR-0008 operator doc step.
+- ADR-0004 steps A, B and D; ADR-0005 propose-time rejection and the prefix registry file; ADR-0006 concurrency tests, conjunctive-read guard test, doc-sync sole-writer claim; ADR-0009 identity-claims work; ADR-0008 operator doc step.
 - ADR-0010: the OpenTelemetry API and SDK are direct dependencies at pyproject.toml:26-27, and the exporter distributions are not. Entry-point spans exist on a separate primitive (src/iagent/trace_spans.py, entered at gwy:8311, :14088 and :18072), with a parent-span header of their own. A trace header is parsed at wfr:683-690 through a separate telemetry package. An older trace header is still read in two services. Neither matches the ADR's plan, so it stays `proposed`.
 - Checked only in part: ADR-0014 rule 1 is judged from comments recording the removal plus absence of enumerated catalog URNs in agent entry points; a fuller prompt audit was not done.
 - Checked only in part: ADR-0017 "dissolve into a validator" is marked not built because the hand-kept capability file still exists with fixed expected fields; a chart normalizer file was not seen. Whether the validator now duplicates it was not examined.
 - Checked only in part: ADR-0018 asserts a log reason for the no-compatible-verbs short-circuit; the grep did not surface that exact line, so the claim rests on the route's return of UNKNOWN with no model call.
 - Checked only in part: ADR-0019 Contract B is cited to the supervisor's classify function; the test that confirms the unresolved-subject path never calls classification is the parametrized contract test, whose case list was not read.
 - Checked only in part: ADR-0023 read-sync deployment template exists, but no sync-shape or UI consumer code was checked, so only the template's existence is claimed.
-- ADR-0015 whether any registration path accepts example questions (only a test text mentions them). ADR-0019 Contract C verification at registration (no code seen; the runnable outcome test only inspects state), the dedup rule (5a) and pair identity. ADR-0021 precedence, mapping table, halt and instance-of stamping live in a different repository or were not located. ADR-0022 whether the deployed wrapper calls the vendor tool server at all (no reference found). ADR-0016 whether any test pins the memory-library setting.
+- ADR-0015 whether any registration path accepts example questions (only a test text mentions them). ADR-0019 Contract C verification at registration (no code seen; the runnable outcome test only inspects state). ADR-0021 precedence, mapping table, halt and instance-of stamping live in a different repository or were not located. ADR-0022 whether the deployed wrapper calls the vendor tool server at all (no reference found). ADR-0016 whether any test pins the memory-library setting.
 - ADR-0014: whether rule 2's deployed copy matches the configuration shape.
 - ADR-0017: decision provenance.
-- ADR-0019: reference binding, beside the dedup rule and pair identity above.
 - ADR-0021: the driver rules.
 
 ## Sources
@@ -227,7 +226,8 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0002 Two memory-library patches | mem `:64-99`, mem `:119-147` | ADR-0002 | the end-to-end memory round-trip test (:220) | `built` |
 | ADR-0003 Per-class model variables: phase 1 | mem `:532-538` | ADR-0003 | no test | `built` |
 | ADR-0003 Per-class model variables: phases 2 and 3 | mem `:532-538` | ADR-0003 | no test | `accepted` |
-| ADR-0004 Predicate-graph path lookup | ont `:4296-4315`, ont `:4320`, ont `:4353-4354`, ont `:4538-4575` | ADR-0004 | test_find_tool_happy_path (:156), test_find_path_happy_two_hop (:240), test_find_path_validates_max_hops_range (:295) | Step C: `built`. Steps A, B, D, E and F: not established |
+| ADR-0004 Predicate-graph path lookup: step C | ont `:4296-4315`, ont `:4320`, ont `:4353-4354`, ont `:4538-4575` | ADR-0004 | test_find_tool_happy_path (:156), test_find_path_happy_two_hop (:240), test_find_path_validates_max_hops_range (:295) | `built` |
+| ADR-0004 Predicate-graph path lookup: steps E and F | IA `agent_fleet/ontology_service/registry_views.py:84-147`, ont `:486-519`, ont `:4713-4717`, ont `:5507-5508` | ADR-0004 | test_personas_from_graph (:68), test_domains_from_graph (:100) | `built` |
 | ADR-0005 Platform and domain authority: authority marker | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | `built` |
 | ADR-0005 Platform and domain authority: prefix registry file | mrg `:633`, mrg `:650`, mrg `:1153`, mrg `:1182` | ADR-0005 | test_mesh_prefix_resolves_to_platform_authority (:252), test_unknown_prefix_resolves_to_domain_authority (:262) | `proposed` |
 | ADR-0006 Neo4j routing, saga writes: routing and saga | ont `:4296-4315`, sag `:151-360`, sag `:467-536`, rst `:68-127` | ADR-0006 | test_neo4j_failure_returns_503_with_no_compensation_needed (:139), test_probe_failure_compensates_both_stores_and_returns_503 (:160), test_mesh_resolve_instance_has_one_edge_per_provider (:658), test_substrate_covers_routing_via_v02_saga_edges (:914, live substrate) | `built` |
@@ -237,7 +237,8 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0007 Survey before minting: survey rule | reg `:18-29` | ADR-0007 | no test | `accepted` |
 | ADR-0007 Survey before minting: retroactive mappings | reg `:18-29` | ADR-0007 | no test | `proposed` |
 | ADR-0008 Generalist fallback policy | sup `:70-74`, sup `:1861-1885`, sup `:2765-2893`, sup `:2998`, ana `:1107-1130` | ADR-0008 | test_matched_returns_predicate_dict (:180), test_no_match_returns_none (:228), test_http_503_returns_infra_error (:291), test_fallback_payload_for_no_match (:372), test_fallback_payload_for_low_confidence (:405), test_fallback_emits_telemetry_log_line (:435), test_threshold_default_loaded_from_env (:464) | Fallback core: `built`. Operator doc: not established |
-| ADR-0009 Retire classification axes | ont `:4405`, ont `:5452` | ADR-0009 | test_a1_infra_error_records_no_verb (:118) | Search and extraction: `built`. Identity and graph views: not established |
+| ADR-0009 Retire classification axes: search and extraction | ont `:4405`, ont `:5452` | ADR-0009 | test_a1_infra_error_records_no_verb (:118) | `built` |
+| ADR-0009 Retire classification axes: graph views | IA `agent_fleet/ontology_service/registry_views.py:84-147`, ont `:486-519` | ADR-0009 | test_personas_from_graph (:68), test_domains_from_graph (:100) | `built` |
 | ADR-0010 OTel at the HTTP boundary | IA `pyproject.toml` `:26-27`; wfr `:683-690` | ADR-0010 | no test | `proposed` |
 | ADR-0011 Multi-hop routing deferred | — | ADR-0011 | no test | `proposed` |
 | ADR-0013 capability tools per change | — | ADR-0013 | no test | `proposed` |
@@ -255,6 +256,7 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0019 contracts A and B in routing: contract A | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | `built` |
 | ADR-0019 contracts A and B in routing: contract B, two routes only | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | `built` |
 | ADR-0019 contracts A and B in routing: contracts C and D | ont `:7025-7075`; sup `:703`, `:725-732` | ADR-0019 | test_n1_on_topic_still_dispatches (:350), test_adr0019_contract (:862); contracts C and D: skip-marked placeholders such as test_D_invalid_input_uri_rejected_no_phantom_created (:407) | `proposed` |
+| ADR-0019 dedup, pair identity and reference binding | ont `:7104-7153`; sag `:42`; IA `agent_fleet/mesh_registrar/v2_substrate.py:241`, `:287`; IA `setup/ontologies/idp_extension.ttl:9-36`, `:57-58`; ana `:3673-3675` | ADR-0019 | no test | `built` |
 | ADR-0020 composition axis in verb walk | — | ADR-0020 | no test | `proposed` |
 | ADR-0021 door writes declared content kind: gateway side | gwy `:13893`, `:13940-13945`; ing `:128`; ttl `:852` | ADR-0021 | test_ingest_declared_content_kind_lands_in_manifest_and_metadata (:308), test_ingest_refuses_event_as_a_file_kind_before_any_write (:144), test_every_file_kind_the_door_accepts_is_a_declared_leaf_of_artifact (:49) | `built` |
 | ADR-0021 door writes declared content kind: failed-stage record and kind-to-format binding, as open items | gwy `:13893`, `:13940-13945`; ing `:128`; ttl `:852` | ADR-0021 | test_ingest_declared_content_kind_lands_in_manifest_and_metadata (:308), test_ingest_refuses_event_as_a_file_kind_before_any_write (:144), test_every_file_kind_the_door_accepts_is_a_declared_leaf_of_artifact (:49) | `accepted` |
