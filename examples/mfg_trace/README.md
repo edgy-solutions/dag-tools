@@ -186,6 +186,82 @@ row is a curated `where`, and turning the sentinel end date into a null is a
 `nullif`. Both are planted here and asserted to reach raw unchanged; their
 behaviour is proven in `contract_mapping`'s own suites, not against this data.
 
+## The template fixture (`fixture/`)
+
+The BW fixture above is shaped like one source. The template needs two: an
+as-designed source and a test-data source. `fixture/seed.py` is the stand-in
+for both — `python fixture/seed.py` builds one sqlite file with five
+relations, in two halves, and no warehouse, no credentials and no binary
+committed.
+
+The as-designed / as-built half is three relations: a parent-to-child
+structure with revisions and effectivity, the serialized units that were
+built, and where each unit was installed. The test-data half is two
+relations shaped like what a stage-1 mapping reads: one row per test result,
+and one row per parameter measured in a step.
+
+**It is a seeder, not a `DltPipelineComponent` instance, and that is
+deliberate.** The step-parameter relation is shaped like a view over dlt's
+own child table, so its `_dlt_id` and `_dlt_list_idx` columns are already
+dlt's output; extracting them again would be dlt reading itself, and the
+seeded `_dlt_id` column would collide with the one dlt mints. So there is
+one load and no scd2 history to observe across two of them: the replacement
+is carried as a closed row and an open row inside the single load, which is
+how the source system records it.
+
+**The test-data half's columns are the two conformed mappings' declared
+`source.columns`, exactly.** Not a hand-written list that resembles them:
+`dag_tools_tests/test_mfg_trace_template_fixture.py` asserts the equality in
+both directions, so a column added to either mapping fails until it is
+seeded. That is what makes this fixture input for stage 1 rather than a
+picture of it.
+
+Each structural plant sits on its own change record, beside a control key
+that trips nothing:
+
+| plant | what it carries |
+|---|---|
+| a second level | two edges where one's child part is the other's parent, so a closure over the structure has a depth of two |
+| a substitute | an edge of substitute kind beside the child-kind edges |
+| several reference designators | one cell holding more than one designator |
+| no find number | an edge with neither a find number nor a designator, both blank as the source writes them |
+| a replacement | two install rows at one position of one parent unit, the first closed on the day the second opens: read as current only the second is installed, read as built both happened |
+| a unit in a parent nobody can see | an install row whose parent part is outside `systemlink/seed_parts.csv`, the part list the sample viewer reads |
+
+Each measurement plant sits on its own serial number, beside a control. The
+plants leave the comparator column empty, so the operator has to travel in
+the limits text — the case the grammar exists for; the control supplies a
+comparison code directly, which is the other path, where a supplied value
+wins over anything the text would yield.
+
+| plant | limits text | what it is |
+|---|---|---|
+| *the control* | `≤ 50`, comparator `LTE` | a supplied code, so the text need not be read |
+| a tolerance | `1.005 ± 0.005 V` | a centre and a tolerance, which bound both sides |
+| a low bound | `>= 3` | a comparator the table covers, on the low side |
+| a high bound | `< 50` | the same, on the high side |
+| an uncovered comparator | `== 5` | an operator this example's table deliberately omits |
+| limits that bound nothing | `7` | a bare number as limits text |
+| a parse failure | `>= 3`, measurement `OPEN` | numeric limits and a measurement that is not a number |
+| nothing measured | blank, measurement blank | not a parse failure: no number was expected |
+| no units | `>= 3`, units blank | the bound is still read |
+| a repeated parameter name | two parameters of one name in one step | the index is what tells them apart |
+| a rerun | the same unit tested twice, the later attempt failing | which attempt is latest is the curated layer's to decide |
+| a non-terminal result | — | a status outside `systemlink/component.yaml`'s terminal list, with no parameter rows at all |
+
+Nothing in the fixture states what a row *should* parse to. The example's own
+test parses these rows through the library's grammar against this example's
+own six-row comparator table, which is the only reading that proves
+anything.
+
+**Deferred, by name.** The open-interval end date is written as the source
+writes it, a `9999-12-31` sentinel rather than a null, and turning it into a
+null is a `nullif` the curated layer declares. The blank find number and the
+blank designator are the same: planted as the source writes them, asserted
+to reach raw unchanged. Every name in the fixture belongs to this example's
+sqlite file; dag-tools names none of them, and the test enforces that in
+both directions.
+
 ## Hazards
 
 - **A SQL cast rounds where the row route refuses.** The casts in a mapping
