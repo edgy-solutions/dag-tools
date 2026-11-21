@@ -11,7 +11,7 @@ This record sets the mesh against the security roles and the data planes of the 
 | Name | NATO, *Data Centric Reference Architecture for the Alliance* | Chief Digital and Artificial Intelligence Office (CDAO), *Data Mesh Reference Architecture* |
 | Edition | version 2, AC/322-D(2025)0056, publicly disclosed | version 2.6, March 2024 |
 | Terms | Public. Cited by element name and appendix paragraph only. No figure or passage is copied, and each element's meaning is given here in this record's own words. The document is not committed. | As in [the DoD record](dod-dmra.md). Cited only by that record's row numbers. |
-| Elements used | Appendix 9 (data-centric security): ¶3, the four policy roles; ¶6 to ¶10, the identity, credential and access management services. Appendix 14 (data planes): ¶1 to ¶10, the four planes. | — |
+| Elements used | Appendix 9 (data-centric security): ¶3, the four policy roles; ¶6 to ¶10, the identity, credential and access management services. Appendix 14 (data planes): ¶1 to ¶10, the four planes. Appendices 1 to 13, by title only: the thirteen capabilities the Capability column is read against. | — |
 
 **Out of scope.** Appendix 14 ¶11 to ¶15 cover APIs, consistency, ontologies and discoverability across the planes. They are not rows here. The DoD record's rows S2 (semantic), S3 (catalog) and S8 (search) cover the same ground.
 
@@ -70,3 +70,4 @@ The mesh's plane list, and the plane each component is placed in, is in [the REA
 | Graph, vector and RDF stores in the chart | invincible-agent `helm/invincible-agent/templates/infrastructure.yaml:124-128`, `:197-201`, `:287-291` | none read | — | `built` |
 | SDK vector interface only; graph client without a handler | SDK `interfaces.py:724`; `remote_clients.py:36-41`, `:58` | none | supplied by the SDK session | `not built` / `proposed` |
 | No DCAT, no standard label form | both repositories searched | lane rule | — | `not built` |
+| Capability values; the planes under none | NATO DCRA v2, Appendices 1 to 13, by title; Appendix 14, placed in the technical architecture rather than among the capabilities | none | — | — |
