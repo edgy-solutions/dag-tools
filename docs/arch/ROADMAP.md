@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 24 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 24 at the component-records pin for dag-tools, and at the invincible-agent pin for that repo. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -199,7 +199,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 21. Dashboards authorized through the decision point
 
-- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). An agent engine calls a dashboard tool's API directly, with the chart's bearer token, which is empty by default (invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`). The gateway does not decide the read, and no gateway receipt is written. `built`
+- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). An agent engine calls a dashboard tool's API directly, with the chart's bearer token, which is empty by default (invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`; `helm/invincible-agent/values.yaml:662`). The gateway does not decide the read, and no gateway receipt is written. `built`
 - **What already exists:** the gateway's authorize route and the client that calls it (`dag_tools/central_gateway/main.py:404-405`). What the dashboard tool's own roles permit is not established from code. `built`
 - **Owner:** not named. The caller is invincible-agent's; the decision point is dag-tools'.
 - **Remedy:** a dashboard tool's reads of mesh data are decided at the gateway, and each leaves a gateway receipt. `proposed`
