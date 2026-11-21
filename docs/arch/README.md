@@ -75,6 +75,7 @@ How closely is one of:
 | [walkthroughs/evidence.md](walkthroughs/evidence.md) | walkthrough: a decision-maker asking for evidence | draft |
 | [walkthroughs/sustainment.md](walkthroughs/sustainment.md) | walkthrough: qualifying a Dagster upgrade | draft |
 | [built-to-measured.md](built-to-measured.md) | list: built claims and the test or run that could make each measured | draft |
+| [not-established.md](not-established.md) | list: every fact the records do not establish, merged and grouped by what would settle it | draft |
 | [components/central-gateway.md](components/central-gateway.md) | component | draft |
 | [components/classification-propagation.md](components/classification-propagation.md) | component | draft |
 | [components/contract-mapping.md](components/contract-mapping.md) | component | draft |

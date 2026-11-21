@@ -91,6 +91,7 @@ Read together, the edges show that the catalog (S3) and policy (S5, S6) carry mo
 | What a decision-maker can be shown, and what it rests on | [the evidence walkthrough](walkthroughs/evidence.md) |
 | How a Dagster upgrade is qualified | [the sustainment walkthrough](walkthroughs/sustainment.md) |
 | Which built claims a recorded run could make measured | [the built-to-measured list](built-to-measured.md) |
+| What the records do not establish, in one list | [the not-established list](not-established.md) |
 
 Two walkthroughs follow a question through the records: [a decision-maker asking for evidence](walkthroughs/evidence.md) and [a sustainment case](walkthroughs/sustainment.md), the qualification of a Dagster upgrade.
 
