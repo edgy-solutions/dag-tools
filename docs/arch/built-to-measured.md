@@ -169,4 +169,4 @@ These rows count or point at records, or name a decision that is superseded or d
 | Claim | Source | Decision | Evidence |
 |---|---|---|---|
 | No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list |
-| 319 "no test" lines in fifty-two records | the records in this directory, except this list | — | a count of the lines containing the words in any case |
+| 320 "no test" lines in fifty-three records | the records in this directory, except this list | — | a count of the lines containing the words in any case |

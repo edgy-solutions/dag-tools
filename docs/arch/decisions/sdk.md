@@ -78,7 +78,7 @@ All paths are in the SDK repository, as supplied by its session, and were not re
 | Person guard checks the kind of identity at the boundary; no grants consulted | d6 `interfaces.py:216-243` | SDK.1 | not supplied | `built` |
 | Resolve returns a data reference; caller reads | d6 `interfaces.py:1013`, `:1076`, `:1085`; `core.py:503` | SDK.2 | `tests/test_cortex_data_client_contract.py` | `built` |
 | Remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` |
-| No server end for the remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` |
+| No server end for the remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | no test; `tests/test_remote_clients.py` runs the client against a stub, not a server end | `built` |
 | Graph client warns it is deprecated | f1 `remote_clients.py:43`, `:80`, `:90` | SDK.3 | `test_construction_warns_deprecated` (`tests/test_remote_clients.py:30`) | `built` |
 | Retire the graph client | roadmap row 8; architect's ruling 2026-11-18 | SDK.3 | — | `accepted` |
 | Vector interface | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `built` |
