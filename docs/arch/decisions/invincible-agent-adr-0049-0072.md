@@ -158,7 +158,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 
 - ADR-0049: the stalest-source stamp, request-scoped cache and registration-time dependency declaration were not seen. Calls between engines exist in several engine files, but no test was read. Status left "not established".
 - ADR-0050: shared-slot carry and one-ask-for-many-panels seal not established. The named-hole test file was seen by filename only.
-- ADR-0051: the ADR names verbs under a different prefix and says this engine does not register instance resolution; the code differs. Two further verbs named in the ADR were not found. The task kind used for concurrence is likely but unverified. Seals for registry sites and ladder routing were seen by filename only.
+- ADR-0051: the ADR names verbs under a different prefix and says this engine does not register instance resolution; the code differs. Two further verbs named in the ADR were not found. The task kind used for concurrence is likely but unverified. Seals for the registry call points and for ladder routing were seen by filename only.
 - ADR-0052: three of six rules are stated by the ADR as not met; their status here follows that table, not independent checks. Open items (asset location, drift disposition, fixture URN registration) are unresolved.
 - ADR-0053: export envelope, name-and-version in every artifact and external sha pinning not established. The runtime still reads the type literal.
 - ADR-0054: whether the census exists in this repository is not established; the ADR says it was on another branch. The prime still derives its drop set from manifest domains.
