@@ -8,7 +8,7 @@ These records list the decisions that dag-tools states in `AGENTS.md`. Each deci
 
 `AGENTS.md` is the census. It is cited by path, at the component-records pin (`add5bc48021fe6d2c79c24c31072142fc93c8179`), as listed in [the README](../README.md).
 
-A decision is addressed by its census section and its bullet's position in that section. For example, `AGENTS.md §4, bullet 3` is the third top-level bullet of section 4 at the pin. Headings in these files carry the same address in short form, such as `§4.3`.
+A decision is addressed by its census section and its bullet's position in that section. For example, `AGENTS.md §4, bullet 3` is the third top-level bullet of section 4 at the pin. Headings in these files carry the same address in short form, such as `§4.3`. Where one entry states two census bullets, its Source cell names both, such as `bullets 3-4`, and the entries after it keep consecutive heading numbers, so from there on a heading's number is one lower than its bullet. The Source cell is the census address, and the bullets it names add up to the section's count.
 
 The census has 307 top-level bullets at the pin, across 35 sections. A 36th, section 7, has none.
 
@@ -43,6 +43,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4s.md](dag-tools-s4s.md) | §4s documents to tables | 33 |
 | [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md) | §4n classification propagation, §4o ticket identity, §4o-1 refusal reasons, §4k-1 refusal fixture | 31 |
 | [dag-tools-s4k-s4j.md](dag-tools-s4k-s4j.md) | §4k contract mapping, §4j read audit and tagged warehouse | 37 |
+| [dag-tools-s4i-s4h-s4g.md](dag-tools-s4i-s4h-s4g.md) | §4i dbt to DataHub publishing, §4h verdict, §4g-1 probe status, §4g0 probe runner, §4g0a synthetic coverage rollup, §4g2 round-trip probe | 32 (one bullet of §4g2 lists tests and states no decision) |
 
 ## Where the numbered series already holds a decision
 
