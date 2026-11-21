@@ -16,7 +16,7 @@ The mesh lets data stay with the team that produces it, while other teams read i
 
 ## How to read the statuses
 
-Every claim in these records carries one status: `measured`, `built`, `accepted` or `proposed`. [The README](README.md#status-vocabulary) defines each one and the evidence it needs. In brief:
+Every claim in these records carries one status: `measured`, `built`, `accepted`, `proposed` or, for an absence, `not built`. [The README](README.md#status-vocabulary) defines each one and the evidence it needs. In brief:
 
 - **`built`** means code at the pinned commit does it. The record gives a file and line, and a test when one exists. When none exists, the record says "no test".
 - **`measured`** needs a recorded run of what the claim is about. An in-process run in continuous integration measures the code's own behaviour, and is cited as "in CI, in process". A claim about a deployed service or a real backend needs a run against that service or backend. A test that could measure a claim is not enough. [The built-to-measured list](built-to-measured.md) names eight claims `measured` in CI, in process, at least in part, and the claims a further run could change. **No other record carries `measured` yet**; each is updated when it is revisited.

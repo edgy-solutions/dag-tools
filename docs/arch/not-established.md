@@ -7,7 +7,7 @@ This page gathers, in one place, every fact these records leave open. Most recor
 ## How the list was built
 
 - **Sources.**
-  - Every "Not established" section in this directory: 183 items in 43 records.
+  - Every "Not established" section in this directory: 182 items in 43 records.
   - Sixteen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole. The "Connections" tables of ten component records carry sixteen more lines, each with "not established" in a row's Sign-in cell; those lines are not entries here.
   - Items 1 to 35 of the lane's twice-daily reports, each of which already comes from a record.
 - **Merged.** One fact carried by several records is one entry, and it links to each of them.
@@ -18,7 +18,7 @@ This page gathers, in one place, every fact these records leave open. Most recor
   4. a decision nobody has made yet;
   5. another repository or lane;
   6. a further read of code.
-- **Result.** 79 entries. Two decisions in group 4 were closed by the architect's ruling of 2026-11-19, and one entry was added in group 5.
+- **Result.** 79 open entries. X1 and X2 in group 4 were answered whole by the architect's ruling of 2026-11-19 and moved to [Answered](#answered-since-this-list-was-published), and one entry was added in group 5.
 
 ## Findings
 
@@ -150,10 +150,12 @@ These are settled by a further read at the pin.
 
 ## Answered since this list was published
 
-A clause leaves the tables above only by moving here, never by deletion. The entry it belonged to stays open while it holds any other clause, so the count of entries is unchanged.
+A clause leaves the tables above only by moving here, never by deletion. The entry it belonged to stays open while it holds any other clause. An entry whose every clause is answered moves here whole, under its own id, and leaves the count of open entries: X1 and X2 are the two.
 
 | # | Clause as published | Answer | Where it lives |
 |---|---|---|---|
+| X1 | Whether an in-process run recorded by continuous integration counts as a run against a running system. This is group B of the list. | It counts for what it exercises: the architect's ruling of 2026-11-19 makes such a run, cited by run id, `measured`. Eight claims carry it. | [built-to-measured list](built-to-measured.md#measured-in-ci-in-process) |
+| X2 | Where a recorded run would be kept, and in what form, so that a record can cite it. | As a run id, which the same ruling accepts today. Its logs expire; a durable form is the owner's to design. | [built-to-measured list](built-to-measured.md#measured-in-ci-in-process) |
 | L7 | Whether the line numbers of entries 1 to 4 still hold at the later pin. | 24 of the 25 line ranges are unchanged at the later SDK pin. The one that moved is `remote_clients.py:58`, now `:69`. | the scope note in [SDK decisions](decisions/sdk.md) |
 | C12 | One test that ADR-0006 names does not exist at the pin. | It exists at the pin, at tests/routing/test_substrate_invariants.py:914, and needs a live graph store. The source-declaration rule is `built` on that guard. | ADR-0006 in [invincible-agent decisions 0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) |
 
@@ -162,7 +164,7 @@ A clause leaves the tables above only by moving here, never by deletion. The ent
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record | none; an entry is not established |
-| 183 section items in 43 records | the "Not established" sections of the records in this directory at the #104 head | — | a count of the items under those headings | — |
+| 182 section items in 43 records | the "Not established" sections of the records in this directory at the #111 head (`16da9650`); 183 at the #104 head, before the built-to-measured list's own section lost an item | — | a count of the items under those headings | — |
 | Sixteen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
 | Sixteen connections-table lines in ten component records | the "Connections" tables of [central gateway](components/central-gateway.md), [dlt pipeline](components/dlt-pipeline.md), [domain broker](components/domain-broker.md), [JupyterHub](components/jupyterhub.md), [MinIO](components/minio.md), [Redpanda](components/redpanda.md), [Restate dlt sync](components/restate-dlt-sync.md), [Restate worker](components/restate-worker.md), [Superset](components/superset.md), [SystemLink source](components/systemlink-source.md) | — | a count of the table lines that say "not established" | — |
 | No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list | — |
