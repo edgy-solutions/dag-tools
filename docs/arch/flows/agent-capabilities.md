@@ -42,7 +42,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 
 Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are defined in [the README](../README.md#ids-and-connections).
 
-| # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
+| # | Actor | Action | Target | What passes | Decision or check | Evidence | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | XE-AGENT-ENGINE | one of its routes needs a graph or vector answer for a person | XE-AGENT-ENGINE | the person's request | — | invincible-agent `agent_fleet/ontology_service/main.py:6584-6593`, `:6605-6607` | `built` |
 | 2 | XE-AGENT-ENGINE | builds an SDK `Initiator` for the person | XE-AGENT-ENGINE | — | a request that names no person is refused | `main.py:6613-6622` | `built` |
