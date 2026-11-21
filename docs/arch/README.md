@@ -101,10 +101,7 @@ How closely is one of:
 | [components/topaz.md](components/topaz.md) | component | draft |
 | [components/vault.md](components/vault.md) | component | draft |
 | [components/warehouse-source.md](components/warehouse-source.md) | component | draft |
-| [decisions/README.md](decisions/README.md) | decisions index: how census decisions are addressed | draft |
-| [decisions/dag-tools-s1-s3.md](decisions/dag-tools-s1-s3.md) | decisions: dag-tools census §1 to §3 | draft |
-| [decisions/dag-tools-s4-restate.md](decisions/dag-tools-s4-restate.md) | decisions: dag-tools census §4 | draft |
-| [decisions/dag-tools-s5-s6.md](decisions/dag-tools-s5-s6.md) | decisions: dag-tools census §5 and §6 | draft |
+| [decisions/README.md](decisions/README.md) | decisions index: how census decisions are addressed, and every decision record | draft |
 | [ROADMAP.md](ROADMAP.md) | roadmap note (the kit's format) | draft |
 | [alignment/dod-dmra.md](alignment/dod-dmra.md) | alignment: the DoD reference's principles and services | draft |
 | [alignment/nato-dcra.md](alignment/nato-dcra.md) | alignment: the NATO reference's security roles and planes | draft |

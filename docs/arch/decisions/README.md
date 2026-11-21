@@ -35,6 +35,8 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s1-s3.md](dag-tools-s1-s3.md) | §1 reusability, §2 declarative components, §3 durable state and double writes | 11 |
 | [dag-tools-s4-restate.md](dag-tools-s4-restate.md) | §4 Restate worker deployment | 11 |
 | [dag-tools-s5-s6.md](dag-tools-s5-s6.md) | §5 configuration design, §6 backwards compatibility | 5 |
+| [dag-tools-s4a-otel.md](dag-tools-s4a-otel.md) | §4a (OTel) OTel to API sync | 15 |
+| [dag-tools-s4o2-s8.md](dag-tools-s4o2-s8.md) | §4o-2 gateway image signature support, §8 release images | 13 (one bullet of §8 lists tests and states no decision) |
 
 ## Where the numbered series already holds a decision
 
@@ -46,4 +48,4 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | §1 no names from below | [rulings.md](../../rulings.md), 2026-11-04, widened 2026-11-05 |
 | §2, §5 everything is a component configured from YAML | [rulings.md](../../rulings.md), 2026-11-04 |
 
-Records for the sections after §6 follow in later batches.
+Records for the remaining sections follow in later batches.
