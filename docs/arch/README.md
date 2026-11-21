@@ -68,6 +68,7 @@ How closely is one of:
 
 | Record | Kind | State |
 |---|---|---|
+| [overview.md](overview.md) | overview: what the mesh is, how to read the statuses, how services depend on each other | draft |
 | [flows/need-to-know.md](flows/need-to-know.md) | flow | draft |
 | [flows/big-data.md](flows/big-data.md) | flow | draft |
 | [flows/agent-capabilities.md](flows/agent-capabilities.md) | flow | draft |
