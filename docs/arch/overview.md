@@ -88,8 +88,10 @@ Read together, the edges show that the catalog (S3) and policy (S5, S6) carry mo
 | Why the code is the way it is | [the decisions index](decisions/README.md) |
 | How the mesh lines up with the two references | [DoD](alignment/dod-dmra.md) and [NATO](alignment/nato-dcra.md) |
 | The remedies proposed for gaps | [the roadmap note](ROADMAP.md) |
+| What a decision-maker can be shown, and what it rests on | [the evidence walkthrough](walkthroughs/evidence.md) |
+| How a Dagster upgrade is qualified | [the sustainment walkthrough](walkthroughs/sustainment.md) |
 
-Two walkthroughs are to follow: a decision-maker asking for evidence, and a sustainment case.
+Two walkthroughs follow a question through the records: [a decision-maker asking for evidence](walkthroughs/evidence.md) and [a sustainment case](walkthroughs/sustainment.md), the qualification of a Dagster upgrade.
 
 ## Sources
 
