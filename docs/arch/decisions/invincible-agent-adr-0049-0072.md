@@ -12,14 +12,14 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A direct read has no gate, no identity and no provenance. A partial number looks like a whole one, so the three states (empty, unavailable, unentitled) must stay distinct.
 - **Stated status.** Proposed. Mesh-mediated option chosen; seeded duplication left open as transitional; supervisor composition limited to routing.
 - **Where else.** ADR-0060 extends the direct-read refusal from engines to every consumer. ADR-0051 repeats it for the sustainment domain.
-- **Status.** Not established. Several engines call each other, but the stalest-source stamp and the registration-time dependency declaration were not seen. The stamp is a ruling of the ADR. The dependency declaration is one of its open questions, leaning yes, so its absence is not a shortfall against a ruling.
+- **Status.** The stalest-source stamp, a ruling of the ADR: `proposed`; no code for it at the pin, though several engines call each other. The request-scoped cache and the registration-time dependency declaration are open questions of the ADR, the second leaning yes, so their absence is not a shortfall against a ruling; both are in the not-established list.
 
 ## ADR-0050 Canvas templates are ratified YAML; a panel is a pre-resolved step
 
 - **Decision.** A canvas template is a ratified YAML file. Each panel is a ready-made step (verb, slots, layout) sent through the second-stage gate under the initiator's grants, never through the classifier. One seed verb takes a template id. A panel that cannot be invoked draws as a named hole. A template reference is its id plus a short hash of canonical content, and the schema is generated from the models.
 - **Why.** Free-text seeding cannot express a fixed panel set. Hashing content rather than bytes keeps the reference stable across formatting edits.
 - **Stated status.** Proposed. Later falsification blocks were renamed as an acceptance section; the decision did not change.
-- **Status.** `built` for the loader, reference, seed verb, schema and drift seals. The shared-slot carry and the one-ask-for-many-panels seal are not established.
+- **Status.** `built` for the loader, reference, seed verb, schema and drift seals. The shared-slot carry: `built`, at cvt `:278-298`, gwy `:5182-5229` and gwy `:5370-5396`. The one-ask-for-many-panels seal was not located and is in the not-established list.
 
 ## ADR-0051 Sustainment safety: the mesh drafts a risk and never accepts it
 
@@ -41,7 +41,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Decision.** A measure is a pure, versioned module and a verb is a thin wrapper. A row in policy data maps a method to its module and carries a transcription seal against its cited source. Selecting among ratified methods is allowed; a formula-as-slot verb is refused. A row pointing at an unmanifested module is refused. Money is `Decimal`, quantised only after derivation. The artifact records method name and version beside each figure.
 - **Why.** Method choice becomes a reviewable row instead of code, and a figure can be traced to the exact formula version.
 - **Stated status.** Accepted and ratified as a numbered rule.
-- **Status.** Mixed. Rows, loader, modules and row seals: `built`. Runtime selection from the rows: `accepted`, because the type literal and constant tuple are still what the runtime reads. The single export envelope, name-and-version in every artifact, and sha-pinned external modules: not established.
+- **Status.** Mixed. Rows, loader, modules and row seals: `built`. Runtime selection from the rows: `accepted`, because the type literal and constant tuple are still what the runtime reads. The single export envelope: `proposed`; two envelopes remain, at IA `agent_fleet/cost_agent/export.py:57` and IA `agent_fleet/finance_agent/export.py:28`. Name and version on row-declared measures: `built` (fmn `:1024-1025`). Name and version in every artifact: `proposed`; built-in measures carry "builtin" (fmn `:1517-1525`). Sha-pinned external modules: `proposed`; IA `agent_fleet/finance_agent/measure_verbs.py:654-734` computes a sha, but no row carries an expected one.
 
 ## ADR-0054 Data classes: every write declares what it is
 
@@ -108,7 +108,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A derived table that is less restricted than its inputs leaks data without anyone deciding to. The label of a derived column should follow from its inputs, not from a later guess.
 - **Stated status.** Proposed; design only, extending ADR-0052 and amended to align with an OpenDDIL ADR. The six build steps are carried by dag-tools releases.
 - **Where else.** [dag-tools-s4r-s4l-s4m.md](dag-tools-s4r-s4l-s4m.md), [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md), [classification-propagation](../components/classification-propagation.md), [warehouse-source](../components/warehouse-source.md).
-- **Status.** The dimensions document reader, the labelled source observation and the propagation engine and component: `built` in dag-tools. Which of the six steps are complete is not established here.
+- **Status.** The ADR's six steps, read from code. Steps 1 to 4, auditing the reads, attributing every read, classifying the sources and declaring source assets with propagation: `built` in dag-tools, at `dag_tools/audit/cli.py:152-223`, `dag_tools/resources/warehouse.py:300-463`, dim `:83-655`, `dag_tools/warehouse_source/spec.py:120-200`, prp `:190-305`, prp `:406-521` and cpc `:395-415`. Steps 5 and 6, enforcement at the broker and the data plane inheriting it: `proposed`. The gateway narrows only by the columns the policy engine returns (`dag_tools/central_gateway/main.py:360-363`) and reads no label, and the level-readers list at IA `policy/level_readers.yaml:20` is empty.
 
 ## ADR-0065 Obsolescence is a process, and change notices are its intake
 
@@ -123,7 +123,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Decision.** This record only points at the OpenDDIL decision that each thing has one identity, and lists what this repository does to follow it. The work is alias and binding rows written through the graph mapping and a realigned case episode id.
 - **Why.** The decision belongs to the standard that owns the identifiers, so it is recorded once there.
 - **Stated status.** Reference; accepted on its date, decided elsewhere, with nothing built yet.
-- **Status.** `—` (reference). The follow-on work is not established at the pin.
+- **Status.** `—` (reference). The follow-on work: `proposed`. No alias or binding rows go through graph mapping at the pin (the alias-shaped rows are read by wuv `:180-193`), and the case episode id is still a fixed prefix plus a sha256 (IA `agent_fleet/restate_analyst/case_routing.py:244-249`).
 
 ## ADR-0068 An edge tier with profiles and a case journal
 
@@ -145,7 +145,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Decision.** The directory client is built once per process, lazily and under a lock, and shared by readers. Its transport follows the URL scheme, a batch job builds one client per run, and a seal keeps the rule.
 - **Why.** Building a client for every call spent most of a request's CPU on setup. One pooled client removes that cost.
 - **Stated status.** Proposed; design plus a census. Steps 1 and 2 are built by another lane in their own changes.
-- **Status.** The shared, lazily built, lock-guarded client keyed per process, with a plain context for plain-text URLs: `built`. The batching and batch-job parts are not established.
+- **Status.** The shared, lazily built, lock-guarded client keyed per process, with a plain context for plain-text URLs: `built`. Batching: `built`, at IA `src/iagent/human_tasks.py:428-470`. The batch job: `built`, at IA `policy/sync/topaz_sync.py:391-404` and IA `policy/sync/grant_sync.py:239`. The seal's static check: `proposed`.
 
 ## ADR-0072 A live answer is one durable workflow
 
@@ -156,11 +156,11 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 
 ## Not established
 
-- ADR-0049: the stalest-source stamp, request-scoped cache and registration-time dependency declaration were not seen. Calls between engines exist in several engine files, but no test was read. Status left "not established".
-- ADR-0050: shared-slot carry and one-ask-for-many-panels seal not established. The named-hole test file was seen by filename only.
+- ADR-0049: the request-scoped cache and the registration-time dependency declaration are open questions of the ADR and were not seen. Calls between engines exist in several engine files, but no test was read.
+- ADR-0050: the one-ask-for-many-panels seal was not located. The named-hole test file was seen by filename only.
 - ADR-0051: the ADR names verbs under a different prefix and says this engine does not register instance resolution; the code differs. Two further verbs named in the ADR were not found. The task kind used for concurrence is likely but unverified. Seals for the registry call points and for ladder routing were seen by filename only.
 - ADR-0052: three of six rules are stated by the ADR as not met; their status here follows that table, not independent checks. Open items (asset location, drift disposition, fixture URN registration) are unresolved.
-- ADR-0053: export envelope, name-and-version in every artifact and external sha pinning not established. The runtime still reads the type literal.
+- ADR-0053: the runtime still reads the type literal.
 - ADR-0054: whether the census exists in this repository is not established; the ADR says it was on another branch. The prime still derives its drop set from manifest domains.
 - ADR-0055: front-end packages and cross-repo seals live elsewhere and were not read. Presentation code cites the ADR, but the tuple table remains.
 - ADR-0056: the ADR header still reads Proposed; the code from the amendment is built.
@@ -168,11 +168,10 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - ADR-0061: sections 1, 2 and 6 (bundle format, facets, proposal handoff) were not checked against code beyond the loop functions. A grep found no proposal verb at the pin.
 - ADR-0062: the header says nothing is built, but the core library and its tests exist at the pin. The ADR text lags the code. The serializing wrapper and the review-audience wiring were not found in the library. The ref update is check-then-set.
 - ADR-0063: the absence of seed rows rests on the content-kinds directory listing and a search for the three kind ids. Whether the other two kinds have workflows authored under names other than their kind ids was not checked.
-- ADR-0064: the header says design only, but the dag-tools code exists. Which of the six build steps are complete was not checked. Lines cited for dimensions, propagation and the component are coarse ranges, not per-claim lines.
+- ADR-0064: the header says design only, but the dag-tools code exists. Lines cited for dimensions, propagation and the component are coarse ranges, not per-claim lines.
 - ADR-0065: the header says no code, but the where-used verb exists at the pin. Whether the lifecycle-status write exists was not checked.
-- ADR-0067: the follow-on items (alias and binding rows, case episode id) were not confirmed at the pin. The episode id appears in several files; whether it is realigned was not checked.
 - ADR-0070: the dag-tools line ranges are whole-file. No read-only engine or verb was found in the invincible-agent tree by a keyword grep, which is weak evidence of absence. The ADR body was not re-read beyond its header and decision summary.
-- ADR-0071: batching, batch jobs and the seal were not checked. The listed tests pin the shared client, not the full rule.
+- ADR-0071: the listed tests pin the shared client and batching, not the full rule.
 - ADR-0072: the ruled sections 3 and 8.1 were not compared to code. The five-step run is delegated to a function outside the cited lines. Behaviour of the live view with more than one replica is not established.
 
 ## Sources
@@ -181,12 +180,16 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| ADR-0050 ratified template panels | cvt `:75`, cvt `:157-189`, cvt `:229-299`, cvt `:366`, gwy `:791-804` | ADR-0050 | test_schema_matches_the_models (:90), test_the_check_can_actually_fail (:98), test_every_ratified_template_validates (:122), test_template_ref_is_content_not_bytes (:161), test_seedCanvas_is_registered_with_template_id_as_a_SLOT (:108), test_an_unknown_id_RAISES_rather_than_defaulting (:67) | Loader, reference, seed verb and seals: `built`. Shared-slot carry: not established |
+| ADR-0050 ratified template panels | cvt `:75`, cvt `:157-189`, cvt `:229-299`, cvt `:366`, gwy `:791-804`, gwy `:5182-5229`, gwy `:5370-5396` | ADR-0050 | test_schema_matches_the_models (:90), test_the_check_can_actually_fail (:98), test_every_ratified_template_validates (:122), test_template_ref_is_content_not_bytes (:161), test_seedCanvas_is_registered_with_template_id_as_a_SLOT (:108), test_an_unknown_id_RAISES_rather_than_defaulting (:67) | `built` |
 | ADR-0051 draft risk, never accept | saf `:145-199`, sms `:61-101`, sms `:217`, sms `:315`, smx `:100-163`, saw `:149` | ADR-0051 | test_no_measure_function_writes_an_acceptance (:50), test_changing_one_row_in_the_ttl_changes_the_drafted_level_with_no_code_edit (:43), test_an_unrecognised_pair_refuses_loudly_and_names_the_file (:73), test_a_concurrence_level_is_not_routed_straight_to_an_acceptance (:118) | `built` |
 | ADR-0052 read by URN, initiator: read rule | fmn `:2317-2356`, fai `:55`, fai `:227` | ADR-0052 | test_an_identity_that_is_not_a_person_is_a_401_and_no_client_is_built (:400), test_not_entitled_is_a_403_that_names_the_grant_and_carries_no_figure (:418), test_each_contract_rule_is_its_own_502_and_names_no_money (:504) | `built` |
 | ADR-0052 read by URN, initiator: the rest | fmn `:2317-2356`, fai `:55`, fai `:227` | ADR-0052 | test_an_identity_that_is_not_a_person_is_a_401_and_no_client_is_built (:400), test_not_entitled_is_a_403_that_names_the_grant_and_carries_no_figure (:418), test_each_contract_rule_is_its_own_502_and_names_no_money (:504) | `accepted` |
 | ADR-0053 measure rows and modules: rows | fmr `:75-175`, fef `:33` | ADR-0053 | test_the_module_COMPUTES_what_its_row_TRANSCRIBES (:105), test_a_row_pointing_at_an_UNMANIFESTED_module_is_refused (:260), test_a_row_whose_VERSION_disagrees_with_its_module_is_refused (:272) | `built` |
 | ADR-0053 measure rows and modules: runtime selection | fmr `:75-175`, fef `:33` | ADR-0053 | test_the_module_COMPUTES_what_its_row_TRANSCRIBES (:105), test_a_row_pointing_at_an_UNMANIFESTED_module_is_refused (:260), test_a_row_whose_VERSION_disagrees_with_its_module_is_refused (:272) | `accepted` |
+| ADR-0053 measure rows and modules: export envelope | IA `agent_fleet/cost_agent/export.py:57`, IA `agent_fleet/finance_agent/export.py:28` | ADR-0053 | no test | `proposed` |
+| ADR-0053 measure rows and modules: name and version on row-declared measures | fmn `:1024-1025` | ADR-0053 | no test | `built` |
+| ADR-0053 measure rows and modules: name and version in every artifact | fmn `:1517-1525` | ADR-0053 | no test | `proposed` |
+| ADR-0053 measure rows and modules: sha-pinned external modules | IA `agent_fleet/finance_agent/measure_verbs.py:654-734` | ADR-0053 | no test | `proposed` |
 | ADR-0054 store class declaration | — | ADR-0054 | no test | `accepted` |
 | ADR-0054 edge-type partition seal | the seal is the test | ADR-0054 | test_EVERY_TYPE_A_DOOR_WRITES_IS_DECLARED (:194), test_EVERY_TYPE_THE_SDK_DECLARES_IS_ACTUALLY_WRITTEN (:205) | `built` |
 | ADR-0055 archetype package and row | — | ADR-0055 | tests/test_cortex_archetype_packages_are_seen.py: test_every_archetype_package_is_seen_by_BOTH_registries (:60), test_the_archetype_package_population_is_inhabited (:49). Package half only, and the module skips when the sibling UI checkout is absent. The row half has no test | `accepted` |
@@ -198,13 +201,16 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0062 core repository library with audited merge: core | rcr `:284`, rcr `:346-366`, rcr `:368-506`, rcr `:584-617`, rcr `:617-645` | ADR-0062 | test_a_happy_merge_is_a_two_parent_signed_audited_commit (:82), test_the_proposer_cannot_approve (:129), test_a_secret_in_the_diff_is_refused_and_not_echoed (:180), test_a_commit_without_the_trailers_is_refused (:238), test_a_release_tag_never_moves_except_by_a_logged_repair (:305), test_a_merge_with_its_note_removed_is_found (:367), test_the_package_never_shells_out (:400) | `built` |
 | ADR-0062 core repository library with audited merge: wrapper and mirrors | rcr `:284`, rcr `:346-366`, rcr `:368-506`, rcr `:584-617`, rcr `:617-645` | ADR-0062 | test_a_happy_merge_is_a_two_parent_signed_audited_commit (:82), test_the_proposer_cannot_approve (:129), test_a_secret_in_the_diff_is_refused_and_not_echoed (:180), test_a_commit_without_the_trailers_is_refused (:238), test_a_release_tag_never_moves_except_by_a_logged_repair (:305), test_a_merge_with_its_note_removed_is_found (:367), test_the_package_never_shells_out (:400) | `proposed` |
 | ADR-0063 three event kinds seeded | sfw `:3-5`, sfo `:3`, sfo `:18`, tgr `:326` | ADR-0063 | tests/safety/test_the_safety_finding_review_is_declared.py: test_the_workflow_loads_with_one_step_and_the_ruled_stages (:91), test_the_step_names_the_audience_and_the_overlay_kind (:98), test_the_overlay_row_carries_the_three_outcomes_and_no_accepted (:104), test_dismissed_requires_a_reason (:112), test_the_grant_row_is_keyed_by_the_audience_and_names_a_populated_group (:118); one kind of three, and no seed row | `proposed` |
-| ADR-0064 labels compose through derivation | dim `:83-378`, prp `:190-305`, obs `:1-256`, cpc `:233-308` | ADR-0064 | test_composition_is_the_join_of_one_order_in_every_type (:172), test_a_permissive_set_composes_by_INTERSECTION_not_union (:112), test_a_dagster_platform_urn_fails_the_load (:359), test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED (:1085), test_the_code_location_loads_with_no_document_mounted (:1172) | Engine and components: `built`. Step coverage: not established |
+| ADR-0064 labels compose through derivation: steps 1 to 4 | dim `:83-378`, prp `:190-305`, obs `:1-256`, cpc `:233-308` | ADR-0064 | test_composition_is_the_join_of_one_order_in_every_type (:172), test_a_permissive_set_composes_by_INTERSECTION_not_union (:112), test_a_dagster_platform_urn_fails_the_load (:359), test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED (:1085), test_the_code_location_loads_with_no_document_mounted (:1172) | `built` |
+| ADR-0064 labels compose through derivation: steps 5 and 6 | `dag_tools/central_gateway/main.py:360-363`, IA `policy/level_readers.yaml:20` | ADR-0064 | no test | `proposed` |
 | ADR-0065 where-used verb with stated configuration: verb | wuv `:57`, wuv `:240`, wuv `:393` | ADR-0065 | test_AS_BUILT_AND_AS_MAINTAINED_ARE_REFUSED_WITH_NO_ROWS (:76), test_CONTROL_AS_DESIGNED_BY_THE_SAME_PATH_GIVES_ROWS (:85) | `built` |
 | ADR-0065 where-used verb with stated configuration: the rest | wuv `:57`, wuv `:240`, wuv `:393` | ADR-0065 | test_AS_BUILT_AND_AS_MAINTAINED_ARE_REFUSED_WITH_NO_ROWS (:76), test_CONTROL_AS_DESIGNED_BY_THE_SAME_PATH_GIVES_ROWS (:85) | `accepted` |
 | ADR-0068 edge tier profiles and journal | — | ADR-0068 | no test | `proposed` |
 | ADR-0070 test-result source and curated slice: data side | slk `:1-716`, sls `:1-183`, slm `:1-370` | ADR-0070 | test_the_schedule_targets_incremental_and_no_name_job_exists (:114), test_the_filters_block_is_required_because_terminal_statuses_has_no_default (:494) | `built` |
 | ADR-0070 test-result source and curated slice: engine | slk `:1-716`, sls `:1-183`, slm `:1-370` | ADR-0070 | test_the_schedule_targets_incremental_and_no_name_job_exists (:114), test_the_filters_block_is_required_because_terminal_statuses_has_no_default (:494) | `proposed` |
-| ADR-0071 one shared directory client per process | tpz `:166-202`, tpz `:220-226` | ADR-0071 | test_a_reader_builds_no_client_after_its_first_call (:105), test_a_whole_entitlements_request_builds_no_client_after_warm_up (:118), test_CONTROL_a_client_built_per_call_is_counted (:167), test_an_http_directory_loads_no_trust_store_and_fails_tls_closed (:181), test_a_forked_child_builds_its_own_client (:205) | Shared client: `built`. Batching: not established |
+| ADR-0071 one shared directory client per process | tpz `:166-202`, tpz `:220-226` | ADR-0071 | test_a_reader_builds_no_client_after_its_first_call (:105), test_a_whole_entitlements_request_builds_no_client_after_warm_up (:118), test_CONTROL_a_client_built_per_call_is_counted (:167), test_an_http_directory_loads_no_trust_store_and_fails_tls_closed (:181), test_a_forked_child_builds_its_own_client (:205) | `built` |
+| ADR-0071 one shared directory client per process: batching and batch job | IA `src/iagent/human_tasks.py:428-470`, IA `policy/sync/topaz_sync.py:391-404`, IA `policy/sync/grant_sync.py:239` | ADR-0071 | test_b1_a_request_is_one_list_and_one_batched_check (:105) | `built` |
+| ADR-0071 one shared directory client per process: the seal's static check | — | ADR-0071 | no test | `proposed` |
 | ADR-0072 live answer as one Restate workflow | sup `:29-58`, sup `:96-100`, dra `:19-30`, gwy `:9682-9702` | ADR-0072 | test_run_impl_journals_each_step_once_and_persists (:42), test_snapshot_serves_live_mid_run_then_durable_and_queued (:53), test_answer_path_flag (:101), test_launch_posts_and_returns_the_id_or_none (:38) | `built` |
 
 ### Rows that carry no status
