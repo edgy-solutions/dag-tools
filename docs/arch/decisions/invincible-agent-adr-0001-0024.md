@@ -35,7 +35,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Fixed classification axes need a code change for every new engine.
 - **Stated status.** Accepted.
 - **Where else.** ADR-0005, ADR-0006, ADR-0009.
-- **Status.** Step C (path and tool lookup as a plain graph query): `built`. Step E, in ADR-0009's wording (persona and domain lists derived from the registry by view functions): `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. Step F, in ADR-0009's wording (the language layer builds its target lists from those views): `built`, at IA `agent_fleet/ontology_service/main.py:4713-4717` and `:5507-5508`. Steps A and B live in other repositories, and step D was not located; all three are in the not-established list.
+- **Status.** Step C (path and tool lookup as a plain graph query): `built`. Step E, in ADR-0009's wording (persona and domain lists derived from the registry by view functions): `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. Step F, in ADR-0004's own wording (the language layer builds its target lists from those views): `built`, at IA `agent_fleet/ontology_service/main.py:4713-4717` and `:5507-5508`. ADR-0009 supersedes steps E and F (IA `docs/adr/ADR-0009-sunset-classification-axes.md:160-164`, `:321-322`). Its step F', which replaces the three-axis classifier with predicate-graph routing, is `proposed` at the pin: the classifier still serves `/route_and_plan`, kept until step F' deletes it (IA `agent_fleet/ontology_service/main.py:5493-5506`; IA `agent_fleet/ontology_service/registry_views.py:57-58`). Steps A and B live in other repositories, and step D was not located; all three are in the not-established list.
 
 ## ADR-0005 Two kinds of namespace for verbs and concepts
 
@@ -75,7 +75,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** The classification grid was brittle, and verbs lacked the semantic matching nouns already had.
 - **Stated status.** Proposed, with a recorded mid-course correction.
 - **Where else.** ADR-0004, ADR-0008.
-- **Status.** Hybrid predicate search endpoint, mode-and-entities extraction call, removal of the master persona, domain and intent dicts: `built`. Persona and domain views as graph queries: `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. The identity-claims work was not located and is in the not-established list.
+- **Status.** Hybrid predicate search endpoint, mode-and-entities extraction call, removal of the master persona, domain and intent dicts: `built`. Persona and domain views as graph queries: `built`, at IA `agent_fleet/ontology_service/registry_views.py:84-147`, wired at IA `agent_fleet/ontology_service/main.py:486-519`. Step F', the replacement of the three-axis classifier: `proposed`; the classifier still runs at the pin (IA `agent_fleet/ontology_service/main.py:5493-5506`). The identity-claims work was not located and is in the not-established list.
 
 ## ADR-0010 OpenTelemetry tracing at the HTTP boundary
 
@@ -201,7 +201,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 
 - Checked only in part: ADR-0009 `built` parts rest on greps. The master persona, domain and intent dicts have no definitions in the ontology service at the pin, only comments (ont:478). The extraction function body was not read.
 - Checked only in part: the ADR-0009 test (test_a1_infra_error_records_no_verb) is in tests/routing/test_an_early_exit_records_no_verb_and_its_reason.py and covers the infra-error path only. Weak pin.
-- Checked only in part: the ADR-0004 test names are from tests/test_ontology_routing.py; their assertions were not opened to confirm they check the graph-query shape.
+- Checked only in part: the ADR-0004 step C test names are from tests/test_ontology_routing.py, and the steps E and F test names are from tests/test_ontology_view_functions.py; their assertions were not opened to confirm they check the graph-query shape.
 - Checked only in part: ADR-0005: test_emits_full_predicate_payload (:176) also asserts domain authority for a domain prefix; two nearer tests are cited instead.
 - Checked only in part: the ADR-0008 abstain case comes from comments at sup:2906-2923, not from a test.
 - ADR-0004 steps A, B and D; ADR-0005 propose-time rejection and the prefix registry file; ADR-0006 concurrency tests, conjunctive-read guard test, doc-sync sole-writer claim; ADR-0009 identity-claims work; ADR-0008 operator doc step.
@@ -239,6 +239,7 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0008 Generalist fallback policy | sup `:70-74`, sup `:1861-1885`, sup `:2765-2893`, sup `:2998`, ana `:1107-1130` | ADR-0008 | test_matched_returns_predicate_dict (:180), test_no_match_returns_none (:228), test_http_503_returns_infra_error (:291), test_fallback_payload_for_no_match (:372), test_fallback_payload_for_low_confidence (:405), test_fallback_emits_telemetry_log_line (:435), test_threshold_default_loaded_from_env (:464) | Fallback core: `built`. Operator doc: not established |
 | ADR-0009 Retire classification axes: search and extraction | ont `:4405`, ont `:5452` | ADR-0009 | test_a1_infra_error_records_no_verb (:118) | `built` |
 | ADR-0009 Retire classification axes: graph views | IA `agent_fleet/ontology_service/registry_views.py:84-147`, ont `:486-519` | ADR-0009 | test_personas_from_graph (:68), test_domains_from_graph (:100) | `built` |
+| ADR-0009 Retire classification axes: classifier replaced (step F') | ont `:5493-5506`, IA `agent_fleet/ontology_service/registry_views.py:57-58` | ADR-0009 | no test | `proposed` |
 | ADR-0010 OTel at the HTTP boundary | IA `pyproject.toml` `:26-27`; wfr `:683-690` | ADR-0010 | no test | `proposed` |
 | ADR-0011 Multi-hop routing deferred | — | ADR-0011 | no test | `proposed` |
 | ADR-0013 capability tools per change | — | ADR-0013 | no test | `proposed` |

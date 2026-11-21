@@ -206,7 +206,7 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 |---|---|---|---|---|
 | ADR-0025 deny-by-default data gate | tcm `:351-391` | ADR-0025 | no test | `built` |
 | ADR-0025 entitlement source captured | aaw `:603-645`, ath `:132-136` | ADR-0025 | test_entitlement_source_required_on_user_model (:72), test_topaz_state_constructs (:83), test_none_state_is_honest_empty (:99), test_retired_jwt_origin_values_are_rejected (:117) | `built` |
-| ADR-0025 access-decision slot on citation: slot | aaw `:651-692` | ADR-0025 | test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j (:160), test_layer_1_2_null_access_decision_roundtrips_as_null (:219), test_layer_6_cortex_ui_source_type_declares_access_decision (:303) | `built` |
+| ADR-0025 access-decision slot on citation: slot | aaw `:651-691` | ADR-0025 | test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j (:160), test_layer_1_2_null_access_decision_roundtrips_as_null (:219), test_layer_6_cortex_ui_source_type_declares_access_decision (:303) | `built` |
 | ADR-0025 access-decision slot on citation: population | aaw `:651-691` | ADR-0025 | no test | `proposed` |
 | ADR-0026 matrix, 403/503, claim ignored | tcm `:276-335`, tpc `:60-69`, tpc `:237`, tpc `:366`, gwy `:12076-12090` | ADR-0026 | test_honest_empty_when_no_entitlements (:80), test_persona_from_topaz_default_cell (:108), test_persona_from_first_cell_when_no_default (:130), test_jwt_persona_claim_is_ignored (:148) | `built` |
 | ADR-0026 persona mapper retired in the repo | ath `:32-44`, ath `:296-298` | ADR-0026 | test_jwt_persona_claim_is_ignored (:148) | `built` |
