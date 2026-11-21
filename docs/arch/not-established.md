@@ -8,7 +8,7 @@ This page gathers, in one place, every fact these records leave open. Most recor
 
 - **Sources.**
   - Every "Not established" section in this directory: 183 items in 43 records.
-  - Seventeen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole. The "Connections" tables of ten component records carry sixteen more lines, each with "not established" in a row's Sign-in cell; those lines are not entries here.
+  - Sixteen lines in ten files that say "not established" outside such a section. The invincible-agent decision files carry more of these, in their status lines, and groups C8 to C12 point to those whole. The "Connections" tables of ten component records carry sixteen more lines, each with "not established" in a row's Sign-in cell; those lines are not entries here.
   - Items 1 to 35 of the lane's twice-daily reports, each of which already comes from a record.
 - **Merged.** One fact carried by several records is one entry, and it links to each of them.
 - **Grouped by what would settle it:**
@@ -18,12 +18,12 @@ This page gathers, in one place, every fact these records leave open. Most recor
   4. a decision nobody has made yet;
   5. another repository or lane;
   6. a further read of code.
-- **Result.** 80 entries.
+- **Result.** 79 entries. Two decisions in group 4 were closed by the architect's ruling of 2026-11-19, and one entry was added in group 5.
 
 ## Findings
 
 1. **Most of what is open is a deployment fact.** Group 1 holds 35 entries. A component record describes what the chart and code provide by default and what a deployment may set. It never describes a particular deployment, so these entries stay open by design. A deployment's own record could close them.
-2. **Nothing is `measured`, and two of the reasons are decisions, not facts.** Group 3 lists the runs that would change that. Group 4 asks the owner whether an in-process run recorded by continuous integration counts, and where a recorded run would be kept.
+2. **Few claims are `measured`, and only in CI, in process.** The architect ruled on 2026-11-19 that an in-process run in continuous integration measures what it exercises, and that a run id is accepted today. [The built-to-measured list](built-to-measured.md) names the claims that ruling makes `measured`. Group 3 lists the runs that would change the rest.
 3. **The read path's open facts sit at policy and the catalog.** These are which policy Topaz runs, what its answer carries, and how the catalog's ownership data is kept correct. The read decision depends on all three, as [the overview](overview.md#how-the-services-depend-on-each-other) shows.
 4. **The invincible-agent decision records carry most of the partial reads.** Group 6 lists them. Ten of those ADRs carry a header that claims less than the code at the pin does.
 
@@ -100,7 +100,7 @@ These are settled by a recorded run. Until one is cited, the claims stay `built`
 | R1 | Whether the live seals for the read path have a recorded run. They exist as scripts, and a result has been asked of the owner. | [need to know](flows/need-to-know.md) |
 | R2 | Whether any figure has been traced end to end through the evidence steps on a running system. | [evidence walkthrough](walkthroughs/evidence.md) |
 | R3 | Whether any qualification has been run on a deployment, and with what verdict. | [sustainment walkthrough](walkthroughs/sustainment.md) |
-| R4 | Which built claims a recorded run would make `measured`. The candidates are listed, and none has run. | [built-to-measured list](built-to-measured.md) |
+| R4 | Which further built claims a recorded run would make `measured`. Eight are `measured` in CI, in process, at least in part; the rest are listed and have no recorded run. | [built-to-measured list](built-to-measured.md) |
 
 ## 4. Decisions nobody has made yet
 
@@ -108,8 +108,6 @@ These are settled by a decision, not by reading code.
 
 | # | Not established | Records |
 |---|---|---|
-| X1 | Whether an in-process run recorded by continuous integration counts as a run against a running system. This is group B of the list. | [built-to-measured list](built-to-measured.md) |
-| X2 | Where a recorded run would be kept, and in what form, so that a record can cite it. | [built-to-measured list](built-to-measured.md) |
 | X3 | What role Hasura is meant to play in the mesh, which plane it would sit in, and which services it would serve. | [Hasura](components/hasura.md) |
 | X4 | What role Redpanda would play, and which datasets or events it would carry. How a subscription would be authorized, and by which decision point. Whether a published object would be registered in the catalog. Pub/sub is `proposed`. | [Redpanda](components/redpanda.md); [roadmap note](ROADMAP.md) |
 
@@ -129,6 +127,7 @@ These are settled by the session that owns the fact.
 | L8 | Whether pub-tools' records match its code line by line. | pub-tools | [pub-tools pointer](decisions/pub-tools.md) |
 | L9 | Whether the downstream repositories surveyed tag their assets for runnability as the class matrix expects. | each downstream repository | [sustainment walkthrough](walkthroughs/sustainment.md) |
 | L10 | Whether the contract-mapping example's contract is current with its upstream copy. A test compares them only when the upstream copy is on the machine. | invincible-agent | [contract mapping](components/contract-mapping.md) |
+| L11 | Whether invincible-agent's own continuous integration runs the tests the built-to-measured list cites from that repository, and with what result. | invincible-agent | [built-to-measured list](built-to-measured.md) |
 
 ## 6. Code not read, or read only in part
 
@@ -164,6 +163,7 @@ A clause leaves the tables above only by moving here, never by deletion. The ent
 |---|---|---|---|---|
 | Each entry above | the "Not established" section, or the line, of each record linked in its row | — | as each record | none; an entry is not established |
 | 183 section items in 43 records | the "Not established" sections of the records in this directory at the #104 head | — | a count of the items under those headings | — |
-| Seventeen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), finding 3 and item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
+| Sixteen further lines in ten files | [dag-tools §4a.1](decisions/dag-tools-s4e-s4a-s7.md); [§4n.8](decisions/dag-tools-s4n-s4o-s4k1.md); [§4l.1 and §4l.3](decisions/dag-tools-s4r-s4l-s4m.md); [roadmap note](ROADMAP.md); [DataHub](components/datahub.md), finding 4; [Hasura](components/hasura.md), purpose and plane; [Restate API sync](components/restate-api-sync.md), finding 14; [agent capabilities](flows/agent-capabilities.md), finding 9; [the built-to-measured list](built-to-measured.md), item E15; [the overview](overview.md), under "How to read the statuses" and "How the services depend on each other" | — | the lines that say "not established" outside a section | — |
 | Sixteen connections-table lines in ten component records | the "Connections" tables of [central gateway](components/central-gateway.md), [dlt pipeline](components/dlt-pipeline.md), [domain broker](components/domain-broker.md), [JupyterHub](components/jupyterhub.md), [MinIO](components/minio.md), [Redpanda](components/redpanda.md), [Restate dlt sync](components/restate-dlt-sync.md), [Restate worker](components/restate-worker.md), [Superset](components/superset.md), [SystemLink source](components/systemlink-source.md) | — | a count of the table lines that say "not established" | — |
-| No claim is `measured` | the status columns of the records in this directory | — | none found | — |
+| No record but the built-to-measured list carries `measured` | the status columns of the records in this directory | — | none found outside that list | — |
+| X1 and X2 closed | the architect's ruling of 2026-11-19: an in-process CI run measures what it exercises, and a run id is accepted today | — | — | — |

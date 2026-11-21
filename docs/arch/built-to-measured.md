@@ -1,36 +1,56 @@
 # Built claims that could become measured
 
-This list names `built` claims in these records, and for each one the seal or test that could make it `measured`. It is a list only. Nothing in it was run to write it. Statuses are those of [the README](README.md#status-vocabulary), and line numbers are at the pins listed there.
+This list names `built` claims in these records, and for each one the seal or test that could make it `measured`. It is a list only. Nothing was run to write it: the runs it cites are the repository's own continuous-integration runs at the pins. Statuses are those of [the README](README.md#status-vocabulary), and line numbers are at the pins listed there.
 
-The README sets the bar: `measured` means a recorded run against a running system showed the claim. A test that could measure a claim is not enough. So this list sorts the candidates by what a recorded run of each would actually show, not only by whether a test exists.
+The README sets the bar, as the architect ruled on 2026-11-19: `measured` is relative to the claim. A recorded run measures what it exercises. So a claim about the code's own behaviour is `measured` by an in-process run in continuous integration, cited by its run id and marked "in CI, in process". A claim about a deployed service or a real backend is not measured by such a run, and stays `built`. A test that could measure a claim is not enough. So this list sorts the candidates by what a run of each shows, and splits a claim where a run measures one part and not the other.
 
 **This record describes; it proposes nothing.** Where a candidate test does not exist, it is named as a candidate, not as work in progress. The record shape is provisional.
 
+**The records themselves are not changed here.** Each keeps `built` until it is revisited, and this list names what the revision would carry.
+
 ## Findings
 
-1. **No claim is `measured`.** No record cites a recorded run against a running system. `—`
-2. **Four existing tests run a real process, and a recorded run of each would measure its claim** (group A). They sit behind environment gates or skip when a dependency is absent. `built`
-3. **Three claims rest on in-process runs in continuous integration** (group B). One is a benchmark that runs in the default suite; only its target is asserted behind an environment gate. Whether an in-process run counts as a running system is not established. `built`
-4. **Five claims need a live run that no test performs** (group C). A recorded run against a deployment is the only route to `measured` for these. `built`
-5. **Sixteen claims have a unit test over doubles** (group D). Running the test again shows the code does it, which is `built`. A recorded run of the test does not make the claim `measured`. Three of them replace a live service with a fake. `built`
-6. **Eighteen claims have no test at all** (group E). A candidate test would make each one `built` with a test. It would still not be `measured`. `built`
+1. **Eight claims are `measured` in CI, in process, at least in part:** A2, A3, B1, B2, B3, D2, D11 and D16 ([below](#measured-in-ci-in-process)). The run cited is 44398336497 at `9d89568a`, and run 44451597250 at `add5bc48` agrees. No other record carries `measured` yet. `measured`, in CI, in process
+2. **No claim about a deployed service or a real backend is measured.** The parts still `built` are a real catalog server (A2), the chart's handover of the image (A3) and a real token service (D11). `built`
+3. **Group A: two of the four ran in CI.** A2 ran in a job of its own, and A3 ran in each Python job. A1 skipped in both runs. A4 is an invincible-agent test, which dag-tools CI does not run. A1 and A4: `built`
+4. **Group B: all three passed in CI.** B1's throughput target stays `not built`; the run measures that the benchmark runs and records a rate. `measured`, in CI, in process; the target `not built`
+5. **Five claims need a live run that no test performs** (group C). A recorded run against a deployment is the only route to `measured` for these. `built`
+6. **Sixteen claims have a unit test over doubles** (group D). A CI run of such a test measures the code's behaviour in process. D2, D11 and the composition part of D16 passed in the cited run. D1 skipped. The invincible-agent tests are not run by dag-tools CI, and no run of them is cited, so they stay `built`. Three of them replace a live service with a fake. D2, D11 and the composition part of D16: `measured`, in CI, in process; the rest `built`
+7. **Eighteen claims have no test at all** (group E). A candidate test would make each one `built` with a test. A CI run of it would then measure the code's behaviour in process, and nothing more. `built`
+
+## Measured in CI, in process
+
+The "Tests" workflow at `9d89568a` runs four jobs. Two Python jobs run the whole test directory and upload their results (`test.yml:27-28`, `:86-90`). A job on Dagster 1.10.19 runs everything but one module (`:117-118`, `:224-227`). An end-to-end job runs the dbt-to-catalog test with its environment gate set, and fails if the test skips (`:245-246`, `:277-289`). Run 44398336497 ran at `9d89568a`, and every job succeeded. Run 44451597250 ran at `add5bc48`, and every job succeeded there too. A run id is accepted as evidence today; its logs expire, and a durable form is the owner's to design.
+
+| # | Part measured | Run and job | Outcome | Still `built` | Status |
+|---|---|---|---|---|---|
+| A2 | The artifact handoff into one directory, sources in the catalog, and the publish with a real dbt and the real ingest command line. The database is a real one in a container; the catalog server is an in-process recorder. | 44398336497, the end-to-end job | the job succeeded, and it fails on any skip | a real catalog server | `measured`, in CI, in process |
+| A3 | A live code-server process reports its image through the workspace query. | 44398336497, both Python jobs | passed | the chart's handover of the image on a deployment | `measured`, in CI, in process |
+| B1 | The two throughput benchmarks run and record a rate. Without the gate each asserts only a rate above zero. | 44398336497, both Python jobs | passed, with the rate recorded as a test property | the throughput target, which is `not built` | `measured`, in CI, in process |
+| B2 | The document tables example loads and materializes on Dagster 1.10.19. | 44398336497, the 1.10.19 job | the job succeeded; none of its skips is in these modules | — | `measured`, in CI, in process |
+| B3 | The contract mapping, read audit and tagged warehouse examples load and materialize on Dagster 1.10.19. | 44398336497, the 1.10.19 job | the job succeeded; none of its skips is in these modules | — | `measured`, in CI, in process |
+| D2 | Every GraphQL document the client sends validates against the installed schema. | 44398336497, both Python jobs and the 1.10.19 job | passed, eleven cases in each Python job | — | `measured`, in CI, in process |
+| D11 | A minted credential is scoped to the asset and read-only, and a minting failure refuses the ticket. | 44398336497, both Python jobs | both tests passed, against a fake token service | a real token service | `measured`, in CI, in process |
+| D16 | Labels compose as the join of one order, in every dimension type. | 44398336497, both Python jobs | passed, four cases | the three invincible-agent parts | `measured`, in CI, in process |
 
 ## A. An existing test runs a real process
 
 | # | Built claim | Test | What a recorded run would show | Record |
 |---|---|---|---|---|
-| A1 | §4j.19: the concurrency cap holds against a live Restate server, and the timeout settings reach discovery. | `test_restate_concurrency_e2e.py`, behind an environment gate | The cap and the discovery settings, on a real Restate server | [§4j.19](decisions/dag-tools-s4k-s4j.md) |
-| A2 | §4i.3, §4i.8, §4i.9: every artifact the catalog recipe names lands in one directory, the catalog includes sources, and the publish works with a real dbt and a real ingest command line. | `test_dbt_datahub_e2e.py`, behind an environment gate. It runs a real database, dbt and the ingest command line against an in-process catalog recorder. | The artifact handoff and what the catalog received. The catalog server itself is a recorder, so a run does not measure a real catalog. | [§4i.3](decisions/dag-tools-s4i-s4h-s4g.md) |
-| A3 | §4g.3: the Dagster chart hands the code server its image, and the server reports it in display metadata. | `test_dagster_reports_the_container_image_through_the_workspace_query` (`test_preflight_image_identity_grpc.py:66`), a live code-server process, skipped when its dependencies are absent | The image reported through the workspace query, on each supported Dagster version | [§4g.3](decisions/dag-tools-s4g1-s4g-s4f.md) |
-| A4 | invincible-agent ADR-0025: the access-decision slot on a citation round-trips to the graph store. | `test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j`, which reads its graph store address from the environment | The slot written and read back from a running graph store | [ADR-0025](decisions/invincible-agent-adr-0025-0048.md) |
+| A1 | §4j.19: the concurrency cap holds against a live Restate server, and the timeout settings reach discovery. | `test_restate_concurrency_e2e.py`, behind an environment gate. It skipped in both CI runs. | The cap and the discovery settings, on a real Restate server | [§4j.19](decisions/dag-tools-s4k-s4j.md) |
+| A2 | §4i.3, §4i.8, §4i.9: every artifact the catalog recipe names lands in one directory, the catalog includes sources, and the publish works with a real dbt and a real ingest command line. | `test_dbt_datahub_e2e.py`, behind an environment gate. CI runs it in a job of its own with the gate set, and that job fails if it skips. It runs a real database, dbt and the ingest command line against an in-process catalog recorder. | The artifact handoff and what the catalog received, `measured` in CI, in process ([above](#measured-in-ci-in-process)). The catalog server itself is a recorder, so the run does not measure a real catalog. | [§4i.3](decisions/dag-tools-s4i-s4h-s4g.md) |
+| A3 | §4g.3: the Dagster chart hands the code server its image, and the server reports it in display metadata. | `test_dagster_reports_the_container_image_through_the_workspace_query` (`test_preflight_image_identity_grpc.py:66`), a live code-server process, skipped when its dependencies are absent | The image reported through the workspace query, on each supported Dagster version. The server's part is `measured` in CI, in process ([above](#measured-in-ci-in-process)); the chart's handover is a deployment fact, and is not. | [§4g.3](decisions/dag-tools-s4g1-s4g-s4f.md) |
+| A4 | invincible-agent ADR-0025: the access-decision slot on a citation round-trips to the graph store. | `test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j`, which reads its graph store address from the environment. dag-tools CI does not run it. | The slot written and read back from a running graph store | [ADR-0025](decisions/invincible-agent-adr-0025-0048.md) |
 
-## B. In-process runs in continuous integration
+## B. In-process runs recorded by continuous integration
+
+All three passed in the cited run and are `measured` in CI, in process ([above](#measured-in-ci-in-process)).
 
 | # | Built claim | Run | Record |
 |---|---|---|---|
-| B1 | §4s.28: the documents throughput benchmark exists. Its throughput target is `not built`. | `test_throughput_on_a_bulk_manifest` (`test_documents_engine.py:942`) and `test_json_throughput_on_a_bulk_manifest` (`test_documents_json.py:695`). Both run in the default suite, compute the rate and record it as a test property; only the throughput target is asserted behind an environment gate (`:963`, `:716`). Continuous integration writes the test report to an artifact (`.github/workflows/test.yml:90`, `:112-113`); an artifact expires, so it is not a cited record. | [§4s.28](decisions/dag-tools-s4s.md) |
-| B2 | §4s.33: the document tables example loads and materializes on Dagster 1.10.19. | The 1.10.19 continuous-integration job's recorded result for those tests. The job does not block a merge ([Dagster](components/dagster.md), finding 7). | [§4s.33](decisions/dag-tools-s4s.md) |
-| B3 | §4k.16, §4j.8, §4j.16: the contract mapping, read audit and tagged warehouse examples load and materialize on Dagster 1.10.19. | The same job's recorded result for those test modules | [§4k.16](decisions/dag-tools-s4k-s4j.md) |
+| B1 | §4s.28: the documents throughput benchmark exists. Its throughput target is `not built`. | `test_throughput_on_a_bulk_manifest` (`test_documents_engine.py:942`) and `test_json_throughput_on_a_bulk_manifest` (`test_documents_json.py:695`). Both run in each Python job and record the rate as a test property. The target is checked only behind an environment gate, which CI does not set. | [§4s.28](decisions/dag-tools-s4s.md) |
+| B2 | §4s.33: the document tables example loads and materializes on Dagster 1.10.19. | The 1.10.19 continuous-integration job, which ran those tests and succeeded. The job does not block a merge ([Dagster](components/dagster.md), finding 7). | [§4s.33](decisions/dag-tools-s4s.md) |
+| B3 | §4k.16, §4j.8, §4j.16: the contract mapping, read audit and tagged warehouse examples load and materialize on Dagster 1.10.19. | The same job, which ran those test modules and succeeded | [§4k.16](decisions/dag-tools-s4k-s4j.md) |
 
 ## C. The claim needs a live run that no test performs
 
@@ -44,11 +64,11 @@ The README sets the bar: `measured` means a recorded run against a running syste
 
 ## D. A unit test over doubles exists
 
-A run of these tests shows the code does what the claim says. It does not show a running system doing it.
+A run of these tests shows the code does what the claim says, against doubles. It does not show a running system doing it. Where the cited CI run passed a dag-tools test, that part is `measured` in CI, in process: D2, D11 and the composition part of D16 ([above](#measured-in-ci-in-process)). D3 to D10, D12 to D15 and three parts of D16 are invincible-agent tests, which dag-tools CI does not run, and no run of them is cited.
 
 | # | Built claim | Test | Record |
 |---|---|---|---|
-| D1 | §4k.18: the vendored contract is byte-identical to the upstream copy. | `test_the_vendored_contract_has_not_drifted_from_upstream`. It compares files when the upstream copy is available and skips otherwise. A recorded comparison would show the two files agree on that day. | [§4k.18](decisions/dag-tools-s4k-s4j.md) |
+| D1 | §4k.18: the vendored contract is byte-identical to the upstream copy. | `test_the_vendored_contract_has_not_drifted_from_upstream`. It compares files when the upstream copy is available and skips otherwise. A recorded comparison would show the two files agree on that day. It skipped in both CI runs, so no comparison is recorded. | [§4k.18](decisions/dag-tools-s4k-s4j.md) |
 | D2 | §4g.5, §4f.5: every GraphQL document the client sends validates against the installed schema. | `test_client_document_validates_against_the_installed_schema` (`test_graphql_query_schema_validation.py:38`), against the installed library, run on each supported Dagster version | [§4g.5](decisions/dag-tools-s4g1-s4g-s4f.md) |
 | D3 | invincible-agent ADR-0026: the token's persona claim is ignored, and entitlements come from the decider. | `test_jwt_persona_claim_is_ignored` | [ADR-0026](decisions/invincible-agent-adr-0025-0048.md) |
 | D4 | invincible-agent ADR-0031: a core name inside a descriptor phrase resolves on the containment rung. | `test_core_name_inside_descriptor_phrase_is_a_strong_hit` | [ADR-0031](decisions/invincible-agent-adr-0025-0048.md) |
@@ -67,7 +87,7 @@ A run of these tests shows the code does what the claim says. It does not show a
 
 ## E. No test exists
 
-A candidate test is named for each. Writing it would give the claim a test. A run would still need a running system to make the claim `measured`.
+A candidate test is named for each. Writing it would give the claim a test, and a CI run of it would measure the code's behaviour in process. A claim about a running system would still need a run against one.
 
 | # | Built claim | Candidate test | Record |
 |---|---|---|---|
@@ -96,44 +116,49 @@ A candidate test is named for each. Writing it would give the claim a test. A ru
 
 ## Where "no test" is written
 
-Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted.
+Every evidence cell that says "no test" is a further candidate for group E. The count below is of lines containing the words in any case, per record, so it is an upper bound on the cells. Lines in this list are not counted. Fifty records carry 281 such lines.
 
 | Record | Lines | Record | Lines |
 |---|---|---|---|
-| [S3 sensor](components/s3-sensor.md) | 15 | [warehouse source](components/warehouse-source.md) | 4 |
-| [restate API sync](components/restate-api-sync.md) | 14 | [document tables](components/document-tables.md) | 3 |
-| [Grist ingest](components/grist-ingest.md) | 13 | [classification propagation](components/classification-propagation.md) | 3 |
-| [OTel API sync](components/otel-api-sync.md) | 13 | [DataHub](components/datahub.md) | 3 |
-| [restate dlt sync](components/restate-dlt-sync.md) | 6 | [Keycloak](components/keycloak.md) | 3 |
-| [contract mapping](components/contract-mapping.md) | 5 | [MinIO](components/minio.md) | 3 |
-| [dbt project](components/dbt-project.md) | 5 | [Dagster](components/dagster.md) | 2 |
-| [dlt pipeline](components/dlt-pipeline.md) | 5 | [read audit](components/read-audit.md) | 2 |
-| [Topaz](components/topaz.md) | 5 | [tagged warehouse](components/tagged-warehouse.md) | 2 |
-| [DataHub lineage](components/datahub-lineage.md) | 4 | [central gateway](components/central-gateway.md) | 1 |
-| [domain broker](components/domain-broker.md) | 4 | [SystemLink source](components/systemlink-source.md) | 1 |
-| [mesh data client](components/mesh-data-client.md) | 4 | [big data](flows/big-data.md) | 3 |
-| [Restate server](components/restate-server.md) | 4 | [need to know](flows/need-to-know.md) | 2 |
-| [Restate worker](components/restate-worker.md) | 4 | [roadmap](ROADMAP.md) | 7 |
-| [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
-| [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 10 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
-| [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 8 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
-| [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
-| [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
-| [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
-| [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
-| [pub-tools](decisions/pub-tools.md) | 1 | | |
+| [Grist ingest](components/grist-ingest.md) | 17 | [tagged warehouse](components/tagged-warehouse.md) | 3 |
+| [S3 sensor](components/s3-sensor.md) | 17 | [SystemLink source](components/systemlink-source.md) | 2 |
+| [restate API sync](components/restate-api-sync.md) | 16 | [Redpanda](components/redpanda.md) | 1 |
+| [OTel API sync](components/otel-api-sync.md) | 14 | [big data](flows/big-data.md) | 3 |
+| [dlt pipeline](components/dlt-pipeline.md) | 9 | [need to know](flows/need-to-know.md) | 2 |
+| [Restate worker](components/restate-worker.md) | 9 | [evidence walkthrough](walkthroughs/evidence.md) | 1 |
+| [classification propagation](components/classification-propagation.md) | 8 | [not-established list](not-established.md) | 1 |
+| [contract mapping](components/contract-mapping.md) | 8 | [overview](overview.md) | 1 |
+| [mesh data client](components/mesh-data-client.md) | 8 | [roadmap](ROADMAP.md) | 7 |
+| [restate dlt sync](components/restate-dlt-sync.md) | 8 | [invincible-agent ADR-0001 to 0024](decisions/invincible-agent-adr-0001-0024.md) | 15 |
+| [Restate server](components/restate-server.md) | 8 | [invincible-agent ADR-0025 to 0048](decisions/invincible-agent-adr-0025-0048.md) | 10 |
+| [DataHub lineage](components/datahub-lineage.md) | 7 | [invincible-agent ADR-0049 to 0072](decisions/invincible-agent-adr-0049-0072.md) | 8 |
+| [DataHub](components/datahub.md) | 6 | [dag-tools §4r, §4l, §4m](decisions/dag-tools-s4r-s4l-s4m.md) | 8 |
+| [dbt project](components/dbt-project.md) | 6 | [dag-tools §4n, §4o, §4k-1](decisions/dag-tools-s4n-s4o-s4k1.md) | 6 |
+| [warehouse source](components/warehouse-source.md) | 6 | [dag-tools §1 to §3](decisions/dag-tools-s1-s3.md) | 5 |
+| [central gateway](components/central-gateway.md) | 5 | [dag-tools §4s](decisions/dag-tools-s4s.md) | 5 |
+| [document tables](components/document-tables.md) | 5 | [dag-tools §4a otel](decisions/dag-tools-s4a-otel.md) | 4 |
+| [Topaz](components/topaz.md) | 5 | [dag-tools §4k, §4j](decisions/dag-tools-s4k-s4j.md) | 4 |
+| [domain broker](components/domain-broker.md) | 4 | [dag-tools §4 Restate](decisions/dag-tools-s4-restate.md) | 2 |
+| [JupyterHub](components/jupyterhub.md) | 4 | [dag-tools §4e, §4a, §7](decisions/dag-tools-s4e-s4a-s7.md) | 1 |
+| [Keycloak](components/keycloak.md) | 4 | [dag-tools §4g1, §4g, §4f](decisions/dag-tools-s4g1-s4g-s4f.md) | 1 |
+| [MinIO](components/minio.md) | 4 | [dag-tools §4i, §4h, §4g](decisions/dag-tools-s4i-s4h-s4g.md) | 1 |
+| [Dagster](components/dagster.md) | 3 | [dag-tools §4q](decisions/dag-tools-s4q.md) | 1 |
+| [read audit](components/read-audit.md) | 3 | [dag-tools §5, §6](decisions/dag-tools-s5-s6.md) | 1 |
+| [Superset](components/superset.md) | 3 | [pub-tools](decisions/pub-tools.md) | 1 |
 
 ## Not established
 
-- Whether an in-process run recorded by continuous integration counts as a run against a running system (group B).
-- Where a recorded run would be kept, and in what form, so that a record can cite it.
+- Whether invincible-agent's own continuous integration runs the tests of A4, D3 to D10, D12 to D15 and three parts of D16, and with what result. That is the owning repository's to say.
 - For each "no test" line in the table above, which candidate test would cover it. They are counted, not yet sorted.
 
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| What `measured` requires | [the README](README.md#status-vocabulary) | — | the vocabulary table | — |
+| What `measured` requires | [the README](README.md#status-vocabulary); the architect's ruling of 2026-11-19 | — | the vocabulary table | — |
+| The CI jobs, and the end-to-end job's failure on a skip | `.github/workflows/test.yml` at `9d89568a` | — | `:27-28`, `:86-90`; `:117-118`, `:224-227`; `:245-246`, `:277-289` | `built` |
+| The runs and their outcomes | the "Tests" workflow, run 44398336497 at `9d89568a` and run 44451597250 at `add5bc48`: every job succeeded in both. Per-test outcomes come from each Python job's uploaded results and the 1.10.19 job's log. | — | the table under "Measured in CI, in process" | `measured`, in CI, in process |
 | Groups A to E | the records named in each row | as each row | as each row | `built`, as each record |
 | Three group-D tests replace a live service with a fake | the tests at their pins: each replaces the live service with a fake or has no live gate | — | D8, D11, D16 | `built` |
-| No claim is `measured` | the status columns of the records in this directory | — | none found | — |
+| No record but this list carries `measured` | the status columns of the records in this directory | — | none found outside this list | — |
+| 281 "no test" lines in fifty records | the records in this directory, except this list | — | a count of the lines containing the words in any case | — |
