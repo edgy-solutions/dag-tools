@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 15 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 16 at the component-records pin. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -23,6 +23,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | 13 | Restate's ports establish their caller (not filed) | only the mesh's own senders start a durable job, and only its own workers register | — (proposed; no decision yet) | — |
 | 14 | A pinned Restate server, and no setting read by nothing (not filed) | two installs of one chart run one Restate version, and every external Restate setting is used | — (proposed; no decision yet) | — |
 | 15 | The worker reports that it is registered (not filed) | a worker the server cannot route to is not reported ready | — (proposed; no decision yet) | — |
+| 16 | The internal doors admit only listed services by default (not filed) | only a listed service registers a route at the gateway or calls the broker's resolve route | — (proposed; no decision yet) | — |
 
 ## Where later slices fold in
 
@@ -144,6 +145,14 @@ The remedies proposed for gaps the flow and component records found, in the orde
 - **Remedy:** the worker declares a readiness probe that fails until its registration has succeeded, and a test covers registration. `proposed`
 - **Issue:** not filed.
 
+### 16. The internal doors admit only listed services by default
+
+- **Gap:** [central gateway, finding 12](components/central-gateway.md). The door on the gateway's register route and on the broker's resolve route defaults to `observe`. Under it, a caller the door would refuse, one with no token included, is logged as `would_refuse` and served. The chart sets no door posture (`dag_tools/central_gateway/internal_door.py:17-21`, `:101-131`; `helm/dag-tools/values.yaml:173-215`). `built`
+- **What already exists:** the door, its service lists and its `enforce` posture, and the `would_refuse` line a deployment can read before it switches (`internal_door.py:50-72`, `:101-131`). `built`
+- **Owner:** dag-tools.
+- **Remedy:** the chart sets the door to `enforce`, with each route's list of services, once the `would_refuse` lines read zero over a period the deployment chooses; or the code default moves to `enforce`. Which of the two is for the decision record. It could be filed together with row 1, which moves the identity posture the same way. `proposed`
+- **Issue:** not filed.
+
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
@@ -164,6 +173,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | The client's mesh token as a SQL password | dag-tools `dag_tools/cortex_data/client.py:315`, `:339` | not stated | no test | `built` |
 | Restate ports and registration check no caller | dag-tools `dag_tools/restate_handlers/serve.py:72`, `:75-112`; `helm/dag-tools/templates/restate-server.yaml:47-54` | not stated | no test | `built` |
 | Restate server image at `latest`; an ingress setting read by nothing | dag-tools `helm/dag-tools/values.yaml:22-24`, `:34-38`; `templates/_helpers.tpl:43-46`, `:66-74` | not stated | — | `built` |
+| Internal doors serve a refused caller under `observe`, the default; chart sets no posture | dag-tools `dag_tools/central_gateway/internal_door.py:17-21`, `:50-72`, `:101-131`; `helm/dag-tools/values.yaml:173-215` | not stated | `test_internal_doors.py`: `test_observe_serves_and_logs_would_refuse` | `built` |
 | No worker probe; registration failure only logged | dag-tools `helm/dag-tools/templates/restate-worker.yaml:1-98`; `dag_tools/restate_handlers/serve.py:75-112` | not stated | no test | `built` |
-| The fifteen remedies, except row 8 | this note | none | — | `proposed` |
+| The sixteen remedies, except row 8 | this note | none | — | `proposed` |
 | Row 8: retire the remote graph client | this note | the architect's ruling, 2026-11-18 | — | `accepted` |
