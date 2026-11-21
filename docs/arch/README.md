@@ -29,7 +29,9 @@ All evidence is read at these commits. A line number is valid only at its pin.
 | dag-tools (component records) | `add5bc48021fe6d2c79c24c31072142fc93c8179` | read directly |
 | invincible-agent | `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` | read directly, file by file, for the claims cited |
 | iagent-mesh-sdk | `d6a737837c3d0609ace95017c6b4b45b500ea755` | facts supplied by the owning session; not read here |
+| iagent-mesh-sdk (decision entries 5 to 8) | `f1a941030bd68f1218ee6122750619ea08ee7276` | facts supplied by the owning session; not read here |
 | pub-tools | `90fba4a` | facts supplied by the owning session; not read here |
+| pub-tools (decision records) | `21bc4db758f2465d35122e3a9f9ee8aeb4fab1f9` | file list and status counts read through the hosting service's API; contents not checked |
 
 ## References
 

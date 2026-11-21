@@ -1,6 +1,6 @@
 # Decisions from the census
 
-These records list the decisions that dag-tools states in `AGENTS.md`. Each decision is given in plain words, with its reason, one status and its evidence at a pinned commit.
+These records list the decisions that dag-tools states in `AGENTS.md`, and the decisions of the other repositories the mesh draws on (see [other repositories](#other-repositories)). Each decision is given in plain words, with its reason, one status and its evidence at a pinned commit.
 
 **These records describe; they decide nothing.** Each decision already stands in the census. Where a numbered decision record or a ruling already holds a decision, the entry points to it and does not restate it. Statuses are those of [the README](../README.md). Gaps go to [the roadmap note](../ROADMAP.md).
 
@@ -61,4 +61,14 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | §1 no names from below | [rulings.md](../../rulings.md), 2026-11-04, widened 2026-11-05 |
 | §2, §5 everything is a component configured from YAML | [rulings.md](../../rulings.md), 2026-11-04 |
 
-Records for the remaining sections follow in later batches.
+Every census section now has a record.
+
+## Other repositories
+
+Each repository's decisions are addressed in its own way. A decision number is always cited with its repository, because each repository numbers its own series.
+
+| Repository | Record | How a decision is addressed | Decisions |
+|---|---|---|---|
+| invincible-agent | follows in the next batches | by its own ADR number, as "invincible-agent ADR-NNNN" | — |
+| iagent-mesh-sdk | [sdk.md](sdk.md) | `SDK.N`, numbered in that record only; the SDK has no committed census | 8 |
+| pub-tools | [pub-tools.md](pub-tools.md), a pointer | by its own ADR number, as "pub-tools ADR-NNNN", in its own records | 45, recorded there |
