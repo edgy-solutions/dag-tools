@@ -1,6 +1,6 @@
 # Mesh architecture records
 
-These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it gives that thing a status of `accepted` or `proposed` and says so. Nothing unbuilt is called built. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found. Every row in it is `proposed` except the one the architect has accepted, which the note marks.
+These records **describe the mesh as it is**. They do not propose. Where a record names something that is not built, it states the absence. The absence, established from code, is `built` (see [Status vocabulary](#status-vocabulary)); the intention to build it, where one is recorded, is `accepted` or `proposed`. Nothing absent is claimed as present. The one exception is [the roadmap note](ROADMAP.md): it holds the remedies proposed for gaps the records found. Every row in it is `proposed` except the one the architect has accepted, which the note marks.
 
 The records are written for arch-kit, pinned at tag `v0.1.0` (`e0b9b3c40520440a09a4e0e6050ea5017de05848`). arch-kit v0.1.0 has no record type for a *flow* or for *alignment to an outside reference*. Until the kit or its loader declares one, these files follow the kit's view form: a title line, findings first, and a Sources table at the end. **That shape is provisional.**
 
