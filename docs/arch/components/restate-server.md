@@ -54,7 +54,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | CO-OTEL-API-SYNC | is called by | HTTP | none; an idempotency key is the one header sent | one rendered plan per group | `dag_tools/components/otel_api_sync/component.py:58`, `:218-224`, `:760-770`; `test_dispatch_posts_one_plan_per_group_to_the_group_keyed_object` | `built` |
 | CO-RESTATE-API-SYNC | is called by | HTTP | none | one message per staged row | `dag_tools/components/restate_api_sync/component.py:130-160`; no test | `built` |
 | CO-RESTATE-DLT-SYNC | is called by | HTTP | none | acknowledgement chunks and request or control-row calls | `dag_tools/components/restate_dlt_sync/component.py:290`, `:342`; `test_the_send_suffix_is_stripped` | `built` |
-| none: a persistent volume | writes | file system | none | the journal | `helm/dag-tools/templates/restate-server.yaml:59`, `:76-82`; no test | `built` |
+| XE-VOLUME | writes | file system | none | the journal | `helm/dag-tools/templates/restate-server.yaml:59`, `:76-82`; no test | `built` |
 
 ## Place in the mesh
 
@@ -64,7 +64,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | external by default and named by address; or a StatefulSet in this chart; the worker registers itself on the admin port; Dagster components post jobs to the ingress | — |
 | Sign-in | none set by the chart or sent by any caller in dag-tools | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | job payloads and step results pass through it and are kept in its journal; the bytes a handler reads or writes go between the worker and the backend, not through the server | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | infrastructure that the operational and data management planes run on | [NATO L1](../alignment/nato-dcra.md) |
+| Plane | `infrastructure`: the durable execution that the operational-data and data-management planes run on | [NATO L1](../alignment/nato-dcra.md) |
 | Security role | none: it decides and enforces nothing about who may read | — |
 | Services served | the delivery of rendered API calls to a consumer's endpoint, as a registered and retried exchange | [DoD S7](../alignment/dod-dmra.md) |
 

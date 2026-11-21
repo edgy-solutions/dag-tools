@@ -68,9 +68,9 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: a ClickHouse database | reads | ClickHouse client connection | username and password in the component's attributes | the telemetry rows | `dag_tools/components/otel_api_sync/component.py:482-492`; `dag_tools/asset_wrappers/sources/clickhouse_query.py:38-56`; no test | `built` |
-| none: a staging SQL database | writes | dlt destination connection | explicit config, else a process environment URL | the telemetry copy, and the dispatch ledger when staged | `dag_tools/components/otel_api_sync/component.py:409-464`; `dag_tools/components/otel_api_sync/ledger.py:44-158`; `test_staged_pipeline_wires_extraction_into_dispatch` | `built` |
-| none: a staging SQL database | reads | SQL through a database driver | explicit config, else a process environment URL | the staged rows for each group | `dag_tools/components/otel_api_sync/component.py:75-119`; `test_explicit_dest_config_host_beats_the_ambient_dlt_env_var` | `built` |
+| XE-CLICKHOUSE | reads | ClickHouse client connection | username and password in the component's attributes | the telemetry rows | `dag_tools/components/otel_api_sync/component.py:482-492`; `dag_tools/asset_wrappers/sources/clickhouse_query.py:38-56`; no test | `built` |
+| XE-STAGING-DB | writes | dlt destination connection | explicit config, else a process environment URL | the telemetry copy, and the dispatch ledger when staged | `dag_tools/components/otel_api_sync/component.py:409-464`; `dag_tools/components/otel_api_sync/ledger.py:44-158`; `test_staged_pipeline_wires_extraction_into_dispatch` | `built` |
+| XE-STAGING-DB | reads | SQL through a database driver | explicit config, else a process environment URL | the staged rows for each group | `dag_tools/components/otel_api_sync/component.py:75-119`; `test_explicit_dest_config_host_beats_the_ambient_dlt_env_var` | `built` |
 | CO-RESTATE | calls | HTTP | none; the plan id is sent as an idempotency header | one rendered plan per group, one-way | `dag_tools/components/otel_api_sync/component.py:55-58`, `:660-661`, `:701-704`, `:748-783`; `test_dispatch_posts_one_plan_per_group_to_the_group_keyed_object` | `built` |
 | CO-RESTATE | calls | HTTP | none | status polls for each dispatched group | `dag_tools/components/otel_api_sync/component.py:175-276`, `:708-746`; `test_completion_check_passes_when_every_group_completed` | `built` |
 
@@ -82,7 +82,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a YAML component; it posts plans to the Restate worker's plan-executor service and polls its status | — |
 | Sign-in | a password for the telemetry store and one for the staging database, from the component's attributes; no identity presented to the ingress or the gateway | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct to the telemetry store, the staging database and the Restate ingress; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where a producer moves its own data out | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where a producer moves its own data out | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none in access decisions; the target API's credential stays on the worker by default, and is in the journal only if the operator opts in | [NATO R5](../alignment/nato-dcra.md) |
 | Services served | turns source rows into the shape an API needs | [DoD S14](../alignment/dod-dmra.md) |
 

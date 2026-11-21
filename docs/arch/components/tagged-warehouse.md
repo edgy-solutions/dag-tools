@@ -48,7 +48,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: a SQL warehouse | calls | SQL through a database driver | the connection's own warehouse credential, from config | tagged statements, run in a committing transaction | `dag_tools/resources/warehouse.py:77-132`, `:447-457`; `test_tagged_warehouse_resource.py`: `test_a_connection_naming_nothing_is_refused_with_no_env_fallback` | `built` |
+| XE-SQL-WAREHOUSE | calls | SQL through a database driver | the connection's own warehouse credential, from config | tagged statements, run in a committing transaction | `dag_tools/resources/warehouse.py:77-132`, `:447-457`; `test_tagged_warehouse_resource.py`: `test_a_connection_naming_nothing_is_refused_with_no_env_fallback` | `built` |
 | CO-DAGSTER | is called by | in-process | none | resource definition under its key | `dag_tools/components/tagged_warehouse/component.py:54-86`; `test_tagged_warehouse_component.py`: `test_the_component_contributes_a_resource_and_no_assets` | `built` |
 | CO-READ-AUDIT | is called by | in-process resource call | none | a history statement and parameters | `dag_tools/components/read_audit/component.py:144-167`; `test_tagged_warehouse_component.py`: `test_the_resource_drops_in_under_an_unchanged_read_audit` | `built` |
 | CO-WAREHOUSE-SOURCE | is called by | in-process resource call | none | count and column statements | `dag_tools/components/warehouse_source/component.py:403-409`; no test | `built` |
@@ -61,7 +61,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster resource from a component a deployment adds; the warehouse source and read audit components can read through it by key | — |
 | Sign-in | the connection's own warehouse credential, from config | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from Dagster to the warehouse; the gateway and broker are not on it | — |
-| Plane | data management: attributed access to stored data | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: attributed access to stored data | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | marks each read with a principal; enforces nothing on what the read does | [NATO R5](../alignment/nato-dcra.md) |
 | Services served | the attribution the read audit measures | [DoD S10](../alignment/dod-dmra.md) |
 

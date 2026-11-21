@@ -74,9 +74,9 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DLT-PIPELINE | is called by | in-process | none | the source kind dispatch | `dag_tools/asset_wrappers/source_kinds.py:28, :129`; no test | `built` |
-| none: the source's HTTP API | calls | HTTP | API key in a request header | three read-only POST query routes | `dag_tools/systemlink/client.py:130-140`; `test_the_key_is_sent_in_the_header_only` | `built` |
-| none: a SQL warehouse | reads | SQL through the dlt client | not established | stored ids and versions | `dag_tools/asset_wrappers/sources/systemlink.py:348-364`; `test_the_first_run_stores_everything_and_the_second_stores_nothing_new` | `built` |
-| none: a SQL warehouse | writes | dlt destination connection | not established | results, steps, products and a run row | `dag_tools/asset_wrappers/sources/systemlink.py:587-599`; `test_the_ingest_run_row_counts_the_run` | `built` |
+| XE-SYSTEMLINK-API | calls | HTTP | API key in a request header | three read-only POST query routes | `dag_tools/systemlink/client.py:130-140`; `test_the_key_is_sent_in_the_header_only` | `built` |
+| XE-SQL-WAREHOUSE | reads | SQL through the dlt client | not established | stored ids and versions | `dag_tools/asset_wrappers/sources/systemlink.py:348-364`; `test_the_first_run_stores_everything_and_the_second_stores_nothing_new` | `built` |
+| XE-SQL-WAREHOUSE | writes | dlt destination connection | not established | results, steps, products and a run row | `dag_tools/asset_wrappers/sources/systemlink.py:587-599`; `test_the_ingest_run_row_counts_the_run` | `built` |
 | CO-DAGSTER | is called by | in-process | none | jobs and asset checks | `dag_tools/asset_wrappers/sources/systemlink.py:473-474, :488-491`; `test_the_schedule_targets_incremental_and_no_name_job_exists` | `built` |
 
 ## Place in the mesh
@@ -87,7 +87,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a source kind inside the dlt pipeline component, configured in YAML; the chart ships nothing for it | — |
 | Sign-in | an API key read from an environment variable and sent in a request header to the SystemLink server | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from the SystemLink server to the pipeline and then to the destination; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' data is extracted | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' data is extracted | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; it only reads, and it keeps a person's name out of the tables unless the deployment chooses to store it | — |
 | Services served | ingest run rows and checks as quality metadata on the load | [DoD S13](../alignment/dod-dmra.md) |
 

@@ -52,18 +52,18 @@ Each element names the mesh component that plays it and the code that shows it.
 
 ## The flow, step by step
 
-Actors and targets are record ids. `person:` names a role, and `none:` marks a party with no record of its own.
+Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are defined in [the README](../README.md#ids-and-connections).
 
 | # | Actor | Action | Target | What is passed | Decision or check | Evidence | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | person: a person | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2199` | `built` |
+| 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2199` | `built` |
 | 2 | CO-CLIENT | asks for a dataset | CO-GATEWAY | the bearer token and the principal it acts for | — | dag-tools `dag_tools/cortex_data/client.py:161-205` | `built` |
 | 3 | CO-GATEWAY | verifies the token, then resolves the principal | CO-GATEWAY | — | signature, `exp`, `iss`, `aud`; the configured posture | `dag_tools/central_gateway/identity.py:178-201`, `:270`, `:398` | `built` |
 | 4 | CO-GATEWAY | checks the request against the deny list | CO-GATEWAY | — | the configured deny list | `dag_tools/central_gateway/main.py:78-82`, `:438-465` | `built` |
 | 5 | CO-GATEWAY | asks for one decision, `allowed` | CO-TOPAZ | the dataset URN and the subject, in the resource context | — | `main.py:208-335`, `:468` | `built` |
 | 6 | CO-TOPAZ | evaluates the request against its directory | CO-TOPAZ | — | `ds.check(dataset, can_read, user)` under the `data_mesh…authorize` policy | invincible-agent `topaz-configmap.yaml:159-165` (model), `:352-392` (policy) | `built` |
 | 7 | CO-GATEWAY | looks up the producer's broker and asks it for a ticket | CO-BROKER | the dataset | proceeds only when step 6 allowed | `main.py:476-544` | `built` |
-| 8 | CO-BROKER | mints a credential for that dataset | none: the dataset's backend | — | the minter for the backend type | `dag_tools/domain_broker/main.py:226-308`, `dag_tools/domain_broker/sql_minting.py:164-221`, `:264-344` | `built` |
+| 8 | CO-BROKER | mints a credential for that dataset | XE-DATASET-BACKEND | — | the minter for the backend type | `dag_tools/domain_broker/main.py:226-308`, `dag_tools/domain_broker/sql_minting.py:164-221`, `:264-344` | `built` |
 | 9 | CO-GATEWAY | logs `TICKET_ISSUED` and returns the ticket; the client reads with it | CO-CLIENT | the ticket | — | `main.py:549-571`; `client.py` read paths | `built` |
 
 ## Roles in the NATO frame

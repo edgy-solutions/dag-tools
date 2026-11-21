@@ -62,7 +62,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | CO-WAREHOUSE-SOURCE | reads | in-process Dagster instance API | none | the label set a source published in its newest observation | `dag_tools/components/classification_propagation/component.py:482-526`; `test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED` | `built` |
 | CO-DAGSTER | writes | in-process Dagster instance API | none | an observation on the derived asset | `dag_tools/components/classification_propagation/component.py:544-640`; no test | `built` |
 | CO-DATAHUB | calls | HTTP | token from config, else from the environment; none sent when empty | two patch aspects per dataset | `dag_tools/components/classification_propagation/component.py:373-414`; no test | `built` |
-| none: a mounted classification document | reads | file read | none | the dimensions and values, read every tick | `dag_tools/components/classification_propagation/component.py:544-554, :700-717`; no test | `built` |
+| XE-CLASSIFICATION-DOC | reads | file read | none | the dimensions and values, read every tick | `dag_tools/components/classification_propagation/component.py:544-554, :700-717`; no test | `built` |
 
 ## Place in the mesh
 
@@ -72,7 +72,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component; one sensor, stopped by default, reading the Dagster event log and the dimensions document, writing to the catalog | [DoD P4](../alignment/dod-dmra.md) |
 | Sign-in | to the catalog with a token from config or the environment, if one is set; none to anything else | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct to the catalog; the gateway and broker are not on it, and no warehouse is read | [DoD S3](../alignment/dod-dmra.md) |
-| Plane | data management | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: labels are composed as a shared lifecycle service | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none for access control; it publishes labels and records how each was composed | — |
 | Services served | classification markings that rise when data is combined, with downgrades named and owned | [DoD S12](../alignment/dod-dmra.md) |
 

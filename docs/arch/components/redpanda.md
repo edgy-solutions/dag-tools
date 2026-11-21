@@ -33,7 +33,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: the invincible-agent projector | is called by | Kafka protocol | not established | not established | invincible-agent `docs/plans/projector-build-plan.md`; invincible-agent `src/iagent/projector/apply_loop.py`; no test | `proposed` |
+| XE-PROJECTOR | is called by | Kafka protocol | not established | not established | invincible-agent `docs/plans/projector-build-plan.md`; invincible-agent `src/iagent/projector/apply_loop.py`; no test | `proposed` |
 
 ## Place in the mesh
 
@@ -43,7 +43,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | not wired | — |
 | Sign-in | none | — |
 | Data path | none | — |
-| Plane | `proposed`: data management, delivery between producers and consumers | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: `proposed`: delivery between producers and consumers | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none | — |
 | Services served | none at the pin; pub/sub is `not built`, and the mesh's pub/sub phase is `proposed` | [DoD S9](../alignment/dod-dmra.md) |
 

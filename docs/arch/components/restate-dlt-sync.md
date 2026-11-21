@@ -80,9 +80,9 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | acknowledgement chunks, request lists and control rows, each awaited | `dag_tools/components/restate_dlt_sync/component.py:290-345`, `:326`, `:601-622`; `test_the_send_suffix_is_stripped`, `test_the_ack_is_awaited_not_fired_and_forgotten` | `built` |
 | CO-DLT-PIPELINE | calls | in-process | none | the shared extraction asset factory | `dag_tools/components/restate_dlt_sync/component.py:410-532`; `test_every_source_table_gets_an_ack_dispatch` | `built` |
-| none: a source database | reads | SQL through a database driver | not established | the tables to copy; control and backlog queries | `dag_tools/components/restate_dlt_sync/component.py:551-560`, `:692-697`, `:868`, `:939`; no test | `built` |
-| none: a destination database | writes | dlt destination connection | not established | the copied tables | `dag_tools/components/restate_dlt_sync/component.py:410-532`; `test_every_source_table_gets_an_ack_dispatch` | `built` |
-| none: a destination database | reads | SQL through a database driver | explicit config, else a process environment URL | the keys loaded since the last acknowledged mark | `dag_tools/components/restate_dlt_sync/component.py:500-507`, `:551-560`; no test | `built` |
+| XE-SOURCE-DB | reads | SQL through a database driver | not established | the tables to copy; control and backlog queries | `dag_tools/components/restate_dlt_sync/component.py:551-560`, `:692-697`, `:868`, `:939`; no test | `built` |
+| XE-DLT-DESTINATION | writes | dlt destination connection | not established | the copied tables | `dag_tools/components/restate_dlt_sync/component.py:410-532`; `test_every_source_table_gets_an_ack_dispatch` | `built` |
+| XE-DLT-DESTINATION | reads | SQL through a database driver | explicit config, else a process environment URL | the keys loaded since the last acknowledged mark | `dag_tools/components/restate_dlt_sync/component.py:500-507`, `:551-560`; no test | `built` |
 
 ## Place in the mesh
 
@@ -92,7 +92,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a YAML component in a code location, sharing the dlt resource with the other dlt-based components; it posts to Restate ingress endpoints that a deployment names | — |
 | Sign-in | to the source and destination with credentials from config or environment; to Restate, nothing is presented | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from the source to the destination, and direct to the Restate ingress; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' tables are read out and their systems written back to | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' tables are read out and their systems written back to | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none for mesh reads; the refusals at load are config validation, not access control | — |
 | Services served | moves producer data into a store a consumer reads and records consumption back at the source | [DoD S7](../alignment/dod-dmra.md) |
 

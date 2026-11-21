@@ -53,11 +53,11 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: a Postgres database | writes | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |
-| none: a Postgres database | reads | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |
-| none: a code-location server | calls | gRPC | none in the chart | the code location's definitions and run launches | invincible-agent `helm/invincible-agent/templates/user-deployments.yaml:93-104`, `:239-240`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_EVERY_RENDERED_CODE_LOCATION_HAS_ITS_OWN_RUN_SLOTS` | `built` |
-| person: an operator | is called by | HTTP | none enforced in the chart; a deployment may add annotations on the ingress | the web interface | invincible-agent `helm/invincible-agent/templates/ingress.yaml:87-124`; invincible-agent `helm/invincible-agent/values.yaml:452-454`; no test | `built` |
-| none: the qualification tooling | is called by | HTTP, GraphQL | optional bearer token; a redirect is reported as a sign-in gate, not followed | launch, status and event-log queries | `dag_tools/qual/graphql/client.py:112-129`, `:195-200`, `:254-270`; `test_graphql_client.py`: `test_post_sends_auth_header_when_token_set`, `test_post_omits_auth_header_when_no_token` | `built` |
+| XE-DAGSTER-STORAGE | writes | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |
+| XE-DAGSTER-STORAGE | reads | SQL through a database driver | credentials read from the environment | run and event records | invincible-agent `helm/invincible-agent/templates/dagster-instance.yaml:20-22`, `:24-36`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_THE_RENDERED_STORAGE_READS_ENV_REFS_NEVER_LITERALS` | `built` |
+| XE-CODE-LOCATION | calls | gRPC | none in the chart | the code location's definitions and run launches | invincible-agent `helm/invincible-agent/templates/user-deployments.yaml:93-104`, `:239-240`; invincible-agent `tests/test_a_started_run_whose_worker_died_is_failed.py`: `test_EVERY_RENDERED_CODE_LOCATION_HAS_ITS_OWN_RUN_SLOTS` | `built` |
+| RL-OPERATOR | is called by | HTTP | none enforced in the chart; a deployment may add annotations on the ingress | the web interface | invincible-agent `helm/invincible-agent/templates/ingress.yaml:87-124`; invincible-agent `helm/invincible-agent/values.yaml:452-454`; no test | `built` |
+| XE-QUAL-TOOLING | is called by | HTTP, GraphQL | optional bearer token; a redirect is reported as a sign-in gate, not followed | launch, status and event-log queries | `dag_tools/qual/graphql/client.py:112-129`, `:195-200`, `:254-270`; `test_graphql_client.py`: `test_post_sends_auth_header_when_token_set`, `test_post_omits_auth_header_when_no_token` | `built` |
 
 ## Place in the mesh
 
@@ -67,7 +67,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | deployed by the invincible-agent chart; the dag-tools image is one of its code locations | — |
 | Sign-in | none enforced on the webserver by chart default; the qualification client sends an optional bearer token | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | runs move data between sources and stores; the instance holds run and event records, not data | — |
-| Plane | producers' pipelines and the shared lifecycle services both run in it | [NATO L2](../alignment/nato-dcra.md), [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: the shared lifecycle services run in it. Producers' pipelines run in it too, so it also carries operational-data work | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none built; the run bound limits a stuck run, not access | — |
 | Services served | the source of lineage, of the materializations the read audit reconciles, and of asset checks | [DoD S4](../alignment/dod-dmra.md), [DoD S10](../alignment/dod-dmra.md), [DoD S13](../alignment/dod-dmra.md) |
 

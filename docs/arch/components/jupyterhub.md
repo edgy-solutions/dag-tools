@@ -46,7 +46,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | CO-CLIENT | calls | in-process | the notebook's environment, which nothing at the pin sets | the notebook imports the library | `docs/cortex-data-client.md:25-27`; no test | `not built` |
 | CO-GATEWAY | calls | HTTP | developer token, or a token from the client credentials exchange; a user token from the environment names the user | authorization of a read, answered with a ticket | `dag_tools/cortex_data/client.py:88-112`; `dag_tools/cortex_data/identity.py:34`, `:213-215`; no test here | `built` |
 | CO-KEYCLOAK | calls | HTTP | client id and secret | a service token request | `dag_tools/cortex_data/client.py:88-112`; no test here | `built` |
-| none: a mechanism that delivers a user's token to a notebook | is called by | not established | not established | a user's token | invincible-agent `docs/plans/jupyter-user-token-data-access.md`; no test | `proposed` |
+| XE-TOKEN-DELIVERY | is called by | not established | not established | a user's token | invincible-agent `docs/plans/jupyter-user-token-data-access.md`; no test | `proposed` |
 
 ## Place in the mesh
 
@@ -56,7 +56,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | not wired; the data client is a library a notebook can import | — |
 | Sign-in | whatever token the notebook's environment carries; nothing sets it | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | notebook to the gateway for a ticket, then to the store; the same as any client | — |
-| Plane | analytical: exploration by people | [NATO L4](../alignment/nato-dcra.md) |
+| Plane | `analytical-data`: exploration by people | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | none of its own; the gateway decides each read | — |
 | Services served | none of its own; it consumes data exchange through the client | [DoD S7](../alignment/dod-dmra.md) |
 

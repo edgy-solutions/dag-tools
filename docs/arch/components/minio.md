@@ -56,12 +56,12 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: a Delta or Arrow IO manager in a code location | is called by | S3 API | access key pair and endpoint required in the IO manager's config | the writer's files, written and read | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`; `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
-| none: the qualification registry client | is called by | S3 API | the default credential chain; optional endpoint | immutable per-build records, with a pointer written last | `dag_tools/qual/registry/client.py:45-55`, `:62-75`; `test_registry_client.py`: `test_storage_put_immutable_refuses_overwrite` | `built` |
-| none: a DuckDB resource | is called by | S3 API | not established | files read through an endpoint split into a host and a TLS flag | `dag_tools/resources/duckdb.py:90-98`; `test_duckdb_resource.py`: `test_split_endpoint` | `built` |
-| none: a demo IO manager registered only in demo mode | is called by | S3 API | standard key and secret from the environment; an unset one becomes empty | demo files written and read | `dag_tools/user_deployment/definitions.py:62-67`, `:233-256`; no test of an unset key | `built` |
+| XE-IO-MANAGER | is called by | S3 API | access key pair and endpoint required in the IO manager's config | a Delta or Arrow IO manager's files, written and read | `dag_tools/io_managers/delta.py:102-114`, `:162`, `:180`; `test_image_s3fs_floor.py`: `test_the_installed_s3fs_accepts_an_endpoint_url` | `built` |
+| XE-QUAL-TOOLING | is called by | S3 API | the default credential chain; optional endpoint | the registry client's immutable per-build records, with a pointer written last | `dag_tools/qual/registry/client.py:45-55`, `:62-75`; `test_registry_client.py`: `test_storage_put_immutable_refuses_overwrite` | `built` |
+| XE-DUCKDB-RESOURCE | is called by | S3 API | not established | files read through an endpoint split into a host and a TLS flag | `dag_tools/resources/duckdb.py:90-98`; `test_duckdb_resource.py`: `test_split_endpoint` | `built` |
+| XE-IO-MANAGER | is called by | S3 API | standard key and secret from the environment; an unset one becomes empty | demo files written and read, by an IO manager registered only in demo mode | `dag_tools/user_deployment/definitions.py:62-67`, `:233-256`; no test of an unset key | `built` |
 
-CO-CLIENT, CO-S3-SENSOR, CO-DOCUMENT-TABLES and CO-DLT-PIPELINE also reach an S3-compatible store, through their own configuration. Their records draw that store as a `none:` party rather than as this component, because which store a deployment runs is still open in this record. They are therefore not rows here.
+CO-CLIENT, CO-S3-SENSOR, CO-DOCUMENT-TABLES and CO-DLT-PIPELINE also reach an S3-compatible store, through their own configuration. Their records draw that store by an `XE-` id (`XE-OBJECT-STORE`, or `XE-DLT-DESTINATION` for a pipeline's destination) rather than as this component, because which store a deployment runs is still open in this record. They are therefore not rows here.
 
 ## Place in the mesh
 
@@ -71,7 +71,7 @@ CO-CLIENT, CO-S3-SENSOR, CO-DOCUMENT-TABLES and CO-DLT-PIPELINE also reach an S3
 | How the mesh wires it | an external store each client reaches by endpoint address; not deployed by the chart | — |
 | Sign-in | a key pair per client, from config, the environment or the default chain; readers get a minted, prefix-scoped key | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | producers write directly; readers read directly with the ticket's coordinates and a minted key | — |
-| Plane | infrastructure and data management: where data at rest lives | [NATO L1](../alignment/nato-dcra.md), [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `infrastructure`: where data at rest lives. The shared lifecycle services keep their records in it too | [NATO L1](../alignment/nato-dcra.md) |
 | Security role | holds credentials and enforces the minted key's prefix scope | [NATO R5](../alignment/nato-dcra.md) |
 | Services served | the storage behind governed exchanges | [DoD S7](../alignment/dod-dmra.md) |
 

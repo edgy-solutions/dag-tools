@@ -56,7 +56,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | an external service the gateway calls once per read; not deployed by the chart | — |
 | Sign-in | an optional tenant key from the environment; the caller's bearer token is forwarded | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | none; it sees the URN and the principal, never the data | — |
-| Plane | the policy decision point for dataset reads | [NATO R2](../alignment/nato-dcra.md) |
+| Plane | `data-management`: a shared service that decides each dataset read; it is the policy decision point | [NATO L3](../alignment/nato-dcra.md), [NATO R2](../alignment/nato-dcra.md) |
 | Security role | authorization of each read; the decision the gateway enforces | [NATO R6](../alignment/nato-dcra.md) |
 | Services served | the access decision behind each exchange, and the narrowing a label would feed | [DoD S7](../alignment/dod-dmra.md), [DoD S12](../alignment/dod-dmra.md) |
 

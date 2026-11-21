@@ -63,9 +63,9 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| none: an object store | calls | S3 API | whatever the S3 resource resolves, with credential lookup left to the client library by default | a prefix listing, then object metadata | `dag_tools/components/s3_sensor/sensor_component.py:47-50`, `:89-95`, `:157`; `dag_tools/components/s3_sensor/utils.py:26`; `test_s3_sensor.py`: `test_get_client` | `built` |
+| XE-OBJECT-STORE | calls | S3 API | whatever the S3 resource resolves, with credential lookup left to the client library by default | a prefix listing, then object metadata | `dag_tools/components/s3_sensor/sensor_component.py:47-50`, `:89-95`, `:157`; `dag_tools/components/s3_sensor/utils.py:26`; `test_s3_sensor.py`: `test_get_client` | `built` |
 | CO-DAGSTER | calls | in-process | none | run requests and dynamic-partition keys | `dag_tools/components/s3_sensor/sensor_component.py:35-45`, `:122-153`; no test of `additional_target_ops` | `built` |
-| none: an object store | reads | S3 API | explicit key fields on the arrow resource | an object read as a dataset | `dag_tools/components/s3_sensor/arrow_component.py:16`, `:64-66`; `dag_tools/resources/arrow.py:10-81`; no test | `not built` |
+| XE-OBJECT-STORE | reads | S3 API | explicit key fields on the arrow resource | an object read as a dataset | `dag_tools/components/s3_sensor/arrow_component.py:16`, `:64-66`; `dag_tools/resources/arrow.py:10-81`; no test | `not built` |
 
 ## Place in the mesh
 
@@ -75,7 +75,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | YAML components in a code location, joined by a shared dynamic partition name and a job name | — |
 | Sign-in | to the object store, with the credential the S3 resource resolves, or explicit keys on the arrow resource; nothing is presented to the mesh | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from the object store to the sensor and the asset; the gateway and broker are not on it | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | operational, where producers' files arrive | [NATO L2](../alignment/nato-dcra.md) |
+| Plane | `operational-data`: where producers' files arrive | [NATO L2](../alignment/nato-dcra.md) |
 | Security role | none; no access decision is made here | — |
 | Services served | moves arriving files into partitioned assets for a consumer | [DoD S7](../alignment/dod-dmra.md) |
 

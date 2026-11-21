@@ -61,10 +61,10 @@ One row per connection, read from this component's side. Evidence is at this rec
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | asset run and run config | `dag_tools/components/read_audit/component.py:170-233`; `test_read_audit_component.py`: `test_the_shipped_example_loads` | `built` |
 | CO-DAGSTER | reads | in-process instance read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`, `:213-223`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |
-| none: a warehouse-history resource | calls | in-process resource call | none of its own; the resource holds the warehouse credential | a history statement with bound parameters | `dag_tools/components/read_audit/component.py:144-167`, `:200-205`; `dag_tools/audit/history.py:92-148`; `test_audit_history.py`: `test_every_value_is_bound_and_none_is_interpolated` | `built` |
-| none: an exported history file | reads | file read | none | history rows | `dag_tools/components/read_audit/schema.py:25-109`; `test_read_audit_component.py`: `test_history_demands_exactly_one_topology` | `built` |
-| none: an exported run-window file | reads | file read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |
-| none: the asset's IO manager | writes | in-process | none | the full report | `dag_tools/components/read_audit/component.py:213-231`; no test of the failure text | `built` |
+| XE-HISTORY-RESOURCE | calls | in-process resource call | none of its own; the resource holds the warehouse credential | a history statement with bound parameters | `dag_tools/components/read_audit/component.py:144-167`, `:200-205`; `dag_tools/audit/history.py:92-148`; `test_audit_history.py`: `test_every_value_is_bound_and_none_is_interpolated` | `built` |
+| XE-HISTORY-EXPORT | reads | file read | none | history rows | `dag_tools/components/read_audit/schema.py:25-109`; `test_read_audit_component.py`: `test_history_demands_exactly_one_topology` | `built` |
+| XE-RUN-WINDOW-EXPORT | reads | file read | none | run windows | `dag_tools/components/read_audit/component.py:114-141`; `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows` | `built` |
+| XE-IO-MANAGER | writes | in-process | none | the full report | `dag_tools/components/read_audit/component.py:213-231`; no test of the failure text | `built` |
 
 ## Place in the mesh
 
@@ -74,7 +74,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a Dagster component a deployment adds; the chart and the shipped code location do not | — |
 | Sign-in | none of its own; the history resource holds the warehouse credential | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | a history query through a resource, or an exported file; the gateway and broker are not on it | — |
-| Plane | data management: attribution of reads to producers | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: attribution of reads to producers | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | attribution of reads to identities, from an unsigned tag or a time window | [NATO R5](../alignment/nato-dcra.md) |
 | Services served | mesh performance analytics, where the read audit is named | [DoD S10](../alignment/dod-dmra.md) |
 

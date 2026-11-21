@@ -71,8 +71,8 @@ One row per connection, read from this component's side. Evidence is at this rec
 | CO-BROKER | calls | HTTP | client-credentials bearer token for the service door | the URN, allowed columns, row filters and subject; back comes a ticket | `dag_tools/central_gateway/main.py:404-606`; `dag_tools/central_gateway/internal_door.py:143`; `test_service_headers_refetches_30s_before_expiry` | `built` |
 | CO-BROKER | is called by | HTTP | service-door caller list, posture observe by default | the broker's address and the URNs it serves | `dag_tools/central_gateway/internal_door.py:50-72`, `:98`; `dag_tools/central_gateway/main.py:214-236`; `test_observe_serves_and_logs_would_refuse` | `built` |
 | CO-CLIENT | is called by | HTTP | bearer token verified by the gateway under enforce; the principal a header names under observe, the default | a dataset URN in; a ticket out | `dag_tools/central_gateway/identity.py:179-196`; `dag_tools/central_gateway/main.py:468-494`; `test_posture_parse` | `built` |
-| none: a route cache | writes | in-process | not established | each URN against the broker's address | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
-| none: a route cache | reads | in-process | not established | the broker address for a URN | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
+| XE-ROUTE-CACHE | writes | in-process | not established | each URN against the broker's address | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
+| XE-ROUTE-CACHE | reads | in-process | not established | the broker address for a URN | `dag_tools/central_gateway/main.py:63`, `:214-236`, `:506`; no test | `built` |
 | CO-KEYCLOAK | calls | HTTP | none | the keys that verify a signed token | `dag_tools/central_gateway/identity.py:212`, `:256-257`, `:301-315`; no test | `built` |
 
 ## Place in the mesh
@@ -83,7 +83,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | the dag-tools chart deploys it; brokers register their URNs to it; the mesh data client calls its authorize route | — |
 | Sign-in | under `enforce`, a token from the identity provider, verified by a key set or a key, with issuer and audience checked; under `observe`, the default, the principal a header names; the internal routes have their own service door | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | none: it carries the decision and the ticket, never the data | [DoD S7](../alignment/dod-dmra.md) |
-| Plane | data management: access to the shared services goes through its API | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: access to the shared services goes through its API | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | enforcement point: it refuses before any data path is resolved | [NATO R1](../alignment/nato-dcra.md) |
 | Services served | data exchange; policy access control, by enforcing the engine's answer; performance analytics, by its refusal counts; instrumentation, by `/health` and `/ready` | [DoD S7, S5, S10, S15](../alignment/dod-dmra.md) |
 

@@ -61,7 +61,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | an external service; the gateway reads its key set and the client posts to its token address; not deployed by the chart | — |
 | Sign-in | it is the sign-in: user tokens and client-credentials service tokens | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | none; it issues and publishes keys, and sees no data | — |
-| Plane | identity: the authority behind each principal | [NATO R9](../alignment/nato-dcra.md) |
+| Plane | `infrastructure`: a shared foundation service, the authority behind each principal | [NATO L1](../alignment/nato-dcra.md), [NATO R9](../alignment/nato-dcra.md) |
 | Security role | authentication of people and services; tokens are verified under both postures and decide the principal only under `enforce`; the read path and the internal doors each have their own posture, both `observe` by default | [NATO R5](../alignment/nato-dcra.md), [NATO R7](../alignment/nato-dcra.md) |
 | Services served | the identity every governed exchange is decided for | [DoD S7](../alignment/dod-dmra.md) |
 

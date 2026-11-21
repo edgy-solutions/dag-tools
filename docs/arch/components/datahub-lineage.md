@@ -67,7 +67,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | How the mesh wires it | a sensor in the Dagster code location, turned on by environment variables in the deployed location, or by a component file in a deployment's own | — |
 | Sign-in | a bearer token from config or the environment, sent to DataHub; none is sent if none is set | [NATO R7](../alignment/nato-dcra.md) |
 | Data path | direct from the Dagster process to DataHub; the gateway and broker are not on it | — |
-| Plane | data management, where shared lifecycle services keep metadata | [NATO L3](../alignment/nato-dcra.md) |
+| Plane | `data-management`: where shared lifecycle services keep metadata | [NATO L3](../alignment/nato-dcra.md) |
 | Security role | none; it writes metadata and decides no access | — |
 | Services served | dataset identity and lineage records for the catalog | [DoD S1](../alignment/dod-dmra.md), [S11](../alignment/dod-dmra.md) |
 

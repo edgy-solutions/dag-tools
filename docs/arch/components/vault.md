@@ -50,7 +50,7 @@ No connection is built at this pin: nothing in the code or the chart refers to t
 | How the mesh wires it | not wired; secrets come from Kubernetes Secrets a deployment provides | — |
 | Sign-in | not applicable | — |
 | Data path | none | — |
-| Plane | infrastructure: secret delivery | [NATO L1](../alignment/nato-dcra.md) |
+| Plane | `infrastructure`: secret delivery | [NATO L1](../alignment/nato-dcra.md) |
 | Security role | none built; credential storage and rotation are the deployment's | [NATO R5](../alignment/nato-dcra.md), [NATO R8](../alignment/nato-dcra.md) |
 | Services served | none at the pin | — |
 
