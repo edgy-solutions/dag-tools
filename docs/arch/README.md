@@ -15,7 +15,7 @@ Every claim carries exactly one status.
 | `accepted` | A decision record accepts it, and no code does it yet. | The decision record. |
 | `proposed` | It is written down as intent, but not accepted or built. | Where it is written. |
 
-A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`.
+A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`. So is an absence: a claim that a chart or the code does not provide something is `not built`, never `built`.
 
 ## Pins
 
@@ -79,17 +79,21 @@ How closely is one of:
 | [components/document-tables.md](components/document-tables.md) | component | draft |
 | [components/domain-broker.md](components/domain-broker.md) | component | draft |
 | [components/grist-ingest.md](components/grist-ingest.md) | component | draft |
+| [components/grist.md](components/grist.md) | component | draft |
 | [components/hasura.md](components/hasura.md) | component | draft |
+| [components/jupyterhub.md](components/jupyterhub.md) | component | draft |
 | [components/keycloak.md](components/keycloak.md) | component | draft |
 | [components/mesh-data-client.md](components/mesh-data-client.md) | component | draft |
 | [components/minio.md](components/minio.md) | component | draft |
 | [components/otel-api-sync.md](components/otel-api-sync.md) | component | draft |
 | [components/read-audit.md](components/read-audit.md) | component | draft |
+| [components/redpanda.md](components/redpanda.md) | component | draft |
 | [components/restate-api-sync.md](components/restate-api-sync.md) | component | draft |
 | [components/restate-dlt-sync.md](components/restate-dlt-sync.md) | component | draft |
 | [components/restate-server.md](components/restate-server.md) | component | draft |
 | [components/restate-worker.md](components/restate-worker.md) | component | draft |
 | [components/s3-sensor.md](components/s3-sensor.md) | component | draft |
+| [components/superset.md](components/superset.md) | component | draft |
 | [components/systemlink-source.md](components/systemlink-source.md) | component | draft |
 | [components/tagged-warehouse.md](components/tagged-warehouse.md) | component | draft |
 | [components/topaz.md](components/topaz.md) | component | draft |
