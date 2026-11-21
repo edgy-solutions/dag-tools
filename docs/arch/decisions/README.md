@@ -40,6 +40,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4p.md](dag-tools-s4p.md) | §4p dlt source kinds and per-pipeline schedules | 16 |
 | [dag-tools-s4q.md](dag-tools-s4q.md) | §4q SystemLink source kind | 15 |
 | [dag-tools-s4r-s4l-s4m.md](dag-tools-s4r-s4l-s4m.md) | §4r curated slice, §4l classification dimensions file, §4m warehouse source | 37 |
+| [dag-tools-s4s.md](dag-tools-s4s.md) | §4s documents to tables | 33 |
 
 ## Where the numbered series already holds a decision
 
