@@ -61,7 +61,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-OBJECT-STORE | calls | S3 API | whatever the S3 resource resolves, with credential lookup left to the client library by default | a prefix listing, then object metadata | `dag_tools/components/s3_sensor/sensor_component.py:47-50`, `:89-95`, `:157`; `dag_tools/components/s3_sensor/utils.py:26`; `test_s3_sensor.py`: `test_get_client` | `built` |
 | CO-DAGSTER | calls | in-process | none | run requests and dynamic-partition keys | `dag_tools/components/s3_sensor/sensor_component.py:35-45`, `:122-153`; no test of `additional_target_ops` | `built` |

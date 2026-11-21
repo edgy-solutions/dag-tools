@@ -55,7 +55,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a sensor tick | `dag_tools/components/classification_propagation/component.py:529-541`; no test | `built` |
 | CO-DAGSTER | reads | in-process Dagster instance API | none | materializations and observations from the event log | `dag_tools/components/classification_propagation/component.py:482-526`; no test | `built` |

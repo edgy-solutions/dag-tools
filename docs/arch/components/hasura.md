@@ -27,7 +27,7 @@ None. Neither chart nor any component has a setting for it.
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 
 No connection is built at this pin: nothing in the code or the chart refers to this component. `not built`

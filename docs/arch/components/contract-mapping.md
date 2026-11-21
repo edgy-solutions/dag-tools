@@ -64,7 +64,7 @@ Component attributes in the component's YAML file. The mapping document's own se
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a run of the one asset that checks the mapping | `dag_tools/components/contract_mapping/component.py:438-448`; no test | `built` |
 | XE-CONTRACT-FILE | reads | file read | none | the contract document or one selected from a bundle | `dag_tools/components/contract_mapping/component.py:100-162`; no test | `built` |

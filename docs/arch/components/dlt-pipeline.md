@@ -54,7 +54,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | runs of the dlt assets | `dag_tools/asset_wrappers/dlt_assets_factory.py:605-620`; no test | `built` |
 | XE-SOURCE-DB | reads | SQL through a database driver | credential from config or the environment | the tables the pipeline copies | `dag_tools/asset_wrappers/dlt_assets_parsing.py:236-242, :304-310`; no test | `built` |

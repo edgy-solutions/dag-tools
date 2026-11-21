@@ -63,7 +63,7 @@ The read-only IO manager takes the gateway address, the service credentials and 
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-GATEWAY | calls | HTTP | bearer token | a dataset URN; back comes a ticket | `dag_tools/cortex_data/client.py:188-205`; `test_authorize_endpoint_shape` | `built` |
 | CO-KEYCLOAK | calls | HTTP | client-credentials grant, used when no token is handed in | service credentials; back comes a token | `dag_tools/cortex_data/client.py:89-112`, `:146-159`; `test_cortex_client_m2m_env` | `built` |

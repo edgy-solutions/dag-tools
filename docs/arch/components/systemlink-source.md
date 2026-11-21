@@ -71,7 +71,7 @@ Source attributes are under `source_config`. `table_prefix`, `dest_schema` and `
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DLT-PIPELINE | is called by | in-process | none | the source kind dispatch | `dag_tools/asset_wrappers/source_kinds.py:28, :129`; no test | `built` |
 | XE-SYSTEMLINK-API | calls | HTTP | API key in a request header | three read-only POST query routes | `dag_tools/systemlink/client.py:130-140`; `test_the_key_is_sent_in_the_header_only` | `built` |

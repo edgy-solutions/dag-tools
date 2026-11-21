@@ -31,7 +31,7 @@ None. Neither chart nor any component has a setting for it.
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-PROJECTOR | is called by | Kafka protocol | not established | not established | invincible-agent `docs/plans/projector-build-plan.md`; invincible-agent `src/iagent/projector/apply_loop.py`; no test | `proposed` |
 

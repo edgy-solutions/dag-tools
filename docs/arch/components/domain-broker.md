@@ -67,7 +67,7 @@ No dag-tools chart template deploys the broker, so there is no chart column.
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-GATEWAY | calls | HTTP | client-credentials bearer token | the broker's address and its URNs, repeated on an interval | `dag_tools/domain_broker/main.py:963-1010`; `test_the_broker_register_call_sends_the_service_token` | `built` |
 | CO-GATEWAY | is called by | HTTP | service-door caller list, posture observe by default | the URN, allowed columns, row filters and subject in; a ticket out | `dag_tools/domain_broker/main.py:1168-1189`; `test_enforce_with_no_list_refuses_everyone` | `built` |

@@ -76,7 +76,7 @@ Fixed in code:
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | acknowledgement chunks, request lists and control rows, each awaited | `dag_tools/components/restate_dlt_sync/component.py:290-345`, `:326`, `:601-622`; `test_the_send_suffix_is_stripped`, `test_the_ack_is_awaited_not_fired_and_forgotten` | `built` |
 | CO-DLT-PIPELINE | calls | in-process | none | the shared extraction asset factory | `dag_tools/components/restate_dlt_sync/component.py:410-532`; `test_every_source_table_gets_an_ack_dispatch` | `built` |

@@ -65,7 +65,7 @@ The chart's `centralGateway.env` is empty, so the chart column reads "not set" u
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-TOPAZ | calls | HTTP | the caller's bearer token forwarded; an optional tenant header | the dataset URN, the principal and a read permission; back come allowed columns and row filters | `dag_tools/central_gateway/main.py:72-73`, `:238-402`, `:295-300`, `:346`; no test | `built` |
 | CO-BROKER | calls | HTTP | client-credentials bearer token for the service door | the URN, allowed columns, row filters and subject; back comes a ticket | `dag_tools/central_gateway/main.py:404-606`; `dag_tools/central_gateway/internal_door.py:143`; `test_service_headers_refetches_30s_before_expiry` | `built` |

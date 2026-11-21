@@ -36,7 +36,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | XE-AGENT-ENGINE | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; invincible-agent `helm/invincible-agent/values.yaml:662`; no test | `built` |
 | XE-SQL-DATABASE | reads | SQL | not established | rows, through Superset's own database connections | no code at either pin shows it; no test | `not built` |

@@ -62,7 +62,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-RESTATE | calls | HTTP | none | one message per staged row: route, table, key and the whole row | `dag_tools/components/restate_api_sync/component.py:133-142`, `:160`; no test | `built` |
 | XE-STAGING-DB | reads | SQL through a database driver | connection URL from the process environment | every row of the staged table | `dag_tools/components/restate_api_sync/component.py:92-109`; no test | `built` |

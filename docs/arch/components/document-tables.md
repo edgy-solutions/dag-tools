@@ -73,7 +73,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DAGSTER | is called by | in-process | none | a partitioned asset per bundle | `dag_tools/components/document_tables/component.py:372-376`; no test | `built` |
 | XE-OBJECT-STORE | reads | S3 API | none passed; the client's default credential chain | bundles of documents | `dag_tools/documents/sources.py:612-618, :699-702`; `test_s3_credentials_are_never_passed_by_the_source` | `built` |

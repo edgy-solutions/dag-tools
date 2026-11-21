@@ -45,7 +45,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-DATAHUB-LINEAGE | is called by | HTTP through the catalog's client library | token from config or the environment, none when absent | whole aspects | `dag_tools/components/datahub_lineage/component.py:170-250`, `:718-728`; no test | `built` |
 | CO-DBT-PROJECT | is called by | the catalog's ingestion command as a child process | token from config or the environment, none when absent | build artifacts | `dag_tools/components/dbt_project/component.py:181-214`; `test_dbt_datahub_artifacts.py`: `test_every_artifact_the_datahub_recipe_names_is_in_the_ingest_cwd` | `built` |

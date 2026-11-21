@@ -48,7 +48,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 One row per connection, read from this component's side. Evidence is at this record's pin. Prose above says how each connection behaves; this table is what a diagram draws.
 
-| Other component | Direction | Protocol | Sign-in | What passes | Evidence | Status |
+| Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 | CO-GATEWAY | is called by | HTTP | none | the signing key set, fetched with a three-second limit and cached, only when a key set address is configured | `dag_tools/central_gateway/identity.py:296-325`, `:417-427`; no test | `built` |
 | CO-CLIENT | is called by | HTTP | client id and secret exchanged by a client-credentials grant | a service token, fetched once at construction and never refreshed | `dag_tools/cortex_data/client.py:95-112`, `:146-159`; `test_cortex_client_documented_contract.py`: `test_dev_token_wins_over_m2m` | `built` |
