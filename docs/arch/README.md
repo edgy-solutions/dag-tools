@@ -53,6 +53,8 @@ An alignment record sets the mesh against an outside reference. It follows the s
 
 These records add a fifth field to each row: the status of what corresponds, in the vocabulary above. The shape gives none, and this README requires one for every claim.
 
+They add a sixth, `Capability`, after the element: the NATO DCRA capability the row falls under. The value is `dcra:A1` to `dcra:A13`, where the number is the DCRA appendix that describes the capability. A row under more than one lists each, separated by commas. A row under none says `none`, so that a blank never reads as an answer. The list of thirteen is declared once, in the mesh composition.
+
 How closely is one of:
 
 | How closely | Means |
