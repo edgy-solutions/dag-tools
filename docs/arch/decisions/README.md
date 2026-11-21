@@ -41,6 +41,7 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s4q.md](dag-tools-s4q.md) | §4q SystemLink source kind | 15 |
 | [dag-tools-s4r-s4l-s4m.md](dag-tools-s4r-s4l-s4m.md) | §4r curated slice, §4l classification dimensions file, §4m warehouse source | 37 |
 | [dag-tools-s4s.md](dag-tools-s4s.md) | §4s documents to tables | 33 |
+| [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md) | §4n classification propagation, §4o ticket identity, §4o-1 refusal reasons, §4k-1 refusal fixture | 31 |
 
 ## Where the numbered series already holds a decision
 
