@@ -37,6 +37,8 @@ The shape is provisional. It changes when the kit's single log or lane 02's shap
 | [dag-tools-s5-s6.md](dag-tools-s5-s6.md) | §5 configuration design, §6 backwards compatibility | 5 |
 | [dag-tools-s4a-otel.md](dag-tools-s4a-otel.md) | §4a (OTel) OTel to API sync | 15 |
 | [dag-tools-s4o2-s8.md](dag-tools-s4o2-s8.md) | §4o-2 gateway image signature support, §8 release images | 13 (one bullet of §8 lists tests and states no decision) |
+| [dag-tools-s4p.md](dag-tools-s4p.md) | §4p dlt source kinds and per-pipeline schedules | 16 |
+| [dag-tools-s4q.md](dag-tools-s4q.md) | §4q SystemLink source kind | 15 |
 
 ## Where the numbered series already holds a decision
 
