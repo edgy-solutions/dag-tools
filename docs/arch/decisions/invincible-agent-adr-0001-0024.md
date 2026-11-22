@@ -274,4 +274,4 @@ These rows count or point at records, or name a decision that is superseded or d
 | Claim | Source | Decision | Evidence |
 |---|---|---|---|
 | ADR-0007 Survey before minting: mint log | reg `:18-29` | ADR-0007 | no test |
-| ADR-0012 UI archetype rigidity | bam `:776-781` | ADR-0012 | no test |
+| ADR-0012 UI archetype rigidity, superseded by ADR-0017 | bam `:776-781` | ADR-0012 | no test |
