@@ -13,7 +13,7 @@ The README sets the bar, as the architect ruled on 2026-11-19: `measured` is rel
 1. **Eight claims are `measured` in CI, in process, at least in part:** A2, A3, B1, B2, B3, D2, D11 and D16 ([below](#measured-in-ci-in-process)). The run cited is 44398336497 at `9d89568a`, and run 44451597250 at `add5bc48` agrees. No other record carries `measured` yet. `measured`, in CI, in process
 2. **No claim about a deployed service or a real backend is measured.** The parts still `built` are a real catalog server (A2), the chart's handover of the image (A3) and a real token service (D11). `built`
 3. **Group A: two of the four ran in CI.** A2 ran in a job of its own, and A3 ran in each Python job. A1 skipped in both runs. A4 is an invincible-agent test, which dag-tools CI does not run. A1 and A4: `built`
-4. **Group B: all three passed in CI.** B1's throughput target stays `not built`; the run measures that the benchmark runs and records a rate. Of the four rates each route recorded (two runs, two Python versions), the engine route's reach the target of 20,000 rows per second in two and the JSON route's in none. CI does not assert the target, so these are readings of the runs and change no status. `measured`, in CI, in process; the target `not built`
+4. **Group B: all three passed in CI.** Whether B1's throughput target is met is not established; the run measures that the benchmark runs and records a rate. Of the four rates each route recorded (two runs, two Python versions), the engine route's reach the target of 20,000 rows per second in two and the JSON route's in none. CI does not assert the target, so these are readings of the runs and change no status. `measured`, in CI, in process
 5. **Five claims need a live run that no test performs** (group C). A recorded run against a deployment is the only route to `measured` for these. `built`
 6. **Sixteen claims have a unit test over doubles** (group D). A CI run of such a test measures the code's behaviour in process. D2, D11 and the composition part of D16 passed in the cited run. D1 skipped. The invincible-agent tests are not run by dag-tools CI, and no run of them is cited, so they stay `built`. Three of them replace a live service with a fake. D2, D11 and the composition part of D16: `measured`, in CI, in process; the rest `built`
 7. **Eighteen claims have no test at all** (group E). A candidate test would make each one `built` with a test. A CI run of it would then measure the code's behaviour in process, and nothing more. `built`
@@ -26,7 +26,7 @@ The "Tests" workflow at `9d89568a` runs four jobs. Two Python jobs run the whole
 |---|---|---|---|---|---|
 | A2 | The artifact handoff into one directory, sources in the catalog, and the publish with a real dbt and the real ingest command line. The database is a real one in a container; the catalog server is an in-process recorder. | 44398336497, the end-to-end job | the job succeeded, and it fails on any skip | a real catalog server | `measured`, in CI, in process |
 | A3 | A live code-server process reports its image through the workspace query. | 44398336497, both Python jobs | passed | the chart's handover of the image on a deployment | `measured`, in CI, in process |
-| B1 | The two throughput benchmarks run and record a rate. Without the gate each asserts only a rate above zero. | 44398336497, both Python jobs | passed, with the rate recorded as a test property | the throughput target, which is `not built` | `measured`, in CI, in process |
+| B1 | The two throughput benchmarks run and record a rate. Without the gate each asserts only a rate above zero. | 44398336497, both Python jobs | passed, with the rate recorded as a test property | whether the throughput target is met, which is not established | `measured`, in CI, in process |
 | B2 | The document tables example loads and materializes on Dagster 1.10.19. | 44398336497, the 1.10.19 job | the job succeeded; none of its skips is in these modules | — | `measured`, in CI, in process |
 | B3 | The contract mapping, read audit and tagged warehouse examples load and materialize on Dagster 1.10.19. | 44398336497, the 1.10.19 job | the job succeeded; none of its skips is in these modules | — | `measured`, in CI, in process |
 | D2 | Every GraphQL document the client sends validates against the installed schema. | 44398336497, both Python jobs and the 1.10.19 job | passed, eleven cases in each Python job | — | `measured`, in CI, in process |
@@ -48,7 +48,7 @@ All three passed in the cited run and are `measured` in CI, in process ([above](
 
 | # | Built claim | Run | Record |
 |---|---|---|---|
-| B1 | §4s.28: the documents throughput benchmark exists. Its throughput target is `not built`. | `test_throughput_on_a_bulk_manifest` (`test_documents_engine.py:942`) and `test_json_throughput_on_a_bulk_manifest` (`test_documents_json.py:695`). Both run in each Python job and record the rate as a test property. The target is checked only behind an environment gate, which CI does not set. | [§4s.28](decisions/dag-tools-s4s.md) |
+| B1 | §4s.28: the documents throughput benchmark exists. Its throughput target is asserted only behind an environment gate. | `test_throughput_on_a_bulk_manifest` (`test_documents_engine.py:942`) and `test_json_throughput_on_a_bulk_manifest` (`test_documents_json.py:695`). Both run in each Python job and record the rate as a test property. The target is checked only behind an environment gate, which CI does not set. | [§4s.28](decisions/dag-tools-s4s.md) |
 | B2 | §4s.33: the document tables example loads and materializes on Dagster 1.10.19. | The 1.10.19 continuous-integration job, which ran those tests and succeeded. The job does not block a merge ([Dagster](components/dagster.md), finding 7). | [§4s.33](decisions/dag-tools-s4s.md) |
 | B3 | §4k.16, §4j.8, §4j.16: the contract mapping, read audit and tagged warehouse examples load and materialize on Dagster 1.10.19. | The same job, which ran those test modules and succeeded | [§4k.16](decisions/dag-tools-s4k-s4j.md) |
 
@@ -58,7 +58,7 @@ All three passed in the cited run and are `measured` in CI, in process ([above](
 |---|---|---|---|
 | C1 | Restate API sync records state after acknowledging. The call is a state write on an unkeyed service (`api_sync.py:11`, `:193-194`), and only a context double accepts it (`test_restate_api_sync_refusal.py:536`). | A run against a real Restate server, in the shape of `test_restate_concurrency_e2e.py` | [restate API sync](components/restate-api-sync.md), finding 14 |
 | C2 | §4s.6: an S3 store as a destination for the documents writer. | A write, a re-write and a maintenance run against an S3 store, recorded. The documentation states this is not verified. | [§4s.6](decisions/dag-tools-s4s.md) |
-| C3 | §4o.4: an absent version is counted per source type on the broker's health body. | A recorded health response from a running broker. The version readers themselves are `not built`. | [§4o.4](decisions/dag-tools-s4n-s4o-s4k1.md) |
+| C3 | §4o.4: an absent version is counted per source type on the broker's health body. | A recorded health response from a running broker. No version reader ships. | [§4o.4](decisions/dag-tools-s4n-s4o-s4k1.md) |
 | C4 | §4i.4: a catalog server with metadata authentication on rejects an ingest without a token and accepts one with it. | A recorded run against such a server, with and without the token. The decision reports a comparison, but no record of the run is cited. | [§4i.4](decisions/dag-tools-s4i-s4h-s4g.md) |
 | C5 | §4g0.2: the probe runner launches the upstream and the downstream asset in one run, and the downstream reads what the upstream wrote. | A recorded launch against a running Dagster with a deployed probe location. The decision reports a live check, but no record of the run is cited. | [§4g0.2](decisions/dag-tools-s4i-s4h-s4g.md) |
 
@@ -148,6 +148,7 @@ Every evidence cell that says "no test" is a further candidate for group E. The 
 
 ## Not established
 
+- Whether B1's throughput target is met. Continuous integration records a rate in each Python job and does not assert the target.
 - Whether invincible-agent's own continuous integration runs the tests of A4, D3 to D10, D12 to D15 and three parts of D16, and with what result. That is the owning repository's to say.
 - For each "no test" line in the table above, which candidate test would cover it. They are counted, not yet sorted.
 

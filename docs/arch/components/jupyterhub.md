@@ -8,8 +8,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **Neither chart deploys JupyterHub.** The dag-tools chart does not mention it, and no invincible-agent chart template or default value does. `not built`
-2. **The documentation names JupyterHub as a place the data client runs without arguments.** The client's guide says it needs no arguments when its environment is set, in the cluster and in JupyterHub. Nothing at either pin sets that environment for a notebook. `not built`
+1. **Neither chart deploys JupyterHub.** The dag-tools chart does not mention it, and no invincible-agent chart template or default value does. `built`
+2. **The documentation names JupyterHub as a place the data client runs without arguments.** The client's guide says it needs no arguments when its environment is set, in the cluster and in JupyterHub. Nothing at either pin sets that environment for a notebook. `built`
 3. **What a notebook must set is fixed by the client's construction.** The gateway address is required, from an argument or `CORTEX_BROKER_URL`. A token is required too: a developer token from an argument or `MESH_DEV_TOKEN`, or else a client id and secret from `CORTEX_CLIENT_ID` and `CORTEX_CLIENT_SECRET`, which the client exchanges for a token at the identity provider's token address. With neither, construction fails, naming both (see [the data client record](mesh-data-client.md), finding 2). `built`
 4. **A notebook can name its user through `CORTEX_USER_TOKEN`.** Outside a request, the client takes the user's token from that variable. With the variable unset, a notebook that names no subject reads as the service, because every constructed client already holds the service opt-in (see [the data client record](mesh-data-client.md), findings 3 and 4). The client does not refresh the user's token. `built`
 5. **A notebook's read goes through the gateway like any other.** The client authorizes each read with the gateway and then reads the data itself (see [the data client record](mesh-data-client.md), findings 5 and 7). Nothing in that path knows the caller is a notebook. `built`
@@ -43,7 +43,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| CO-CLIENT | calls | in-process | the notebook's environment, which nothing at the pin sets | the notebook imports the library | `docs/cortex-data-client.md:25-27`; no test | `not built` |
+| CO-CLIENT | calls | in-process | the notebook's environment, which nothing at the pin sets | the notebook imports the library | `docs/cortex-data-client.md:25-27`; no test | `built` |
 | CO-GATEWAY | calls | HTTP | developer token, or a token from the client credentials exchange; a user token from the environment names the user | authorization of a read, answered with a ticket | `dag_tools/cortex_data/client.py:88-112`; `dag_tools/cortex_data/identity.py:34`, `:213-215`; no test here | `built` |
 | CO-KEYCLOAK | calls | HTTP | client id and secret | a service token request | `dag_tools/cortex_data/client.py:88-112`; no test here | `built` |
 | XE-TOKEN-DELIVERY | is called by | not established | not established | a user's token | invincible-agent `docs/plans/jupyter-user-token-data-access.md`; no test | `proposed` |
@@ -66,8 +66,8 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Not in either chart | `helm/dag-tools/` (no match for `jupyter`, any case); invincible-agent `templates/` and `values.yaml` (no match) | not stated | — | `not built` |
-| Documentation names JupyterHub | `docs/cortex-data-client.md:25-27` | not stated | — | `not built` |
+| Not in either chart | `helm/dag-tools/` (no match for `jupyter`, any case); invincible-agent `templates/` and `values.yaml` (no match) | not stated | — | `built` |
+| Documentation names JupyterHub | `docs/cortex-data-client.md:25-27` | not stated | — | `built` |
 | Construction requirements | `dag_tools/cortex_data/client.py:88-112` | not stated | see [the data client record](mesh-data-client.md) | `built` |
 | User token rung, no refresh | `dag_tools/cortex_data/identity.py:34`, `:213-215` (no refresh in that module) | not stated | see [the data client record](mesh-data-client.md) | `built` |
 | Reads go through the gateway | see [the data client record](mesh-data-client.md), findings 5 and 7 | not stated | see that record | `built` |

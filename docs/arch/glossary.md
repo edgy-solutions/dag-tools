@@ -98,7 +98,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | source asset | A Dagster asset whose data something else produces, so Dagster observes it rather than builds it | CO-WAREHOUSE-SOURCE |
 | source kind | A kind of source the dlt pipeline can read, chosen by the type its configuration names | CO-DLT-PIPELINE; CO-SYSTEMLINK-SOURCE |
 | staging | In a qualification, preparing the upstream data a run will read. For OTel API sync, the destination extracted telemetry is written to | WT-SUSTAIN; CO-OTEL-API-SYNC |
-| status words | `measured`, `built`, `accepted` and `proposed`; every claim carries exactly one. An absence is `not built` | [README, Status vocabulary](README.md#status-vocabulary) |
+| status words | `measured`, `built`, `accepted` and `proposed`; every claim carries exactly one. A gap carries the status of the condition it describes | [README, Status vocabulary](README.md#status-vocabulary) |
 | steward | The role accountable for a governance decision about data | RL-STEWARD |
 | survey | Loading each repository's code locations at a commit and recording an inventory. If any location fails to load, nothing is published | WT-SUSTAIN |
 | ticket | What the broker returns for one read of one dataset: the source type, the physical location and, where the backend allows it, a credential minted for that read alone. It also carries an id and the time it was issued | CO-BROKER; CO-CLIENT; FL-BIG; WT-EVIDENCE |

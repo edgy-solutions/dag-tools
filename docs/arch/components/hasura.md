@@ -8,7 +8,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **No code, chart or configuration names Hasura at either pin.** A case-insensitive search of the dag-tools repo finds no mention. The same search of the invincible-agent chart finds none, and neither does a search of the rest of that repo. `not built`
+1. **No code, chart or configuration names Hasura at either pin.** A case-insensitive search of the dag-tools repo finds no mention. The same search of the invincible-agent chart finds none, and neither does a search of the rest of that repo. `built`
 
 ## Settings and defaults
 
@@ -16,7 +16,7 @@ None. Neither chart nor any component has a setting for it.
 
 ## Gaps
 
-- **Nothing wires Hasura into the mesh** (finding 1). Remedy: not on the roadmap. Status: `accepted`.
+- **Nothing wires Hasura into the mesh** (finding 1). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
@@ -30,7 +30,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
 
-No connection is built at this pin: nothing in the code or the chart refers to this component. `not built`
+No connection is built at this pin: nothing in the code or the chart refers to this component. `built`
 
 ## Place in the mesh
 
@@ -50,5 +50,5 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No mention in dag-tools | whole repo (no match for `hasura`, any case) | not stated | — | `not built` |
-| No mention in invincible-agent | invincible-agent `helm/invincible-agent/` and the rest of the repo (no match for `hasura`, any case) | not stated | — | `not built` |
+| No mention in dag-tools | whole repo (no match for `hasura`, any case) | not stated | — | `built` |
+| No mention in invincible-agent | invincible-agent `helm/invincible-agent/` and the rest of the repo (no match for `hasura`, any case) | not stated | — | `built` |

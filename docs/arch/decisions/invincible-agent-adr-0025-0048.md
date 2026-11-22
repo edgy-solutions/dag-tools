@@ -44,7 +44,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Domain experts can then author processes without a data engineer, and an invented verb cannot survive validation.
 - **Stated status.** Accepted for the model shape and the Restate seam; other standard seams directional. A note says the second interviewer slice is implemented with no callers and the cutover is not taken.
 - **Where else.** ADR-0030, ADR-0032, ADR-0034, ADR-0035.
-- **Status.** Step executor, definition loading and answer seeding: `built`. Pre-resolved step on the skip path: `built`. Cutover of the gateway to the new interviewer: `not built`. Directional standard seams: `proposed`.
+- **Status.** Step executor, definition loading and answer seeding: `built`. Pre-resolved step on the skip path: `built`. Cutover of the gateway to the new interviewer: `proposed`. Directional standard seams: `proposed`.
 
 ## ADR-0030 One fixed output type per verb
 
@@ -157,7 +157,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A credential copied from the producer outlives the request and can write.
 - **Stated status.** Accepted. A same-day amendment moved minting into the broker, because the coordinate lookup runs once at startup.
 - **Where else.** [The domain broker](../components/domain-broker.md); [dag-tools-s4n-s4o-s4k1.md](dag-tools-s4n-s4o-s4k1.md).
-- **Status.** Object-store, ClickHouse and Postgres minting, dropping the echoed credential, fail-closed on mint failure, and reporting non-qualified hosts: `built`. A source type with no minter still gets the producer credential, counted as unprotected: `built`, as a deviation from the no-advertise rule. Proxy-only mode and reaping of minted database accounts: `not built`. The legacy no-coordinates SQL path does not mint.
+- **Status.** Object-store, ClickHouse and Postgres minting, dropping the echoed credential, fail-closed on mint failure, and reporting non-qualified hosts: `built`. A source type with no minter still gets the producer credential, counted as unprotected: `built`, as a deviation from the no-advertise rule. Proxy-only mode and reaping of minted database accounts: `proposed`. The legacy no-coordinates SQL path does not mint.
 
 ## ADR-0045 Finance engine verbs
 
@@ -235,7 +235,7 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0042 live views, anonymous refusal: validity stamping and intent catalog | cap `:425-455` | ADR-0042 | test_an_anonymous_caller_asking_for_a_live_view_is_REFUSED (:65), test_an_IDENTIFIED_caller_gets_its_live_view (:111) | `accepted` |
 | ADR-0043 presentation trace on answer | — | ADR-0043 | no test | `proposed` |
 | ADR-0044 per-request minted credentials: per-request minting and fail-closed | dtb `:226-365`, dsq `:152-246` | ADR-0044 | test_consumer_receives_a_minted_credential_not_the_producers (:134), test_minted_policy_is_scoped_to_the_asset_and_cannot_write (:148), test_minting_failure_fails_closed (:197) | `built` |
-| ADR-0044 per-request minted credentials: proxy-only mode and reaping | dtb `:226-365`, dsq `:152-246` | ADR-0044 | test_consumer_receives_a_minted_credential_not_the_producers (:134), test_minted_policy_is_scoped_to_the_asset_and_cannot_write (:148), test_minting_failure_fails_closed (:197) | `not built` |
+| ADR-0044 per-request minted credentials: proxy-only mode and reaping | dtb `:226-365`, dsq `:152-246` | ADR-0044 | test_consumer_receives_a_minted_credential_not_the_producers (:134), test_minted_policy_is_scoped_to_the_asset_and_cannot_write (:148), test_minting_failure_fails_closed (:197) | `proposed` |
 | ADR-0045 six finance verbs, method required | fin `:245-392`, ent `:86` | ADR-0045 | test_the_eac_method_values_come_out_of_the_literal (:134) | Verbs, method refusal and ticketed reads: `built`. Archetype and template claims: not established |
 | ADR-0046 one graph one verb | ghm `:371-607` | ADR-0046 | test_every_ratified_row_is_a_verb_in_neo4j (:129), test_a_host_with_no_ratified_rows_REFUSES_TO_START (:208) | Registration and refusals: `built`. Seal sections: not established |
 | ADR-0047 export verb with recipient scope | exp `:69-215` | ADR-0047 | no test | Export route in the finance engine: `built`. Pinned modules and supersedes chain: not established |

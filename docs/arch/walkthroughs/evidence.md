@@ -12,12 +12,12 @@ Each step's actor is the role that asks, `RL-CONSUMER`, defined with the other r
 
 ## Findings
 
-1. **Every question but one has a built answer, and none has a measured one.** Identity, lineage, checks, labels, grants, reads and run records are each `built` with a test. The version actually read is the exception: the mechanism is `built` and no reader of a version ships. No step has a recorded run against a running system, so none is `measured`. `built`; version readers `not built`
+1. **Every question but one has a built answer, and none has a measured one.** Identity, lineage, checks, labels, grants, reads and run records are each `built` with a test. The version actually read is the exception: the mechanism is `built` and no reader of a version ships. No step has a recorded run against a running system, so none is `measured`. `built`; no version reader ships
 2. **The dataset's identity is its physical address, not its pipeline.** A labelled source and a mapped model each record the physical platform's dataset as the asset of record, and the Dagster asset attaches as lineage. A Dagster-platform address for a labelled source is refused when the code location loads. `built`
 3. **Whether the catalog holds the dataset depends on the path that published it.** A labelled source whose labels fail to reach the catalog fails its materialization. A dbt build whose publishing fails still succeeds, by design, so a built model can be missing from the catalog without anything failing. `built`
 4. **Lineage reaches the catalog only where a deployment turns it on.** The lineage sensor starts stopped. The shipped code location starts it only when a catalog server address is set. `built`
 5. **A label is evidence of what was read, not of who may read.** Labels are composed and published with the basis each was derived from, and every downgrade names an owner and a reason. The read decision does not consult them. Labels as published metadata: `built`. As a decision input: `proposed`.
-6. **Who did read has two sources that are not joined.** The gateway logs each ticket it issues, with a ticket id and the verified principal. The read audit attributes warehouse reads by a query tag, which is not signed. No record joins the two. Each source: `built`. A join: `not built`.
+6. **Who did read has two sources that are not joined.** The gateway logs each ticket it issues, with a ticket id and the verified principal. The read audit attributes warehouse reads by a query tag, which is not signed. No record joins the two. Each source, and the absence of a join: `built`.
 
 ## The walkthrough, step by step
 
@@ -50,7 +50,7 @@ Each step's actor is the role that asks, `RL-CONSUMER`, defined with the other r
 - **A dbt model can be missing from the catalog after a green build.** Publishing failures are swallowed by design (§4i.3). The end-to-end run behind an environment gate (§4i.9) is measured in CI, in process, against an in-process catalog recorder; with a real catalog server it is still built (item A2 of [the built-to-measured list](../built-to-measured.md)). No row: swallowing is the decision. Status: `built`.
 - **Gateway reads and warehouse reads are attributed separately.** The ticket log and the read audit are not joined, and the warehouse tag is not signed. Remedy: [roadmap row 17](../ROADMAP.md). Status: `built`.
 - **Labels do not decide reads.** A decision-maker reading a label should not infer that it limited who read the data ([need to know](../flows/need-to-know.md), findings 1 and 3). Remedy: [roadmap row 18](../ROADMAP.md). Status: `built`.
-- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on. No row: off by default is the decision (§4p.16), and turning it on is a deployment setting. Status: `accepted`.
+- **Run records are optional for dlt pipelines.** `ingest_runs` is off by default, so a failed load leaves no row unless a deployment turned it on. No row: off by default is the decision (§4p.16), and turning it on is a deployment setting. Status: `built`.
 
 ## Not established from code
 
@@ -72,7 +72,7 @@ Each step's actor is the role that asks, `RL-CONSUMER`, defined with the other r
 | Ticket identity, principal and receipt | dag-tools decisions §4o.3, §4o.5, §4o.6 | [§4o.3](../decisions/dag-tools-s4n-s4o-s4k1.md) | as step 8 | `built` |
 | Warehouse read attribution | dag-tools decisions §4j.5, §4j.6; [read audit](../components/read-audit.md) | [§4j.5](../decisions/dag-tools-s4k-s4j.md) | as step 9 | `built` |
 | Version mechanism | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | `built` |
-| Version readers | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | `not built` |
+| No version reader ships | dag-tools decisions §4o.1, §4o.4 | [§4o.4](../decisions/dag-tools-s4n-s4o-s4k1.md) | `test_no_as_of_reader_ships_by_default` | `built` |
 
 ### Rows that carry no status
 

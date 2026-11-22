@@ -19,7 +19,7 @@ This record covers what the chart and code provide by default, and what a deploy
 9. **The gap is reported in parts, and an empty window has no coverage figure.** Unexplained relations are split into ambiguous, untagged and not-a-pipeline. With nothing read, coverage is absent rather than full. A history row that cannot be parsed is listed in `row_failures`, not dropped. `built`
 10. **Failure text from rows and run files travels into the output.** A row or run window that fails to parse is recorded with the exception's message. The full report is the asset's output, so it goes to the asset's IO manager. A list of unexplained relations, capped by `max_listed`, goes into the materialization metadata. `built`
 11. **Run windows come from a file, from the Dagster instance, or both.** The instance read takes up to `limit` run records. If that read fails, a warning is logged and no instance windows are used. The audit then runs with fewer windows and more reads in the gap. `built`
-12. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `not built`
+12. **The chart and the shipped code location do not deploy it.** No chart template and nothing in the user code location wires this component. A deployment adds it in its own code location. `built`
 
 ## Where it exists and what its example proves
 
@@ -127,4 +127,4 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are
 | Gap in parts; no coverage on an empty window; failed rows listed | `reads.py:145-151`, `:276-278`; `history.py:189-225` | AGENTS.md §4j | `test_audit_reads.py`: `test_the_gap_contains_every_read_no_asset_explains`, `test_coverage_is_none_when_nothing_was_read`; `test_audit_history.py`: `test_one_malformed_row_is_reported_not_swallowed_and_not_fatal`; `test_read_audit_component.py`: `test_the_metadata_decomposes_the_gap` | `built` |
 | Failure text in the output; report to the IO manager | `component.py:213-231`; `history.py:222-223` | not stated | no test of the text | `built` |
 | Run windows from file or instance; soft instance failure | `component.py:114-141`, `:213-223` | not stated | `test_read_audit_component.py`: `test_run_rows_become_aware_utc_windows`, `test_a_run_with_no_start_time_is_skipped_not_guessed` | `built` |
-| Not wired by the chart or the shipped code location | no match for the component under `helm/` or `dag_tools/user_deployment/` | not stated | — | `not built` |
+| Not wired by the chart or the shipped code location | no match for the component under `helm/` or `dag_tools/user_deployment/` | not stated | — | `built` |

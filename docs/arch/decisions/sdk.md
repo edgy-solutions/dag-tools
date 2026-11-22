@@ -27,14 +27,14 @@ Two SDK commits are cited. Entries 1 to 4 were supplied at the SDK pin in [the R
 - **Decision.** The SDK's remote graph client is retired rather than completed. The client posts to a mesh graph route that no gateway handles, and it is tested against a stub only. The server end is not to be built. Instead the client warns on construction that it is deprecated.
 - **Why.** The architect's ruling of 2026-11-18 on roadmap row 8, as supplied.
 - **Where else.** [Agent capabilities, finding 1](../flows/agent-capabilities.md); [the roadmap note](../ROADMAP.md), row 8.
-- **Status.** The client and its deprecation warning: `built`. The server end: `not built`. Removal of the client: `accepted` (roadmap row 8).
+- **Status.** The client and its deprecation warning: `built`. No server end: `built`. Removal of the client: `accepted` (roadmap row 8).
 
 ### SDK.4
 
 - **Decision.** The SDK defines a vector interface, with a nomination call and two retrieval modes, and deliberately builds no remote client for vectors or the ontology. Engines implement the read interfaces in-process. The SDK's offline conformance checks a writer's contract; it has no read conformance.
 - **Why.** Not supplied.
 - **Where else.** [Agent capabilities, findings 1, 2 and 10](../flows/agent-capabilities.md).
-- **Status.** The vector interface: `built`. Remote vector and ontology clients: `not built`, by decision. Read conformance: `not built`.
+- **Status.** The vector interface: `built`. No remote vector or ontology client, by decision: `built`. No read conformance check: `built`.
 
 ### SDK.5
 
@@ -78,12 +78,12 @@ All paths are in the SDK repository, as supplied by its session, and were not re
 | Person guard checks the kind of identity at the boundary; no grants consulted | d6 `interfaces.py:216-243` | SDK.1 | not supplied | `built` |
 | Resolve returns a data reference; caller reads | d6 `interfaces.py:1013`, `:1076`, `:1085`; `core.py:503` | SDK.2 | `tests/test_cortex_data_client_contract.py` | `built` |
 | Remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` |
-| A server end for the remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `not built` |
+| No server end for the remote graph client | d6 `interfaces.py:283`; `remote_clients.py:40-41`, `:58` | SDK.3 | `tests/test_remote_clients.py` (against a stub) | `built` |
 | Graph client warns it is deprecated | f1 `remote_clients.py:43`, `:80`, `:90` | SDK.3 | `test_construction_warns_deprecated` (`tests/test_remote_clients.py:30`) | `built` |
 | Retire the graph client | roadmap row 8; architect's ruling 2026-11-18 | SDK.3 | — | `accepted` |
 | Vector interface | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `built` |
-| Remote vector and ontology clients | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `not built` |
-| No read conformance | d6 `interfaces.py:373-374`; `conformance.py:725` | SDK.4 | not supplied | `not built` |
+| No remote vector or ontology client | d6 `interfaces.py:724`, `:792`, `:800`; `remote_clients.py:36-38` | SDK.4 | not supplied | `built` |
+| No read conformance | d6 `interfaces.py:373-374`; `conformance.py:725` | SDK.4 | not supplied | `built` |
 | Attestation is a closed set of two values | f1 `ingest.py:507` | SDK.5 | `test_attestation_is_a_closed_literal_not_an_open_string` (`tests/test_ingest.py:592`) | `built` |
 | Declared models forbid unknown keys and freeze | f1 `workflow_definition.py:86` | SDK.6 | `test_the_definition_itself_rejects_an_unknown_top_level_key` (`tests/test_workflow_definition.py:100`) | `built` |
 | One paging envelope; opaque cursor | f1 `paged_answer.py:201` | SDK.7 | `test_paged_answer_next_is_opaque_and_passed_through` (`tests/test_paged_answer.py:106`) | `built` |

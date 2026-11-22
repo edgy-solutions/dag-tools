@@ -8,7 +8,7 @@ This record covers what the code and the dag-tools image provide by default, and
 
 ## Findings
 
-1. **It ships in the user-deployment image, and no dag-tools chart template deploys it.** The image carries the broker's dependencies through the `broker` extra, and the image expects a chart to override the container command to start the broker. `built` No template under the dag-tools chart does so. `not built`
+1. **It ships in the user-deployment image, and no dag-tools chart template deploys it.** The image carries the broker's dependencies through the `broker` extra, and the image expects a chart to override the container command to start the broker. No template under the dag-tools chart does so. `built`
 2. **It finds its datasets by importing the definitions module a deployment names.** The module is named as `module` or `module:attribute`. The import runs in the background after startup. Until it finishes, `/ready` answers 503 and `/health` reports `loading`. If the import fails, `/ready` stays 503, `/health` reports the error, and the broker does not register with the gateway. `/health` answers 200 in every state. `built`
 3. **With no module named, it serves two placeholder datasets.** It logs a warning and populates one SQL and one object-store entry with made-up locations, then registers them like any others. No test covers this default. `built`
 4. **It registers what it loaded, and repeats.** It posts its address and its URNs to the gateway's register route with a service credential. The first post follows the load, and later ones run every two minutes by default. A failed post is logged and retried on the next round. The gateway keeps each route for five minutes ([gateway, finding 10](central-gateway.md)). `built`
@@ -25,8 +25,8 @@ This record covers what the code and the dag-tools image provide by default, and
 7. **A source type with no minter is handed the producer's credential.** The ticket goes out as the producer advertised it, and the source type is counted on `/health` as unprotected. [Roadmap row 3](../ROADMAP.md) (dag-tools #72) is the remedy. `built`
 8. **A dataset with no advertised coordinates takes an older path, which does not mint for SQL.** For a SQL source type it returns a ticket carrying a fixed placeholder token. Neither branch reads the decision's allowed columns or row filters, so the policy engine's narrowing does not reach this path. For an object store it asks the token service for a credential with a fixed one-hour lifetime, not the configured one, and refuses with 503 on failure. Any other type is refused with 400. No test covers the SQL branch. The two placeholder datasets of finding 3 take this path. `built`
 9. **The minting identity is read from the environment, in a fixed order.** For the token service: a broker-specific pair first, then the platform's standard pair, then two older pairs, then the ambient credential chain. The region falls back to a fixed public region. For each SQL backend: a broker-specific admin pair, then the backend's ordinary pair. With none set, minting fails closed (finding 6). `built`
-10. **Minted SQL accounts are never removed.** The database refuses them once they expire, and they stay listed. The code states this as a gap. `built`; the absence `not built`
-11. **Every ticket gets an id, an issue time and a version field.** The version comes from a reader registered for the backend type, else from a version the producer advertised at load. No reader ships, so an unadvertised version is absent and counted. `built`; the absence `not built`
+10. **Minted SQL accounts are never removed.** The database refuses them once they expire, and they stay listed. The code states this as a gap. `built`
+11. **Every ticket gets an id, an issue time and a version field.** The version comes from a reader registered for the backend type, else from a version the producer advertised at load. No reader ships, so an unadvertised version is absent and counted. `built`
 12. **`/health` reports four counts.** These are: producer credentials dropped at load; datasets loaded on a producer credential, by backend type, counted once per dataset at load; tickets with no version, by backend type; and hosts that are not fully qualified, reported rather than refused. A fifth count, datasets not advertised by reason, is kept in the process but appears only in a warning logged at load. A count on `/health` can be watched; a warning at load cannot. `built`
 13. **Identifiers are refused, not cleaned.** A table, schema or column name outside a plain identifier grammar fails the mint. Passwords are long random alphanumeric strings, and account names carry a fixed prefix and a random suffix. `built`
 
@@ -95,7 +95,7 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | Ships in the user-deployment image; command overridden by a chart | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built` |
-| No dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `not built` |
+| No dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built` |
 | Background import; `/ready` 503 until loaded or after a failure; no registration after a failure | `main.py:693-723`, `:1013-1075`, `:1097-1165` | not stated | `test_broker_load_failure.py`: `test_ready_is_503_while_still_loading`, `test_health_surfaces_the_import_error`, `test_ready_is_503_after_a_failed_import`, `test_a_failed_import_does_not_register`, `test_a_successful_load_registers_its_assets` | `built` |
 | Placeholder datasets when no module is named | `main.py:42`, `:802-818` | not stated | no test | `built` |
 | Registers, then every two minutes by default | `main.py:963-1010` | not stated | `test_internal_doors.py`: `test_the_broker_register_call_sends_the_service_token` | `built` |
@@ -107,9 +107,9 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 | No minter: producer credential, counted | `main.py:75`, `:1219-1223` | not stated | — | `built` |
 | Older path: fixed placeholder token for SQL; fixed one-hour object-store lifetime; 400 otherwise; the decision not read | `main.py:1238-1242`, `:1273-1360` | not stated | no test | `built` |
 | Minting identity order; region fallback | `main.py:153-224`; `sql_minting.py:117-123`, `:152-200` | not stated | `test_broker_mints_ticket_credentials.py`: `test_sts_identity_prefers_the_purpose_named_pair`, `test_sts_identity_accepts_the_pods_existing_s3_vars`; `test_sql_minting.py`: `test_no_minting_identity_names_the_variables` | `built` |
-| No account removal | `sql_minting.py:22-33` | not stated | — | `not built` |
+| No account removal | `sql_minting.py:22-33` | not stated | — | `built` |
 | Ticket identity | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `built` |
-| No version reader | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `not built` |
+| No version reader | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `built` |
 | Four counts on `/health`; unadvertised datasets in a load warning only | `main.py:68-108`, `:368-370`, `:942-948`, `:1097-1142` | cited in code: invincible-agent ADR-0044 (not read) | — | `built` |
 | Identifiers refused, not cleaned; random passwords and names | `sql_minting.py:53`, `:91-110` | not stated | — | `built` |
 | Remedies | [the roadmap note](../ROADMAP.md), rows 2, 3, 5, 9 and 10 | none | — | `proposed` |

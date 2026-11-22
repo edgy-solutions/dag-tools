@@ -8,7 +8,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Findings
 
-1. **The chart deploys no identity provider.** No template in the dag-tools chart creates one. The chart's values document the gateway's verification settings in comments and set none of them. `not built`
+1. **The chart deploys no identity provider.** No template in the dag-tools chart creates one. The chart's values document the gateway's verification settings in comments and set none of them. `built`
 2. **The gateway names no issuer, audience or key of its own.** Accepted issuers, accepted audiences and the key source come only from the environment. An empty list refuses every token. The refusal sent to the caller names the three kinds of configuration that may be missing (a key source, an accepted issuer, an accepted audience) and no variable; the variables are named only in the gateway's error log. A key set address is preferred over a static key. The accepted algorithms default to RS256. The reasons are in AGENTS.md §4o-1 and in [the gateway record](central-gateway.md). `built`
 3. **Verification checks signature, audience and issuer, in that order, and requires three claims.** A token must carry an expiry, an issuer and an audience. A token signed correctly by an issuer the gateway does not accept is refused for that reason, not as an invalid token. `built`
 4. **The key set is fetched with a three-second limit, cached, and a failed fetch is not remembered.** The key set client keeps the keys it has fetched and is rebuilt only when the address changes. If the fetch fails, that request gets a 503 and the next request tries again. `built`
@@ -71,7 +71,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No identity provider in the chart; settings documented only | `helm/dag-tools/templates/`; `helm/dag-tools/values.yaml:186-216` | not stated | — | `not built` |
+| No identity provider in the chart; settings documented only | `helm/dag-tools/templates/`; `helm/dag-tools/values.yaml:186-216` | not stated | — | `built` |
 | No compiled issuer, audience or key; empty refuses; key set preferred; RS256 | `dag_tools/central_gateway/identity.py:208-236`, `:257`, `:264-265`, `:417-421`; the refusal message `:134-137`, sent at `dag_tools/central_gateway/main.py:144`; the variables logged at `identity.py:335` | AGENTS.md §4o-1 | `test_gateway_accepted_issuers_and_audiences.py`: `test_no_issuer_and_no_audience_is_compiled_in`, `test_the_library_writes_down_no_issuer_and_no_audience_value`, `test_an_empty_list_refuses_everything`, `test_a_jwks_url_is_a_key_source_so_it_clears_that_blocker` | `built` |
 | Order of checks; three required claims | `dag_tools/central_gateway/identity.py:399-445` | not stated | `test_gateway_accepted_issuers_and_audiences.py`: `test_an_unaccepted_issuer_is_refused_for_THAT_reason_not_as_an_invalid_token`, `test_a_token_naming_another_audience_is_refused` | `built` |
 | Key set: three seconds, cached | `dag_tools/central_gateway/identity.py:91`, `:296-325` | not stated | no test | `built` |
