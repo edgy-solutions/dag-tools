@@ -11,7 +11,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 
 ## Findings
 
-1. **The SDK's remote graph client has no server end.** The SDK's remote graph client posts to a mesh graph route, and its own docstring says no gateway handler exists; it is tested against a stub only (supplied). The SDK's remote vector and ontology clients are deliberately not built (supplied). A search of both repositories at their pins finds no route under either path. The server end is `built`.
+1. **The SDK's remote graph client has no server end.** The SDK's remote graph client posts to a mesh graph route, and its own docstring says no gateway handler exists; it is tested against a stub only (supplied). The SDK's remote vector and ontology clients are deliberately not built (supplied). A search of both repositories at their pins finds no route under either path. That it has no server end is `built`.
 2. **Engines implement the SDK's read interfaces in-process.** Engine-o holds `Neo4jGraph`, which implements the SDK's graph interface over Neo4j. `WeaviateVectors` implements the SDK's vector interface over Weaviate. It lives in the fleet's shared utilities because two engines read through it: engine-o and the Weaviate engine. Neither module imports a driver. The driver is injected by the engine, so the store connection lives in the engine, not the SDK. `built`
 3. **The store sees the engine, not the person.** Every read in this flow uses the engine's own credential:
    - engine-o opens Neo4j with a credential from its posture settings;
