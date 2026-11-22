@@ -55,6 +55,37 @@ The DMRA does not cite the DCRA's capabilities. Each Capability value in this re
 | S14 | Mediation hub: turning data into the form a consumer needs | dcra:A7 | A contract mapping turns a source table into the contract's shape, by SQL or row by row. The OTel sync renders telemetry into API call plans. | `different`: translation happens once, at the producer, into the contract's form. There is no hub translating per consumer at read time. | `built` | dag-tools `dag_tools/contract_mapping/emit.py:277`, `:354`, `:742`; `dag_tools/otel_api_sync/render.py:317-373`; tests `test_contract_mapping_emit.py`, `test_otel_api_sync_render.py` |
 | S15 | Mesh instrumentation: health telemetry at the infrastructure level | dcra:A4 | `/health` and `/ready` routes on the gateway and broker. No metrics or tracing library is in either service, and the chart deploys no collector. | `partial`: liveness and readiness only. The provenance-telemetry repository was not read, and its owner has not yet been asked. The probes are built; metrics and tracing are not built. | `built` | dag-tools `dag_tools/central_gateway/main.py:142`, `:172`; `dag_tools/domain_broker/main.py:1097`, `:1145` |
 
+## How the services depend on each other
+
+One service depends on another when it cannot do its job without what the other provides. Each row is one service and one service it depends on, both by the element ids of the table above, with its own status and its evidence by record id. A service that depends on none of the other fourteen has one row whose Depends on cell is `none`. Each service's capability is on its row in the table above, so a dependency between capabilities is read by joining the two; those capability values are `proposed`, as listed in Sources.
+
+| # | Service | Depends on | Why | Status | Evidence |
+|---|---|---|---|---|---|
+| 1 | S1 | S3 | A dataset's identifier is its catalog URN on the physical platform. | `built` | AL-DMRA S1; CO-WAREHOUSE-SOURCE |
+| 2 | S2 | none | The ontology service answers from its own graph, and a contract's normalizer is a rule document read by the mapping. Neither calls another of the fifteen. | `built` | AL-DMRA S2; CO-CONTRACT-MAPPING |
+| 3 | S3 | none | The catalog runs outside the chart and is reached by URL. The mesh writes into it; it calls no other of the fifteen. | `built` | AL-DMRA S3; CO-DATAHUB |
+| 4 | S4 | S3 | Lineage from Dagster and dbt is published to the catalog. | `built` | AL-DMRA S4; CO-DATAHUB-LINEAGE |
+| 5 | S5 | S3 | The policy directory's dataset objects and owner relations are synced from the catalog. | `built` | FL-NTK, Roles in the NATO frame; CO-TOPAZ |
+| 6 | S5 | S6 | Grants are reviewed files, and the seed job syncs them to Topaz only after the validator passes. | `built` | AL-DMRA S6; CO-TOPAZ |
+| 7 | S5 | S12 | Labels as an input to the read decision. Today the decision reads relations only. | `proposed` | FL-NTK, Findings; AL-DMRA S5, S12 |
+| 8 | S6 | none | Policy files are reviewed in git and validated with no network. The seed job writes into S5's store, which is S5 depending on S6, not the reverse. | `built` | AL-DMRA S6; CO-TOPAZ |
+| 9 | S7 | S1 | A read names its dataset by catalog URN, and each ticket gets its own id. | `built` | AL-DMRA S1, S7; CO-BROKER |
+| 10 | S7 | S5 | The gateway asks the policy service before it asks any broker for a ticket. A refusal stops the read. | `built` | FL-NTK steps 5 to 7; AL-DMRA S5, S7; CO-GATEWAY; CO-TOPAZ |
+| 11 | S8 | S3 | The catalog wrapper searches the catalog. | `built` | AL-DMRA S8 |
+| 12 | S8 | S5 | By default search is gated per catalog domain in code. A deployment may turn on a per-domain `can_view` check instead, and search then depends on S5. | `built` | AL-DMRA S8; CO-TOPAZ |
+| 13 | S9 | S3 | Each published object would be registered in the catalog. Nothing publishes today. | `proposed` | AL-DMRA S9; CO-REDPANDA |
+| 14 | S9 | S5 | Each subscription would need an access decision of its own. Nothing subscribes today. | `proposed` | AL-DMRA S9; CO-REDPANDA |
+| 15 | S10 | S15 | The gateway's and broker's counts are read from their `/health` routes. | `built` | AL-DMRA S10, S15; CO-GATEWAY; CO-BROKER |
+| 16 | S11 | S4 | A product's origin is read from lineage. | `built` | AL-DMRA S4, S11 |
+| 17 | S12 | S3 | Labels are published to the catalog, for sources and for derived datasets. | `built` | AL-DMRA S12; CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION |
+| 18 | S12 | S4 | A derived column's label is composed from the labels of the columns its lineage names. | `built` | AL-DMRA S4, S12; CO-CLASSIFICATION-PROPAGATION |
+| 19 | S12 | S6 | Every label is validated against the classification dimensions, a reviewed policy file that dag-tools reads from a mounted copy. | `built` | AL-DMRA S6, S12; CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION |
+| 20 | S13 | S14 | Contract tests are generated from the contract mapping. | `built` | AL-DMRA S13, S14; CO-CONTRACT-MAPPING |
+| 21 | S14 | S2 | Local identifier spellings are normalized by a declared rule document, per contract rather than as a service. | `built` | AL-DMRA S2, S14; CO-CONTRACT-MAPPING |
+| 22 | S15 | none | The `/health` and `/ready` routes answer from the service's own process. | `built` | AL-DMRA S15; CO-GATEWAY; CO-BROKER |
+
+There are 18 edges among the fifteen services: 15 `built` and 3 `proposed`. S3 has the most services depending on it, and S5 the next most.
+
 ## Could not establish
 
 - The pub/sub phase is stated as `proposed` on the architect's instruction. No design for it was found in either repository at the pins.
