@@ -21,7 +21,7 @@ This record sets the mesh against the security roles and the data planes of the 
 - **Planes:** each plane has a built part, and each is `partial`. The main missing parts are:
   - no standard metadata form for the catalog (DCAT) or for labels;
   - no retirement in data management;
-  - SDK vector and graph clients not built for the analytical plane.
+  - no SDK vector or graph client for the analytical plane.
 
 ## Security roles (Appendix 9)
 
