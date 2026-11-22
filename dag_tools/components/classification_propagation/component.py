@@ -402,8 +402,13 @@ def emit_propagation(
     """Send the proposals. A failure fails this dataset, deliberately.
 
     The published label set IS the deliverable: a column whose terms do not
-    land is a column a broker finds unclassified, and reporting success would
-    turn a catalog outage into a silent release.
+    land is a column the catalog describes as unclassified, and reporting
+    success would leave that description standing.
+
+    What an unclassified column is FOR is the refusal a broker would make of
+    it -- INTENDED, NOT BUILT: nothing consults these terms to decide an
+    access question today, so a missing term releases nothing that was
+    withheld. The failure stance does not depend on it.
     """
     graph = _graph(spec)
     mcps = mcps_for(

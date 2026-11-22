@@ -108,9 +108,13 @@ attributes:
     #   token: "{{ env('DATAHUB_TOKEN') }}"
     #
     # A catalog failure FAILS this materialization, deliberately. The label
-    # set is the deliverable: if it does not land, a broker finds no labels on
-    # the dataset and denies every read of it, and reporting success would
-    # turn an outage into a silent embargo.
+    # set is the deliverable, and reporting success without publishing it
+    # would leave the catalog describing a dataset it never described. What
+    # the labels are FOR is the denial -- a broker that finds no labels on a
+    # dataset is TO deny every read of it -- but that brokering is INTENDED,
+    # NOT BUILT: nothing consults these labels to decide an access question
+    # today, so publishing a label set changes nothing about what any reader
+    # may currently read.
     description: >-
       Example source dataset, observed rather than moved.
 
