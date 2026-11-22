@@ -137,7 +137,7 @@ The asset inventory record is one schema used by two callers on different releas
 
 - **Decision.** The asset record schema is the contract between the domain broker and the qualification survey. Both build their records through the same extractor.
 - **Why.** The two run different releases at the same time, so the schema has to hold across versions.
-- **Status.** Shared schema and extractor: `built`. The census says the two read each other's records across versions. The broker builds its own records in-process, and no path where it reads records the survey wrote was found: not established.
+- **Status.** Shared schema and extractor: `built`. The census says the two read each other's records across versions. At the pin the broker builds its own records in-process (`dag_tools/domain_broker/main.py:656-661`) and reads none the survey wrote: it imports no registry reader, and its only storage client is the token service (`:223`). The cross-version contract is therefore held by the schema's rules alone, with no reader at the pin to exercise it: `built`.
 
 ### §4a.2 The schema evolves by addition only
 
@@ -191,7 +191,7 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are unde
 | §4b.3 pointer last | rcl `:231`, `:264-273` | bullet 3 | trc: `test_pointer_not_updated_when_artifact_write_fails` (`:143`) | `built` |
 | §4b.4 JSON by default: twelve of fifteen commands | qcl `:41`, `:180`, `:290`, `:387`, `:597`, `:787`, `:870`, `:997`, `:1098`, `:1217`, `:1295`, `:1398`, `:1455`; no option at `:235`, `:1618`, `:1657`; rcp `:61` | bullet 4 | tdc: `test_registry_status_json_default` (`:52`) | `built` |
 | §4b.4 JSON by default: three commands with no format option | qcl `:41`, `:180`, `:290`, `:387`, `:597`, `:787`, `:870`, `:997`, `:1098`, `:1217`, `:1295`, `:1398`, `:1455`; no option at `:235`, `:1618`, `:1657`; rcp `:61` | bullet 4 | tdc: `test_registry_status_json_default` (`:52`) | `built` |
-| §4a.1 one schema, one extractor, two callers | isc `:47`; dbm `:445`, `:656-661`, `:847`; isp `:42-44` | AGENTS.md §4a (inventory), bullet 1 | none found | `built`; cross-version reading not established |
+| §4a.1 one schema, one extractor, two callers | isc `:47`; dbm `:445`, `:656-661`, `:847`; isp `:42-44` | AGENTS.md §4a (inventory), bullet 1 | none found | `built` |
 | §4a.2 additive only | isc `:33`, `:57-59` | bullet 2 | tin: `test_schema_version_is_stamped_by_default` (`:28`), `test_schema_tolerates_unknown_fields` (`:33`) | `built` |
 | §4a.3 class-name registry, base-class walk, warned fallback | cls `:48`, `:127-130`, `:142`, `:152-156` | bullet 3 | tin: `test_classify_known_fqn_string` (`:65`), `test_classify_walks_mro_for_custom_subclass` (`:75`), `test_classify_substring_fallback_logs_warning` (`:90`) | `built` |
 | §4a.4 soft failure | ext `:58-70`, `:93`, `:241-247` | bullet 4 | tin: `test_extract_records_soft_fails_on_broken_spec` (`:174`) | `built` |

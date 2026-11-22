@@ -12,7 +12,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** An answer's audit trail cannot be rebuilt after the fact, so what is needed later must be recorded when the answer is created.
 - **Stated status.** Proposed, with four dated amendments.
 - **Where else.** ADR-0026 (entitlement model).
-- **Status.** Deny-by-default data gate: `built`. Entitlement-source capture on the user node: `built`. Access-decision slot on the citation edge: slot `built`, population not established (the writer notes it is null in production writes). Enforcement on every retrieval path: not established.
+- **Status.** Deny-by-default data gate: `built`. Entitlement-source capture on the user node: `built`. Access-decision slot on the citation edge: `built`. Its population: `proposed`; the writer leaves it null and nothing at the pin produces a value for it (aaw `:651-691`). Whether enforcement covers every retrieval path could not be settled from code and is in the not-established list.
 
 ## ADR-0026 Persona and domain entitlements decided in Topaz
 
@@ -20,7 +20,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Identity claims in a token can drift from policy. Telling "not entitled" apart from "decider down" keeps a refusal honest.
 - **Stated status.** Proposed.
 - **Where else.** ADR-0025; ADR-0031 cites its abstention gate.
-- **Status.** Server-side matrix, per-token entitlement cache, 403 and 503 split, and claim ignoring: `built`. The user-interface picker and retirement of the identity-provider persona mapper: not established.
+- **Status.** Server-side matrix, per-token entitlement cache, 403 and 503 split, and claim ignoring: `built`. Retirement of the persona mapper in the repository: `built`; the persona claim is no longer read (ath `:32-44`, ath `:296-298`). The user-interface picker and the live identity-provider settings are configured outside code and are in the not-established list.
 
 ## ADR-0027 Composable approval policy for grant issuance
 
@@ -28,7 +28,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Granting access is the highest-risk change, so it needs governance that does not depend on one approver.
 - **Stated status.** Accepted for the architecture; the single-dimension form is built and the composable form is deferred.
 - **Where else.** ADR-0029 (human-await steps); ADR-0034 (promotion as an approval).
-- **Status.** Single-dimension task-audience check: `built`. Composable multi-approval engine for grant issuance: `accepted`, code not established.
+- **Status.** Single-dimension task-audience check: `built`. Composable multi-approval engine for grant issuance: `accepted`; no code for it at the pin.
 
 ## ADR-0028 Canvas as an answer-composition workspace
 
@@ -52,7 +52,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Load-time verification and answer-to-step matching both need a static answer to what a verb produces. Drawing a graph from edgeless data had led a renderer to invent edges.
 - **Stated status.** Accepted; re-confirms ADR-0017 under the new constraint and records a rejected alternative.
 - **Where else.** ADR-0017; ADR-0029.
-- **Status.** Edgeless-topology degradation to a document keyed on the outcome field, in the presentation layer: `built`. Producer-side outcome field and the owed consumer items: not established.
+- **Status.** Edgeless-topology degradation to a document keyed on the outcome field, in the presentation layer: `built`. Producer-side outcome field: `built`, at IA `agent_fleet/restate_analyst/lineage_answer.py:111-118`, `:190-341`, called at rab `:1398`. The owed consumer items: `proposed`; name resolution still runs in the analyst (rab `:511`, called at rab `:1353`) and no second verb exists.
 
 ## ADR-0031 Instance-resolution ladder
 
@@ -60,7 +60,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** A classifier standing alone silently answered a different question than the one asked. Only the catalog should say what a subject is.
 - **Stated status.** Accepted; rungs 1 and 2 built, rung 3 deferred until telemetry shows a need.
 - **Where else.** ADR-0032, ADR-0033.
-- **Status.** Rungs 1 and 2: `built`. Rung 3: `accepted`. Rung 4 flagging: not established.
+- **Status.** Rungs 1 and 2: `built`. Rung 3: `accepted`. Rung 4 flagging: `built`, at IA `agent_fleet/ontology_service/recall_guard.py:31-73`, applied at IA `agent_fleet/ontology_service/main.py:4211-4239`.
 
 ## ADR-0032 Goal-oriented queries and the catalog-analyst loop
 
@@ -76,7 +76,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Asking captures the signal that guessing and abstaining both discard.
 - **Stated status.** Accepted, woken by the reachability condition, not the frequency one. Amendments cover an unfilled-slot trigger and an ambiguous-class trigger.
 - **Where else.** ADR-0031, ADR-0032.
-- **Status.** Ask for a missing or wrong-kind mandatory slot: `built`. Provenance tier for user-confirmed picks and alias growth: not established. Frequency gate: not fired.
+- **Status.** Ask for a missing or wrong-kind mandatory slot: `built`. Provenance tier for user-confirmed picks: `built`, as the per-slot source `picked` (IA `src/iagent_pure/slot_acceptance.py:104-122`, IA `src/iagent/defs/dynamic_supervisor.py:3094-3128`, gwy `:11304-11308`). Alias growth from those picks: `proposed`. Frequency gate: not fired.
 
 ## ADR-0034 Trust lifecycle for autonomous review
 
@@ -84,7 +84,7 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Why.** Autonomy needs evidence gathered under the same regime, and trust must never replace a check.
 - **Stated status.** Proposed; phase one is buildable now, the autonomous definition deferred.
 - **Where else.** ADR-0029, ADR-0027.
-- **Status.** Trust table, promotion rule, starter routing and autonomous host: `built` (the autonomous host is expected to be denied until a dispatch grant exists). Decision-record emission: not established.
+- **Status.** Trust table, promotion rule, starter routing and autonomous host: `built` (the autonomous host is expected to be denied until a dispatch grant exists). Decision-record emission: `built`, at IA `src/iagent/decision_record.py:96-200` and IA `src/iagent/decision_record_writer.py:48-80`, emitted from IA `src/iagent/defs/extraction_review_sensor.py:572-642` (called at `:923-983`) and IA `agent_fleet/ontology_service/main.py:6092-6140`.
 
 ## ADR-0035 Process plane and data plane joined by embedded provenance
 
@@ -128,14 +128,14 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Decision.** The work board is generated from packet headers. Status uses a closed five-value vocabulary. Items name a repo when cross-repo and carry a marker when tied to code. Seals cover drift, parked items needing a blocker or trigger, and closed items needing a resolvable, attributable closer.
 - **Why.** A hand-kept board drifts from the packets it summarizes.
 - **Stated status.** Proposed.
-- **Status.** Generator, vocabulary, parked rule, closer checks and drift seal: `built`. Header migration is partial (the generated file discloses unheadered packets). Per-marker and orphan seals: not established.
+- **Status.** Generator, vocabulary, parked rule, closer checks and drift seal: `built`. Header migration is partial (the generated file discloses unheadered packets). Per-marker and orphan seals: `proposed`; no check for either exists at the pin.
 
 ## ADR-0041 User-contributed documents
 
 - **Decision.** User documents are ingested on arrival with a structural unvouched stamp set by the entry door. Truth is granted later by a separate promotion event, recorded as a new fact plus a decision record, never by rewriting the provenance block. Rejection is a keyed sweep. The weakest provenance rides on the answer. Duplicates key on issuer, number and revision, and the official feed wins.
 - **Why.** Users need to add material without it being mistaken for ratified source.
 - **Stated status.** Proposed; build deferred; a delegate amendment ruled 2026-10.
-- **Status.** Promotion and rejection on the approval plane, and the user-drop stamp at the gateway: `built`. Label on the answer envelope, classifier-then-human flow, delegate part and drop-box UI: not established.
+- **Status.** Promotion and rejection on the approval plane, and the user-drop stamp at the gateway: `built`. Label on the answer envelope: `built`, at IA `src/iagent/provenance_floor.py:85-102`, set at gwy `:8005-8035` and gwy `:10830-10834`. Delegate part (§8.1): `built`, at gwy `:5943-6110`, gwy `:14123-14130` and IA `agent_fleet/restate_analyst/workflow_runner.py:124-150`. Classifier-then-human flow: `proposed`. The drop-box UI was not located and is in the not-established list.
 
 ## ADR-0042 Live view artifacts
 
@@ -164,38 +164,38 @@ An ADR number here is always invincible-agent's own series, cited elsewhere as "
 - **Decision.** A finance engine offers six deterministic verbs (variance, estimate at completion, performance indices, burn rate, variance drivers, funding status). The estimate method slot is mandatory with no default. Data is notional and reads go through the mesh on per-request tickets. The engine is a template for later ones.
 - **Why.** Money figures must come from fixed arithmetic with explicit method choice.
 - **Stated status.** Accepted, sequenced after the planning engine; an amendment replaced the archetype column and refused a ranked-set archetype.
-- **Status.** Six verbs registered, mandatory method refusal, and ticketed reads: `built`. Tree archetype, notional-data boundary and the template claims: not established.
+- **Status.** Six verbs registered, mandatory method refusal, and ticketed reads: `built`. Tree archetype: `built`, at IA `agent_fleet/presentation_agent/capabilities.py:401-408`, pma `:930-934` and IA `agent_fleet/finance_agent/measures.py:418-433`. Template claims: `built`, at IA `agent_fleet/cost_agent/main.py:1-5` and IA `docs/runbooks/adding-an-engine.md:39`. The notional-data boundary was not located and is in the not-established list.
 
 ## ADR-0046 Agent-graph library graphs as mesh verbs
 
 - **Decision.** One graph is one registered verb with a full contract. A generic run-any-graph runner is refused by name. The output class is a subclass of the response class, so it is never grounded, and internal steps are telemetry, not provenance.
 - **Why.** A verb contract is what the mesh can authorize and audit.
 - **Stated status.** Proposed, "not started"; an amendment retired the exemplar slice. The header is out of date against the code.
-- **Status.** Row-driven registration, 404 for unloaded ids, refusal enforcement and refusal to start with no rows: `built`. Durability, memory and entitlement seal sections: not established.
+- **Status.** Row-driven registration, 404 for unloaded ids, refusal enforcement and refusal to start with no rows: `built`. Durability section: `built`, at ghm `:129-265`. The memory and entitlement seal sections were not located and are in the not-established list.
 
 ## ADR-0047 Computation export
 
 - **Decision.** A package is produced by a registered export verb with a mandatory recipient scope. Zip scripts are refused. The package carries real computation modules at a pinned commit plus a verification manifest. Filtering happens once per recipient. A service identity is never a recipient. Fixes propagate by re-issuance.
 - **Why.** A recipient needs to re-verify the algorithm, and a service identity as recipient is a confused-deputy risk.
 - **Stated status.** Proposed, "not started"; a section 5.1 amendment ratified 2026-09.
-- **Status.** A package-export route in the finance engine with recipient scope, a verification manifest and per-recipient file names: `built` for that engine, not checked against every rule. Pinned-commit modules, service-identity refusal and supersedes chain: not established.
+- **Status.** A package-export route in one engine with recipient scope, a verification manifest and per-recipient file names: `built` for that engine. Pinned-commit modules: `built`, at fin `:208-215`, fin `:1407-1420` and IA `agent_fleet/cost_agent/export.py:175-185`. Service-identity refusal: `built`, at IA `policy/sync/validate_policy.py:343-375`, `:1954-1975` and fin `:1981-1995`. Supersedes chain: `proposed`.
 
 ## ADR-0048 External validation package
 
 - **Decision.** First consumer of ADR-0047: two formats (an HTML package and a notebook) from one emit, with differing guarantees, proven first on notional data.
 - **Why.** A format decision should rest on a measured notional run.
 - **Stated status.** Proposed, "not started"; only the header and outline were read.
-- **Status.** Not established. The finance engine's export module refers to this ADR and writes an HTML file and a database file; a notebook output was not found. Notebook format: `proposed`.
+- **Status.** The validation package: `built`. IA `scripts/build_cost_package.py:1-20` builds it from IA `agent_fleet/cost_agent/export.py:248`, and one engine's export module mirrors it at exp `:82-87`; it carries an HTML file and a database file. Notebook format: `proposed`; no notebook output is written at the pin.
 
 ## Not established
 
 - Checked only in part: the ADR-0027 status. A threshold join exists in the workflow join module, but it serves human-await steps under ADR-0029, not grant issuance, so it was not counted for ADR-0027.
 - Checked only in part: ADR-0035. Provenance fields appear in ontology-service reads, but the path was not traced, so the ADR stays `accepted` with no source cited.
-- Checked only in part: ADR-0031 rung 4 flagging (a recall-guard module exists, not read in depth). A second copy of the matching functions exists in the ontology service with its own descriptor set, which the ADR does not mention.
-- ADR-0025 production population of the access-decision slot and enforcement on every retrieval path; ADR-0026 picker and mapper retirement and the end-to-end probe; ADR-0028 card provenance; ADR-0033 frequency gate (the ADR says it has not fired) and the user-confirmed provenance tier; ADR-0034 decision-record emission; ADR-0036 composition in CI at the overlay repository and per-entry layer provenance. The graph host composes overlay directories at service start, which is a different place than the ADR names.
+- ADR-0031: a second copy of the matching functions exists in the ontology service with its own descriptor set, which the ADR does not mention.
+- ADR-0025 enforcement on every retrieval path; ADR-0026 picker, the live identity-provider settings and the end-to-end probe; ADR-0028 card provenance; ADR-0033 frequency gate (the ADR says it has not fired); ADR-0036 composition in CI at the overlay repository and per-entry layer provenance. The graph host composes overlay directories at service start, which is a different place than the ADR names.
 - Checked only in part: ADR-0037 rung 2 not found by search, which may have missed it. ADR-0039 schema generator absence rests on a non-exhaustive search. ADR-0045 line ranges for verb entries are the first entry to the last, not every line between.
-- leaf telemetry package internals (0038); a separate newer board system and its link to 0040; answer-envelope label and delegate flow (0041); where the user-drop constant is defined (0041); deployed behavior of live views (0042); archetype per finance verb and notional boundary (0045); graph durability and entitlement seal (0046); pinned-commit modules, service-identity refusal, notebook output (0047, 0048).
-- ADR-0047 and 0048 were judged mostly from the finance export module header, which carries both numbers; the export-profile files are a separate feature and were not read in depth. The ADR-0044 status of ClickHouse settings-profile pinning is not established.
+- leaf telemetry package internals (0038); a separate newer board system and its link to 0040; drop-box UI (0041); where the user-drop constant is defined (0041); deployed behavior of live views (0042); notional boundary (0045); graph memory and entitlement seal (0046).
+- The ADR-0044 status of ClickHouse settings-profile pinning is not established.
 - Headers saying Proposed or not started understate code for 0040, 0041, 0042, 0046 and 0047. ADR-0045's header says Accepted but defers the build, and understates the code the same way.
 
 ## Sources
@@ -206,20 +206,28 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 |---|---|---|---|---|
 | ADR-0025 deny-by-default data gate | tcm `:351-391` | ADR-0025 | no test | `built` |
 | ADR-0025 entitlement source captured | aaw `:603-645`, ath `:132-136` | ADR-0025 | test_entitlement_source_required_on_user_model (:72), test_topaz_state_constructs (:83), test_none_state_is_honest_empty (:99), test_retired_jwt_origin_values_are_rejected (:117) | `built` |
-| ADR-0025 access-decision slot on citation | aaw `:651-692` | ADR-0025 | test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j (:160), test_layer_1_2_null_access_decision_roundtrips_as_null (:219), test_layer_6_cortex_ui_source_type_declares_access_decision (:303) | Slot: `built`. Population: not established |
-| ADR-0026 matrix, 403/503, claim ignored | tcm `:276-335`, tpc `:60-69`, tpc `:237`, tpc `:366`, gwy `:12076-12090` | ADR-0026 | test_honest_empty_when_no_entitlements (:80), test_persona_from_topaz_default_cell (:108), test_persona_from_first_cell_when_no_default (:130), test_jwt_persona_claim_is_ignored (:148) | Matrix, 403 and 503 split, claim ignored: `built`. Picker and mapper retirement: not established |
+| ADR-0025 access-decision slot on citation: slot | aaw `:651-692` | ADR-0025 | test_layer_1_2_3_populated_access_decision_roundtrips_to_neo4j (:160), test_layer_1_2_null_access_decision_roundtrips_as_null (:219), test_layer_6_cortex_ui_source_type_declares_access_decision (:303) | `built` |
+| ADR-0025 access-decision slot on citation: population | aaw `:651-691` | ADR-0025 | no test | `proposed` |
+| ADR-0026 matrix, 403/503, claim ignored | tcm `:276-335`, tpc `:60-69`, tpc `:237`, tpc `:366`, gwy `:12076-12090` | ADR-0026 | test_honest_empty_when_no_entitlements (:80), test_persona_from_topaz_default_cell (:108), test_persona_from_first_cell_when_no_default (:130), test_jwt_persona_claim_is_ignored (:148) | `built` |
+| ADR-0026 persona mapper retired in the repo | ath `:32-44`, ath `:296-298` | ADR-0026 | test_jwt_persona_claim_is_ignored (:148) | `built` |
 | ADR-0027 single-dimension task audience: single dimension | tcm `:216-230` | ADR-0027 | no test | `built` |
 | ADR-0027 single-dimension task audience: composable engine | tcm `:216-230` | ADR-0027 | no test | `accepted` |
 | ADR-0028 canvas card provenance | — | ADR-0028 | no test | `accepted` |
 | ADR-0029 step dispatch with caller identity | sse `:181-224`, wdf `:92` | ADR-0029 | no test | `built` |
 | ADR-0029 answer seeds an operation step | ans `:81-104` | ADR-0029 | test_a_single_asset_verb_on_the_SKIP_path_is_flagged_needs_instance (:154), test_the_flag_is_NOT_set_when_the_ask_carried_an_instance (:172), test_a_multi_arity_verb_is_never_flagged (:182), test_NO_MODEL_CALL_IS_MADE_ON_THE_SKIP (:192), test_the_route_carried_is_the_route_returned (:209), test_a_verb_that_is_no_longer_compatible_ROUTES_THE_FULL_PATH (:221) | `built` |
-| ADR-0030 edgeless topology degrades honestly | pma `:411-450`, pma `:1255-1262` | ADR-0030 | tests/test_topology_degrade.py: test_list_outcome_degrades_to_document_with_summary (:27), test_every_say_so_outcome_degrades_not_just_the_list (:38), test_structured_data_may_arrive_as_a_dict_already (:47), test_empty_summary_still_yields_a_coherent_document (:54), test_no_discriminant_means_real_topology_render (:62), test_discriminant_but_nonempty_edges_is_a_real_graph (:69), test_non_dict_payload_declines (:76); tests/test_lineage_answer.py: test_genuinely_none_is_distinct_from_walk_failure (:93), test_access_denied_walk_is_a_failure_not_none (:106) | Degradation: `built`. Producer side: not established |
+| ADR-0030 edgeless topology degrades honestly | pma `:411-450`, pma `:1255-1262` | ADR-0030 | tests/test_topology_degrade.py: test_list_outcome_degrades_to_document_with_summary (:27), test_every_say_so_outcome_degrades_not_just_the_list (:38), test_structured_data_may_arrive_as_a_dict_already (:47), test_empty_summary_still_yields_a_coherent_document (:54), test_no_discriminant_means_real_topology_render (:62), test_discriminant_but_nonempty_edges_is_a_real_graph (:69), test_non_dict_payload_declines (:76); tests/test_lineage_answer.py: test_genuinely_none_is_distinct_from_walk_failure (:93), test_access_denied_walk_is_a_failure_not_none (:106) | `built` |
+| ADR-0030 edgeless topology degrades honestly: producer outcome field | IA `agent_fleet/restate_analyst/lineage_answer.py:111-118`, `:190-341`, rab `:1398` | ADR-0030 | test_output_uri_is_always_lineage_topology (:45) | `built` |
+| ADR-0030 edgeless topology degrades honestly: consumer items | rab `:511`, rab `:1353` | ADR-0030 | no test | `proposed` |
 | ADR-0031 exact and containment rungs: rungs 1 and 2 | imm `:37-92` | ADR-0031 | test_strip_removes_entity_type_and_platform_and_articles (:18), test_strip_is_a_noop_when_no_descriptors (:24), test_core_name_inside_descriptor_phrase_is_a_strong_hit (:30), test_exact_and_suffix_unchanged (:35), test_lone_descriptor_word_does_NOT_win (:41) | `built` |
 | ADR-0031 exact and containment rungs: rung 3 | imm `:37-92` | ADR-0031 | test_strip_removes_entity_type_and_platform_and_articles (:18), test_strip_is_a_noop_when_no_descriptors (:24), test_core_name_inside_descriptor_phrase_is_a_strong_hit (:30), test_exact_and_suffix_unchanged (:35), test_lone_descriptor_word_does_NOT_win (:41) | `accepted` |
+| ADR-0031 exact and containment rungs: rung 4 flagging | IA `agent_fleet/ontology_service/recall_guard.py:31-73`, IA `agent_fleet/ontology_service/main.py:4211-4239` | ADR-0031 | test_the_work_case_fires_discounts_and_flags (:27) | `built` |
 | ADR-0032 analyst loop and goal-shape card | — | ADR-0032 | no test | `proposed` |
-| ADR-0033 ask for unfilled mandatory slot | sld `:312`, sld `:585`, sld `:787`, sld `:848` | ADR-0033 | test_A1_H06_a_required_slot_named_nowhere_asks (:62), test_A2_E05_a_name_that_resolved_to_the_wrong_kind_asks (:77), test_A3_a_missing_mandatory_slot_is_an_ask_and_not_a_400 (:125), test_E04_a_genuine_miss_on_an_OPTIONAL_slot_still_routes (:172) | Ask: `built`. Confirmed-pick tier: not established |
+| ADR-0033 ask for unfilled mandatory slot | sld `:312`, sld `:585`, sld `:787`, sld `:848` | ADR-0033 | test_A1_H06_a_required_slot_named_nowhere_asks (:62), test_A2_E05_a_name_that_resolved_to_the_wrong_kind_asks (:77), test_A3_a_missing_mandatory_slot_is_an_ask_and_not_a_400 (:125), test_E04_a_genuine_miss_on_an_OPTIONAL_slot_still_routes (:172) | `built` |
+| ADR-0033 ask for unfilled mandatory slot: confirmed-pick tier | IA `src/iagent_pure/slot_acceptance.py:104-122`, IA `src/iagent/defs/dynamic_supervisor.py:3094-3128`, gwy `:11304-11308` | ADR-0033 | test_AN_ACCEPTED_BINDING_CARRIES_ITS_SOURCE (:50) | `built` |
+| ADR-0033 ask for unfilled mandatory slot: alias growth | — | ADR-0033 | no test | `proposed` |
 | ADR-0034 trust table and promotion rule | ttb `:106-170` | ADR-0034 | test_an_unlisted_format_is_supervised (:57), test_an_empty_table_permits_no_autonomy_at_all (:65), test_a_pipeline_upgrade_re_supervises (:73), test_supervised_to_trusted_is_forbidden (:92) | `built` |
 | ADR-0034 starter routes by rung | rvs `:364`, arw `:1-25` | ADR-0034 | test_unpromoted_format_routes_to_workflow_1 (:105), test_promoted_format_routes_to_workflow_2 (:114), test_the_pair_discriminates_in_one_run (:128), test_pipeline_version_mismatch_re_supervises (:139), test_unreadable_table_supervises_and_does_not_block (:151) | `built` |
+| ADR-0034 decision-record emission | IA `src/iagent/decision_record.py:96-200`, IA `src/iagent/decision_record_writer.py:48-80`, IA `src/iagent/defs/extraction_review_sensor.py:572-642`, IA `agent_fleet/ontology_service/main.py:6092-6140` | ADR-0034 | test_records_go_to_a_dedicated_graph_never_a_vocabulary_or_prime_graph (:39) | `built` |
 | ADR-0035 plane boundary and provenance | — | ADR-0035 | no test | `accepted` |
 | ADR-0036 overlay compose with deletion | ghm `:105`, ghm `:378` | ADR-0036 | test_the_sample_overlay_EXISTS_and_is_labelled (:63), test_A_TOMBSTONE_REMOVES_A_SEEDED_KIND (:124), test_A_TOMBSTONE_FOR_AN_UNSEEDED_KEY_IS_AN_ERROR (:136), test_CONTROL_an_EMPTY_overlay_composes_to_exactly_the_seed (:152) | Graph-host composition: `built`. Composition in the overlay repository's CI: not established |
 | ADR-0037 explains edge, abstain, vocabulary: vocabulary, explain handler and partition | ttl `:775-797`, dca `:380-425` | ADR-0037 | test_the_doc_vocabulary_is_declared_in_a_ttl_that_actually_primes (:94), test_the_docs_prefix_is_registered_on_the_WRITE_side (:124), test_the_committed_corpus_matches_the_frontmatter (:43) | `built` |
@@ -229,14 +237,22 @@ All paths are in invincible-agent at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb` 
 | ADR-0039 decision tables total, unique: decision tables and seals | dtm `:91-233` | ADR-0039 | test_TOTALITY_every_input_the_domain_admits_has_a_row (:183), test_UNIQUENESS_no_input_matches_two_rows (:195) | `built` |
 | ADR-0039 decision tables total, unique: generated schema, export and rename | dtm `:91-233` | ADR-0039 | test_TOTALITY_every_input_the_domain_admits_has_a_row (:183), test_UNIQUENESS_no_input_matches_two_rows (:195) | `proposed` |
 | ADR-0039 legacy import path, marked superseded | gwy `:12504-12566`, gwy `:10091-10123`, gwy `:12960-12972`, dyf `:73`, dyf `:465` | ADR-0039 | no test located | Legacy import path present: `built`, marked superseded and scheduled for deletion |
-| ADR-0040 generated board with seals | gbd `:16-175` | ADR-0040 | test_board_matches_the_packet_headers (:44), test_the_check_can_actually_fail (:59) | Generator, closer checks and drift seal: `built`. Per-marker and orphan seals: not established |
-| ADR-0041 promotion on approval plane | pro `:191-690`, gwy `:13902`, ogw `:54` | ADR-0041 | test_the_BLOCK_is_BYTE_IDENTICAL_across_a_promotion (:176), test_a_REJECTION_writes_the_record_THEN_sweeps_graph_indexes_and_MOVES_the_objects (:192) | Promotion and drop stamp: `built`. Envelope label and drop-box: not established |
+| ADR-0040 generated board with seals | gbd `:16-175` | ADR-0040 | test_board_matches_the_packet_headers (:44), test_the_check_can_actually_fail (:59) | `built` |
+| ADR-0040 generated board with seals: per-marker and orphan seals | — | ADR-0040 | no test | `proposed` |
+| ADR-0041 promotion on approval plane | pro `:191-690`, gwy `:13902`, ogw `:54` | ADR-0041 | test_the_BLOCK_is_BYTE_IDENTICAL_across_a_promotion (:176), test_a_REJECTION_writes_the_record_THEN_sweeps_graph_indexes_and_MOVES_the_objects (:192) | `built` |
+| ADR-0041 promotion on approval plane: envelope label and delegate part | IA `src/iagent/provenance_floor.py:85-102`, gwy `:8005-8035`, gwy `:10830-10834`, gwy `:5943-6110`, gwy `:14123-14130`, IA `agent_fleet/restate_analyst/workflow_runner.py:124-150` | ADR-0041 | test_an_answer_over_vouched_sources_is_floored_at_its_weakest_rung (:48) | `built` |
+| ADR-0041 promotion on approval plane: classifier-then-human flow | — | ADR-0041 | no test | `proposed` |
 | ADR-0042 live views, anonymous refusal: verbs, contracts and anonymous refusal | cap `:425-455` | ADR-0042 | test_an_anonymous_caller_asking_for_a_live_view_is_REFUSED (:65), test_an_IDENTIFIED_caller_gets_its_live_view (:111) | `built` |
 | ADR-0042 live views, anonymous refusal: validity stamping and intent catalog | cap `:425-455` | ADR-0042 | test_an_anonymous_caller_asking_for_a_live_view_is_REFUSED (:65), test_an_IDENTIFIED_caller_gets_its_live_view (:111) | `accepted` |
 | ADR-0043 presentation trace on answer | — | ADR-0043 | no test | `proposed` |
 | ADR-0044 per-request minted credentials: per-request minting and fail-closed | dtb `:226-365`, dsq `:152-246` | ADR-0044 | test_consumer_receives_a_minted_credential_not_the_producers (:134), test_minted_policy_is_scoped_to_the_asset_and_cannot_write (:148), test_minting_failure_fails_closed (:197) | `built` |
 | ADR-0044 per-request minted credentials: proxy-only mode and reaping | dtb `:226-365`, dsq `:152-246` | ADR-0044 | test_consumer_receives_a_minted_credential_not_the_producers (:134), test_minted_policy_is_scoped_to_the_asset_and_cannot_write (:148), test_minting_failure_fails_closed (:197) | `proposed` |
-| ADR-0045 six finance verbs, method required | fin `:245-392`, ent `:86` | ADR-0045 | test_the_eac_method_values_come_out_of_the_literal (:134) | Verbs, method refusal and ticketed reads: `built`. Archetype and template claims: not established |
-| ADR-0046 one graph one verb | ghm `:371-607` | ADR-0046 | test_every_ratified_row_is_a_verb_in_neo4j (:129), test_a_host_with_no_ratified_rows_REFUSES_TO_START (:208) | Registration and refusals: `built`. Seal sections: not established |
-| ADR-0047 export verb with recipient scope | exp `:69-215` | ADR-0047 | no test | Export route in the finance engine: `built`. Pinned modules and supersedes chain: not established |
-| ADR-0048 external validation package | exp `:82-87` | ADR-0048 | no test | Not established. Notebook format: `proposed` |
+| ADR-0045 six finance verbs, method required | fin `:245-392`, ent `:86` | ADR-0045 | test_the_eac_method_values_come_out_of_the_literal (:134) | `built` |
+| ADR-0045 six finance verbs, method required: archetype and template claims | IA `agent_fleet/presentation_agent/capabilities.py:401-408`, pma `:930-934`, IA `agent_fleet/finance_agent/measures.py:418-433`, IA `agent_fleet/cost_agent/main.py:1-5`, IA `docs/runbooks/adding-an-engine.md:39` | ADR-0045 | no test | `built` |
+| ADR-0046 one graph one verb | ghm `:371-607` | ADR-0046 | test_every_ratified_row_is_a_verb_in_neo4j (:129), test_a_host_with_no_ratified_rows_REFUSES_TO_START (:208) | `built` |
+| ADR-0046 one graph one verb: durability section | ghm `:129-265` | ADR-0046 | test_a_STATEFUL_row_actually_CARRIES_a_saver (:114) | `built` |
+| ADR-0047 export verb with recipient scope | exp `:69-215` | ADR-0047 | no test | `built` |
+| ADR-0047 export verb: pinned modules and service-identity refusal | fin `:208-215`, fin `:1407-1420`, IA `agent_fleet/cost_agent/export.py:175-185`, IA `policy/sync/validate_policy.py:343-375`, `:1954-1975`, fin `:1981-1995` | ADR-0047 | no test | `built` |
+| ADR-0047 export verb: supersedes chain | — | ADR-0047 | no test | `proposed` |
+| ADR-0048 external validation package: package | IA `scripts/build_cost_package.py:1-20`, IA `agent_fleet/cost_agent/export.py:248`, exp `:82-87` | ADR-0048 | test_a_clean_package_verifies (:42) | `built` |
+| ADR-0048 external validation package: notebook format | — | ADR-0048 | no test | `proposed` |
