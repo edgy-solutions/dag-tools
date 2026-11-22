@@ -21,6 +21,31 @@ The namespace is spelled here rather than derived from the rows' own globs. Deri
 widen the refusal to whatever any row happens to glob -- a row carrying `feature/*` would start
 failing a maintainer's `feature/...` branch -- which is the opposite failure and just as quiet.
 
+STACKED BRANCHES, and why the branch a trailer names is checked against the LANE rather than
+against the head branch. `base..head` is this PR's own commits only when its base is what the
+branch was cut from. A lane that stacks -- branch N built on branch N-1, every PR opened against
+master -- hands this check every commit of the whole stack on every PR in it. Measured on this
+repo: the 24 PRs #118-#141 had `base=master` with heads `lane/arch-components-41` .. `-64`, each
+built on the one below, and every commit in them carries `Lane: arch/lane/arch-components` --
+the lane, not any head branch. Demanding `<id>/<head branch>` refused that stack twice over:
+once because an ancestor commit names the branch it was authored on, and once because the lane
+never wrote a head branch into a trailer at all. Neither was anything a PR author could fix,
+since an ancestor's message is not that PR's to rewrite. The whole stack passed only because no
+row claimed `lane/arch-*` yet, which is the hole the paragraph above closes -- so closing that
+one without this one turns every lane PR red.
+
+The rule is therefore: the trailer's lane id must be this row's, and the branch it names must be
+one the row globs. The head branch stays the canonical spelling and is what every error message
+offers. Insisting on it bought no accountability to lose: the branch part of a trailer is text
+an author typed, never a fact git can confirm, and only the lane id is held to a registered row.
+A commit naming ANOTHER lane still fails, which is what stops a PR to master carrying an
+unmerged lane's work in under this lane's name.
+
+The workflow has no `branches:` filter, so a PR whose base is another branch is checked too --
+the properly-stacked shape, and the one where `base..head` is exactly the PR's own commits.
+While the filter was there, stacking the correct way meant not being checked at all: the same
+silent exemption as an unregistered lane, one level up.
+
 Inputs come from the environment (set from `env:` in the workflow, never interpolated into a
 shell line): BASE_SHA, HEAD_SHA, HEAD_REF. Exit 0 pass, 1 fail, 2 could not run.
 """
@@ -65,11 +90,36 @@ def read_rows(lanes_file: Path) -> List[Tuple[str, List[str]]]:
     return rows
 
 
-def lane_for(branch: str, rows: List[Tuple[str, List[str]]]) -> Optional[str]:
+def row_for(branch: str, rows: List[Tuple[str, List[str]]]) -> Optional[Tuple[str, List[str]]]:
+    """The row this branch commits on, `(lane id, globs)`, or None for a branch in no row."""
     for lane_id, globs in rows:
         if any(fnmatch.fnmatchcase(branch, g) for g in globs):
-            return lane_id
+            return lane_id, globs
     return None
+
+
+def lane_for(branch: str, rows: List[Tuple[str, List[str]]]) -> Optional[str]:
+    row = row_for(branch, rows)
+    return None if row is None else row[0]
+
+
+#: What one `Lane:` value is, read against the row the PR's head branch matched.
+OK, OTHER_LANE, OUTSIDE_LANE = "ok", "other_lane", "outside_lane"
+
+
+def read_trailer(value: str, lane_id: str, globs: List[str]) -> str:
+    """`OK`, `OTHER_LANE` or `OUTSIDE_LANE`.
+
+    The branch named need not be the head branch -- see the module docstring on stacked
+    branches -- but it must be one this lane commits on, which is what keeps the branch part
+    read rather than ignored.
+    """
+    named_lane, sep, named_branch = value.partition("/")
+    if not sep or named_lane != lane_id:
+        return OTHER_LANE
+    if not any(fnmatch.fnmatchcase(named_branch, g) for g in globs):
+        return OUTSIDE_LANE
+    return OK
 
 
 def lane_trailers(repo: Path, sha: str) -> Tuple[List[str], bool]:
@@ -87,8 +137,8 @@ def lane_trailers(repo: Path, sha: str) -> Tuple[List[str], bool]:
 def check(repo: Path, base: str, head: str, branch: str) -> Tuple[int, List[str]]:
     """Returns `(exit code, output lines)`."""
     rows = read_rows(repo / LANES_FILE)
-    lane_id = lane_for(branch, rows)
-    if lane_id is None:
+    row = row_for(branch, rows)
+    if row is None:
         if branch.startswith(LANE_NAMESPACE):
             return 1, [f"::error::branch '{branch}' is in the '{LANE_NAMESPACE}' namespace and "
                        f"matches no row of {LANES_FILE}: an unregistered lane is not exempt from "
@@ -96,9 +146,10 @@ def check(repo: Path, base: str, head: str, branch: str) -> Tuple[int, List[str]
                        f"'{LANE_NAMESPACE}'."]
         return 0, [f"::notice::branch '{branch}' matches no row of {LANES_FILE}; not a lane, "
                    "trailers not checked"]
+    lane_id, globs = row
     expected = f"{lane_id}/{branch}"
     shas = _git(repo, "rev-list", f"{base}..{head}").split()
-    lines, bad = [], 0
+    lines, bad, inherited = [], 0, 0
     for sha in shas:
         got, has_line = lane_trailers(repo, sha)
         if not got and has_line:
@@ -109,10 +160,25 @@ def check(repo: Path, base: str, head: str, branch: str) -> Tuple[int, List[str]
         elif not got:
             bad += 1
             lines.append(f"::error::{sha[:10]} has no 'Lane:' trailer (expected 'Lane: {expected}')")
-        elif any(v != expected for v in got):
-            bad += 1
-            lines.append(f"::error::{sha[:10]} has Lane trailer {got!r}, expected '{expected}'")
-    lines.append(f"checked {len(shas)} commit(s) on '{branch}' as lane '{lane_id}': {bad} bad")
+        else:
+            verdicts = [read_trailer(v, lane_id, globs) for v in got]
+            if OTHER_LANE in verdicts:
+                bad += 1
+                lines.append(f"::error::{sha[:10]} has Lane trailer {got!r}, naming a lane other "
+                             f"than '{lane_id}', which owns '{branch}'. Every commit a PR brings "
+                             f"belongs to that lane; expected 'Lane: {expected}'")
+            elif OUTSIDE_LANE in verdicts:
+                bad += 1
+                lines.append(f"::error::{sha[:10]} has Lane trailer {got!r}, naming a branch no "
+                             f"glob of lane '{lane_id}' matches ({' '.join(globs)}); expected "
+                             f"'Lane: {expected}'")
+            elif any(v != expected for v in got):
+                inherited += 1
+    tail = f"checked {len(shas)} commit(s) on '{branch}' as lane '{lane_id}': {bad} bad"
+    if inherited:
+        tail += (f"; {inherited} of them name another branch of this lane (stacked, accepted: "
+                 f"see {Path(__file__).name})")
+    lines.append(tail)
     return (1 if bad else 0), lines
 
 
