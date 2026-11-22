@@ -72,6 +72,7 @@ Read together, the edges show that the catalog (S3) and policy (S5, S6) carry mo
 | How large data moves | [big data](flows/big-data.md) |
 | What agents can and cannot do through the mesh | [agent capabilities](flows/agent-capabilities.md) |
 | How data travels from a source to its use, and which record proves each link | [source to use](flows/source-to-use.md) |
+| How a column's label is set, carried to derived columns and widened, and whether a read decision consults it | [label propagation](flows/label-propagation.md) |
 | What one component is, how it is wired, how it signs in, and its plane (the planes are listed with [the DCRA alignment](alignment/nato-dcra.md#plane-list)) | the component records, listed in [the README](README.md#records) |
 | Why the code is the way it is | [the decisions index](decisions/README.md) |
 | How the mesh lines up with the two references | [DoD](alignment/dod-dmra.md) and [NATO](alignment/nato-dcra.md) |
