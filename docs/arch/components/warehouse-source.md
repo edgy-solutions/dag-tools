@@ -45,8 +45,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **No test drives a real catalog client.** Emission tests record or monkeypatch the sends (finding 10); the shipped example names no catalog. What a live catalog does with the aspects is not shown. Remedy: not on the roadmap.
-- **The resource is not checked to be the tagged one.** Any object with the two methods is accepted (finding 6), so a resource that sends untagged reads would pass, and the read would not be attributed to the asset. Remedy: not on the roadmap.
+- **No test drives a real catalog client.** Emission tests record or monkeypatch the sends (finding 10); the shipped example names no catalog. What a live catalog does with the aspects is not shown. Remedy: not on the roadmap. Status: `built`.
+- **The resource is not checked to be the tagged one.** Any object with the two methods is accepted (finding 6), so a resource that sends untagged reads would pass, and the read would not be attributed to the asset. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

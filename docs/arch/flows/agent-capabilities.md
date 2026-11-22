@@ -55,12 +55,11 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 ## Gaps
 
-- **No server end for the SDK's remote graph client, and no remote vector client** (finding 1). Remedy: retire the remote graph client, [roadmap row 8](../ROADMAP.md) (`accepted`).
-- **No conformance check reads a live graph or vector store** (finding 10). The offline check proves the contract over stubs. No roadmap row yet; it will go on the list of claims a seal could make `measured`, which is not yet written.
-- **No access decision on these reads by default** (finding 6). Remedy: roadmap row 6.
-- **The store sees the engine's credential, and no receipt comes back** (findings 3, 7). Remedy: roadmap row 7.
-- **What telemetry records, and where:** pending the perf lane's answers (finding 9). No row until they arrive.
-- **A stale comment on the class-candidate flag** (finding 8). Owner: invincible-agent. It is a comment and changes nothing that runs, so it has no roadmap row.
+- **No server end for the SDK's remote graph client, and no remote vector client** (finding 1). Remedy: retire the remote graph client, [roadmap row 8](../ROADMAP.md) (accepted). Status: `built`.
+- **No conformance check reads a live graph or vector store** (finding 10). The offline check proves the contract over stubs. No roadmap row yet; it will go on the list of claims a seal could make measured, which is not yet written. Status: `built`.
+- **No access decision on these reads by default** (finding 6). Remedy: roadmap row 6. Status: `built`.
+- **The store sees the engine's credential, and no receipt comes back** (findings 3, 7). Remedy: roadmap row 7. Status: `built`.
+- **A stale comment on the class-candidate flag** (finding 8). Owner: invincible-agent. It is a comment and changes nothing that runs, so it has no roadmap row. Status: `built`.
 
 ## Not established from code
 
@@ -68,12 +67,14 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 - Whether any deployment turns `ENABLE_AGENTIC_AUTH` on. That is a fact of deployments, not of code.
 - What the ADR-0025 flip plan lists as unbuilt. It was not read.
 - The SDK lines were supplied by the SDK's session and not read here.
+- **What telemetry records, and where:** pending the perf lane's answers (finding 9). No row until they arrive.
 
 ## Sources
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| The remote graph client has no handler; remote vector and ontology clients not built | SDK `remote_clients.py:36-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (client); `not built` (server end) |
+| The remote graph client | SDK `remote_clients.py:36-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` |
+| A handler for the remote graph client; remote vector and ontology clients | SDK `remote_clients.py:36-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `not built` |
 | No route for the SDK's remote clients in either repository | dag-tools: the only two HTTP apps, `dag_tools/central_gateway/main.py:108` and `dag_tools/domain_broker/main.py:1094`; invincible-agent: whole-tree search at the pin | not stated | the complete dag-tools route list, none a graph or vector route: gateway `main.py:142`, `:172`, `:184`, `:374`; broker `main.py:1097`, `:1145`, `:1168` | `not built` |
 | Engine-o's graph reader implements the SDK interface, imports no driver, is read-only | invincible-agent `agent_fleet/ontology_service/mesh_graph.py:1-25`, `:158` | not stated | `test_mesh_graph_conforms.py::test_it_satisfies_the_protocol_structurally` | `built` |
 | The vector reader implements the SDK interface, imports no driver, serves two engines | invincible-agent `agent_fleet/utils/mesh_vectors.py:1-27`, `:83`; `ontology_service/main.py:1074-1076` | not stated | `test_mesh_vectors_conforms.py::test_the_SDK_conformance_suite_passes` | `built` |
@@ -93,7 +94,7 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 | Class-candidate pool via the SDK reader defaults on; the comment above says off | invincible-agent `ontology_service/main.py:1630-1633`, `:1644-1646` | not stated | `test_the_flag_default_is_on_and_every_claim_about_it_agrees.py::test_the_DEFAULT_RESOLVES_to_True_when_the_environment_is_silent` | `built` |
 | Knowledge search via the SDK reader defaults on; a degraded search is marked | invincible-agent `weaviate_expert/service.py:181-186` | not stated | `test_the_mesh_read_is_ATTRIBUTED_to_the_caller_as_a_person`; `test_a_DEGRADED_mesh_search_is_MARKED` | `built` |
 | Both readers pass the SDK offline check; a missing driver is unreachable, not empty; a mismatched marker refuses | invincible-agent `tests/test_mesh_graph_conforms.py:182`, `:201`; `tests/test_mesh_vectors_conforms.py:182`, `:267` | not stated | `test_check_offline_passes_for_every_operation`; `test_the_SDK_conformance_suite_passes`; `test_NO_DRIVER_IS_UNREACHABLE_not_empty`; `test_a_MISMATCHING_marker_REFUSES_and_names_BOTH` | `built` |
-| The offline check is contract conformance; both fleet runs use stubs; no live-store read check | SDK `iagent_mesh/conformance.py:106-155` (supplied); invincible-agent `tests/test_mesh_graph_conforms.py:55-84`, `tests/test_mesh_vectors_conforms.py:135` | not stated | stub driver and stub client in the fleet tests | `built` (contract); `not built` (live read) |
-| The SDK has no telemetry capability; tracing is at the platform layer | SDK `docs/architecture_manifesto.md:82` (supplied) | not stated | — | `built` (absence) |
+| The offline check is contract conformance; both fleet runs use stubs | SDK `iagent_mesh/conformance.py:106-155` (supplied); invincible-agent `tests/test_mesh_graph_conforms.py:55-84`, `tests/test_mesh_vectors_conforms.py:135` | not stated | stub driver and stub client in the fleet tests | `built` |
+| A live-store read check | SDK `iagent_mesh/conformance.py:106-155` (supplied); invincible-agent `tests/test_mesh_graph_conforms.py:55-84`, `tests/test_mesh_vectors_conforms.py:135` | not stated | stub driver and stub client in the fleet tests | `not built` |
+| The SDK has no telemetry capability; tracing is at the platform layer | SDK `docs/architecture_manifesto.md:82` (supplied) | not stated | — | `not built` |
 | Fleet engines pin `provenance-telemetry==0.2.2` | invincible-agent `pyproject.toml:72`; `agent_fleet/{data_analyst,docs_agent,neo4j_expert,ontology_service,presentation_agent,restate_analyst,weaviate_expert}/pyproject.toml` | not stated | the documents engine's core is held free of it: `tests/docs/test_explain_refuses_before_it_renders.py::test_the_core_holds_no_driver` | `built` (pin); rest pending |
-| What the telemetry library emits and where | provenance-telemetry, at a pin the perf lane gives | — | — | pending |

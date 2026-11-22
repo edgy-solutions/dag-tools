@@ -50,8 +50,8 @@ Component attributes in the component's YAML file. The mapping document's own se
 
 ## Gaps
 
-- **The catalog schema read has no test** (finding 12). The code path that builds the catalog client, takes the token and compares schemas is not run by any test. Remedy: not on the roadmap.
-- **A served normalizer document has no test** (finding 12). Its fetch and its note about unverified references are not exercised. Remedy: not on the roadmap.
+- **The catalog schema read has no test** (finding 12). The code path that builds the catalog client, takes the token and compares schemas is not run by any test. Remedy: not on the roadmap. Status: `built`.
+- **A served normalizer document has no test** (finding 12). Its fetch and its note about unverified references are not exercised. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

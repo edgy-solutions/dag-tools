@@ -56,9 +56,9 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **A bundle is read, and a destination written, with a store credential and no identity, outside the mesh's read path** (findings 2 and 11). The component does not call the gateway or broker, so a read of a bundle is not authorized, ticketed or audited by them. Remedy: not on the roadmap.
-- **Every check is a warning, so a run that rejects every document still succeeds** (finding 7). Only a reader of the check results sees it. Remedy: not on the roadmap.
-- **`source.bundle_depth` defaults to `0`, which makes the whole source one bundle and lists all of it every time** (finding 13). The setting's own description calls this unsuitable for large trees, and the documentation's quick start sets a depth of one. Remedy: not on the roadmap.
+- **A bundle is read, and a destination written, with a store credential and no identity, outside the mesh's read path** (findings 2 and 11). The component does not call the gateway or broker, so a read of a bundle is not authorized, ticketed or audited by them. Remedy: not on the roadmap. Status: `built`.
+- **Every check is a warning, so a run that rejects every document still succeeds** (finding 7). Only a reader of the check results sees it. Remedy: not on the roadmap. Status: `built`.
+- **`source.bundle_depth` defaults to `0`, which makes the whole source one bundle and lists all of it every time** (finding 13). The setting's own description calls this unsuitable for large trees, and the documentation's quick start sets a depth of one. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

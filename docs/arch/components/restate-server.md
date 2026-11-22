@@ -32,9 +32,9 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Nothing on the server's ports establishes who is calling** (finding 5). Any process that can reach the ingress port can start a job on a registered handler, and any process that can reach the admin port can register a deployment. The chart ships no restriction, and network policy was not read. Remedy: [roadmap row 13](../ROADMAP.md) (not filed).
-- **The server image is not pinned** (finding 6). Two installs of one chart version can run different Restate versions, and the chart's own comment ties a setting to the server's version (finding 8). Remedy: [roadmap row 14](../ROADMAP.md) (not filed).
-- **A setting is read by nothing** (finding 7). `externalRestate.ingressUrl` looks like the address the senders use, and it is not passed to them. Remedy: [roadmap row 14](../ROADMAP.md) (not filed).
+- **Nothing on the server's ports establishes who is calling** (finding 5). Any process that can reach the ingress port can start a job on a registered handler, and any process that can reach the admin port can register a deployment. The chart ships no restriction, and network policy was not read. Remedy: [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
+- **The server image is not pinned** (finding 6). Two installs of one chart version can run different Restate versions, and the chart's own comment ties a setting to the server's version (finding 8). Remedy: [roadmap row 14](../ROADMAP.md) (not filed). Status: `built`.
+- **A setting is read by nothing** (finding 7). `externalRestate.ingressUrl` looks like the address the senders use, and it is not passed to them. Remedy: [roadmap row 14](../ROADMAP.md) (not filed). Status: `built`.
 
 ## Not established from code
 

@@ -26,7 +26,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **A rotated secret does not reach a running pod** (finding 5). Every secret the chart wires is a variable. Remedy: not on the roadmap.
+- **A rotated secret does not reach a running pod** (finding 5). Every secret the chart wires is a variable. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

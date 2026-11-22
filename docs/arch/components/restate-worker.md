@@ -47,8 +47,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The worker's port and its registration carry no identity** (findings 5 and 6). The server cannot tell its own worker from another process posting the same address. The worker cannot tell the server from any other caller that reaches its port. Remedy: [roadmap row 13](../ROADMAP.md) (not filed).
-- **A worker that is not registered still looks healthy** (findings 3 and 5). With no probe, the pod is ready once it starts. A registration that gave up shows only as an error log line, while the server routes nothing to the pod. Remedy: [roadmap row 15](../ROADMAP.md) (not filed).
+- **The worker's port and its registration carry no identity** (findings 5 and 6). The server cannot tell its own worker from another process posting the same address. The worker cannot tell the server from any other caller that reaches its port. Remedy: [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
+- **A worker that is not registered still looks healthy** (findings 3 and 5). With no probe, the pod is ready once it starts. A registration that gave up shows only as an error log line, while the server routes nothing to the pod. Remedy: [roadmap row 15](../ROADMAP.md) (not filed). Status: `built`.
 
 ## Not established from code
 

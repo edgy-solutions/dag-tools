@@ -29,10 +29,10 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Writers disagree on whether a failed write fails anything** (finding 3). An operator reading a green run cannot tell whether the catalog received it without knowing which component wrote. Remedy: not on the roadmap.
-- **Whole-aspect writes replace what another writer or a person set** (finding 4). Remedy: not on the roadmap.
-- **Contract mapping does not refuse a `dagster` platform URN** (finding 8). Remedy: not on the roadmap.
-- **No test covers the contract-mapping catalog read** (finding 6). Remedy: not on the roadmap.
+- **Writers disagree on whether a failed write fails anything** (finding 3). An operator reading a green run cannot tell whether the catalog received it without knowing which component wrote. Remedy: not on the roadmap. Status: `built`.
+- **Whole-aspect writes replace what another writer or a person set** (finding 4). Remedy: not on the roadmap. Status: `built`.
+- **Contract mapping does not refuse a `dagster` platform URN** (finding 8). Remedy: not on the roadmap. Status: `built`.
+- **No test covers the contract-mapping catalog read** (finding 6). Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

@@ -44,8 +44,8 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **A failed table run is not retried by the sensor** (finding 5). The cursor has passed that document revision, and the run key for it has been used. The table is read again only when the document changes. Remedy: not on the roadmap.
-- **The download path has no test** (findings 6 and 7). The tests replace the client, so nothing covers the download, the redirect or the SQLite read. Remedy: not on the roadmap.
+- **A failed table run is not retried by the sensor** (finding 5). The cursor has passed that document revision, and the run key for it has been used. The table is read again only when the document changes. Remedy: not on the roadmap. Status: `built`.
+- **The download path has no test** (findings 6 and 7). The tests replace the client, so nothing covers the download, the redirect or the SQLite read. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

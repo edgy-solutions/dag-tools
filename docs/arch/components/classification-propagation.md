@@ -41,7 +41,7 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Catalog token resolution has no test** (finding 11). The code takes the configured token, else the environment variable, and sends none when both are empty. No test at the pin exercises that choice. Remedy: not on the roadmap.
+- **Catalog token resolution has no test** (finding 11). The code takes the configured token, else the environment variable, and sends none when both are empty. No test at the pin exercises that choice. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

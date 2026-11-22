@@ -34,9 +34,9 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **Under the default posture, a header outranks the verified token** (finding 5). A header naming a principal decides it, whatever the token proves; the verified token decides only when no header is sent. Remedy: [roadmap row 1](../ROADMAP.md) (dag-tools #70).
-- **A long-lived client keeps an expired token** (finding 7). After the token expires, every read whose principal depends on that token fails until the client is rebuilt; under `observe`, a read whose header names the principal does not depend on it. Remedy: not on the roadmap. Refresh before expiry is `built` on the internal doors' caller side (finding 7).
-- **A token request on every IO manager load** (finding 8). Unless a development token is set, the identity provider receives one grant per input loaded. Remedy: not on the roadmap.
+- **Under the default posture, a header outranks the verified token** (finding 5). A header naming a principal decides it, whatever the token proves; the verified token decides only when no header is sent. Remedy: [roadmap row 1](../ROADMAP.md) (dag-tools #70). Status: `built`.
+- **A long-lived client keeps an expired token** (finding 7). After the token expires, every read whose principal depends on that token fails until the client is rebuilt; under `observe`, a read whose header names the principal does not depend on it. Remedy: not on the roadmap. Refresh before expiry is built on the internal doors' caller side (finding 7). Status: `built`.
+- **A token request on every IO manager load** (finding 8). Unless a development token is set, the identity provider receives one grant per input loaded. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

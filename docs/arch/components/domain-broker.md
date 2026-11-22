@@ -51,11 +51,11 @@ No dag-tools chart template deploys the broker, so there is no chart column.
 
 ## Gaps
 
-- **The object-store credential ignores the decision's columns and rows** (finding 6). Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71).
-- **Backends with no minter get the producer's credential** (finding 7). Remedy: [roadmap row 3](../ROADMAP.md) (dag-tools #72).
-- **No version reader ships** (finding 11). Remedy: [roadmap row 5](../ROADMAP.md) (dag-tools #74).
-- **The broker serves placeholders by default, and the older path hands out a credential it did not mint** (findings 3, 8). With no module named, it registers made-up datasets. A SQL dataset on the older path gets a fixed placeholder token. The older path's object-store credential ignores the configured lifetime. None of these is tested. Remedy: [roadmap row 9](../ROADMAP.md) (not filed).
-- **Minted SQL accounts are never removed** (finding 10). Remedy: [roadmap row 10](../ROADMAP.md) (not filed).
+- **The object-store credential ignores the decision's columns and rows** (finding 6). Remedy: [roadmap row 2](../ROADMAP.md) (dag-tools #71). Status: `built`.
+- **Backends with no minter get the producer's credential** (finding 7). Remedy: [roadmap row 3](../ROADMAP.md) (dag-tools #72). Status: `built`.
+- **No version reader ships** (finding 11). Remedy: [roadmap row 5](../ROADMAP.md) (dag-tools #74). Status: `built`.
+- **The broker serves placeholders by default, and the older path hands out a credential it did not mint** (findings 3, 8). With no module named, it registers made-up datasets. A SQL dataset on the older path gets a fixed placeholder token. The older path's object-store credential ignores the configured lifetime. None of these is tested. Remedy: [roadmap row 9](../ROADMAP.md) (not filed). Status: `built`.
+- **Minted SQL accounts are never removed** (finding 10). Remedy: [roadmap row 10](../ROADMAP.md) (not filed). Status: `built`.
 
 ## Not established from code
 
@@ -94,7 +94,8 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Ships in the user-deployment image; command overridden by a chart; no dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built`; the absence `not built` |
+| Ships in the user-deployment image; command overridden by a chart | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `built` |
+| No dag-tools template | `dag_tools/user_deployment/Dockerfile:13-17`, `:102-118`; `helm/dag-tools/templates/`: no broker template | not stated | — | `not built` |
 | Background import; `/ready` 503 until loaded or after a failure; no registration after a failure | `main.py:693-723`, `:1013-1075`, `:1097-1165` | not stated | `test_broker_load_failure.py`: `test_ready_is_503_while_still_loading`, `test_health_surfaces_the_import_error`, `test_ready_is_503_after_a_failed_import`, `test_a_failed_import_does_not_register`, `test_a_successful_load_registers_its_assets` | `built` |
 | Placeholder datasets when no module is named | `main.py:42`, `:802-818` | not stated | no test | `built` |
 | Registers, then every two minutes by default | `main.py:963-1010` | not stated | `test_internal_doors.py`: `test_the_broker_register_call_sends_the_service_token` | `built` |
@@ -107,7 +108,8 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Broker so
 | Older path: fixed placeholder token for SQL; fixed one-hour object-store lifetime; 400 otherwise; the decision not read | `main.py:1238-1242`, `:1273-1360` | not stated | no test | `built` |
 | Minting identity order; region fallback | `main.py:153-224`; `sql_minting.py:117-123`, `:152-200` | not stated | `test_broker_mints_ticket_credentials.py`: `test_sts_identity_prefers_the_purpose_named_pair`, `test_sts_identity_accepts_the_pods_existing_s3_vars`; `test_sql_minting.py`: `test_no_minting_identity_names_the_variables` | `built` |
 | No account removal | `sql_minting.py:22-33` | not stated | — | `not built` |
-| Ticket identity; no version reader | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `built`; the absence `not built` |
+| Ticket identity | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `built` |
+| No version reader | `ticket_identity.py:47-64`, `:110`, `:149-226` | dag-tools AGENTS.md §4o | `test_ticket_identity.py`: `test_no_as_of_reader_ships_by_default`, `test_an_absent_as_of_is_not_the_issue_time` | `not built` |
 | Four counts on `/health`; unadvertised datasets in a load warning only | `main.py:68-108`, `:368-370`, `:942-948`, `:1097-1142` | cited in code: invincible-agent ADR-0044 (not read) | — | `built` |
 | Identifiers refused, not cleaned; random passwords and names | `sql_minting.py:53`, `:91-110` | not stated | — | `built` |
 | Remedies | [the roadmap note](../ROADMAP.md), rows 2, 3, 5, 9 and 10 | none | — | `proposed` |

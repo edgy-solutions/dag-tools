@@ -41,12 +41,12 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The history read has no row limit** (finding 3). A busy warehouse over a long lookback returns every row into one process. Remedy: [roadmap row 4](../ROADMAP.md) (not filed).
-- **The attribution tag is self-asserted** (finding 5). A read that carries a forged pipeline tag counts as explained. Remedy: [roadmap row 17](../ROADMAP.md) (not filed) signs the tag; it depends on [row 1](../ROADMAP.md), verified principals at the gateway.
-- **Without a principal filter, time correlation credits any identity's reads to an asset** (finding 6). A person's untagged read during a single-asset run is reported as that asset's read. Remedy: not on the roadmap.
-- **A run with no end time absorbs every later untagged read** (finding 7). Remedy: not on the roadmap.
-- **One explained read hides the rest of a relation's reads** (finding 8). Remedy: not on the roadmap.
-- **Exception text reaches the asset's output** (finding 10). The metadata carries only the count of rows not read. A driver message can quote a relation or an account. Remedy: not on the roadmap.
+- **The history read has no row limit** (finding 3). A busy warehouse over a long lookback returns every row into one process. Remedy: [roadmap row 4](../ROADMAP.md) (not filed). Status: `built`.
+- **The attribution tag is self-asserted** (finding 5). A read that carries a forged pipeline tag counts as explained. Remedy: [roadmap row 17](../ROADMAP.md) (not filed) signs the tag; it depends on [row 1](../ROADMAP.md), verified principals at the gateway. Status: `built`.
+- **Without a principal filter, time correlation credits any identity's reads to an asset** (finding 6). A person's untagged read during a single-asset run is reported as that asset's read. Remedy: not on the roadmap. Status: `built`.
+- **A run with no end time absorbs every later untagged read** (finding 7). Remedy: not on the roadmap. Status: `built`.
+- **One explained read hides the rest of a relation's reads** (finding 8). Remedy: not on the roadmap. Status: `built`.
+- **Exception text reaches the asset's output** (finding 10). The metadata carries only the count of rows not read. A driver message can quote a relation or an account. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

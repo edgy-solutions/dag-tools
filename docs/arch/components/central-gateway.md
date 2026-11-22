@@ -49,11 +49,11 @@ The chart's `centralGateway.env` is empty, so the chart column reads "not set" u
 
 ## Gaps
 
-- **The principal is taken from a header by default** (findings 3, 7). This includes the deny list, which under `observe` reads the header subject first. Remedy: [roadmap row 1](../ROADMAP.md) (dag-tools #70).
-- **Delegation is not wired** (finding 5). It is the dependency of roadmap row 1.
-- **Two things in the code describe a gateway that no longer exists** (findings 9, 13): an unsent check payload and a warning that says no verification is enforced. Remedy: [roadmap row 11](../ROADMAP.md) (not filed).
-- **By default the internal routes admit any caller** (finding 12). Under `observe`, which the chart leaves in place, a caller with no token can register URNs to an address of its choosing at the gateway, or call the broker's resolve route, and is only logged. Remedy: [roadmap row 16](../ROADMAP.md) (not filed).
-- **No test covers the deny list under `observe`** (finding 7). Roadmap row 1 would retire the posture it applies under.
+- **The principal is taken from a header by default** (findings 3, 7). This includes the deny list, which under `observe` reads the header subject first. Remedy: [roadmap row 1](../ROADMAP.md) (dag-tools #70). Status: `built`.
+- **Delegation is not wired** (finding 5). It is the dependency of roadmap row 1. Status: `built`.
+- **Two things in the code describe a gateway that no longer exists** (findings 9, 13): an unsent check payload and a warning that says no verification is enforced. Remedy: [roadmap row 11](../ROADMAP.md) (not filed). Status: `built`.
+- **By default the internal routes admit any caller** (finding 12). Under `observe`, which the chart leaves in place, a caller with no token can register URNs to an address of its choosing at the gateway, or call the broker's resolve route, and is only logged. Remedy: [roadmap row 16](../ROADMAP.md) (not filed). Status: `built`.
+- **No test covers the deny list under `observe`** (finding 7). Roadmap row 1 would retire the posture it applies under. Status: `built`.
 
 ## Not established from code
 

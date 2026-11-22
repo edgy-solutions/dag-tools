@@ -85,17 +85,15 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 ## Gaps
 
-- **Security labels in the standard metadata form:** `not built`. Labels are published in the mesh's own form (finding 3); no standard metadata form was found.
-- **Labels as a decision input:** `proposed`. The decision reads no label. The rails that would carry clearances are written down and empty (finding 3). The access model is an explicit per-dataset relation, and it is recorded as such and not relabelled.
-- **Narrowing produced by policy:** narrowing is `built` at every hop, and no deployed policy produces it (finding 2).
-- **Object-store narrowing:** limited to a prefix. The minter's own docstring says it takes the decision's narrowing and ignores it. Remedy: [roadmap row 2](../ROADMAP.md).
-- **Backends with no minter:** they return the producer's credential. Remedy: [roadmap row 3](../ROADMAP.md).
-- **Default posture `observe`:** trusts the named principal without checking it against the token. Remedy: [roadmap row 1](../ROADMAP.md).
-- **Delegation:** a service may not act for a person; the seam always answers no. Roadmap row 1 depends on it.
-- **Gateway code hygiene:**
-  - A second, relation-style request is built and never sent (`main.py:295-307`).
-  - If Topaz returns an empty `decisions` list, the allow flag is read before it is assigned. The resulting exception is caught and the result is a deny, so it fails closed.
-- **No test pins the decision request:** neither the policy path nor `can_read` is asserted by a dag-tools test.
+- **Security labels in the standard metadata form:** not built. Labels are published in the mesh's own form (finding 3); no standard metadata form was found. Status: `built`.
+- **Labels as a decision input:** proposed. The decision reads no label. The rails that would carry clearances are written down and empty (finding 3). The access model is an explicit per-dataset relation, and it is recorded as such and not relabelled. Status: `proposed`.
+- **Narrowing produced by policy:** narrowing is built at every hop, and no deployed policy produces it (finding 2). Status: `built`.
+- **Object-store narrowing:** limited to a prefix. The minter's own docstring says it takes the decision's narrowing and ignores it. Remedy: [roadmap row 2](../ROADMAP.md). Status: `built`.
+- **Backends with no minter:** they return the producer's credential. Remedy: [roadmap row 3](../ROADMAP.md). Status: `built`.
+- **Default posture `observe`:** trusts the named principal without checking it against the token. Remedy: [roadmap row 1](../ROADMAP.md). Status: `built`.
+- **Delegation:** a service may not act for a person; the seam always answers no. Roadmap row 1 depends on it. Status: `built`.
+- **Gateway code hygiene:** A second, relation-style request is built and never sent (`main.py:295-307`). If Topaz returns an empty `decisions` list, the allow flag is read before it is assigned. The resulting exception is caught and the result is a deny, so it fails closed. Status: `built`.
+- **No test pins the decision request:** neither the policy path nor `can_read` is asserted by a dag-tools test. Status: `built`.
 
 ## Not established from code
 

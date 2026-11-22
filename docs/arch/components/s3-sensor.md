@@ -46,10 +46,10 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The cursor is a timestamp, and the listing is keyed by it** (finding 3). Objects sharing one `LastModified` text collapse to one entry, so all but one are not seen. No test covers `get_s3_keys`. Remedy: not on the roadmap.
-- **`S3ToArrowComponent` does not build** (finding 10). A code location that declares it fails to load. No test builds it, which is how the defect stands at the pin. Remedy: not on the roadmap.
-- **An object with no `LastModified` fails the tick when it is listed with others** (finding 3). A single such object is dropped silently instead. No test covers either case. Remedy: not on the roadmap.
-- **A bad `default_status` is accepted as stopped** (finding 2). A deployment that meant `RUNNING` and misspelled it gets a stopped sensor with no message. No test covers it. Remedy: not on the roadmap.
+- **The cursor is a timestamp, and the listing is keyed by it** (finding 3). Objects sharing one `LastModified` text collapse to one entry, so all but one are not seen. No test covers `get_s3_keys`. Remedy: not on the roadmap. Status: `built`.
+- **`S3ToArrowComponent` does not build** (finding 10). A code location that declares it fails to load. No test builds it, which is how the defect stands at the pin. Remedy: not on the roadmap. Status: `built`.
+- **An object with no `LastModified` fails the tick when it is listed with others** (finding 3). A single such object is dropped silently instead. No test covers either case. Remedy: not on the roadmap. Status: `built`.
+- **A bad `default_status` is accepted as stopped** (finding 2). A deployment that meant `RUNNING` and misspelled it gets a stopped sensor with no message. No test covers it. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 

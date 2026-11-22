@@ -36,9 +36,9 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **A deployment that keeps the invincible-agent chart default runs the demo surfaces** (finding 5). Remedy: not on the roadmap.
-- **Nothing in either chart puts a sign-in in front of the webserver** (finding 9). Whoever reaches the webserver can launch runs. Remedy: not on the roadmap.
-- **The floor is tested by a job that may fail without blocking** (finding 7). A change that breaks the floor can merge. Remedy: not on the roadmap.
+- **A deployment that keeps the invincible-agent chart default runs the demo surfaces** (finding 5). Remedy: not on the roadmap. Status: `built`.
+- **Nothing in either chart puts a sign-in in front of the webserver** (finding 9). Whoever reaches the webserver can launch runs. Remedy: not on the roadmap. Status: `built`.
+- **The floor is tested by a job that may fail without blocking** (finding 7). A change that breaks the floor can merge. Remedy: not on the roadmap. Status: `built`.
 
 ## Not established from code
 
@@ -86,4 +86,5 @@ All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible
 | Floor 1.10.19, non-blocking; not reachable through the orchestrator extra | `pyproject.toml:89-100`; `.github/workflows/test.yml:117-125`, `:145-152`, `:177-187`; `uv.lock:1185-1190` | AGENTS.md §4j | the CI job itself | `built` |
 | Qualification client: optional bearer, no redirects | `dag_tools/qual/graphql/client.py:112-129`, `:195-200`, `:245-247`, `:254-270`; `dag_tools/qual/cli.py:502-503`; `dag_tools/qual/qualify/manifest.py:133` | AGENTS.md §4f | `test_graphql_client.py`: `test_resolve_auth_token_none_returns_none`, `test_post_302_redirect_raises_clear_auth_error_not_json_error`, `test_post_sends_auth_header_when_token_set`, `test_post_omits_auth_header_when_no_token` | `built` |
 | No sign-in in the chart | invincible-agent `templates/ingress.yaml:87-124`; `values.yaml:452-454` | not stated | — | `not built` |
-| Probes code location built, not deployed | `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`; no entry in either chart | AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built`; the absence `not built` |
+| Probes code location built | `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`; no entry in either chart | AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
+| Probes code location in neither chart | `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65`; no entry in either chart | AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `not built` |

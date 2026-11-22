@@ -46,13 +46,13 @@ This record covers what the chart and code provide by default, and what a deploy
 
 ## Gaps
 
-- **The asset-metadata ledger loses entries without saying so** (finding 7). Past its cap it drops an arbitrary set of entries, not the oldest, and a failed read-back starts from empty with only a warning. Either way a plan already sent can be sent again. No test covers the cap or the failed read-back. Remedy: not on the roadmap.
-- **The SQL ledger has no test.** The ledger that a staged pipeline uses by default creates its schema and table and writes rows (`ledger.py:104-158`). No test file refers to its load or flush functions. Remedy: not on the roadmap.
-- **The oversized-plan refusal has no test.** The guard at `component.py:625-644` is not named in any test of the component. Remedy: not on the roadmap.
-- **Readiness fails open when the timestamps cannot be read** (finding 7). A wrong `timestamp_column`, or a column with no parseable values, makes every group ready, and a declared `complete_when` is then not waited for. A half-filled group is dispatched as complete. The reason is recorded, but nothing fails. No test covers it. Remedy: not on the roadmap.
-- **An unmatched `complete_when` with no quiet period and no maximum age holds a group with no bound** (finding 7). Both defaults leave it unset, so a group whose terminal marker never arrives is never dispatched and is never reported as stranded. No test covers it. Remedy: not on the roadmap.
-- **The staging refusal does not name every variable it read** (finding 4). On a driver other than Postgres, the Postgres variable is still a fallback, and the message leaves it out. Remedy: not on the roadmap.
-- **The ingress is called with no credential.** The plan post and the status polls carry no authorization header (`component.py:224`, `:766-770`). Whether the ingress needs one is a matter for the deployment. Remedy: [roadmap row 13](../ROADMAP.md) (not filed).
+- **The asset-metadata ledger loses entries without saying so** (finding 7). Past its cap it drops an arbitrary set of entries, not the oldest, and a failed read-back starts from empty with only a warning. Either way a plan already sent can be sent again. No test covers the cap or the failed read-back. Remedy: not on the roadmap. Status: `built`.
+- **The SQL ledger has no test.** The ledger that a staged pipeline uses by default creates its schema and table and writes rows (`ledger.py:104-158`). No test file refers to its load or flush functions. Remedy: not on the roadmap. Status: `built`.
+- **The oversized-plan refusal has no test.** The guard at `component.py:625-644` is not named in any test of the component. Remedy: not on the roadmap. Status: `built`.
+- **Readiness fails open when the timestamps cannot be read** (finding 7). A wrong `timestamp_column`, or a column with no parseable values, makes every group ready, and a declared `complete_when` is then not waited for. A half-filled group is dispatched as complete. The reason is recorded, but nothing fails. No test covers it. Remedy: not on the roadmap. Status: `built`.
+- **An unmatched `complete_when` with no quiet period and no maximum age holds a group with no bound** (finding 7). Both defaults leave it unset, so a group whose terminal marker never arrives is never dispatched and is never reported as stranded. No test covers it. Remedy: not on the roadmap. Status: `built`.
+- **The staging refusal does not name every variable it read** (finding 4). On a driver other than Postgres, the Postgres variable is still a fallback, and the message leaves it out. Remedy: not on the roadmap. Status: `built`.
+- **The ingress is called with no credential.** The plan post and the status polls carry no authorization header (`component.py:224`, `:766-770`). Whether the ingress needs one is a matter for the deployment. Remedy: [roadmap row 13](../ROADMAP.md) (not filed). Status: `built`.
 
 ## Not established from code
 

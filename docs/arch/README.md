@@ -15,7 +15,9 @@ Every claim carries exactly one status.
 | `accepted` | A decision record accepts it, and no code does it yet. | The decision record. |
 | `proposed` | It is written down as intent, but not accepted or built. | Where it is written. |
 
-A gap is a claim the reference expects and the mesh does not meet. Its status is the status of whatever partial thing exists. A gap with nothing built is written `not built`. So is an absence: a claim that a chart or the code does not provide something is `not built`, never `built`.
+A row carries one status. A claim whose parts differ in status is split into one row per part, and each row names its part. An alignment row is one outside element and stays one row: its status is that of what corresponds, and the parts that differ are described, without backticks, in its "How closely" cell. A row that counts or points at records is bookkeeping, not a claim about the mesh, and sits in a table with no Status column.
+
+A gap is a claim the reference expects and the mesh does not meet. Each gap carries exactly one status, written once at its end after "Status:". That status is the status of the partial thing the gap is found in: the code or chart that does part of what the reference expects. Where nothing partial exists, it is the status of the remedy (`proposed`) or of the decision that sets the gap's scope or keeps it (`accepted`). A gap is never written `not built` alone, since the gap already says what is missing. Any other status word inside a gap's text is written without backticks. An absence stated as a claim, outside a gap, is `not built`, never `built`.
 
 Three cases are settled by one rule. An absence (nothing at the pin does it) is `not built`. A test behind an environment gate still counts as a test: the evidence cell names the suite it runs in, the claim stays `built`, and the claim is listed among the built claims a recorded run could make measured, until a recorded run of it exists. A run the census reports with no recorded result is `built`, and the record writes "the census reports"; it becomes `measured` only when the run's record is cited.
 
