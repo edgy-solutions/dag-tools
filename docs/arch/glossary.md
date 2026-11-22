@@ -52,7 +52,7 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | journal | The durable engine's log of completed steps, replayed after a restart | CO-RESTATE; CO-OTEL-API-SYNC |
 | label | The value a column carries on one dimension of classification, published to the catalog | CO-WAREHOUSE-SOURCE; CO-CLASSIFICATION-PROPAGATION; FL-NTK; AL-DMRA |
 | lake | No record describes a lake. The word appears only inside a catalog platform name. The stores the records describe are object stores and warehouses | CO-DATAHUB-LINEAGE |
-| lineage | The record of which datasets, and which columns, another was computed from | CO-DATAHUB-LINEAGE; CO-DATAHUB; WT-EVIDENCE |
+| lineage | The record of which datasets, and which columns, another was computed from | CO-DATAHUB-LINEAGE; CO-DATAHUB; FL-SOURCE-TO-USE; WT-EVIDENCE |
 | materialization | A Dagster run's production of an asset's data, and the event that records it | CO-CONTRACT-MAPPING; CO-CLASSIFICATION-PROPAGATION; CO-DATAHUB-LINEAGE |
 | mesh | The arrangement in which data stays with the team that produces it and other teams read it under a decision made for each read | [overview](overview.md) |
 | mesh data client | The consumer-side library that asks the gateway, takes the ticket and reads straight from the store | CO-CLIENT |
@@ -83,9 +83,9 @@ One line per mesh term a reader meets in these records. Each definition is in th
 | pub/sub | Publish-and-subscribe delivery between producers and consumers. AL-DMRA gives its status | AL-DMRA; CO-REDPANDA |
 | qualification | The evidence gathered before a Dagster upgrade is allowed, from survey to verdict | WT-SUSTAIN; CO-DAGSTER |
 | query tag | An attribution carried with each warehouse query, naming who it was made for | CO-TAGGED-WAREHOUSE; CO-READ-AUDIT |
-| read audit | A comparison of the warehouse's query history with Dagster runs. The reads nothing explains are its result | CO-READ-AUDIT; CO-TAGGED-WAREHOUSE; WT-EVIDENCE |
+| read audit | A comparison of the warehouse's query history with Dagster runs. The reads nothing explains are its result | CO-READ-AUDIT; CO-TAGGED-WAREHOUSE; FL-SOURCE-TO-USE; WT-EVIDENCE |
 | readiness | The test that all of an execution group's telemetry has arrived before its plan is sent | CO-OTEL-API-SYNC |
-| receipt | The part of a ticket a consumer keeps beside an answer: a fixed list of the URN and identifying fields, with no credential and no physical location | CO-CLIENT; FL-BIG; FL-AGENT; WT-EVIDENCE |
+| receipt | The part of a ticket a consumer keeps beside an answer: a fixed list of the URN and identifying fields, with no credential and no physical location | CO-CLIENT; FL-BIG; FL-AGENT; FL-SOURCE-TO-USE; WT-EVIDENCE |
 | refusal | A read the gateway or the broker declines, returned with a status code and a named reason | CO-GATEWAY; CO-BROKER |
 | registry | In a qualification, the store a survey publishes to: each build's artifacts written once, and the pointer to the latest written last. In a dbt project, the shared table that turns a name into an asset key | WT-SUSTAIN; CO-MINIO; CO-DBT-PROJECT |
 | representative | The one asset per class that a qualification launches | WT-SUSTAIN |
