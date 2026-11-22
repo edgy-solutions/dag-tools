@@ -70,7 +70,7 @@ How closely is one of:
 
 ## Planes
 
-The mesh places each component in one of four planes. The plane list is with the alignment records, in [the DCRA alignment](alignment/nato-dcra.md#plane-list). It gives each plane's id, its name as the DCRA prints it, its paragraphs in Appendix 14 and its alignment row.
+The mesh places each component in one of four planes. The plane list is with the alignment records, in [the DCRA alignment](alignment/nato-dcra.md#plane-list). It gives each plane's id, its name as the DCRA prints it, its paragraphs in Appendix 14, its alignment row and what it holds.
 
 Each component record's Plane row names exactly one plane, in backticks, and then says why. A component that also carries work of a second plane says so in that explanation; it is still placed in one. A component that nothing wires into the mesh is placed by the role its record establishes for it. Where the record establishes no role, the component has no plane, and its row says not established.
 
