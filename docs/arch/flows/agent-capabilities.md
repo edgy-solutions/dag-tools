@@ -40,7 +40,7 @@ Dataset reads through the gateway are in [need to know](need-to-know.md) and [bi
 
 ## The flow, step by step
 
-Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are defined in [the README](../README.md#ids-and-connections).
+Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` id a party with no record of its own; both are declared in [the README](../README.md#element-ids).
 
 | # | Actor | Action | Target | What passes | Decision or check | Evidence | Status |
 |---|---|---|---|---|---|---|---|
