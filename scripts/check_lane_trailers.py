@@ -4,10 +4,22 @@
 Ruling: no local hook; the trailer is checked in CI on dag-tools PRs.
 
 The rows come from `.githooks/lanes`: a lane id, then the branch globs that lane commits on.
-If the PR's head branch matches no row it is not a lane (a maintainer's own branch, a release
-branch) and passes with a notice. Otherwise EVERY commit in `base..head`, merge commits
-included, must have a `Lane:` trailer, in the last paragraph of its message, equal to
-`<that row's id>/<head branch>`.
+EVERY commit in `base..head`, merge commits included, must have a `Lane:` trailer, in the last
+paragraph of its message, equal to `<that row's id>/<head branch>`.
+
+A branch matching no row is not a lane -- a maintainer's own branch, a seat's branch (a seat is
+not a lane: `docs/rulings.md`, 2026-11-03), a release branch -- and passes with a notice. WITH
+ONE EXCEPTION, because the plain reading of "matches no row" made this check pass vacuously
+exactly where it was meant to bite: a branch inside the `lane/` namespace whose lane has no row
+is an UNREGISTERED LANE, and it FAILS. Measured on this repo: `.githooks/lanes` carried one row
+while three lanes were committing under `lane/`, so two lanes' PRs -- the larger share of the
+open stack -- were waved through with `not a lane, trailers not checked`, and the trailers they
+did carry went unread. Registering a lane is a one-line row; being silently exempt from the
+check is not something a branch should be able to acquire by never being registered.
+
+The namespace is spelled here rather than derived from the rows' own globs. Derivation would
+widen the refusal to whatever any row happens to glob -- a row carrying `feature/*` would start
+failing a maintainer's `feature/...` branch -- which is the opposite failure and just as quiet.
 
 Inputs come from the environment (set from `env:` in the workflow, never interpolated into a
 shell line): BASE_SHA, HEAD_SHA, HEAD_REF. Exit 0 pass, 1 fail, 2 could not run.
@@ -16,12 +28,22 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 LANES_FILE = ".githooks/lanes"
+
+#: Branch prefix that means "this is a lane's branch", registered or not. See the module
+#: docstring: an unmatched branch inside it fails rather than being waved through.
+LANE_NAMESPACE = "lane/"
+
+#: A `Lane:` line anywhere in a message. Only used to tell "no such line at all" from "the line
+#: is there and git does not read it as a trailer", which are one error with two very different
+#: fixes: write the trailer, versus move it into the last paragraph.
+_LANE_LINE = re.compile(r"^[ \t]*lane[ \t]*:", re.IGNORECASE | re.MULTILINE)
 
 
 def _git(repo: Path, *args: str, stdin: Optional[str] = None) -> str:
@@ -50,7 +72,8 @@ def lane_for(branch: str, rows: List[Tuple[str, List[str]]]) -> Optional[str]:
     return None
 
 
-def lane_trailers(repo: Path, sha: str) -> List[str]:
+def lane_trailers(repo: Path, sha: str) -> Tuple[List[str], bool]:
+    """`(trailer values git reads, whether a 'Lane:' line appears in the message at all)`."""
     message = _git(repo, "log", "-1", "--format=%B", sha)
     parsed = _git(repo, "interpret-trailers", "--parse", stdin=message)
     values = []
@@ -58,7 +81,7 @@ def lane_trailers(repo: Path, sha: str) -> List[str]:
         key, sep, value = line.partition(":")
         if sep and key.strip().lower() == "lane":
             values.append(value.strip())
-    return values
+    return values, bool(_LANE_LINE.search(message))
 
 
 def check(repo: Path, base: str, head: str, branch: str) -> Tuple[int, List[str]]:
@@ -66,14 +89,24 @@ def check(repo: Path, base: str, head: str, branch: str) -> Tuple[int, List[str]
     rows = read_rows(repo / LANES_FILE)
     lane_id = lane_for(branch, rows)
     if lane_id is None:
+        if branch.startswith(LANE_NAMESPACE):
+            return 1, [f"::error::branch '{branch}' is in the '{LANE_NAMESPACE}' namespace and "
+                       f"matches no row of {LANES_FILE}: an unregistered lane is not exempt from "
+                       f"the check. Add a row for it, or move the work to a branch outside "
+                       f"'{LANE_NAMESPACE}'."]
         return 0, [f"::notice::branch '{branch}' matches no row of {LANES_FILE}; not a lane, "
                    "trailers not checked"]
     expected = f"{lane_id}/{branch}"
     shas = _git(repo, "rev-list", f"{base}..{head}").split()
     lines, bad = [], 0
     for sha in shas:
-        got = lane_trailers(repo, sha)
-        if not got:
+        got, has_line = lane_trailers(repo, sha)
+        if not got and has_line:
+            bad += 1
+            lines.append(f"::error::{sha[:10]} has a 'Lane:' line git does not read as a trailer "
+                         f"(it must be in the LAST paragraph, with no blank line between it and "
+                         f"any other trailer); expected 'Lane: {expected}'")
+        elif not got:
             bad += 1
             lines.append(f"::error::{sha[:10]} has no 'Lane:' trailer (expected 'Lane: {expected}')")
         elif any(v != expected for v in got):

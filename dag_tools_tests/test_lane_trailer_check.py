@@ -1,7 +1,9 @@
 """`scripts/check_lane_trailers.py` against a REAL temporary git repo.
 
 Rule: on a PR whose head branch matches a row of `.githooks/lanes`, every commit in base..head
-carries `Lane: <row id>/<branch>` as a trailer (last paragraph). A branch in no row passes.
+carries `Lane: <row id>/<branch>` as a trailer (last paragraph). A branch in no row passes --
+UNLESS it is inside the `lane/` namespace, where matching no row means an unregistered lane
+and fails, because the plain reading passed vacuously on exactly the branches it is for.
 """
 from __future__ import annotations
 
@@ -93,6 +95,28 @@ def test_a_trailer_not_in_the_last_paragraph_is_not_a_trailer(repo):
     assert run(repo)[0] == 1
 
 
+def test_a_lane_line_git_does_not_read_says_so_rather_than_no_trailer(repo):
+    """The shape measured on real branches here: a blank line between `Lane:` and
+    `Co-Authored-By:`. Git reads only the last paragraph, so the line is plainly in the
+    message and is not a trailer. Reported as "has no 'Lane:' trailer" it sends the author
+    looking for a line that is already there, so the two cases get different messages."""
+    commit(repo, "a", f"feat: a\n\n{GOOD}\n\nCo-Authored-By: X <x@example.com>\n")
+    code, with_line = run(repo)
+    assert code == 1
+    assert "does not read as a trailer" in with_line[0] and "LAST paragraph" in with_line[0]
+    assert "has no 'Lane:' trailer" not in with_line[0]
+
+
+def test_a_message_with_no_lane_line_at_all_still_says_no_trailer(repo):
+    """The control for the test above: without it, that one would pass on a check that had
+    simply reworded every missing-trailer error."""
+    commit(repo, "a", "feat: a\n\nno lane line anywhere\n")
+    code, lines = run(repo)
+    assert code == 1
+    assert "has no 'Lane:' trailer" in lines[0]
+    assert "does not read as a trailer" not in lines[0]
+
+
 def _merge_master_into_lane(repo, message):
     commit(repo, "a", f"feat: a\n\n{GOOD}\n")
     git(repo, "switch", "-q", "master")
@@ -119,18 +143,51 @@ def test_a_merge_commit_with_the_trailer_passes(repo):
     assert code == 0, lines
 
 
-def test_a_branch_in_no_row_passes_with_a_notice_even_with_bad_commits(repo):
+def test_a_branch_outside_the_lane_namespace_passes_with_a_notice_even_with_bad_commits(repo):
+    """Renamed from `test_a_branch_in_no_row_passes_...`, which described the behaviour that
+    was removed for branches inside `lane/`. A seat's branch, or a maintainer's own, is
+    still not a lane and is still not checked."""
     commit(repo, "a", "no trailer at all\n")
     code, lines = run(repo, "chris/own-branch")
     assert code == 0
     assert lines[0].startswith("::notice::") and "chris/own-branch" in lines[0]
 
 
+def test_an_unregistered_lane_branch_fails_naming_the_lanes_file(repo):
+    """The defect this closes. Measured on this repo: one row in `.githooks/lanes` while
+    three lanes were committing under `lane/`, so two lanes' PRs passed with "not a lane,
+    trailers not checked" and the trailers they did carry went unread."""
+    commit(repo, "a", "no trailer at all\n")
+    code, lines = run(repo, "lane/unregistered-thing")
+    assert code == 1
+    assert len(lines) == 1 and lines[0].startswith("::error::")
+    assert ".githooks/lanes" in lines[0] and "lane/unregistered-thing" in lines[0]
+
+
+def test_an_unregistered_lane_fails_even_when_every_trailer_is_right(repo):
+    """Control for the test above, which on its own would pass on the missing trailer alone.
+    The refusal is that the lane has no row, and there is no row to say what the trailer
+    should have been, so a well-formed one does not rescue it."""
+    commit(repo, "a", "feat: a\n\nLane: mylane/lane/unregistered-thing\n")
+    code, lines = run(repo, "lane/unregistered-thing")
+    assert code == 1 and "matches no row" in lines[0]
+
+
+def test_the_namespace_is_not_derived_from_the_rows_globs(repo):
+    """The fixture file carries a `feature/*` row. Deriving the namespace from the globs
+    would make an unmatched `feature/...` branch fail too -- a maintainer's own branch
+    refused by a rule about lanes, the opposite failure and just as quiet."""
+    assert check_lane_trailers.LANE_NAMESPACE == "lane/"
+    commit(repo, "a", "no trailer at all\n")
+    assert run(repo, "feature/x")[0] == 1       # matches the feature/* row: a lane, no trailer
+    assert run(repo, "featurebranch")[0] == 0   # matches no row, outside lane/: not a lane
+
+
 def test_the_row_is_read_from_the_file_and_the_second_row_matches(repo):
     commit(repo, "a", "feat: a\n\nLane: other/feature/x\n")
     assert run(repo, "feature/x")[0] == 0  # 'other' row, comment stripped, glob feature/*
     assert run(repo, "feature/y")[0] == 1  # same row, a different branch in the trailer
-    assert run(repo, "lane/02")[0] == 0    # matches no row: passes
+    assert run(repo, "lane/02")[0] == 1    # no row, but inside lane/: an unregistered lane
     rows = check_lane_trailers.read_rows(repo / ".githooks" / "lanes")
     assert check_lane_trailers.lane_for("lane/01", rows) == "mylane"
 
