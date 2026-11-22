@@ -129,15 +129,15 @@ Each id that names a party with no record of its own is declared here once. Kind
 
 ### Roles
 
-A role is what a person does in the mesh, not who the person is, and one person may act in several. The roles are named after the actors the DoD reference lists in §3, "DMRA Use Cases and Actors/Roles". Each definition is in these records' own words. A walkthrough step's Actor cell holds one of these ids, and so does a flow step's Actor or Target cell when a person acts. The reference's Domain Team, Data Engineer and Enabling Team have no id. A domain team's product work is written under `RL-OWNER`, and an id for any of the three is added when a record has a step that one performs.
+A role is what a person does in the mesh, not who the person is, and one person may act in several. The roles are named after the actors the DoD reference lists in §4, "DMRA Use Cases and Actors/Roles". Each definition is in these records' own words. A walkthrough step's Actor cell holds one of these ids, and so does a flow step's Actor or Target cell when a person acts. The reference's Domain Team, Data Engineer and Enabling Team have no id. A domain team's product work is written under `RL-OWNER`, and an id for any of the three is added when a record has a step that one performs.
 
 | Id | Kind | What it is | Actor in the DoD reference |
 |---|---|---|---|
-| `RL-CONSUMER` | role | a person who reads a data product, or a figure made from one, and may ask what stands behind it. The decision-maker of WT-EVIDENCE acts in this role | Data Consumer (§3) |
-| `RL-OPERATOR` | role | the platform operator: a person who builds or operates the mesh platform, including a deployment of it. Sets what the chart and code leave to a deployment, maintains the builds of its images, and runs the qualification tooling | Data Platform Engineer (§3) |
-| `RL-OWNER` | role | the data product owner: accountable for one data product, and writes the configuration it is built from, such as its source declaration, its contract mapping and its pipeline settings | Data Product Owner, within the Domain Team (§3) |
-| `RL-PERSON` | role | a consumer as the read path sees one: a person on whose behalf data is read, under that person's verified identity. A flow step that turns on the identity names this id rather than `RL-CONSUMER` | Data Consumer (§3) |
-| `RL-STEWARD` | role | accountable for a governance decision about data, such as widening a column's label or ratifying a classification value | Data Governance Group (§3); the reference also names a data steward under quality management (§4, item 13) |
+| `RL-CONSUMER` | role | a person who reads a data product, or a figure made from one, and may ask what stands behind it. The decision-maker of WT-EVIDENCE acts in this role | Data Consumer (§4) |
+| `RL-OPERATOR` | role | the platform operator: a person who builds or operates the mesh platform, including a deployment of it. Sets what the chart and code leave to a deployment, maintains the builds of its images, and runs the qualification tooling | Data Platform Engineer (§4) |
+| `RL-OWNER` | role | the data product owner: accountable for one data product, and writes the configuration it is built from, such as its source declaration, its contract mapping and its pipeline settings | Data Product Owner, within the Domain Team (§4) |
+| `RL-PERSON` | role | a consumer as the read path sees one: a person on whose behalf data is read, under that person's verified identity. A flow step that turns on the identity names this id rather than `RL-CONSUMER` | Data Consumer (§4) |
+| `RL-STEWARD` | role | accountable for a governance decision about data, such as widening a column's label or ratifying a classification value | Data Governance Group (§4); the reference also names a data steward under data security classification (§4, item 12) |
 
 ## Records
 
