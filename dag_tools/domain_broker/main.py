@@ -1077,6 +1077,13 @@ async def _startup_load_and_register() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
+    # Say what the resolve door would do BEFORE anything can fail. Nothing else in this
+    # pod announces a posture, so without these two lines `BROKER_RESOLVE_CALLERS` being
+    # empty -- a door that under `enforce` admits nobody -- is invisible until a caller
+    # is refused, and the caller-side settings are invisible until a call is attempted.
+    internal_door.announce(internal_door.ROUTE_RESOLVE,
+                           internal_door.BROKER_RESOLVE_CALLERS)
+    internal_door.announce_caller(internal_door.ROUTE_REGISTER)
     # Kick off the load + register loop as a fire-and-forget
     # background task so lifespan startup completes immediately.
     # Hypercorn's lifespan startup timeout (60s, not CLI-configurable)

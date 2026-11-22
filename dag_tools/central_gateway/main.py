@@ -98,6 +98,12 @@ async def lifespan(app: FastAPI):
     principal_gauge.announce()
     refusal_gauge.announce()
     identity.announce()
+    # The two internal doors, one line each: the door this pod serves and the door it
+    # calls. `callers=0` is a door that under `enforce` admits nobody, which is the one
+    # state that otherwise looks exactly like a door nobody has called yet.
+    internal_door.announce(internal_door.ROUTE_REGISTER,
+                           internal_door.GATEWAY_REGISTER_CALLERS)
+    internal_door.announce_caller(internal_door.ROUTE_RESOLVE)
     # Ask this process whether it can verify a signed token, ONCE, here. The answer cannot
     # change while the process runs -- the library is baked into the image and the algorithm
     # list arrives as an environment variable, which is populated once, at startup -- so a

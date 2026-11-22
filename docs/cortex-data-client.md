@@ -209,6 +209,17 @@ audience and key settings as the user-facing route. To turn it on: set the
 callers' credentials, set both lists, read the `internal_door would_refuse` log lines
 until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
 
+Each pod says at startup what its doors would do, in counts and variable
+names and never values. Two lines per pod, because each one serves one door
+and calls the other: `internal_door: route=... posture=... callers=N
+enforce_ready=yes|no [unset=...]` for the door it serves, and
+`internal_door: calls=... token_ready=yes|no [unset=...]` for the door it
+calls. `callers=0` is the state worth grepping for -- a door that under
+`enforce` admits nobody looks exactly like a door nobody has called yet --
+and `enforce_ready=no` on a door with a full callers list means the pod
+cannot verify a token at all, so the `unset=` names there are the issuer,
+audience and key settings rather than the list.
+
 Verifying a token means signature, then the issuer against the accepted list
 (`GATEWAY_JWT_ISSUERS`, comma-separated), then the audience against the
 accepted list (`GATEWAY_JWT_AUDIENCES`). Neither list has a default and an

@@ -26,6 +26,13 @@ independently. Under `observe` a refusal is logged (`would_refuse`) and the requ
 returns the `Authorization` header. It never raises: with nothing configured, or on a failed
 fetch, it returns `{}` (observe still serves; enforce refuses at the door).
 
+## Startup announcement
+
+Each pod serves one door and calls the other, so it emits one line for each: `announce(route,
+callers_env)` and `announce_caller(route)`. Both carry counts and env var NAMES and never a
+value. `callers=0` is the line that matters -- a door which under `enforce` admits nobody looks
+exactly like a door nobody has called yet.
+
 Every setting is read per call. Nothing here logs a token, a claim set or a credential.
 """
 from __future__ import annotations
@@ -33,7 +40,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 import httpx
 from fastapi import HTTPException, Request
@@ -41,8 +48,10 @@ from fastapi import HTTPException, Request
 # Two layouts, as in main.py: the deployed gateway image is flat `/app`.
 try:
     from . import identity  # package layout: the test suite, and the broker image
+    from . import subject_gauge  # package layout
 except ImportError:  # pragma: no cover - exercised only by the flattened container layout
     import identity  # type: ignore[no-redef]  # flat /app layout: the gateway image
+    import subject_gauge  # type: ignore[no-redef]  # flat /app layout
 
 logger = logging.getLogger(__name__)
 _PKG_LOGGER = logging.getLogger("dag_tools.central_gateway")
@@ -180,3 +189,69 @@ async def service_headers() -> Dict[str, str]:
     _cache["token"] = token
     _cache["fetch_at"] = time.monotonic() + max(0.0, expires_in - _REFRESH_MARGIN_SECONDS)
     return {"Authorization": f"Bearer {token}"}
+
+
+# ---------------------------------------------------------------------------
+# Startup announcement
+# ---------------------------------------------------------------------------
+# `identity.announce()` exists because `issuers=0` is a gateway that refuses every token and
+# otherwise looks exactly like a quiet one. The doors had no such line, and the broker pod had
+# no startup line AT ALL -- so `callers=0` on the resolve door, which under `enforce` admits
+# nobody, was indistinguishable from a door nobody had called yet. Same question, same grammar:
+# COUNTS and env var NAMES, never values.
+def enforce_blockers(callers_env: str) -> List[str]:
+    """What is unset before `enforce` could admit ANY caller at this door. NAMES, never values.
+
+    Two things, and the second is the one an operator does not expect: the door's own callers
+    list, and whatever `identity` needs to verify a token at all. The door verifies with
+    `identity._verify`, so a deployment with a full callers list and no accepted issuer admits
+    nobody either -- and on the broker, where nothing else announces identity, this line is the
+    only place those names appear.
+    """
+    missing: List[str] = []
+    if not _listed(callers_env):
+        missing.append(callers_env)
+    missing.extend(identity.enforce_blockers())
+    return missing
+
+
+def caller_blockers() -> List[str]:
+    """What is unset before THIS pod could present a service token at a door it calls.
+
+    The other direction, and it fails differently: a pod with nothing configured here sends its
+    internal calls bare, which `observe` serves and `enforce` refuses as `no_token`. The one-shot
+    error in `service_headers` fires only once a call is attempted; this answers at startup.
+    """
+    return [name for name, value in (
+        (TOKEN_URL_ENV, (os.getenv(TOKEN_URL_ENV) or "").strip()),
+        (CLIENT_ID_ENV, (os.getenv(CLIENT_ID_ENV) or "").strip()),
+        (CLIENT_SECRET_ENV, os.getenv(CLIENT_SECRET_ENV) or ""),
+    ) if not value]
+
+
+def announce(route: str, callers_env: str) -> str:
+    """Startup line for the door this pod SERVES. Returns the line it logged."""
+    subject_gauge.ensure_gauge_visible()  # a posture announced into a dark channel is not announced
+    blockers = enforce_blockers(callers_env)
+    line = "internal_door: route=%s posture=%s callers=%d enforce_ready=%s%s" % (
+        route,
+        posture(),
+        len(_listed(callers_env)),
+        "no" if blockers else "yes",
+        (" unset=" + ",".join(blockers)) if blockers else "",
+    )
+    _PKG_LOGGER.info(line)
+    return line
+
+
+def announce_caller(route: str) -> str:
+    """Startup line for the door this pod CALLS. Returns the line it logged."""
+    subject_gauge.ensure_gauge_visible()
+    blockers = caller_blockers()
+    line = "internal_door: calls=%s token_ready=%s%s" % (
+        route,
+        "no" if blockers else "yes",
+        (" unset=" + ",".join(blockers)) if blockers else "",
+    )
+    _PKG_LOGGER.info(line)
+    return line
