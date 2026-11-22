@@ -5,13 +5,13 @@ import httpx
 import boto3
 
 from dag_tools.central_gateway import internal_door
-from dag_tools.domain_broker import ticket_identity
+from dag_tools.domain_broker import ticket_identity, unminted_posture
 from dag_tools.domain_broker.sql_minting import (
     mint_clickhouse as _mint_clickhouse,
     mint_postgres as _mint_postgres,
     sql_scope_from_uri,
 )
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, NamedTuple, Optional
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -305,6 +305,26 @@ _MINTERS = {
     "clickhouse": (_mint_clickhouse, sql_scope_from_uri),
     "postgres": (_mint_postgres, sql_scope_from_uri),
 }
+
+
+class Resolved(NamedTuple):
+    """A ticket, and WHETHER THIS BROKER MINTED THE CREDENTIAL ON IT.
+
+    The seam cannot work this out by looking, and the two things it might try
+    are each wrong in a way that reads as protection -- see
+    ``unminted_posture``: ``source_type`` says which backend the ticket names
+    rather than where its credential came from (the legacy coordinate path
+    below returns a ``postgres`` ticket carrying a placeholder token, and
+    ``postgres`` is in ``_MINTERS``), and ``mode`` survives from the producer.
+
+    So every return path says, and ``resolve_asset`` decides once. A path
+    added later that returns a bare dict raises on ``.ticket`` rather than
+    being taken for a minted one.
+    """
+
+    ticket: Dict[str, Any]
+    minted: bool
+
 
 # Keys inside a legacy ticket's ``credentials`` that are COORDINATES, not
 # secrets. They must survive the strip: dropping the whole dict would take the
@@ -1133,6 +1153,12 @@ async def health():
             "echoed_credentials_dropped": dict(ECHOED_CREDENTIALS_DROPPED),
             "unprotected_source_types": dict(UNPROTECTED_SOURCE_TYPES),
             "non_fqdn_hosts": dict(NON_FQDN_HOSTS),
+            # Reads carrying a credential this broker did not mint: what
+            # would be refused if the posture flipped, and what was. Two
+            # numbers, never summed -- under `observe` a would-refusal is
+            # SERVED anyway, so one number would report refusals for reads
+            # that were served.
+            "unminted_credentials": unminted_posture.health(),
         },
         # Which backends issue tickets a consumer cannot pin to a version.
         # Counted, not logged, for the same reason as the line above it.
@@ -1180,20 +1206,33 @@ async def resolve_asset(request: ResolveRequest):
     here rather than on each of them, because the paths that matter most are
     the ones nobody remembers to update. invincible-agent ADR-0044 was exactly that shape: the
     minting was present and one newer path returned in front of it.
+
+    THE UNMINTED GUARD IS HERE FOR THE SAME REASON, and before the stamp: a
+    read that is refused never issues a ticket, so it must not be counted in
+    ``AS_OF_ABSENT`` as one that was.
     """
-    ticket = await _resolve_ticket(request)
-    stamped = ticket_identity.stamp(ticket)
+    resolved = await _resolve_ticket(request)
+
+    refusal = unminted_posture.decide(resolved.ticket, resolved.minted)
+    if refusal:
+        # The reason and nothing else. Which env var, and that the real fix is
+        # a minter for that backend, goes to the broker's log where no reader
+        # sees it; no credential is named in either place.
+        raise HTTPException(status_code=403, detail={"error": refusal})
+
+    stamped = ticket_identity.stamp(resolved.ticket)
     if stamped.get("as_of") is None:
         source_type = str(stamped.get("source_type") or "unknown")
         AS_OF_ABSENT[source_type] = AS_OF_ABSENT.get(source_type, 0) + 1
     return stamped
 
 
-async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
+async def _resolve_ticket(request: ResolveRequest) -> Resolved:
     """Coordinates and, where a minter exists for the backend, a credential.
 
-    Returns the ticket WITHOUT its identity; ``resolve_asset`` stamps it. Kept
-    separate so no future path can return around the stamp.
+    Returns the ticket WITHOUT its identity, and with a flag saying whether
+    this broker minted what is on it; ``resolve_asset`` stamps and decides.
+    Kept separate so no future path can return around either.
     """
     urn = request.urn
 
@@ -1217,10 +1256,13 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
         minter_entry = _MINTERS.get(source_type)
 
         if not minter_entry:
-            # No minting implementation for this backend yet — it is still on
-            # the producer's credential. Advertised as such rather than
-            # dressed up as protected.
-            return ticket
+            # No minting implementation for this backend yet, so whatever
+            # credential is on this ticket is the producer's -- a write
+            # credential, unscoped, not expiring with the access window.
+            # Declared unminted and handed to the guard at the seam, which
+            # serves it under ``observe`` (today's behaviour) and refuses it
+            # under ``enforce``. See ``unminted_posture``.
+            return Resolved(ticket, minted=False)
 
         minter, scope_from = minter_entry
         scope = ticket.get("scope") or scope_from(ticket.get("physical_uri", ""))
@@ -1267,8 +1309,11 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
                 detail="Could not mint a scoped credential for this asset." + hint,
             )
 
-        return {**{k: v for k, v in ticket.items() if k != "scope"},
-                "credentials": credentials}
+        return Resolved(
+            {**{k: v for k, v in ticket.items() if k != "scope"},
+             "credentials": credentials},
+            minted=True,
+        )
 
     io_type = asset_info.get("io_manager_type", "s3_parquet")
 
@@ -1278,13 +1323,21 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
         schema = asset_info.get("schema", "public")
         table = asset_info.get("table", urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
         
-        return {
-            "source_type": io_type,
-            "physical_uri": f"{io_type}://{host}:{port}/{schema}/{table}",
-            "credentials": {
-                "token": "read-only-db-token-123"
-            }
-        }
+        # NOT MINTED, and not a producer credential either: that token is a
+        # placeholder this path has always returned. It is declared unminted
+        # because it is -- reading it as minted on the strength of
+        # ``source_type`` being in ``_MINTERS`` would report a fake credential
+        # as a protected one, which is the reading the guard exists to refuse.
+        return Resolved(
+            {
+                "source_type": io_type,
+                "physical_uri": f"{io_type}://{host}:{port}/{schema}/{table}",
+                "credentials": {
+                    "token": "read-only-db-token-123"
+                }
+            },
+            minted=False,
+        )
         
     elif io_type in ["s3_parquet", "s3_iceberg", "s3_delta"]:
         bucket = asset_info.get("bucket", "default-bucket")
@@ -1327,15 +1380,18 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
             )
             credentials = response['Credentials']
             
-            return {
-                "source_type": io_type,
-                "physical_uri": f"s3://{bucket}/{prefix}",
-                "credentials": {
-                    "aws_access_key_id": credentials['AccessKeyId'],
-                    "aws_secret_access_key": credentials['SecretAccessKey'],
-                    "aws_session_token": credentials['SessionToken']
-                }
-            }
+            return Resolved(
+                {
+                    "source_type": io_type,
+                    "physical_uri": f"s3://{bucket}/{prefix}",
+                    "credentials": {
+                        "aws_access_key_id": credentials['AccessKeyId'],
+                        "aws_secret_access_key": credentials['SecretAccessKey'],
+                        "aws_session_token": credentials['SessionToken']
+                    }
+                },
+                minted=True,
+            )
         except Exception as e:
             # NO MOCK CREDENTIALS. This used to return aws_access_key_id
             # "mock_access_key" and friends "for environments without AWS
