@@ -39,7 +39,7 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 |---|---|---|---|---|---|---|---|
 | 1 | XE-CONSUMER | asks for a dataset by URN | CO-CLIENT | the URN, directly or through `CortexPolarsIOManager` | — | dag-tools `dag_tools/cortex_data/client.py:161-171`; `dag_tools/io_managers/cortex_io_manager.py:117-153` | `built` |
 | 2 | CO-CLIENT | posts to the authorize route | CO-GATEWAY | the URN and the caller's token | a ten-second timeout | `client.py:188-205` | `built` |
-| 3 | CO-GATEWAY | decides, then asks the producer's broker for a ticket, as in [FL-NTK](need-to-know.md), steps 3 to 9 | CO-BROKER | the dataset | the broker is found through a route each broker registers, which expires after five minutes | `dag_tools/central_gateway/main.py:184-202`, `:374`, `:476` | `built` |
+| 3 | CO-GATEWAY | decides, then asks the producer's broker for a ticket, as in [FL-NTK](need-to-know.md), steps 3 to 9 | CO-BROKER | the dataset | the broker is found through a route each broker registers, which expires after five minutes | `dag_tools/central_gateway/main.py:214-232`, `:404`, `:506` | `built` |
 | 4 | CO-BROKER | mints a credential | XE-DATASET-BACKEND | — | an expiring object-store credential scoped by prefix, or an expiring database role | `dag_tools/domain_broker/main.py:272-279`, `:298-307`; `dag_tools/domain_broker/sql_minting.py:296-340` | `built` |
 | 5 | CO-CLIENT | reads the ticket | CO-CLIENT | the source type, location and credential | — | `client.py:228-235` | `built` |
 | 6 | CO-CLIENT | reads from the store directly, by backend (finding 2) | XE-DATASET-BACKEND | the minted credential; the data back | any other source type is refused | `client.py:260-264` (Parquet, Delta), `:266-297` (Iceberg), `:299-325` (Postgres), `:327-353` (ClickHouse), `:355-356` (refusal) | `built` |
@@ -67,13 +67,13 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| The gateway returns a ticket; bytes go from store to client | dag-tools `dag_tools/central_gateway/main.py:374`; `dag_tools/cortex_data/client.py:201-205`, `:228-231`, `:260-353` | not stated | `test_authorize_endpoint_shape` | `built` |
+| The gateway returns a ticket; bytes go from store to client | dag-tools `dag_tools/central_gateway/main.py:404`; `dag_tools/cortex_data/client.py:201-205`, `:228-231`, `:260-353` | not stated | `test_authorize_endpoint_shape` | `built` |
 | Object-store reads are lazy scans | dag-tools `client.py:260-264`, `:295-297` | not stated | read stubbed: `dag_tools_tests/test_ticket_receipt.py:153-156` | `built` |
 | SQL reads are an eager `SELECT *` of the whole table | dag-tools `client.py:318`, `:323`, `:352-353` | not stated | no test reaches either call | `built` |
 | Postgres skips client narrowing; ClickHouse narrows after the transfer | dag-tools `client.py:325`, `:358-366` | not stated | `test_the_frame_is_still_narrowed_when_the_receipt_is_asked_for` | `built` |
 | No pagination, chunking, streaming, limit or columnar transport | dag-tools `dag_tools/cortex_data/`, `dag_tools/central_gateway/`, `dag_tools/domain_broker/` searched | not stated | — | `built` |
 | Ten-second timeouts on the token fetch and the authorize call only; none on a data read | dag-tools `client.py:156`, `:205`, `:323`, `:352` | not stated | — | `built` |
-| Brokers register routes that expire after five minutes | dag-tools `main.py:184-202` | not stated | — | `built` |
+| Brokers register routes that expire after five minutes | dag-tools `main.py:214-232` | not stated | — | `built` |
 | SQL minters push narrowing into the database | dag-tools `dag_tools/domain_broker/main.py:298-307` | cited in code: invincible-agent ADR-0044 (not read) | as in [need to know](need-to-know.md) | `built` |
 | Data-analyst cell gate before the query; byte gate on the result | invincible-agent `agent_fleet/data_analyst/main.py:19`, `:45`, `:555-583`, `:653-680` | not stated | invincible-agent `tests/test_da_source_size_gate.py`: `test_the_source_table_is_NOT_collected_before_the_query`, `test_a_size_gate_runs_BEFORE_the_query`, `test_the_gate_measures_CELLS_not_rows`, `test_the_refusal_NAMES_the_limit_and_forbids_retry`, `test_a_precheck_that_cannot_run_is_LOUD_not_a_silent_bypass` | `built` |
 | The gate runs after the SQL transfer | dag-tools `client.py:318-325`, `:352-353`; invincible-agent `agent_fleet/data_analyst/main.py:519`, `:555` | not stated | not tested | `built` (read from code) |

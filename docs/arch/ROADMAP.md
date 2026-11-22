@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): rows 1 to 8 at the flows' pins, rows 9 to 24 at the component-records pin for dag-tools, and at the invincible-agent pin for that repo. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): at the dag-tools pin for dag-tools, and at the invincible-agent pin for that repo. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -42,9 +42,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 1. Verified principal by default
 
-- **Gap:** [need to know, finding 4](flows/need-to-know.md). Under `observe`, the code default, the gateway uses the named principal as given (`dag_tools/central_gateway/identity.py:178-197`, `:588-608`). `built`
-- **What already exists:** the gateway counts what `enforce` would have refused, separately from what it did refuse, and reports both on `/health` (`dag_tools/central_gateway/refusal_gauge.py:20-53`; `main.py:142-170`). `built`
-- **Remedy:** a deployment moves `GATEWAY_IDENTITY_POSTURE` to `enforce` once the would-refuse counts read zero over a period it chooses. Before that, the delegation seam (`identity.py:270-285`) gets a reader of the policy rail that lists which services may act for a person, so those services are not refused. `proposed`
+- **Gap:** [need to know, finding 4](flows/need-to-know.md). Under `observe`, the code default, the gateway uses the named principal as given (`dag_tools/central_gateway/identity.py:179-198`, `:589-609`). `built`
+- **What already exists:** the gateway counts what `enforce` would have refused, separately from what it did refuse, and reports both on `/health` (`dag_tools/central_gateway/refusal_gauge.py:20-53`; `main.py:148-187`). `built`
+- **Remedy:** a deployment moves `GATEWAY_IDENTITY_POSTURE` to `enforce` once the would-refuse counts read zero over a period it chooses. Before that, the delegation seam (`identity.py:271-286`) gets a reader of the policy rail that lists which services may act for a person, so those services are not refused. `proposed`
 - **Depends on:** the delegate rail, which policy owns in invincible-agent. dag-tools has no reader for it at the pin.
 - **Issue:** dag-tools #70.
 
@@ -234,9 +234,9 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Posture default `observe`, set per deployment | dag-tools `dag_tools/central_gateway/identity.py:178-197` | not stated | `test_posture_parse` | `built` |
-| Would-refuse and did-refuse counts on `/health` | dag-tools `dag_tools/central_gateway/refusal_gauge.py:20-53`, `main.py:142-170` | not stated | `test_gateway_refusal_reasons.py` | `built` |
-| Delegation seam answers no | dag-tools `identity.py:270-285` | not stated | `test_the_default_seam_is_false_and_says_once_that_the_rail_is_not_wired` | `built` |
+| Posture default `observe`, set per deployment | dag-tools `dag_tools/central_gateway/identity.py:179-198` | not stated | `test_posture_parse` | `built` |
+| Would-refuse and did-refuse counts on `/health` | dag-tools `dag_tools/central_gateway/refusal_gauge.py:20-53`, `main.py:148-187` | not stated | `test_gateway_refusal_reasons.py` | `built` |
+| Delegation seam answers no | dag-tools `identity.py:271-286` | not stated | `test_the_default_seam_is_false_and_says_once_that_the_rail_is_not_wired` | `built` |
 | Object-store minter ignores narrowing | dag-tools `dag_tools/domain_broker/main.py:226-256` | cited in code: invincible-agent ADR-0044 (not read) | `test_minting_failure_fails_closed` | `built` |
 | No-minter backends get the producer credential | dag-tools `dag_tools/domain_broker/main.py:298-308`, `:1219-1223` | not stated | — | `built` |
 | SQL reads are the whole table, eagerly | dag-tools `dag_tools/cortex_data/client.py:318`, `:323`, `:352-353` | not stated | no test reaches either call | `built` |

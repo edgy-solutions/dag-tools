@@ -1,6 +1,6 @@
 # dag-tools decisions: §4r, §4l, §4m
 
-This record covers the decisions in `AGENTS.md` sections 4r, 4l and 4m at the component-records pin (`add5bc4`): the curated measurement slice, the classification dimensions file, and the warehouse source. The curated slice sits on the source described in the [SystemLink source record](../components/systemlink-source.md) and is built by the [dbt record](../components/dbt.md)'s tooling from documents the [contract mapping record](../components/contract-mapping.md) describes. The dimensions file and the source that reads it are described in the [warehouse source record](../components/warehouse-source.md) and the [classification propagation record](../components/classification-propagation.md). [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` sections 4r, 4l and 4m at the dag-tools pin (`503607d`): the curated measurement slice, the classification dimensions file, and the warehouse source. The curated slice sits on the source described in the [SystemLink source record](../components/systemlink-source.md) and is built by the [dbt record](../components/dbt.md)'s tooling from documents the [contract mapping record](../components/contract-mapping.md) describes. The dimensions file and the source that reads it are described in the [warehouse source record](../components/warehouse-source.md) and the [classification propagation record](../components/classification-propagation.md). [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -248,7 +248,7 @@ One component instance is one labelled source dataset, observed rather than move
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. `meas` is `dag_tools/systemlink/measurements.py`, `sql` is `dag_tools/systemlink/sql.py`, `dim` is `dag_tools/warehouse_source/dimensions.py`, `prop` is `dag_tools/warehouse_source/propagate.py` and `ws` is `dag_tools/components/warehouse_source/`. `cur` is `test_systemlink_curated_sql.py`, `conf` is `test_mfg_trace_conform.py`, `eng` is `test_warehouse_source_engine.py`, `wprop` is `test_warehouse_source_propagation.py`, `wcomp` is `test_warehouse_source_component.py` and `tw` is `test_tagged_warehouse_resource.py`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Test files are under `dag_tools_tests/`. `meas` is `dag_tools/systemlink/measurements.py`, `sql` is `dag_tools/systemlink/sql.py`, `dim` is `dag_tools/warehouse_source/dimensions.py`, `prop` is `dag_tools/warehouse_source/propagate.py` and `ws` is `dag_tools/components/warehouse_source/`. `cur` is `test_systemlink_curated_sql.py`, `conf` is `test_mfg_trace_conform.py`, `eng` is `test_warehouse_source_engine.py`, `wprop` is `test_warehouse_source_propagation.py`, `wcomp` is `test_warehouse_source_component.py` and `tw` is `test_tagged_warehouse_resource.py`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

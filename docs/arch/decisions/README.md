@@ -6,7 +6,7 @@ These records list the decisions that dag-tools states in `AGENTS.md`, and the d
 
 ## How a decision is addressed
 
-`AGENTS.md` is the census. It is cited by path, at the component-records pin (`add5bc48021fe6d2c79c24c31072142fc93c8179`), as listed in [the README](../README.md).
+`AGENTS.md` is the census. It is cited by path, at the dag-tools pin (`503607dd321cd6627509bfc93955357b8566597f`), as listed in [the README](../README.md).
 
 A decision is addressed by its census section and its bullet's position in that section. For example, `AGENTS.md §4, bullet 3` is the third top-level bullet of section 4 at the pin. Headings in these files carry the same address in short form, such as `§4.3`. Where one entry states two census bullets, its Source cell names both, such as `bullets 3-4`, and the entries after it keep consecutive heading numbers, so from there on a heading's number is one lower than its bullet. The Source cell is the census address, and the bullets it names add up to the section's count.
 

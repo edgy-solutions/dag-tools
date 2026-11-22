@@ -7,7 +7,7 @@ This flow follows data from a source table to a point of use. A pipeline copies 
 
 The access decision at the point of use is in [need to know](need-to-know.md), and the large read is in [big data](big-data.md). Neither is repeated here.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`) for dag-tools, and at the invincible-agent pin for that repo. The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`) for dag-tools, and at the invincible-agent pin for that repo. The record shape is provisional.
 
 ## Findings
 

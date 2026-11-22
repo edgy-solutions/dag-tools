@@ -1,6 +1,6 @@
 # dag-tools decisions: §4a (OTel)
 
-This record covers the decisions in `AGENTS.md` section 4a, the OTel to API sync section, at the component-records pin (`add5bc4`). The section governs the pure mapping engine, the Dagster component that renders plans and the Restate handler that executes them. [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` section 4a, the OTel to API sync section, at the dag-tools pin (`503607d`). The section governs the pure mapping engine, the Dagster component that renders plans and the Restate handler that executes them. [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -107,7 +107,7 @@ The component itself is described in the [OTel to API sync record](../components
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. Test files are named here in short: `render` is `test_otel_api_sync_render.py`, `numeric` is `test_otel_api_sync_numeric.py`, `automation` is `test_otel_api_sync_automation.py`, `executor` is `test_otel_api_sync_executor.py` and `component` is `test_otel_api_sync_component.py`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Test files are under `dag_tools_tests/`. Test files are named here in short: `render` is `test_otel_api_sync_render.py`, `numeric` is `test_otel_api_sync_numeric.py`, `automation` is `test_otel_api_sync_automation.py`, `executor` is `test_otel_api_sync_executor.py` and `component` is `test_otel_api_sync_component.py`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

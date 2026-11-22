@@ -4,7 +4,7 @@ The central gateway is the mesh's one door for a dataset read. A consumer asks i
 
 This record covers what the code and the dag-tools chart provide by default, and what a deployment may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`), not at the flows' pin. The gateway changed between the two. The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -91,7 +91,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Gateway source paths are under `dag_tools/central_gateway/`.
+All dag-tools paths are at `503607dd321cd6627509bfc93955357b8566597f`. Gateway source paths are under `dag_tools/central_gateway/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
