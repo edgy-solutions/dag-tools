@@ -27,6 +27,7 @@ This record covers what the code provides by default, and what a deployment or a
 8. **Client-side narrowing is a column selection and a filter expression.** Where the client applies it, it selects the decision's allowed columns and filters by the decision's row filter, which it parses as a SQL expression. It runs in the consumer's own process, so it narrows what this client returns and nothing else. `built`
 9. **For SQL backends, the client falls back to its own mesh token as the database password.** For Postgres it uses the ticket's password, else the client's token. For ClickHouse it uses the ticket's password, else the ticket's token, else the client's token. The code says the token fallback is there for a database sign-in pattern that is not wired. On the broker's older path, which mints nothing for SQL ([broker, finding 8](domain-broker.md)), the ticket carries a fixed placeholder token and no password: ClickHouse then signs in with the placeholder, and Postgres with the client's mesh token. No test reaches either SQL branch. `built`
 10. **The receipt is an allowlist.** It carries the URN and eight named ticket fields: the ticket id, issue time, version, version source, the reason a version is absent, the source type, and the allowed columns and row filters. The first four are always present, as empty when the broker gave none. No credential and no physical location is on it, because a presigned location is a credential. `get_dataframe` still returns the frame alone; `get_dataframe_with_ticket` returns both. `built`
+11. **It is the path by which agent answers and notebooks pass the gateway.** An agent engine and a notebook read datasets through it, and each read is authorized at the gateway first (finding 5). A point of use that does not read through it, such as a dashboard tool or an API layer, does not pass the gateway ([need to know, finding 7](../flows/need-to-know.md)). `built`
 
 ## Settings and defaults
 
@@ -82,6 +83,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 | Data path | it is the data path: bytes move from the store to this process, never through the gateway or broker | [DoD S7](../alignment/dod-dmra.md) |
 | Plane | `analytical-data`: where agents and notebooks read. It reaches the data-management plane only through the gateway's API | [NATO L4](../alignment/nato-dcra.md) |
 | Security role | enforcement point, for the narrowing it applies itself | [NATO R1](../alignment/nato-dcra.md) |
+| Points of use | agent answers built from dataset reads, and notebooks; each read is decided at the gateway | [need to know, finding 7](../flows/need-to-know.md) |
 | Services served | data exchange; the receipt's ticket id is a unique identifier for the read | [DoD S7, S1](../alignment/dod-dmra.md) |
 
 ## Sources
@@ -101,3 +103,4 @@ All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Client so
 | Mesh token as the SQL password fallback | `client.py:315`, `:339` | not stated | no test | `built` |
 | Receipt is an allowlist; frame-only call unchanged | `client.py:23-56`, `:161-171`, `:368` | dag-tools AGENTS.md §4o | `test_ticket_receipt.py`: `test_the_receipt_is_an_allowlist_so_a_new_ticket_field_is_not_published`, `test_a_presigned_uri_is_not_on_the_receipt`, `test_the_receipt_carries_no_credential`, `test_get_dataframe_still_returns_only_a_frame` | `built` |
 | Remedies | [the roadmap note](../ROADMAP.md), rows 2, 4, 5, 9 and 12 | none | — | `proposed` |
+| The path for agent answers and notebooks | finding 5; [need to know, finding 7](../flows/need-to-know.md) | not stated | — | `built` |
