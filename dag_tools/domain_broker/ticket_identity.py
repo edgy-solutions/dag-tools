@@ -118,6 +118,103 @@ def register_as_of_reader(
     AS_OF_READERS[source_type] = reader
 
 
+# invincible-agent #529 -- the readers THIS BUILD SHIPS, which is a different
+# fact from the readers this process registered. One table, read by three
+# things: the chart's template constant at render time, the startup check in
+# ``main`` at start, and ``/health`` at runtime. If any of the three grows its
+# own list they disagree silently and each one individually looks correct.
+#
+# It ships EMPTY, and that is the design rather than an omission: a reader for a
+# table format is real IO against a real store, and one whose only evidence is
+# that it parses is a half-measure. So any non-empty selection is refused until
+# a reader lands here -- which is the refusal an operator will otherwise file as
+# a bug.
+AVAILABLE_AS_OF_READERS: Dict[str, Callable[[Mapping[str, Any]], Optional[str]]] = {}
+
+# The deployment names the subset it wants. Read ONCE, at module scope, never
+# per request: a config error consulted inside an authorize call is a reading
+# that can fail a read, which is the one thing this module does not allow.
+AS_OF_READERS_ENV = "DAG_TOOLS_AS_OF_READERS"
+
+
+class UnknownAsOfReader(ValueError):
+    """A deployment asked for an as-of reader this build does not ship.
+
+    A ``ValueError`` subclass so anything already catching ``ValueError``
+    catches it, the same courtesy ``MissingCredentials`` extends.
+    """
+
+
+def available_as_of_readers() -> Tuple[str, ...]:
+    """The source types this BUILD ships a reader for. Static, known at import.
+
+    This is the set a render-time check compares a deployment's list against,
+    and it is why that check can run with no pod: it is a property of the
+    pinned package, not of a running process.
+    """
+    return tuple(sorted(AVAILABLE_AS_OF_READERS))
+
+
+def registered_as_of_readers() -> Tuple[str, ...]:
+    """The source types THIS PROCESS has a reader registered for.
+
+    READ AT CALL TIME, never snapshotted at import: ``register_as_of_reader``
+    mutates the registry, so a module that registers late would be invisible to
+    a snapshot taken early. A render check cannot answer this question -- no pod
+    exists yet -- and this is the only thing that knows what a pod actually did.
+    """
+    return tuple(sorted(AS_OF_READERS))
+
+
+def select_as_of_readers(value: Optional[str]) -> Tuple[str, ...]:
+    """The source types named by one ``DAG_TOOLS_AS_OF_READERS`` value.
+
+    Pure: it validates and returns names, and registers nothing. An unset or
+    empty value selects nothing, which is today's behaviour exactly -- the
+    setting ships inert.
+
+    A name this build does not ship RAISES, because it is not a reading that
+    might fail; it is a typo in configuration, and this repo's standing answer
+    to a typo is that it fails at load and not at 3am. EVERY unknown name is
+    named at once, and so is the available set, so the fix is in the message
+    and nobody has to go and find the table.
+
+    An empty entry -- a trailing comma, a doubled one -- names no source type,
+    so it is dropped rather than refused.
+    """
+    if value is None:
+        return ()
+    names = [part.strip() for part in value.split(",")]
+    wanted = sorted({name for name in names if name})
+    unknown = [name for name in wanted if name not in AVAILABLE_AS_OF_READERS]
+    if unknown:
+        available = available_as_of_readers()
+        offer = ", ".join(available) if available else (
+            "none -- this build ships no as-of reader yet, so any name is "
+            "refused until one lands and the deployment repins"
+        )
+        raise UnknownAsOfReader(
+            "%s names %s, which this build of dag-tools does not ship a reader "
+            "for. Available: %s."
+            % (AS_OF_READERS_ENV, ", ".join(unknown), offer)
+        )
+    return tuple(wanted)
+
+
+def register_selected_as_of_readers(value: Optional[str]) -> Tuple[str, ...]:
+    """Validate one env value and register what it names. Returns the names.
+
+    Refuses before registering anything, so a value with one bad name among
+    good ones leaves the registry exactly as it was: a half-applied selection
+    is a deployment that got some of what it asked for and was told it got
+    none of it.
+    """
+    selected = select_as_of_readers(value)
+    for name in selected:
+        register_as_of_reader(name, AVAILABLE_AS_OF_READERS[name])
+    return selected
+
+
 def _usable(value: Any) -> Optional[str]:
     """The value as text, or None if it cannot honestly be carried as one.
 
