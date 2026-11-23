@@ -209,6 +209,27 @@ audience and key settings as the user-facing route. To turn it on: set the
 callers' credentials, set both lists, read the `internal_door would_refuse` log lines
 until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
 
+#### The broker's unminted posture
+
+invincible-agent ADR-0044 is rolled out per backend: the broker mints a
+read-only, asset-scoped, window-expiring credential for the backends it has a
+minter for. For a backend it does not, the ticket carries the **producer's own**
+credential -- the only thing that would let you read it, and a write credential,
+scoped to no asset, expiring with nothing.
+
+`BROKER_UNMINTED_POSTURE` is `observe` (the default) or `enforce`. Under
+`observe` nothing changes for readers; the broker counts what it *would* refuse,
+per backend, at `/health.adr0044.unminted_credentials.would_refuse`. Under
+`enforce` such a read is refused with 403 `unminted_credential`, which this
+client surfaces as `NotEntitled`, and the refusals are counted separately under
+`refused` -- a would-refusal is served and a refusal is not, so the two numbers
+are never one. A ticket carrying no credential at all is not refused: there is
+nothing exposed to refuse.
+
+To turn it on, read `would_refuse` until it lists only backends you are willing
+to lose reads of, then set `BROKER_UNMINTED_POSTURE=enforce`. The real fix for a
+backend that appears there is a minter for it, not the posture.
+
 Verifying a token means signature, then the issuer against the accepted list
 (`GATEWAY_JWT_ISSUERS`, comma-separated), then the audience against the
 accepted list (`GATEWAY_JWT_AUDIENCES`). Neither list has a default and an
