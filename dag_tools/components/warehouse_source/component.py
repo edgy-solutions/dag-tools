@@ -282,9 +282,16 @@ def emit_payload(
     The opposite call from `CustomDbtProjectComponent._publish_to_datahub`,
     which swallows everything so a catalog outage cannot fail a dbt build.
     There, the build is the deliverable and the catalog is a bonus. Here the
-    published label set IS the deliverable: if it does not land, a broker finds
-    no labels on the dataset and denies every read of it, and a component that
-    reported success would have turned an outage into a silent embargo.
+    published label set IS the deliverable: a component that reported success
+    without publishing it would leave the catalog describing a dataset it
+    never described.
+
+    What the labels are FOR is the denial -- a broker that finds no labels on
+    a dataset is TO deny every read of it, so an unpublished label set would
+    read as a silent embargo. That brokering is INTENDED, NOT BUILT: nothing
+    consults these labels to decide an access question today, so publishing a
+    label set changes nothing about what any reader may currently read. The
+    failure stance does not depend on it.
     """
     graph = _graph(spec)
     mcps = _mcps_for(payload, spec, asset_key)

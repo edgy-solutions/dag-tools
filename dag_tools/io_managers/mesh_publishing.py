@@ -157,10 +157,21 @@ class MeshPublishable:
             if region:
                 ticket["region"] = region
         else:
-            # No minter exists for the database backends yet (invincible-agent ADR-0044's
-            # capability matrix). Declared as unprotected rather than dressed
-            # up as minted, so the broker can count it as live exposure instead
-            # of passing it over silently.
+            # ADVERTISED AS UNPROTECTED, AND THE BROKER DOES NOT BELIEVE IT.
+            # This said "no minter exists for the database backends yet"; one
+            # does for both of them now (``domain_broker.main._MINTERS``), so
+            # the sentence was stale in the one direction that matters -- it
+            # read as a statement about what the broker will do, and this
+            # value is not that. ``mode`` is the producer's word: the broker
+            # preserves whatever is here (``_sanitize_ticket``), so a producer
+            # writing ``mint-sts`` would not get minting and a producer
+            # writing this would not lose it. What decides is whether the
+            # broker minted, which only the broker knows and which it carries
+            # itself (``main.Resolved``).
+            #
+            # It is still set, because a consumer reading a ticket in a log
+            # wants the producer's own claim about its credential, and because
+            # a backend with no minter is exactly what this value says it is.
             ticket["mode"] = "producer-credential-unprotected"
 
         ticket.update(self.mesh_extra(path) or {})

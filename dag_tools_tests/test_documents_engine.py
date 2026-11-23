@@ -940,7 +940,7 @@ def test_control_the_scanner_ignores_debug_records(caplog):
 
 
 def test_throughput_on_a_bulk_manifest(record_property, capsys):
-    n = 20_000  # about 160k rows across loads, parcels, scans and flags
+    n = 20_000  # 120,001 rows: 1 load + n parcels + 4n scans + n flags
     m = copy.deepcopy(MAPPING)
     m["document"]["max_bytes"] = 10**9
     cm = compiled(m)

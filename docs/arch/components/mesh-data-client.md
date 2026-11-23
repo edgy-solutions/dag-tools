@@ -4,7 +4,7 @@ The mesh data client is the consumer's side of a dataset read. It is a Python li
 
 This record covers what the code provides by default, and what a deployment or a caller may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`), not at the flows' pin. The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -88,7 +88,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All dag-tools paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Client source paths are under `dag_tools/cortex_data/`.
+All dag-tools paths are at `503607dd321cd6627509bfc93955357b8566597f`. Client source paths are under `dag_tools/cortex_data/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

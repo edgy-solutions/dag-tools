@@ -111,9 +111,16 @@ value on `editableSchemaMetadata`, and the lineage edge. **Not** a
 claiming a type for each would write a guess into the catalog as fact.
 
 A catalog failure **fails** the materialization, deliberately. The published
-label set is the deliverable: if it does not land, a broker finds no labels on
-the dataset and denies every read of it, and reporting success would turn an
-outage into a silent embargo.
+label set is the deliverable, and a component that reported success without
+publishing it would leave the catalog describing a dataset it never described.
+
+What the labels are *for* is the denial: a broker that finds no labels on a
+dataset is **to** deny every read of it, so an unpublished label set would read
+as a silent embargo. That brokering is **intended, not built** -- nothing today
+consults these labels to decide an access question, so publishing a label set
+changes nothing about what any reader may currently read. The failure stance
+does not depend on it: what is wrong with reporting success is the catalog
+entry, which exists now.
 
 To see what would be published without publishing it, set `dry_run: true`. The
 metadata is identical; `catalog_proposals` stays 0.

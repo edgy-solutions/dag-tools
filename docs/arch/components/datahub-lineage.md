@@ -4,7 +4,7 @@ The DataHub lineage component registers what Dagster produces in the DataHub cat
 
 This record covers what the chart and code provide by default, and what a deployment may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`). The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -73,7 +73,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are under `dag_tools/components/datahub_lineage/`; tests under `dag_tools_tests/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Component paths are under `dag_tools/components/datahub_lineage/`; tests under `dag_tools_tests/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

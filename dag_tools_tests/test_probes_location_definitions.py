@@ -52,10 +52,21 @@ def _reload_module():
 
 
 def test_definitions_module_yields_empty_defs_when_env_unset(monkeypatch):
+    """EMPTY, not merely a ``Definitions``.
+
+    The assertion used to be ``isinstance(m.defs, Definitions)`` alone, which
+    is true of a location carrying every probe in the repo -- so the one
+    property the test is named for was never checked, and a build that fell
+    back to some default bundle would have passed. The emptiness is asserted
+    on the asset graph, and its control is the sibling below: the same
+    expression finds two probes there, so an assertion that could never see
+    an asset would fail that test instead.
+    """
     monkeypatch.delenv(DAGTOOLS_PROBES_DIR_ENV, raising=False)
     m = _reload_module()
     from dagster import Definitions
     assert isinstance(m.defs, Definitions)
+    assert m.defs.resolve_asset_graph().get_all_asset_keys() == set()
 
 
 def test_definitions_module_yields_merged_defs_for_two_probes(monkeypatch, tmp_path):

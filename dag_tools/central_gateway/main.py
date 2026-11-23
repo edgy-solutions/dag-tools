@@ -575,6 +575,35 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             
             if response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Asset not found on broker")
+            elif response.status_code == 403:
+                # A REFUSAL IS FORWARDED AS A REFUSAL, never as a bad gateway.
+                # The broker refuses a read it cannot protect (its unminted
+                # posture); reported as 502 that arrives at the consumer as
+                # `MeshUnavailable` -- "the gateway could not serve the
+                # request" -- which tells the reader to retry and the operator
+                # to go and look at the broker's health. Both are the wrong
+                # place, and the consumer already has the right word for this
+                # one: 403 classifies as `NotEntitled`.
+                #
+                # Only the broker's reason travels, and only from a dict. Its
+                # body for this status carries a reason token and nothing else
+                # by construction; forwarding whatever a body happened to hold
+                # is how a detail written for an operator reaches a reader.
+                reason = None
+                try:
+                    body = response.json()
+                    if isinstance(body, dict):
+                        reason = body.get("error")
+                except Exception:  # noqa: BLE001
+                    reason = None
+                logger.warning(
+                    "broker refused the read (403) reason=%s urn=%s",
+                    reason or "-", urn,
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={"error": reason} if isinstance(reason, str) else "refused by domain broker",
+                )
             elif response.status_code != 200:
                 logger.error(f"Broker returned status {response.status_code}: {response.text}")
                 raise HTTPException(status_code=502, detail="Bad gateway: Domain broker error")

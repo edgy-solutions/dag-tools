@@ -1,6 +1,6 @@
 # dag-tools decisions: §4o-2 and §8
 
-This record covers the decisions in `AGENTS.md` sections 4o-2 and 8 at the component-records pin (`add5bc4`): the gateway image's signature support, and release images. [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` sections 4o-2 and 8 at the dag-tools pin (`503607d`): the gateway image's signature support, and release images. [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -97,7 +97,7 @@ This bullet lists the tests that pin the four decisions above. It states no deci
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. The workflow is named `workflow` in short: `.github/workflows/build-containers.yml`. `signing` is `test_gateway_signing.py`, `retag` is `test_image_release_retag.py` and `ci` is `test_image_record_ci.py`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Test files are under `dag_tools_tests/`. The workflow is named `workflow` in short: `.github/workflows/build-containers.yml`. `signing` is `test_gateway_signing.py`, `retag` is `test_image_release_retag.py` and `ci` is `test_image_record_ci.py`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
