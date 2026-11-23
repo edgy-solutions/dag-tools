@@ -84,6 +84,18 @@ _PKG_LOGGER = logging.getLogger("dag_tools.central_gateway")
 #: The route id the delegate table is keyed on for the asset authorize endpoint.
 ROUTE_AUTHORIZE = "assets.authorize"
 
+#: The route id for the listing of assets a caller may read. ITS OWN id, not a reuse of
+#: `ROUTE_AUTHORIZE`, for two reasons that pull the same way. The audit line names the route, so
+#: sharing an id would record a listing as a read authorization -- a log describing a decision
+#: that was not made. And the delegate table is keyed per route, so sharing an id would widen
+#: every existing row to a route nobody granted it. The consequence is stated rather than
+#: smoothed over: under `enforce`, a service listed as a delegate for `assets.authorize` alone
+#: is refused `not_a_delegate` here until the policy rail carries a row for this id too. A
+#: listing is the weaker operation, which is exactly what makes inferring the grant tempting --
+#: and the table cannot express "weaker", so inferring it in code would make its rows mean
+#: something other than what they say.
+ROUTE_LIST = "assets.list"
+
 POSTURE_OBSERVE = "observe"
 POSTURE_ENFORCE = "enforce"
 

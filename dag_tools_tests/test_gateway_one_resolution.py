@@ -130,20 +130,39 @@ def _references(node: ast.AST) -> set:
     }
 
 
+#: Every function that asks the authorizer for a decision. `topaz_decision` holds the body;
+#: `check_topaz_authz` is the read door's thin view of it, kept at its old signature because
+#: other repos import it (AGENTS.md §6). BOTH are pinned, because a pin on the wrapper alone
+#: would have gone quietly vacuous the moment the body moved out of it -- which is exactly what
+#: happened when the listing route needed the undecided/denied distinction the wrapper discards.
+GATE_FUNCTIONS = ("topaz_decision", "check_topaz_authz")
+
+
 def test_the_gate_is_handed_the_principal_and_reads_nothing_from_the_token():
     """`check_topaz_authz` used to decode the token and fall back to a claim. That decode WAS
     the second resolution: it ran on the token the request presented, with no reference to the
     decision the route had already made, so the two could only agree by coincidence.
     """
-    calls = _calls(_function("check_topaz_authz"))
-    assert "jwt.decode" not in calls, (
-        "the gate decodes the token again — that is the second resolution returning"
-    )
-    assert not [c for c in calls if c.endswith("entitlement_claim")], (
-        "the gate reads a claim name, so it is resolving a subject rather than being handed one"
-    )
-    assert not [c for c in calls if c.endswith("resolve_principal") or c.endswith("decide")], (
-        "the gate resolves the principal itself; it must receive the route's one answer"
+    asked = []
+    for name in GATE_FUNCTIONS:
+        calls = _calls(_function(name))
+        if "client.post" in calls:
+            asked.append(name)
+        assert "jwt.decode" not in calls, (
+            f"{name} decodes the token again — that is the second resolution returning"
+        )
+        assert not [c for c in calls if c.endswith("entitlement_claim")], (
+            f"{name} reads a claim name, so it is resolving a subject rather than being handed one"
+        )
+        assert not [c for c in calls if c.endswith("resolve_principal") or c.endswith("decide")], (
+            f"{name} resolves the principal itself; it must receive the route's one answer"
+        )
+    # Anti-vacuity: the assertions above hold trivially of a function that asks nobody anything,
+    # so at least one of the pinned functions has to be the one that actually posts to the
+    # authorizer. A body moved to a third function fails here rather than passing silently.
+    assert asked, (
+        "none of the pinned gate functions posts to the authorizer — the body has moved and "
+        f"{GATE_FUNCTIONS} now pins nothing"
     )
 
 
