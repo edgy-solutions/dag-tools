@@ -2,7 +2,7 @@
 
 Status: A note, not a decision.
 
-The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8: it is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Line numbers are at the pins in [the README](README.md): at the dag-tools pin for dag-tools, and at the invincible-agent pin for that repo. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
+The remedies proposed for gaps the flow and component records found, in the order they would run, with no dates. Every row is `proposed` except row 8 and part of row 3. A `proposed` row is written here and nowhere else, no decision record accepts it, and no code does it. Each row would be decided in its own record by the repository that owns the code. Row 8 is `accepted`: the architect ruled on it on 2026-11-18, and no code does it yet. Rows 6 and 7 have owners named by the architect the same day and stay `proposed`. Part of row 3 is `built`: dag-tools #143 put its deployment switch in code after the pin, and no release carries it yet. Line numbers are at the pins in [the README](README.md): at the dag-tools pin for dag-tools, and at the invincible-agent pin for that repo. Row 3 names the one later dag-tools commit it cites. Where an issue tracks a row, it is named beside the row; "not filed" means no issue exists yet.
 
 ## Order
 
@@ -10,7 +10,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 |---|---|---|---|---|
 | 1 | Verified principal by default (dag-tools #70) | the gateway reads who a request is for from the verified token, not from a header | — (proposed; no decision yet) | the policy delegate rail and its reader |
 | 2 | Refuse what the object store cannot narrow (dag-tools #71) | an object-store ticket is never wider than the decision that allowed it | — (proposed; no decision yet) | — |
-| 3 | No ticket on the producer's credential (dag-tools #72) | every backend a ticket names is read on a credential minted for that ticket | — (proposed; no decision yet) | — |
+| 3 | No ticket on the producer's credential (dag-tools #72) | every backend a ticket names is read on a credential minted for that ticket | — (switch `built` in dag-tools #143, in no release; no decision yet) | — |
 | 4 | Bounded reads from SQL backends (dag-tools #73) | a read from a SQL backend is no larger than the caller asked for and can stop before the whole table moves | — (proposed; no decision yet) | — |
 | 5 | A version on every read (dag-tools #74) | a receipt says which version of the dataset was read | — (proposed; no decision yet) | — |
 | 6 | Engine read decisions on by default (not filed) | a graph or vector read returns only what the person may read | — (proposed; owner named: invincible-agent) | the preconditions invincible-agent's chart names for the switch |
@@ -57,9 +57,10 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 3. No ticket on the producer's credential
 
-- **Gap:** [need to know, finding 5](flows/need-to-know.md). A backend with no entry in `_MINTERS` (`dag_tools/domain_broker/main.py:298-308`) is returned on the producer's own credential, and the code says so rather than calling it protected (`:1219-1223`). `built`
-- **Remedy:** add a minter for each backend in use. Until each has one, a deployment switch makes the broker refuse a ticket for an unminted backend instead of returning the producer's credential. `proposed`
-- **Issue:** dag-tools #72.
+- **Gap:** [need to know, finding 5](flows/need-to-know.md). At the pin, a backend with no entry in `_MINTERS` (`dag_tools/domain_broker/main.py:298-308`) is returned on the producer's own credential, and the code says so rather than calling it protected (`:1219-1223`). `built`
+- **Fixed in code, not released:** dag-tools #143 merged after the pin, at `2c613aea18fb4c9be8e186504af0024db28f53ef`. At that commit, every resolve path declares whether the broker minted the credential on its ticket (`dag_tools/domain_broker/main.py:310-326`), and one guard on the seam every ticket leaves through decides before the ticket is stamped (`main.py:1216-1221`). Under `BROKER_UNMINTED_POSTURE=enforce`, a credential the broker did not mint is refused with a 403 and reaches the reader as a refusal. Under `observe`, the default, the read is served as before and counted per backend as one `enforce` would refuse (`dag_tools/domain_broker/unminted_posture.py:50`, `:79-81`, `:93-141`, `:144-157`). So under the default the producer's credential is still returned. `_MINTERS` covers the five known backends; what the switch covers is a ticket naming no backend, a backend outside those five, and the older coordinate path's database tickets. No release tag contains that commit: the newest, v0.17.0, predates it. `built`
+- **Remedy:** a minter for each backend in use that `_MINTERS` does not cover. Until each has one, a deployment on a release that carries the switch sets it to `enforce` once the would-refuse counts list only backends whose reads it accepts losing. `proposed`
+- **Issue:** dag-tools #72, closed by #143.
 
 ### 4. Bounded reads from SQL backends
 
@@ -239,6 +240,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Delegation seam answers no | dag-tools `identity.py:271-286` | not stated | `test_the_default_seam_is_false_and_says_once_that_the_rail_is_not_wired` | `built` |
 | Object-store minter ignores narrowing | dag-tools `dag_tools/domain_broker/main.py:226-256` | cited in code: invincible-agent ADR-0044 (not read) | `test_minting_failure_fails_closed` | `built` |
 | No-minter backends get the producer credential | dag-tools `dag_tools/domain_broker/main.py:298-308`, `:1219-1223` | not stated | — | `built` |
+| Unminted switch, default `observe`; in no release | dag-tools at `2c613ae`: `dag_tools/domain_broker/main.py:310-326`, `:1216-1221`; `unminted_posture.py:50`, `:79-81`, `:93-141`, `:144-157` | dag-tools AGENTS.md §4o-3 at `2c613ae` | `test_broker_unminted_posture.py`: `test_observe_serves_exactly_what_it_served_before`, `test_enforce_refuses_and_the_reader_receives_no_credential` | `built` |
 | SQL reads are the whole table, eagerly | dag-tools `dag_tools/cortex_data/client.py:318`, `:323`, `:352-353` | not stated | no test reaches either call | `built` |
 | No version reader ships | dag-tools `dag_tools/domain_broker/ticket_identity.py:110` | dag-tools AGENTS.md §4o | `test_no_as_of_reader_ships_by_default` | `built` |
 | Engine read checks default off in code and chart | invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944` | cited in chart: invincible-agent ADR-0025 (not read) | `test_the_control_with_auth_OFF_both_paths_keep_EVERY_chunk` | `built` |
