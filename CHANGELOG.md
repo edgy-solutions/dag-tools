@@ -10,6 +10,32 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## 0.18.0 — 2026-11-22
+
+Cut at `51cec04`. The release the fleet pins to get the write-credential fix (#143).
+
+### Added
+
+- The broker refuses, or counts, a ticket it did not mint (`dag_tools.domain_broker.unminted_posture`). ADR-0044's minting is per backend, so a ticket for a backend with no minter was served carrying the **producer's own** credential — a write credential, unscoped to the asset, not expiring with the access window. It was counted and labelled, which is how it was found and also why it sat there.
+  - New environment variable `BROKER_UNMINTED_POSTURE`: `observe` (**the default — today's behaviour exactly, plus the numbers**) or `enforce`. Read through the shared `parse_posture`, so an unrecognised value fails closed and is logged carrying only the length of the value.
+  - The guard sits at the one seam every resolve path returns through, and **before** the ticket is stamped, so a refused read is not counted as a ticket that was issued. Each path declares whether the broker minted; nothing is inferred from `mode` (the producer's word) or from backend membership (the legacy coordinate path's placeholder token is for backends that *have* minters).
+  - An unminted ticket carrying **no** credential is not an exposure and is served unchanged. A minted ticket is never refused.
+  - `/health.adr0044.unminted_credentials` publishes the posture plus `would_refuse` and `refused` — two per-backend counts that are never summed, because under `observe` a would-refusal is served anyway. A ticket naming no backend counts under `(absent)`, which reads as a backend nobody can name rather than as a rendering artefact. The counts and the log line sit in separate `try` blocks and `/health` answers nulls rather than raising.
+  - **Changed default, consumer-visible:** the gateway turned every non-200, non-404 broker response into a 502, which reached a reader as `MeshUnavailable` — telling them to retry and an operator to look at broker health, both the wrong place. A 403 from the broker now forwards as a refusal and classifies as `NotEntitled`. Only the `error` key travels, and only from a dict. No existing signature or export changes.
+
+### Changed
+
+- Four statements in docstrings and comments now say which claims are **intended rather than built**: nothing in this library consults a classification to answer an access question. Comment-only — `components/classification_propagation/component.py`, `components/warehouse_source/component.py`, `io_managers/mesh_publishing.py`. No code, signature, export or default changes.
+
+### Documentation
+
+- `docs/warehouse-table-to-published-dataset.md` walks one warehouse table from an unmeasured read to a curated, contracted, classified, published dataset using only examples this repository ships, and states where those examples stop short. Linked from the README and held to the shipped example directories by `test_operator_path_doc.py`.
+- `docs/arch/` records are repinned to the then-current master and the roadmap's rows carry their line citations at that pin.
+
+### Repository
+
+- The lane-trailer check no longer exempts a branch inside `lane/` that matches no row of `.githooks/lanes`, and reads a stacked branch's trailer against its lane. CI only; nothing shipped in the wheel changes.
+
 ## 0.17.0 — 2026-11-18
 
 
