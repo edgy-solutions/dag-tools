@@ -1,6 +1,6 @@
 # dag-tools decisions: §4s
 
-This record covers the decisions in `AGENTS.md` section 4s at the component-records pin (`add5bc4`): documents to tables. The component that carries them is described in the [document tables record](../components/document-tables.md). [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` section 4s at the dag-tools pin (`503607d`): documents to tables. The component that carries them is described in the [document tables record](../components/document-tables.md). [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -217,7 +217,7 @@ One component instance turns bundles of documents into one Lance table per mappe
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. `eng` is `dag_tools/documents/engine.py`, `map` is `dag_tools/documents/mapping.py`, `rdr` is `dag_tools/documents/reader.py`, `src` is `dag_tools/documents/sources.py`, `lw` is `dag_tools/documents/lance_writer.py`, `coe` is `dag_tools/documents/coerce.py`, `fil` is `dag_tools/documents/files.py` and `dt` is `dag_tools/components/document_tables/`. `tc` is `test_document_tables_component.py`, `te` is `test_documents_engine.py`, `tm` is `test_documents_mapping.py`, `tl` is `test_documents_lance_writer.py`, `ts` is `test_documents_sources.py`, `tp` is `test_documents_profiler.py`, `tj` is `test_documents_json.py` and `tf` is `test_documents_features.py`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Test files are under `dag_tools_tests/`. `eng` is `dag_tools/documents/engine.py`, `map` is `dag_tools/documents/mapping.py`, `rdr` is `dag_tools/documents/reader.py`, `src` is `dag_tools/documents/sources.py`, `lw` is `dag_tools/documents/lance_writer.py`, `coe` is `dag_tools/documents/coerce.py`, `fil` is `dag_tools/documents/files.py` and `dt` is `dag_tools/components/document_tables/`. `tc` is `test_document_tables_component.py`, `te` is `test_documents_engine.py`, `tm` is `test_documents_mapping.py`, `tl` is `test_documents_lance_writer.py`, `ts` is `test_documents_sources.py`, `tp` is `test_documents_profiler.py`, `tj` is `test_documents_json.py` and `tf` is `test_documents_features.py`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

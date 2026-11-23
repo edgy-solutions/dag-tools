@@ -1,6 +1,6 @@
 # dag-tools decisions: §4q
 
-This record covers the decisions in `AGENTS.md` section 4q at the component-records pin (`add5bc4`): the SystemLink source kind. The source is described in the [SystemLink source record](../components/systemlink-source.md), and the seam it plugs into in the [dlt pipeline record](../components/dlt-pipeline.md) and [the §4p decisions](dag-tools-s4p.md). [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` section 4q at the dag-tools pin (`503607d`): the SystemLink source kind. The source is described in the [SystemLink source record](../components/systemlink-source.md), and the seam it plugs into in the [dlt pipeline record](../components/dlt-pipeline.md) and [the §4p decisions](dag-tools-s4p.md). [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -98,7 +98,7 @@ The kind has two parts. The engine, under `dag_tools/systemlink/`, imports no Da
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Test files are under `dag_tools_tests/`. `kind` is `dag_tools/asset_wrappers/sources/systemlink.py` and engine paths are under `dag_tools/systemlink/`. `comp` is `test_systemlink_component.py`, `eng` is `test_systemlink_engine.py` and `spike` is `test_systemlink_spike.py`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Test files are under `dag_tools_tests/`. `kind` is `dag_tools/asset_wrappers/sources/systemlink.py` and engine paths are under `dag_tools/systemlink/`. `comp` is `test_systemlink_component.py`, `eng` is `test_systemlink_engine.py` and `spike` is `test_systemlink_spike.py`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

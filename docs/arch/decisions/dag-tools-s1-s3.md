@@ -1,6 +1,6 @@
 # dag-tools decisions: §1 to §3
 
-This record covers the decisions in `AGENTS.md` sections 1 to 3 at the component-records pin (`add5bc4`): reusability, declarative components, and durable state with double writes. [The decisions index](README.md) explains how each decision is addressed.
+This record covers the decisions in `AGENTS.md` sections 1 to 3 at the dag-tools pin (`503607d`): reusability, declarative components, and durable state with double writes. [The decisions index](README.md) explains how each decision is addressed.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -90,7 +90,7 @@ This record covers the decisions in `AGENTS.md` sections 1 to 3 at the component
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are under `dag_tools/restate_handlers/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Handler paths are under `dag_tools/restate_handlers/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
