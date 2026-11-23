@@ -214,6 +214,49 @@ centralGateway:
   # Keycloak, an audience mapper on the client_credentials client. There is
   # deliberately no per-caller exemption: a second verification is a second
   # answer, and two answers that can disagree is the defect this closes.
+  # --------------------------------------------------------------------------
+  # The two internal doors. `POST /api/v1/internal/register` on this gateway
+  # points a URN's route; `POST /api/v1/internal/resolve` on the domain broker
+  # mints credentials. Neither may be reached by anyone but a named mesh
+  # service. Nothing below is rendered unless you set it.
+  #
+  # INTERNAL_DOOR_POSTURE is `observe` (the default, also when blank) or
+  # `enforce`, and it is SEPARATE from GATEWAY_IDENTITY_POSTURE so the doors
+  # and the read path flip independently. Under `observe` a refusal is logged
+  # as `would_refuse` and the request is served.
+  #
+  # GATEWAY_REGISTER_CALLERS is this door's own list of callers, comma
+  # separated, each the `svc:` entitlement of a service token. THERE IS NO
+  # DEFAULT, and an empty list admits nobody under `enforce` -- the same
+  # stance as the issuer list above, for the same reason.
+  #
+  #   INTERNAL_DOOR_POSTURE: "observe"
+  #   GATEWAY_REGISTER_CALLERS: "svc:<service-that-registers-routes>"
+  #
+  # The pod says which of these is unset on its own startup line, one line per
+  # door: grep for `internal_door:` and read `callers=`, `enforce_ready=` and
+  # the `unset=` list after it. `callers=0` is the state worth looking for --
+  # a door that under `enforce` admits nobody looks exactly like a door nobody
+  # has called yet.
+  #
+  # BROKER_RESOLVE_CALLERS is the OTHER door's list and belongs on the broker,
+  # which this chart does not deploy. It is named here only so the pair is
+  # findable from one place; setting it on the gateway configures nothing.
+  #
+  # ..........................................................................
+  # Caller side: this pod also CALLS the broker's resolve door, and needs its
+  # own service token to do it. Three settings, and ONE OF THEM IS A
+  # CREDENTIAL:
+  #
+  #   MESH_SERVICE_TOKEN_URL   -- the client-credentials token endpoint
+  #   MESH_SERVICE_CLIENT_ID   -- this pod's client id
+  #   MESH_SERVICE_CLIENT_SECRET -- a secret. Deliver it through `envFrom`
+  #                                 below, NEVER through `env:` above, which
+  #                                 renders its value into the Deployment.
+  #
+  # With them unset the pod sends its internal calls bare: `observe` serves
+  # them, `enforce` refuses them as `no_token`. The startup line for this half
+  # is `internal_door: calls=broker.resolve token_ready=`.
   # 2026-07-01: `ALLOW_MOCK_AUTH` was removed as part of ADR-0026
   # step 1. It converted every topaz failure (exception, timeout,
   # non-200) into an allow-by-default fail-open, which meant

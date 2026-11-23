@@ -513,3 +513,133 @@ def test_internal_door_and_main_import_under_the_FLAT_gateway_layout(tmp_path):
                          cwd=str(tmp_path), timeout=180)
     assert out.returncode == 0, out.stderr[-800:]
     assert "ok broker.resolve True" in out.stdout
+
+
+# ---------------------------------------------------------------------------
+# Startup announcement
+# ---------------------------------------------------------------------------
+# `callers=0` is a door that under `enforce` admits NOBODY, and it otherwise looks exactly like a
+# door nobody has called yet. The broker pod announced nothing at all, so on that side the state
+# was invisible until a caller was refused. Every test here has its planted-defect control: a
+# check that sees nothing passes vacuously.
+SECRET_VALUES = ("s3cr3t-value", SVC_OK, "https://idp.invalid/token", "svc-client", ISS, AUD)
+
+
+def _values_in(text):
+    return sorted(v for v in SECRET_VALUES if v in text)
+
+
+def test_an_empty_callers_list_says_callers_0_and_names_the_variable(door, verifying):
+    line = internal_door.announce(door.route, door.env)
+    assert "route=%s" % door.route in line
+    assert "callers=0" in line and "enforce_ready=no" in line
+    assert door.env in line.split("unset=", 1)[1].split(",")
+
+
+def test_control_a_populated_list_counts_it_and_does_not_name_the_variable(door, verifying,
+                                                                          monkeypatch):
+    monkeypatch.setenv(door.env, SVC_OK + ",svc:other")
+    line = internal_door.announce(door.route, door.env)
+    assert "callers=2" in line and "enforce_ready=yes" in line
+    assert "unset=" not in line and door.env not in line
+
+
+def test_the_served_line_names_what_identity_needs_too(door, monkeypatch):
+    """The door verifies with `identity._verify`, so a full callers list and no accepted issuer
+    admits nobody either -- and on the broker this line is the only place those names appear."""
+    monkeypatch.setenv(door.env, SVC_OK)
+    line = internal_door.announce(door.route, door.env)
+    assert "callers=1" in line and "enforce_ready=no" in line
+    unset = line.split("unset=", 1)[1].split(",")
+    assert identity.ISSUERS_ENV[0] in unset and identity.AUDIENCES_ENV[0] in unset
+    assert any(identity.KEY_ENV[0] in u for u in unset)
+
+
+def test_control_the_identity_names_leave_the_line_once_they_are_set(door, verifying, monkeypatch):
+    monkeypatch.setenv(door.env, SVC_OK)
+    line = internal_door.announce(door.route, door.env)
+    assert "enforce_ready=yes" in line and "unset=" not in line
+
+
+def test_the_caller_line_names_the_three_unset_settings():
+    line = internal_door.announce_caller(internal_door.ROUTE_RESOLVE)
+    assert "calls=%s" % internal_door.ROUTE_RESOLVE in line and "token_ready=no" in line
+    unset = line.split("unset=", 1)[1].split(",")
+    assert unset == [internal_door.TOKEN_URL_ENV, internal_door.CLIENT_ID_ENV,
+                     internal_door.CLIENT_SECRET_ENV]
+
+
+def test_control_the_caller_line_is_ready_once_all_three_are_set(mesh_creds):
+    line = internal_door.announce_caller(internal_door.ROUTE_RESOLVE)
+    assert "token_ready=yes" in line and "unset=" not in line
+
+
+def test_a_partly_configured_caller_names_only_what_is_missing(monkeypatch):
+    monkeypatch.setenv("MESH_SERVICE_TOKEN_URL", "https://idp.invalid/token")
+    line = internal_door.announce_caller(internal_door.ROUTE_RESOLVE)
+    assert "token_ready=no" in line
+    assert internal_door.TOKEN_URL_ENV not in line
+    assert internal_door.CLIENT_SECRET_ENV in line
+
+
+def test_no_value_reaches_either_line(door, verifying, monkeypatch, mesh_creds):
+    """NAMES, never values -- these lines go wherever logs go."""
+    monkeypatch.setenv(door.env, SVC_OK)
+    served = internal_door.announce(door.route, door.env)
+    called = internal_door.announce_caller(internal_door.ROUTE_REGISTER)
+    assert _values_in(served) == [] and _values_in(called) == []
+    assert PUB.splitlines()[1] not in served  # not even a slice of the key
+
+
+def test_control_the_scan_finds_a_planted_value():
+    planted = "internal_door: route=x posture=observe callers=1 secret=s3cr3t-value"
+    assert _values_in(planted) == ["s3cr3t-value"]
+
+
+def test_the_announcement_establishes_its_visibility_before_making_the_claim(door, monkeypatch):
+    """A posture announced into a dark channel is not announced (`subject_gauge` docstring)."""
+    order = []
+    monkeypatch.setattr(internal_door.subject_gauge, "ensure_gauge_visible",
+                        lambda: order.append("gauge"))
+    monkeypatch.setattr(internal_door._PKG_LOGGER, "info",
+                        lambda *a, **k: order.append("line"))
+    internal_door.announce(door.route, door.env)
+    internal_door.announce_caller(door.route)
+    assert order == ["gauge", "line", "gauge", "line"]
+
+
+def test_the_broker_announces_its_resolve_door_at_startup(monkeypatch, lines):
+    """The regression for the gap: this pod's lifespan announced NOTHING, so an empty
+    `BROKER_RESOLVE_CALLERS` was invisible until a caller was refused."""
+    async def _nothing():
+        return None
+    monkeypatch.setattr(broker, "_startup_load_and_register", _nothing)
+    with TestClient(broker.app):
+        pass
+    served = lines("internal_door: route=")
+    assert len(served) == 1 and internal_door.ROUTE_RESOLVE in served[0]
+    assert "callers=0" in served[0] and internal_door.BROKER_RESOLVE_CALLERS in served[0]
+    called = lines("internal_door: calls=")
+    assert len(called) == 1 and internal_door.ROUTE_REGISTER in called[0]
+
+
+def test_the_gateway_announces_the_register_door_it_serves_and_the_resolve_it_calls(monkeypatch,
+                                                                                    lines):
+    with TestClient(gateway.app):
+        pass
+    served = lines("internal_door: route=")
+    called = lines("internal_door: calls=")
+    assert len(served) == 1 and internal_door.ROUTE_REGISTER in served[0]
+    assert internal_door.GATEWAY_REGISTER_CALLERS in served[0]
+    assert len(called) == 1 and internal_door.ROUTE_RESOLVE in called[0]
+
+
+def test_each_pod_announces_the_door_it_SERVES_not_the_one_it_calls(monkeypatch, lines):
+    """Both pods serve one door and call the other, which is why there are two lines each. A
+    pod announcing the wrong one would report a callers list that governs nothing here."""
+    async def _nothing():
+        return None
+    monkeypatch.setattr(broker, "_startup_load_and_register", _nothing)
+    with TestClient(broker.app):
+        pass
+    assert internal_door.GATEWAY_REGISTER_CALLERS not in "\n".join(lines("internal_door:"))
