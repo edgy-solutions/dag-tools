@@ -10,9 +10,9 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## 0.18.0 — 2026-11-22
+## 0.18.0 — 2026-11-23
 
-Cut at `51cec04`. The release the fleet pins to get the write-credential fix (#143).
+Cut at `0ac0cc3`. The release the fleet pins to get the write-credential fix (#143).
 
 ### Added
 
@@ -22,6 +22,11 @@ Cut at `51cec04`. The release the fleet pins to get the write-credential fix (#1
   - An unminted ticket carrying **no** credential is not an exposure and is served unchanged. A minted ticket is never refused.
   - `/health.adr0044.unminted_credentials` publishes the posture plus `would_refuse` and `refused` — two per-backend counts that are never summed, because under `observe` a would-refusal is served anyway. A ticket naming no backend counts under `(absent)`, which reads as a backend nobody can name rather than as a rendering artefact. The counts and the log line sit in separate `try` blocks and `/health` answers nulls rather than raising.
   - **Changed default, consumer-visible:** the gateway turned every non-200, non-404 broker response into a 502, which reached a reader as `MeshUnavailable` — telling them to retry and an operator to look at broker health, both the wrong place. A 403 from the broker now forwards as a refusal and classifies as `NotEntitled`. Only the `error` key travels, and only from a dict. No existing signature or export changes.
+- Each pod announces at startup the internal door it serves and the one it calls (`dag_tools.central_gateway.internal_door`). `INTERNAL_DOOR_POSTURE=enforce` with an empty callers list refuses every internal call — `callers=0` is a door that admits **nobody**, and it otherwise looks exactly like a door nobody has called yet. The broker's lifespan announced nothing at all, so `BROKER_RESOLVE_CALLERS`, a list only the broker reads, was invisible on the one pod that reads it until a caller was refused.
+  - Two lines per pod, because both pods serve one door and call the other. The served side reports the posture, the caller count, `enforce_ready` and the names of the unset variables; the calling side reports `token_ready` and the unset `MESH_SERVICE_*` names. A pod with none of those set sends its own internal calls bare, which `observe` serves and `enforce` refuses as `no_token` — and the one-shot error in `service_headers` fires only once a call is attempted, which is after the thing it would have warned about.
+  - `enforce_blockers` extends `identity.enforce_blockers()`, because the door verifies through the identity module: a full callers list with no accepted issuer admits nobody either, and on the broker this line is the only place those names appear. Counts and variable names only, never values, since these lines go wherever logs go.
+  - `helm/dag-tools/values.yaml` carries the block **commented out**, so nothing renders by default. It documents that `BROKER_RESOLVE_CALLERS` belongs on the broker — which this chart does not deploy, so setting it on the gateway configures nothing — and that `MESH_SERVICE_CLIENT_SECRET` is delivered through `envFrom`, never `env:`, which would render its value into the Deployment.
+  - Additive: no signature, export or default changes, and `GATEWAY_GAUGE_LOG_AUTOCONFIG=0` still disables the log visibility the announcement establishes for itself.
 
 ### Changed
 
@@ -31,6 +36,7 @@ Cut at `51cec04`. The release the fleet pins to get the write-credential fix (#1
 
 - `docs/warehouse-table-to-published-dataset.md` walks one warehouse table from an unmeasured read to a curated, contracted, classified, published dataset using only examples this repository ships, and states where those examples stop short. Linked from the README and held to the shipped example directories by `test_operator_path_doc.py`.
 - `docs/arch/` records are repinned to the then-current master and the roadmap's rows carry their line citations at that pin.
+- `docs/arch/ROADMAP.md` row 3 records the write-credential fix as built in code and names the commit and lines it is built at, and states separately what a `proposed` row means. That row says the fix is in no release, which is true of the tree it cites and goes false with this tag; repinning it is a follow-up, not part of this release.
 
 ### Repository
 
