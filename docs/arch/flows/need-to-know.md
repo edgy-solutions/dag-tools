@@ -46,7 +46,8 @@ Each element names the mesh component that plays it and the code that shows it.
 6. **Policy is administered as reviewed files.**
    - Grants are YAML in the policy directory, and every grant names who granted it and why.
    - A scheduled job validates the files, then syncs them into the Topaz directory.
-   - Git history is the stated audit trail. No separate grant ledger was found.
+   - Access approved at run time is appended to a grant ledger table naming the requester, the approver, the time and the reason. A row is never edited; a revocation is a later row.
+   - The scheduled job reads committed policy together with the ledger and is the only caller that removes a `reader` grant. A ledger it cannot read leaves every grant in place and fails the job.
 
    `built`
 
@@ -68,7 +69,7 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 | # | Actor | Action | Target | What passes | Decision or check | Protected by | Evidence | Status |
 |---|---|---|---|---|---|---|---|---|
-| 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2199` | `built` |
+| 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2217` | `built` |
 | 2 | CO-CLIENT | asks for a dataset | CO-GATEWAY | the bearer token and the principal it acts for | — | — | dag-tools `dag_tools/cortex_data/client.py:161-205` | `built` |
 | 3 | CO-GATEWAY | verifies the token, then resolves the principal | CO-GATEWAY | — | signature, `exp`, `iss`, `aud`; the configured posture | — | `dag_tools/central_gateway/identity.py:179-202`, `:271`, `:399` | `built` |
 | 4 | CO-GATEWAY | checks the request against the deny list | CO-GATEWAY | — | the configured deny list | — | `dag_tools/central_gateway/main.py:78-82`, `:468-495` | `built` |
@@ -79,7 +80,7 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 | 9 | CO-GATEWAY | logs `TICKET_ISSUED` and returns the ticket; the client reads with it | CO-CLIENT | the ticket | — | — | `main.py:579-601`; `client.py` read paths | `built` |
 | 10 | XE-AGENT-ENGINE | answers from a dataset read through the data client | CO-CLIENT | the URN and the person read for; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: invincible-agent `agent_fleet/data_analyst/main.py:505-519` | `built` |
 | 11 | CO-JUPYTERHUB | reads a dataset from a notebook through the data client | CO-CLIENT | the URN and the token the notebook's environment carries; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: dag-tools `docs/cortex-data-client.md:26-27`; [JupyterHub, finding 5](../components/jupyterhub.md) | `built` |
-| 12 | XE-AGENT-ENGINE | asks a dashboard tool's API for data | CO-SUPERSET | the chart's bearer token, empty by default | none in the mesh | `CO-SUPERSET` `built`; `none: the gateway is not on this path` `built` | `CO-SUPERSET`: [Superset, finding 6](../components/superset.md); `none:` invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (the caller's side only) | `built` |
+| 12 | XE-AGENT-ENGINE | asks a dashboard tool's API for data | CO-SUPERSET | the chart's bearer token, empty by default | none in the mesh | `CO-SUPERSET` `built`; `none: the gateway is not on this path` `built` | `CO-SUPERSET`: [Superset, finding 6](../components/superset.md); `none:` invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` (the caller's side only) | `built` |
 | 13 | XE-AGENT-READER | reads graph or vector objects for an answer | XE-KNOWLEDGE-STORE | the person's query; objects back | the engine's own per-object check, off by default | `none: the gateway is not on this path` `built` | `none:` [agent capabilities, findings 6 and 7](agent-capabilities.md) | `built` |
 
 No step is drawn for an API layer, because nothing at either pin wires one (finding 7).
@@ -93,13 +94,13 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 | Policy enforcement point (¶3), client | `cortex_data` client | Applies column and row narrowing to the frame for non-Postgres backends. For Postgres it skips this and relies on the minted role. | `built` | `client.py:318-366` | Advisory only. Today nothing arrives to apply (finding 2). |
 | Policy enforcement point (¶3), outside the data read | Agent backend and agent services | Make their own Topaz checks for persona and domain cells, documents, ontology, capabilities and tasks. A person refused a cell never reaches the dataset gate. | `built` | invincible-agent `_seal_asset_read_denied_at_the_gate.py:1-13` | Out of scope for this flow; listed so no one reads the gateway as the only enforcement point. |
 | Policy decision point (¶3) | Topaz authorizer, `data_mesh.GET.api.v1.assets.__asset_key.authorize` | Deny by default. Allows only on an explicit `reader` or `owner` relation. | `built` | `topaz-configmap.yaml:352-392` | No narrowing policy (finding 2). No label policy (finding 3). |
-| Policy information point (¶3) | Topaz directory | Holds `dataset` objects and `owner` relations synced from the catalog, `reader` relations synced from grants, and users and groups synced from policy files. | `built` | invincible-agent `policy/sync/datahub_topaz_sync.py:53-57`, `policy/sync/grant_sync.py`, `topaz-seed-cronjob.yaml:255-293` | Catalog tags and domains are parsed but not written to the directory. Token claims do not reach it; the subject is passed in by the gateway. |
+| Policy information point (¶3) | Topaz directory | Holds `dataset` objects and `owner` relations synced from the catalog, `reader` relations synced from grants, and users and groups synced from policy files. | `built` | invincible-agent `policy/sync/datahub_topaz_sync.py:53-57`, `policy/sync/grant_sync.py`, `topaz-seed-cronjob.yaml:277-324` | Catalog tags and domains are parsed but not written to the directory. Token claims do not reach it; the subject is passed in by the gateway. |
 | Policy information point (¶3), request | Token claims, deny list | The verified subject, plus the configured deny list. | `built` | `identity.py:399`; `main.py:78-82` | No directory, catalog or label lookup at decision time. |
-| Policy administration point (¶3) | Policy YAML plus the seed CronJob | Grants are reviewed files carrying `granted_by` and `reason`. The CronJob validates them, then syncs. Removing a row revokes the grant. | `built` | invincible-agent `policy/asset_grants.yaml:1-26`; `topaz-seed-cronjob.yaml:255-293` | No grant ledger beyond git history. |
+| Policy administration point (¶3) | Policy YAML plus the seed CronJob | Grants are reviewed files carrying `granted_by` and `reason`, plus approved-access rows in an append-only grant ledger table. The CronJob validates the files, then syncs them together with the ledger. Removing a committed row revokes a grant the ledger does not also hold; a revocation row revokes either. | `built` | invincible-agent `policy/asset_grants.yaml:1-26`; `topaz-seed-cronjob.yaml:277-324`; `policy/sync/grant_sync.py:20-28`, `:368-387`; `src/iagent/human_tasks.py:1008-1019` | — |
 | ICAM: authentication services (¶8) | Keycloak; gateway token verification | Tokens are issued by the realm and verified at the gateway against JWKS or a static key, with the issuer and audience checked. | `built` | `keycloak.yaml:38`; `identity.py:399-445` | — |
 | ICAM: digital identity services (¶10) | Keycloak realm | One authorization-id claim. Realm roles are `user` and `admin`. Service clients carry a hardcoded authorization id. | `built` | `keycloak-configmap.yaml:2`, `:240-255`, `:279-286` | No group, persona or domain claim; those come from the directory. |
 | ICAM: authorization and access control services (¶7) | Topaz directory and policy | The decision and information points above. | `built` | as above | Access control is relationship-based on explicit grants. It is not attribute-based over security labels. |
-| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `built` | invincible-agent `values.yaml:2268-2283` | Recorded as a gap. |
+| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `built` | invincible-agent `values.yaml:2286-2301` | Recorded as a gap. |
 
 ## Gaps
 
@@ -140,12 +141,13 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 | Labels as a decision input: rails written, empty, unread | invincible-agent `policy/level_readers.yaml:17-20`, `policy/dimension_holders.yaml:23-26` | cited in code: invincible-agent ADR-0064 (not read) | `tests/security/test_level_readers_rail.py`, `tests/security/test_dimension_holders_rail.py` (validate the files; no reader) | `proposed` |
 | Posture is set per deployment | dag-tools `dag_tools/central_gateway/identity.py:198` | not stated | — | `built` |
 | Grants are reviewed files with grantor and reason | invincible-agent `policy/asset_grants.yaml:1-26` | not stated | `tests/test_grant_sync.py` | `built` |
-| Validate, then sync, on a schedule | invincible-agent `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:109`, `:255-293` | not stated | `tests/test_topaz_manifest_load_job.py` | `built` |
+| Approved access is a ledger row; the seed reads the ledger and fails closed | invincible-agent `src/iagent/human_tasks.py:1008-1019`, `:1100-1104`; `policy/sync/grant_sync.py:234-236`, `:368-387`; `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:297-307`, `:326-329` | not stated | `tests/test_the_seed_reads_the_ledger_so_the_one_pruner_keeps_approved_grants.py`: `test_1_a_ledger_grant_survives_a_seed_tick`, `test_1_control_without_the_ledger_the_same_tick_revokes_it`, `test_2_an_unreadable_ledger_prunes_nothing_and_exits_5`; `tests/test_an_approved_access_grant_is_in_the_ledger_not_a_file.py`: `test_1_no_file_is_written_or_changed`, `test_2_a_restart_keeps_an_approved_grant` | `built` |
+| Validate, then sync, on a schedule | invincible-agent `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:109`, `:277-324` | not stated | `tests/test_topaz_manifest_load_job.py` | `built` |
 | Catalog sync writes datasets and owners only | invincible-agent `policy/sync/datahub_topaz_sync.py:53-65` | not stated | `tests/test_datahub_topaz_sync.py` | `built` |
-| One authorization-id claim, default `email` | invincible-agent `keycloak-configmap.yaml:2`; `values.yaml:2199` | not stated | — | `built` |
-| Producer brokers run as a second pod from the producer's image | invincible-agent `helm/invincible-agent/values.yaml:1176-1186` | not stated | pub-tools tests, as reported by its owner | `built` |
+| One authorization-id claim, default `email` | invincible-agent `keycloak-configmap.yaml:2`; `values.yaml:2217` | not stated | — | `built` |
+| Producer brokers run as a second pod from the producer's image | invincible-agent `helm/invincible-agent/values.yaml:1194-1204` | not stated | pub-tools tests, as reported by its owner | `built` |
 | An agent answer reads through the data client | invincible-agent `agent_fleet/data_analyst/main.py:505-519` | not stated | — | `built` |
 | A notebook reads through the data client | dag-tools `docs/cortex-data-client.md:26-27` | not stated | — | `built` |
-| A dashboard tool is called directly, with no gateway | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` | not stated | — | `built` |
+| A dashboard tool is called directly, with no gateway | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` | not stated | — | `built` |
 | Nothing wires an API layer | [Hasura, finding 1](../components/hasura.md) | not stated | — | `built` |
 | Graph and vector reads pass no gateway | [agent capabilities, findings 6 and 7](agent-capabilities.md) | not stated | — | `built` |
