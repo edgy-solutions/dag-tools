@@ -64,14 +64,14 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | The dbt project component | `dag_tools/components/dbt_project/component.py` | AGENTS.md §4i | see [the dbt project record](dbt-project.md) | `built` |
 | Curated package; no variable default; byte identity; the uncovered-operator test warns | `dag_tools/dbt_project_packages/mfg_trace_curated/dbt_project.yml:15-22`; `dag_tools/systemlink/sql.py:723`, `:734` | AGENTS.md §4r | `test_systemlink_curated_sql.py`: `test_every_generated_file_is_shipped_byte_for_byte`, `test_every_measurement_case_agrees_between_the_two_routes`, `test_the_shipped_package_is_on_a_path_no_vcs_ignore_rule_matches`, `test_the_package_declares_a_default_for_no_required_variable`, `test_the_uncovered_comparator_test_warns_rather_than_failing` | `built` |
 | Contract mapping SQL route | `dag_tools/contract_mapping/emit.py:903` | AGENTS.md §4k | `test_contract_mapping_component.py`: `test_nothing_is_written_when_the_render_fails`; `test_contract_mapping_proof.py`: `test_the_scaled_columns_carry_a_cast_so_the_contract_can_be_enforced` | `built` |
-| Demo project: seeds, gated, falls back to the Dagster database | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `dag_tools/user_deployment/demo_dbt_assets.py:54`, `:60-67`, `:143-158`; invincible-agent `helm/invincible-agent/values.yaml:1305`; `helm/invincible-agent/templates/user-deployments.yaml:119-128` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources`, `test_a_missing_project_directory_degrades_instead_of_raising` | `built` |
+| Demo project: seeds, gated, falls back to the Dagster database | `dag_tools/user_deployment/demo_dbt/profiles.yml:11-18`; `dag_tools/user_deployment/demo_dbt_assets.py:54`, `:60-67`, `:143-158`; invincible-agent `helm/invincible-agent/values.yaml:1323`; `helm/invincible-agent/templates/user-deployments.yaml:119-128` | AGENTS.md §4i | `test_demo_dbt_surface.py`: `test_no_dbt_assets_when_demo_mode_is_off`, `test_demo_mode_registers_the_dbt_surface`, `test_the_demo_project_declares_no_sources`, `test_a_missing_project_directory_degrades_instead_of_raising` | `built` |
 | Three mapped prefixes; `dbt` for models; no prefix for an unmatched source | `dag_tools/utils/translation_registry.py:12-15`, `:19-21`, `:24-30`, `:35`, `:40-53` | not stated | `test_demo_dbt_surface.py`: `test_demo_asset_keys_go_through_the_normalization_registry` | `built` |
 | Custom translator, own class | `dag_tools/qual/classes/key.py:9-14`, `:102-106` | AGENTS.md §4e | — | `built` |
 | Orchestrator extra | `pyproject.toml:94-95` | not stated | — | `built` |

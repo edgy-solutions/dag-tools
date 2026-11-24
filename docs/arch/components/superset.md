@@ -39,8 +39,8 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 | Other party | Direction | Protocol | Sign-in | What passes | Evidence | Status |
 |---|---|---|---|---|---|---|
-| XE-AGENT-ENGINE | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; invincible-agent `helm/invincible-agent/values.yaml:662`; no test | `built` |
-| CO-GATEWAY | calls | none | none | nothing; a read through Superset is not decided, ticketed or audited | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (no gateway call in it); no test | `built` |
+| XE-AGENT-ENGINE | is called by | HTTP | bearer token from a chart secret, empty by default and sent even when empty | SQL queries; a dataset and a chart created from the result | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122`, `:1149`; invincible-agent `helm/invincible-agent/values.yaml:680`; no test | `built` |
+| CO-GATEWAY | calls | none | none | nothing; a read through Superset is not decided, ticketed or audited | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` (no gateway call in it); no test | `built` |
 
 ## Place in the mesh
 
@@ -57,13 +57,13 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`. Invincible-agent chart paths are under `helm/invincible-agent/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`. Invincible-agent chart paths are under `helm/invincible-agent/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | No Superset wiring in dag-tools | whole repo (matches for `superset` mean a superset of rows, for example `dag_tools/otel_api_sync/render.py:178`); `helm/dag-tools/` (no match) | not stated | — | `built` |
 | No Superset template in either chart | `helm/dag-tools/templates/`; invincible-agent `templates/` (no match) | not stated | — | `built` |
-| Address and empty token to the engines | invincible-agent `values.yaml:535`, `:653`, `:655`, `:662`; `templates/configmap.yaml:402`; `templates/secrets.yaml:163-167`; `templates/engines.yaml:84-88` | not stated | — | `built` |
-| The restate analyst calls Superset | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`, `:1102`; `values.yaml:689` | not stated | — | `built` |
+| Address and empty token to the engines | invincible-agent `values.yaml:553`, `:671`, `:673`, `:680`; `templates/configmap.yaml:407`; `templates/secrets.yaml:163-167`; `templates/engines.yaml:99-103` | not stated | — | `built` |
+| The restate analyst calls Superset | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122`, `:1149`; `values.yaml:707` | not stated | — | `built` |
 | No gateway on that path | the calls above go to the Superset address; no gateway call in them | not stated | — | `built` |
 | Protected by its own roles, with no gateway receipt | finding 5; [need to know, finding 7](../flows/need-to-know.md) | not stated | — | `built` |

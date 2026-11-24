@@ -79,11 +79,11 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 6. Engine read decisions on by default
 
-- **Gap:** [agent capabilities, finding 6](flows/agent-capabilities.md). The engines' per-document and per-class checks run only when `ENABLE_AGENTIC_AUTH` is on, and the code and chart both default it off (invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944`). With it off, every result is kept. `built`
+- **Gap:** [agent capabilities, finding 6](flows/agent-capabilities.md). The engines' per-document and per-class checks run only when `ENABLE_AGENTIC_AUTH` is on, and the code and chart both default it off (invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2947-2964`). With it off, every result is kept. `built`
 - **Owner:** invincible-agent, with review by a second lane (named by the architect, 2026-11-18). The chart ties the switch to the last step of its ADR-0025 and to a plan for the switch, which lists preconditions that are not built. Neither was read here.
 - **First deliverable (read-only):** what exactly is unprotected with the switch off, meaning which reads return results the caller is not entitled to and which other checks still apply; what ADR-0025's remaining step is; and what breaks when the switch is on. Then a plan to turn it on in a test deployment and then to make it the chart default. The row leads the planning of invincible-agent's next release; it is not deferred. `proposed`
 - **Remedy:** the switch defaults on once those preconditions are met, so a graph or vector read is decided per object unless a deployment opts out. `proposed`
-- **Note:** the chart says the switch does nothing for the data-analyst read path, which the gateway decides (`templates/configmap.yaml:388-397`). That path is [need to know](flows/need-to-know.md), not this row.
+- **Note:** the chart says the switch does nothing for the data-analyst read path, which the gateway decides (`templates/configmap.yaml:393-402`). That path is [need to know](flows/need-to-know.md), not this row.
 - **Issue:** not filed.
 
 ### 7. A receipt on graph and vector reads
@@ -200,7 +200,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 
 ### 21. Dashboards authorized through the decision point
 
-- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). An agent engine calls a dashboard tool's API directly, with the chart's bearer token, which is empty by default (invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`; `helm/invincible-agent/values.yaml:662`). The gateway does not decide the read, and no gateway receipt is written. `built`
+- **Gap:** [Superset, finding 5](components/superset.md); [source to use, finding 7](flows/source-to-use.md). An agent engine calls a dashboard tool's API directly, with the chart's bearer token, which is empty by default (invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122`; `helm/invincible-agent/values.yaml:680`). The gateway does not decide the read, and no gateway receipt is written. `built`
 - **What already exists:** the gateway's authorize route and the client that calls it (`dag_tools/central_gateway/main.py:404-405`). What the dashboard tool's own roles permit is not established from code. `built`
 - **Owner:** not named. The caller is invincible-agent's; the decision point is dag-tools'.
 - **Remedy:** a dashboard tool's reads of mesh data are decided at the gateway, and each leaves a gateway receipt. `proposed`
@@ -243,7 +243,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Unminted switch, default `observe`; in no release | dag-tools at `2c613ae`: `dag_tools/domain_broker/main.py:310-326`, `:1216-1221`; `unminted_posture.py:50`, `:79-81`, `:93-141`, `:144-157` | dag-tools AGENTS.md §4o-3 at `2c613ae` | `test_broker_unminted_posture.py`: `test_observe_serves_exactly_what_it_served_before`, `test_enforce_refuses_and_the_reader_receives_no_credential` | `built` |
 | SQL reads are the whole table, eagerly | dag-tools `dag_tools/cortex_data/client.py:318`, `:323`, `:352-353` | not stated | no test reaches either call | `built` |
 | No version reader ships | dag-tools `dag_tools/domain_broker/ticket_identity.py:110` | dag-tools AGENTS.md §4o | `test_no_as_of_reader_ships_by_default` | `built` |
-| Engine read checks default off in code and chart | invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2927-2944` | cited in chart: invincible-agent ADR-0025 (not read) | `test_the_control_with_auth_OFF_both_paths_keep_EVERY_chunk` | `built` |
+| Engine read checks default off in code and chart | invincible-agent `agent_fleet/weaviate_expert/service.py:92-96`; `helm/invincible-agent/values.yaml:2947-2964` | cited in chart: invincible-agent ADR-0025 (not read) | `test_the_control_with_auth_OFF_both_paths_keep_EVERY_chunk` | `built` |
 | Graph and vector reads carry no ticket, receipt or version | invincible-agent `agent_fleet/ontology_service/mesh_graph.py`, `agent_fleet/utils/mesh_vectors.py`: no match at the pin | not stated | — | `built` |
 | The remote graph client has no server end | SDK `remote_clients.py:40-41`, `:58` (supplied) | not stated | tested against a stub (supplied) | `built` (no server end) |
 | Placeholder datasets; the older path's fixed token and lifetime | dag-tools `dag_tools/domain_broker/main.py:42`, `:802-818`, `:1273-1360` | not stated | no test of the SQL branch | `built` |
@@ -260,7 +260,7 @@ The remedies proposed for gaps the flow and component records found, in the orde
 | Probes code location built | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
 | Probes code location in neither chart | dag-tools `dag_tools/probes_location/definitions.py:40`, `:55-62`, `:65` | dag-tools AGENTS.md §4g1 | `test_probes_location_loader.py`: `test_loader_returns_empty_report_when_env_unset` (empty when the variable is unset); `test_probes_location_definitions.py`: `test_definitions_module_yields_merged_defs_for_two_probes` (loads what the directory holds) | `built` |
 | No joined source-to-use report | dag-tools `dag_tools/audit/`, `dag_tools/components/datahub_lineage/`, `dag_tools/central_gateway/` searched | not stated | — | `built` |
-| A dashboard tool is called directly | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` | not stated | no test | `built` |
+| A dashboard tool is called directly | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` | not stated | no test | `built` |
 | Nothing wires an API layer | [Hasura, finding 1](components/hasura.md) | not stated | — | `built` |
 | Only a self-listed source is refused | dag-tools `dag_tools/components/classification_propagation/schema.py:184-190` | dag-tools AGENTS.md §4n | no test | `built` |
 | No dashboard pattern documented | dag-tools repository searched outside `docs/arch/` | not stated | — | `built` |

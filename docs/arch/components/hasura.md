@@ -48,7 +48,7 @@ No connection is built at this pin: nothing in the code or the chart refers to t
 
 ## Sources
 
-All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

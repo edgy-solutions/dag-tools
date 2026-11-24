@@ -67,12 +67,12 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`. Invincible-agent chart paths are under `helm/invincible-agent/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`. Invincible-agent chart paths are under `helm/invincible-agent/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| No catalog in either chart; a wrapper image only | `helm/dag-tools/` (no match); invincible-agent `templates/infrastructure.yaml`; `values.yaml:942-946`; `templates/NOTES.txt:47` | not stated | — | `built` |
-| Address and optional token wired | invincible-agent `values.yaml:1316`, `:2961`; `templates/secrets.yaml:18`; `templates/user-deployments.yaml:132-141` | not stated | — | `built` |
+| No catalog in either chart; a wrapper image only | `helm/dag-tools/` (no match); invincible-agent `templates/infrastructure.yaml`; `values.yaml:960-964`; `templates/NOTES.txt:47` | not stated | — | `built` |
+| Address and optional token wired | invincible-agent `values.yaml:1334`, `:2981`; `templates/secrets.yaml:18`; `templates/user-deployments.yaml:132-146` | not stated | — | `built` |
 | Writers differ on failure | `dag_tools/components/datahub_lineage/component.py:170-250`; `dag_tools/components/dbt_project/component.py:220-224`; `dag_tools/components/warehouse_source/component.py:277-293`; `dag_tools/components/classification_propagation/component.py:395-414` | AGENTS.md §4i, §4m, §4n | `test_warehouse_source_component.py`: `test_a_catalog_failure_FAILS_the_materialization` | `built` |
 | Whole aspects and patches | `dag_tools/components/datahub_lineage/component.py:170-250`; `dag_tools/components/warehouse_source/component.py:191-274`; `dag_tools/components/classification_propagation/component.py:348-369`; `dag_tools/components/dbt_project/component.py:189-214` | AGENTS.md §4m, §4n | `test_warehouse_source_component.py`: `test_no_schema_aspect_is_emitted_because_only_names_were_read`; `test_dbt_datahub_artifacts.py`: `test_every_artifact_the_datahub_recipe_names_is_in_the_ingest_cwd` | `built` |
 | Token from config then environment; no empty token | `dag_tools/components/datahub_lineage/component.py:718-728`; `dag_tools/components/dbt_project/component.py:181-187`; `dag_tools/components/warehouse_source/component.py:169-188`; `dag_tools/components/classification_propagation/component.py:373-392`; `dag_tools/components/contract_mapping/component.py:242-258` | AGENTS.md §4i | `test_warehouse_source_component.py`: `test_an_empty_token_is_never_sent_as_a_credential` | `built` |

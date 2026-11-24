@@ -75,7 +75,7 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 | The ticket line carries id, subject, URN and version, and no narrowing | dag-tools `dag_tools/central_gateway/main.py:558-563`, `:590-596` | dag-tools AGENTS.md §4o | `test_the_gateway_logs_the_ticket_id_with_the_principal`, `test_the_log_follows_the_VERIFIED_subject_where_it_differs_from_the_header`, `test_the_log_line_names_no_credential` | `built` |
 | Denials are logged on lines of their own | dag-tools `main.py:375`, `:394`, `:486-490` | not stated | — | `built` |
 | The client's receipt is an allowlist | dag-tools `dag_tools/cortex_data/client.py:23-56`, `:161-171`, `:368` | dag-tools AGENTS.md §4o | `test_the_receipt_is_an_allowlist_so_a_new_ticket_field_is_not_published`, `test_get_dataframe_still_returns_only_a_frame` | `built` |
-| A dashboard tool is called directly, with the chart's token | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075`; `helm/invincible-agent/values.yaml:653`, `:662` | not stated | no test | `built` |
+| A dashboard tool is called directly, with the chart's token | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122`; `helm/invincible-agent/values.yaml:671`, `:680` | not stated | no test | `built` |
 | Nothing wires an API layer | [Hasura, finding 1](../components/hasura.md) | not stated | — | `built` |
 | Nothing joins the three records | dag-tools `dag_tools/audit/`, `dag_tools/components/datahub_lineage/`, `dag_tools/central_gateway/` searched | not stated | — | `built` |
 | Remedies | [the roadmap note](../ROADMAP.md), rows 1, 17, 20, 21, 22 and 24 | none | — | `proposed` |

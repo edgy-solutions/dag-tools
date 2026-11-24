@@ -64,7 +64,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`. Invincible-agent chart paths are under `helm/invincible-agent/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`. Invincible-agent chart paths are under `helm/invincible-agent/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
