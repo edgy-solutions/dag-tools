@@ -24,8 +24,11 @@ ROUTES_JSON = GATEWAY_DIR / "gateway_routes.json"
 LOADER = GATEWAY_DIR / "routes.py"
 PYPROJECT = ROOT / "pyproject.toml"
 
-#: The one route the delegate table is keyed on. Everything else is a door.
-DELEGATABLE = "assets.authorize"
+#: The routes the delegate table is keyed on, in the json's own order. Everything else is an
+#: internal door with its own caller list. There are two because a listing is not a read: the
+#: table is keyed PER ROUTE, so a row granting a service the right to authorize reads for a user
+#: must not also grant it the right to enumerate what that user may read.
+DELEGATABLE = ["assets.authorize", "assets.list"]
 
 
 def _published() -> Dict[str, object]:
@@ -81,9 +84,37 @@ def test_every_route_says_whether_a_delegate_row_may_name_it():
         assert isinstance(route["delegate_rows_may_name"], bool), route["id"]
 
 
-def test_the_delegate_table_route_is_the_only_one_a_delegate_row_may_name():
+def test_the_delegate_table_routes_are_exactly_the_ones_a_delegate_row_may_name():
+    """Widening this is a POLICY change, so it is written down twice and the two must agree.
+
+    The list lives here and in the json, and a route added to one and not the other fails. That
+    redundancy is the point: a route becoming delegatable means every existing delegate row can
+    now be read as granting it, and that is a decision somebody makes rather than a consequence
+    of adding a door.
+    """
     named = [r["id"] for r in _published()["routes"] if r["delegate_rows_may_name"]]
-    assert named == [DELEGATABLE]
+    assert named == DELEGATABLE
+
+
+def test_no_route_both_consults_the_delegate_table_and_names_a_caller_list():
+    """The property the old single-value assertion carried, kept now that there are two.
+
+    A route authorizes one way or the other: a delegate row, or an internal door's caller list.
+    A route doing both would have two answers to one question and no rule for which wins, and
+    the safe-looking reading -- "either may let it through" -- is the one that turns a caller
+    list into a suggestion.
+    """
+    problems = []
+    for route in _published()["routes"]:
+        delegatable = route["delegate_rows_may_name"]
+        kind = route["authorization"]
+        if delegatable and (kind != "delegate_table" or "callers_env" in route):
+            problems.append(f"{route['id']} is delegatable and also names a caller list")
+        if not delegatable and kind != "caller_list":
+            problems.append(f"{route['id']} is not delegatable and authorizes as {kind!r}")
+    assert not problems, problems
+    # Anti-vacuity: the loop says nothing unless the document carries both kinds.
+    assert len(_published()["routes"]) > len(DELEGATABLE) > 0
 
 
 def test_each_door_names_the_caller_list_it_authorizes_against():
@@ -122,4 +153,4 @@ def test_the_loader_reads_the_published_document():
 
     assert routes.ROUTES_JSON == ROUTES_JSON
     assert routes.route_ids() == [r["id"] for r in _published()["routes"]]
-    assert routes.delegatable_route_ids() == [DELEGATABLE]
+    assert routes.delegatable_route_ids() == DELEGATABLE

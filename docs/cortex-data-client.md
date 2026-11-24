@@ -197,6 +197,69 @@ missed enough pushes to fall out of the table — not that the asset does
 not exist. It is a liveness signal, not a catalog lookup. If you need to
 know whether an asset exists at all, ask DataHub, not the gateway.
 
+---
+
+## Asking what you may read: `GET {gateway}/api/v1/assets`
+
+Until this route there was one way to find out whether you could read an
+asset: read it and see. That is a fine answer for one URN and a bad one for
+a client building a picker, which ends up either hard-coding URNs or probing
+the read door asset by asset — a 403 storm that looks exactly like an attack.
+
+```
+GET {gateway}/api/v1/assets
+Authorization: Bearer <token>
+```
+
+```json
+{
+  "assets": ["urn:li:dataset:(urn:li:dataPlatform:s3,bucket/x,PROD)"],
+  "complete": true,
+  "incomplete_reasons": []
+}
+```
+
+Three things are worth knowing before you build on it.
+
+**It is a listing, not a catalog.** The candidate set is the routing table
+(`mesh_route:*`), so the answer is *what may you read right now* rather than
+*what exists*. An asset whose broker has stopped heartbeating is not listed —
+and is not readable either, because the read door 404s on exactly the same
+absence. If you want to know whether an asset exists at all, ask DataHub.
+
+**It mints no ticket and carries no masking rules.** The read door is still
+the only way to anything behind it; this one only answers whether that door
+would open. It deliberately omits the `allowed_columns` / `row_filters` the
+authorizer answers with, because those are the shape of a read and a listing
+handing them out would publish the mesh's masking rules to anyone who can
+authenticate.
+
+**`complete: false` is not an empty list.** This is the field to read, and
+the reason the route exists in this shape. If the authorizer cannot be
+reached, every asset goes undecided and the list comes back empty — which is
+indistinguishable from *you may read nothing* unless the response says so.
+So `complete` is `false` whenever the answer is partial, with a token in
+`incomplete_reasons` saying why:
+
+| reason | meaning | what to do |
+| --- | --- | --- |
+| `authorizer_undecided` | some asset got no decision | retry; treat the list as a floor, not an answer |
+| `candidate_limit_reached` | the routing table is larger than `ASSET_LIST_MAX_CANDIDATES` (500) | raise the bound, or narrow by asking the catalog |
+| `deadline_reached` | some decisions did not finish inside `ASSET_LIST_DEADLINE_SECONDS` (10) | retry; raise the bound or `ASSET_LIST_MAX_CONCURRENCY` (8) |
+
+A client that ignores `complete` will, on a bad day, tell its user they have
+access to nothing. Treat an incomplete listing as *at least these*, never as
+*exactly these*. The reasons name this gateway's own health and carry no
+counts: with the authorizer down the undecided count is the size of the
+routing table, which is a fact about the mesh rather than about the caller.
+
+Refusals are the read door's, by design: a caller on the deny list gets 403
+here too rather than an empty list, and an unreadable routing table is a 503.
+The route resolves identity under its own route id, `assets.list` — so under
+`enforce`, a *service* listing on a user's behalf needs a delegate row for
+that id, not only for `assets.authorize`. A row granting the right to
+authorize reads does not grant the right to enumerate them.
+
 The two internal doors this flow crosses, the broker's `/api/v1/internal/resolve`
 and the gateway's `/api/v1/internal/register`, require a service token.
 `INTERNAL_DOOR_POSTURE` is `observe` (default) or `enforce`; each door
