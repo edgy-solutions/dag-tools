@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
+from dag_tools.domain_broker.as_of_readers import SHIPPED_AS_OF_READERS
+
 logger = logging.getLogger(__name__)
 
 # Keys a producer may use to advertise its own version in the coordinates it
@@ -124,12 +126,21 @@ def register_as_of_reader(
 # ``main`` at start, and ``/health`` at runtime. If any of the three grows its
 # own list they disagree silently and each one individually looks correct.
 #
-# It ships EMPTY, and that is the design rather than an omission: a reader for a
-# table format is real IO against a real store, and one whose only evidence is
-# that it parses is a half-measure. So any non-empty selection is refused until
-# a reader lands here -- which is the refusal an operator will otherwise file as
-# a bug.
-AVAILABLE_AS_OF_READERS: Dict[str, Callable[[Mapping[str, Any]], Optional[str]]] = {}
+# It is NOT written down here: it is ``as_of_readers.SHIPPED_AS_OF_READERS``,
+# because a second copy of a list read by three things is the disagreement this
+# comment exists to warn about. That module imports nothing from here and
+# nothing heavy at all -- each driver import is inside its own reader -- so this
+# import cannot make the broker unimportable on an install that lacks one.
+#
+# It shipped EMPTY until the two measured readers landed, and the reason it did
+# is worth keeping in view: a reader for a backend is real IO against a real
+# store, and one whose only evidence is that it parses is a half-measure. What
+# is here has been exercised against a real store of its kind; what has not is
+# still absent, which is why a selection naming a format this build does not
+# read is still refused rather than accepted and ignored.
+AVAILABLE_AS_OF_READERS: Dict[str, Callable[[Mapping[str, Any]], Optional[str]]] = dict(
+    SHIPPED_AS_OF_READERS
+)
 
 # The deployment names the subset it wants. Read ONCE, at module scope, never
 # per request: a config error consulted inside an authorize call is a reading
