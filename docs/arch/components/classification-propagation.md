@@ -30,7 +30,7 @@ Commits are named in full. A release is a version tag whose release page carries
 |---|---|---|---|
 | 1 | The component and its example were first committed at `f6ae3f68caa351a7f0acf6fed1393983423c5037`. | the commit that adds `dag_tools/components/classification_propagation/`, `examples/warehouse_source/dagster_home/components/propagation/` and `examples/warehouse_source/dagster_home/derived.py`; the rest of `examples/warehouse_source/` was added earlier, with the warehouse source (CO-WAREHOUSE-SOURCE) | `built` |
 | 2 | Merged to master by PR #26, merge commit `893b402d84814c8d39cdbfd261eeb08a15cff0e1`, on 2026-11-08 (UTC). | the pull request's merge commit; master contains it | `built` |
-| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the last release before the records pin, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
 | 4 | A component file names it as `type: dag_tools.ClassificationPropagationComponent`; the package root exports the class. | `dag_tools/__init__.py:22` | `built` |
 
 ### What the example proves, and what it does not

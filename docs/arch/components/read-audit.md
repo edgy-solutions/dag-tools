@@ -31,7 +31,7 @@ Commits are named in full. A release is a version tag whose release page carries
 |---|---|---|---|
 | 1 | The component and its example were first committed at `c4cb3d665873b55562967d43f6ca3621419ec825`. | the commit that adds `dag_tools/components/read_audit/` and `examples/read_audit/` | `built` |
 | 2 | Merged to master by PR #17, merge commit `0cb4fb70812129b7f51fa9e1ad80d5491df51dbf`, on 2026-11-05 (UTC). | the pull request's merge commit; master contains it | `built` |
-| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the last release before the records pin, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
 | 4 | A component file names it as `type: dag_tools.ReadAuditComponent`; the package root exports the class. | `dag_tools/__init__.py:11, :26` | `built` |
 
 ### What the example proves, and what it does not
