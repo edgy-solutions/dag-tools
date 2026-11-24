@@ -371,16 +371,26 @@ def test_a_version_is_carried_exactly_as_the_source_wrote_it():
     assert _resolve()["as_of"] == raw
 
 
-# ── no reader ships for any backend yet, and that is reported ──────────────
+# ── shipping a reader is not registering one, and the numbers say so ───────
 
-def test_no_as_of_reader_ships_by_default():
-    """A registry shipped empty, deliberately, and visible in the numbers.
+def test_no_as_of_reader_is_REGISTERED_until_a_deployment_selects_one():
+    """The registered table is empty on a fresh import, deliberately.
 
-    Reading a delta or iceberg version means real IO against a real store,
-    which nothing here can exercise -- and a reader that cannot be tested is
-    the half-measure this repo refuses. The mechanism plus a counted absence is
-    the honest v1; until a backend gets a row, ``as_of`` comes only from what a
-    producer advertised, labelled as such.
+    RENAMED from ``test_no_as_of_reader_ships_by_default``, because that name
+    described the state this build left behind: two readers now SHIP
+    (``as_of_readers.SHIPPED_AS_OF_READERS``). What is still empty, and is the
+    property worth sealing, is the REGISTERED table -- a deployment names what
+    it wants through ``DAG_TOOLS_AS_OF_READERS`` and nothing reads a store
+    until it does. Those are two different sets on purpose
+    (``test_as_of_reader_selection.py``), and a reader that ships but is not
+    selected must not quietly start issuing requests inside authorize calls.
+
+    For a source type nothing has been measured against -- delta and iceberg
+    at this pin -- the old reasoning stands unchanged: reading a version is
+    real IO against a real store, a reader that cannot be exercised against a
+    store of that kind is the half-measure this repo refuses, and until one
+    exists ``as_of`` comes only from what a producer advertised, labelled as
+    such.
     """
     import importlib
 
