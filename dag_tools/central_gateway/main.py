@@ -842,22 +842,40 @@ async def list_readable_assets(
 
     reasons: List[str] = []
 
-    # ---- the candidate set: SCAN, never KEYS -----------------------------------------------
+    # ---- the candidate set: SCAN, never KEYS, and DE-DUPLICATED ----------------------------
     # KEYS is O(n) and blocks the whole Redis instance for its duration, which would make one
-    # listing a stall for every read and every heartbeat sharing that instance. One candidate
-    # past the cap is collected and dropped, so the truncation flag is exact rather than merely
-    # safe in the right direction.
+    # listing a stall for every read and every heartbeat sharing that instance.
+    #
+    # SCAN is what makes the de-duplication necessary rather than tidy. Redis guarantees SCAN
+    # misses nothing that was present throughout the iteration; it explicitly does NOT promise
+    # to yield a key only once, and a keyspace resize during the walk is when it repeats one --
+    # which is to say, under exactly the load this bound exists for. Three consequences, none
+    # of them visible on an idle instance: the same urn is named twice in the response, the
+    # caller's picker shows it twice; a repeat spends a second authorizer request, doubling the
+    # cost the concurrency bound is there to hold down; and a repeat consumes the candidate cap,
+    # so a mesh well inside the cap can report `candidate_limit_reached` and a listing that was
+    # complete says it was truncated -- a false incompleteness, which is the one direction this
+    # route is built not to be wrong in.
+    #
+    # So the cap counts DISTINCT assets. The repeat check runs first, which is what keeps the
+    # cap exact: a duplicate arriving once the cap is full is dropped as a duplicate rather than
+    # read as the asset that would have overflowed.
     candidates: List[str] = []
+    seen_urns: set = set()
     try:
         async for key in redis_client.scan_iter(match=MESH_ROUTE_PREFIX + "*", count=200):
             if isinstance(key, (bytes, bytearray)):
                 key = key.decode("utf-8", "replace")
-            if key.startswith(MESH_ROUTE_PREFIX):
-                candidates.append(key[len(MESH_ROUTE_PREFIX):])
-            if len(candidates) > ASSET_LIST_MAX_CANDIDATES:
-                candidates.pop()
+            if not key.startswith(MESH_ROUTE_PREFIX):
+                continue
+            urn = key[len(MESH_ROUTE_PREFIX):]
+            if urn in seen_urns:
+                continue
+            if len(candidates) >= ASSET_LIST_MAX_CANDIDATES:
                 reasons.append(LIST_TRUNCATED)
                 break
+            seen_urns.add(urn)
+            candidates.append(urn)
     except Exception as exc:  # noqa: BLE001
         # A routing table that cannot be read is not an empty routing table. Refusing is the
         # only honest answer available: an empty list here would tell the caller they may read

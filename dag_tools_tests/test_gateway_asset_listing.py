@@ -23,7 +23,9 @@ WHAT IS PINNED, AND WHY EACH ONE COULD GO WRONG QUIETLY:
     handing them out here would publish the mesh's masking rules to anyone who can
     authenticate. The authorizer in these fixtures answers with both, so their absence from the
     body is measured rather than assumed;
-  * the candidate cap and the deadline are EXACT, not merely safe in the right direction;
+  * the candidate cap and the deadline are EXACT, not merely safe in the right direction,
+    and the cap counts DISTINCT assets: SCAN may yield one key twice, and counting the
+    repeat would report a complete listing as truncated;
   * a deny-listed caller gets 403, the same answer the read door gives them, rather than an
     empty list -- a true sentence that reads as a different one;
   * an unreadable routing table is a 503 and not an empty list, for the same reason;
@@ -311,9 +313,9 @@ def test_the_body_carries_no_counts_and_no_masking_rules(monkeypatch):
 def test_the_candidate_cap_is_exact_and_says_it_was_reached(monkeypatch):
     """Exact, not merely safe in the right direction.
 
-    One candidate past the cap is collected and dropped, so the flag means what it says. A cap
-    that stopped one short would set the flag on a listing that was in fact complete, and a
-    caller cannot check that.
+    The cap counts DISTINCT assets and is tested before the one that would overflow it is
+    taken, so the flag means what it says. A cap that stopped one short would set the flag on a
+    listing that was in fact complete, and a caller cannot check that.
     """
     monkeypatch.setattr(gateway, "ASSET_LIST_MAX_CANDIDATES", 1)
     seen = _mesh(monkeypatch, allow=(OPEN, SHUT))
@@ -332,6 +334,49 @@ def test_the_cap_is_not_reached_when_the_table_fits(monkeypatch):
     assert len(seen["asked"]) == 2
     assert body["complete"] is True
     assert gateway.LIST_TRUNCATED not in body["incomplete_reasons"]
+
+
+def test_a_key_scan_returns_twice_is_asked_about_once_and_named_once(monkeypatch):
+    """SCAN may yield one key more than once, and all three consequences read as correct.
+
+    Redis guarantees SCAN misses nothing present throughout the iteration; it does not promise
+    to yield a key only once, and a keyspace resize during the walk is when it repeats one --
+    under exactly the load the cost bounds exist for. Nothing here raises and nothing looks
+    broken: the urn is simply named twice in the response, a second authorizer request is spent
+    on a decision already held, and the repeat eats a slot of the candidate cap. An idle test
+    instance never repeats a key, so this is planted rather than waited for.
+    """
+    seen = _mesh(monkeypatch, allow=(OPEN,), urns=(OPEN, SHUT, OPEN))
+    body = _list().json()
+    assert seen["asked"].count(OPEN) == 1, seen["asked"]
+    assert body["assets"] == [OPEN]
+    assert body["complete"] is True
+
+
+def test_a_repeated_key_does_not_report_a_complete_listing_as_truncated(monkeypatch):
+    """The expensive half, and it is worse than a wrong flag: a readable asset goes MISSING.
+
+    Two distinct assets, a cap of two, and the first of them scanned twice. Counting the repeat
+    against the cap overflows a mesh that fits inside it, so the cap trips on the yield that
+    was a duplicate -- and the asset still waiting behind it is never asked about and never
+    named. Measured against the pre-fix route: `assets` came back holding only the repeated
+    urn, with `candidate_limit_reached` set.
+
+    So both halves of the answer are wrong at once, and in the two directions this route is
+    built not to be wrong in. The caller is told its complete listing was cut short, a sentence
+    it has no way to check; and an asset it may read is absent from a list whose whole purpose
+    is to name those. The repeat is dropped as a repeat BEFORE the cap is consulted, which is
+    what makes the cap exact on distinct assets rather than on scan yields.
+    """
+    monkeypatch.setattr(gateway, "ASSET_LIST_MAX_CANDIDATES", 2)
+    seen = _mesh(monkeypatch, allow=(OPEN, SHUT), urns=(OPEN, OPEN, SHUT))
+    body = _list().json()
+    assert sorted(body["assets"]) == sorted([OPEN, SHUT])
+    assert body["complete"] is True
+    assert gateway.LIST_TRUNCATED not in body["incomplete_reasons"]
+    # Anti-vacuity: the cap really was at the table's size, so a repeat counted against it
+    # would have tripped it.
+    assert len(seen["asked"]) == 2 == gateway.ASSET_LIST_MAX_CANDIDATES
 
 
 def test_an_authorizer_that_is_too_slow_makes_the_listing_incomplete(monkeypatch):
