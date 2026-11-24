@@ -10,6 +10,27 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Documentation
+
+- `docs/file-backed-asset-to-published-dataset.md` walks the producer path for a **file-backed**
+  asset at `4fbd272` (v0.16.1), for the engineer whose deployment is pinned below 0.17: write the
+  bytes where another process can reach them, advertise the location from the IO manager, let the
+  broker register it, check what it actually advertised, read it back. It names the shipped files
+  rather than examples, because this path has no runnable example at either pin, and it says so.
+  Its version section states what 0.17 and 0.18 changed on the path, starting with the gateway
+  image that could not verify an RS256 token — the default — and reported that as
+  `token_invalid`, plus the two ways out of it that need no library upgrade.
+  - It also records that `_unadvertisable_reason`'s docstring names
+    `/health.adr0044.unadvertised`, a key the payload carries at **neither** pin: the per-reason
+    withholding counts are logged and summarised at WARNING, never served. The page tells an
+    operator to read the log; `test_file_backed_path_doc.py` fails if the key is ever added, so
+    the page is corrected rather than left behind.
+  - Linked from the README and held to the files it names, the hook a producer writes and the
+    `KNOWN_SOURCE_TYPES == set(_MINTERS)` identity its one reassurance rests on. Documentation
+    and tests only: no code, signature, export or default changes.
+
 ## 0.18.0 — 2026-11-23
 
 Cut at `0ac0cc3`. The release the fleet pins to get the write-credential fix (#143).
