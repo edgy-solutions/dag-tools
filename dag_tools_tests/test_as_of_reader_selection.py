@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from dag_tools.domain_broker import as_of_readers
 from dag_tools.domain_broker import main as broker
 from dag_tools.domain_broker import ticket_identity as ti
 
@@ -31,16 +32,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _reset():
-    """The registry is process-global; leave it exactly as it was found."""
-    before = dict(ti.AS_OF_READERS)
+    """Both tables are process-global; leave each exactly as it was found.
+
+    The shipped table is restored as well as the registry, because this build
+    ships readers now and several tests below need a *known* shipped set rather
+    than whatever this pin happens to carry. A test that asserted on the real
+    one would have to be edited every time a reader lands, and the edit that
+    gets skipped is the one that turns an assertion vacuous.
+    """
+    before_registered = dict(ti.AS_OF_READERS)
+    before_shipped = dict(ti.AVAILABLE_AS_OF_READERS)
     ti.AS_OF_READERS.clear()
     yield
     ti.AS_OF_READERS.clear()
-    ti.AS_OF_READERS.update(before)
+    ti.AS_OF_READERS.update(before_registered)
+    ti.AVAILABLE_AS_OF_READERS.clear()
+    ti.AVAILABLE_AS_OF_READERS.update(before_shipped)
 
 
 def _reader(value):
     return lambda ticket: value
+
+
+def _only(*names):
+    """Make the shipped table exactly these names. Restored by ``_reset``."""
+    ti.AVAILABLE_AS_OF_READERS.clear()
+    for name in names:
+        ti.AVAILABLE_AS_OF_READERS[name] = _reader("2")
 
 
 # --------------------------------------------------------------------------
@@ -69,6 +87,43 @@ def test_an_empty_value_names_no_source_type_so_it_is_dropped_not_refused(value)
     assert ti.select_as_of_readers(value) == ()
     assert ti.register_selected_as_of_readers(value) == ()
     assert ti.AS_OF_READERS == {}
+
+
+def test_this_build_ships_the_two_measured_readers():
+    """The pin's own answer, asserted rather than described in a comment.
+
+    Each of the two was measured against a real store of its kind before it was
+    written, which is the gate this work was accepted under. A format that was
+    not -- Delta, Iceberg, and ClickHouse for a separate and measured reason --
+    is absent, and the test below is what proves absent still means refused.
+    """
+    assert ti.available_as_of_readers() == ("postgres", "s3_parquet")
+    assert (
+        ti.AVAILABLE_AS_OF_READERS["postgres"] is as_of_readers.read_postgres_as_of
+    )
+    assert (
+        ti.AVAILABLE_AS_OF_READERS["s3_parquet"]
+        is as_of_readers.read_s3_parquet_as_of
+    )
+
+
+def test_the_shipped_set_is_the_one_table_and_not_a_second_copy():
+    """The whole point of the module docstring, asserted.
+
+    Three things read this list. A hand-kept copy here would let the shipped
+    readers and the advertised set drift apart while each one individually
+    looked correct -- so the table is the readers module's and this build's
+    advertised set is populated from it.
+
+    Asserted as EQUALITY rather than identity, deliberately: the module takes
+    a ``dict(...)`` copy at import, so a test that drives the advertised set to
+    a known value (``_only`` above, and several tests below) cannot reach into
+    the shipped table and corrupt it for whatever runs next. Equality is the
+    property that matters -- the two agree -- and the copy is what keeps the
+    tests that need to disturb one of them honest.
+    """
+    assert ti.AVAILABLE_AS_OF_READERS == as_of_readers.SHIPPED_AS_OF_READERS
+    assert ti.AVAILABLE_AS_OF_READERS is not as_of_readers.SHIPPED_AS_OF_READERS
 
 
 def test_a_name_this_build_does_not_ship_is_refused():
@@ -101,12 +156,16 @@ def test_the_refusal_names_the_type_and_the_available_set(monkeypatch):
 
 
 def test_an_empty_available_set_says_so_rather_than_offering_nothing():
-    """At this pin the build ships no reader, so the offer has no names in it.
+    """The build that ships none, which is no longer this one.
 
     An offer rendered as an empty list reads as a formatting defect; the
     sentence says why it is empty and what has to happen first, which is the
-    sequencing consequence a first operator will otherwise file as a bug.
+    sequencing consequence a first operator would otherwise file as a bug. The
+    branch is kept rather than deleted along with the state that used to reach
+    it, because a build that ships no reader is reachable again the moment a
+    reader is withdrawn -- and the wording is only wrong when it is missing.
     """
+    _only()
     assert ti.available_as_of_readers() == ()
 
     with pytest.raises(ti.UnknownAsOfReader) as caught:
@@ -117,16 +176,25 @@ def test_an_empty_available_set_says_so_rather_than_offering_nothing():
     assert "repins" in message
 
 
-def test_every_unknown_name_is_named_at_once(monkeypatch):
-    """House rule: whoever is fixing the value wants the list, not the first one."""
-    monkeypatch.setitem(ti.AVAILABLE_AS_OF_READERS, "s3_delta", _reader("2"))
+def test_every_unknown_name_is_named_at_once():
+    """House rule: whoever is fixing the value wants the list, not the first one.
+
+    Asserted on the half of the message that names what was REFUSED, not on the
+    whole string. Now that the build ships readers, a name in the offer half
+    satisfies a bare ``in message`` -- so the obvious spelling of this test
+    would pass for a name the refusal never mentioned, which is a test that has
+    stopped testing anything.
+    """
+    _only("postgres")
 
     with pytest.raises(ti.UnknownAsOfReader) as caught:
         ti.select_as_of_readers("s3_iceberg,s3_delta,postgres")
 
-    message = str(caught.value)
-    assert "s3_iceberg" in message
-    assert "postgres" in message
+    refused, _, offered = str(caught.value).partition("Available:")
+    assert "s3_iceberg" in refused
+    assert "s3_delta" in refused
+    assert "postgres" not in refused   # it is shipped, so it was not refused
+    assert "postgres" in offered
 
 
 def test_a_refused_selection_registers_nothing(monkeypatch):
@@ -195,7 +263,7 @@ def test_the_two_sets_can_disagree_which_is_why_there_are_two(monkeypatch):
     That is the state item 3 exists to expose: the render check passes and the
     pod reports no as-of forever, with nothing looking wrong anywhere.
     """
-    monkeypatch.setitem(ti.AVAILABLE_AS_OF_READERS, "s3_delta", _reader("2"))
+    _only("s3_delta")
 
     assert ti.available_as_of_readers() == ("s3_delta",)
     assert ti.registered_as_of_readers() == ()
@@ -222,7 +290,7 @@ def _health():
 
 def test_health_reports_both_sets(monkeypatch):
     _loaded(monkeypatch)
-    monkeypatch.setitem(ti.AVAILABLE_AS_OF_READERS, "s3_delta", _reader("2"))
+    _only("s3_delta")
     ti.register_as_of_reader("postgres", _reader("7"))
 
     body = _health()["ticket_identity"]
@@ -243,17 +311,35 @@ def test_health_reports_no_unknown_set_because_there_can_be_none(monkeypatch):
     assert "as_of_readers_unknown" not in _health()["ticket_identity"]
 
 
-def test_health_still_answers_when_this_build_ships_no_reader(monkeypatch):
+def test_health_still_answers_when_a_build_ships_no_reader(monkeypatch):
     """The empty case is published rather than omitted.
 
     An operator who finds no key cannot tell "this pin ships none" from "this
-    version does not report it".
+    version does not report it". Both lists are driven empty on purpose: the
+    registry is empty on any pod that has not registered, which is the state
+    this exposure exists to make visible.
+    """
+    _loaded(monkeypatch)
+    _only()
+
+    body = _health()["ticket_identity"]
+
+    assert body["as_of_readers_available"] == []
+    assert body["as_of_readers_registered"] == []
+
+
+def test_health_reports_what_this_build_ships_when_nothing_registered(monkeypatch):
+    """The gap item 3 exists to expose, at this pin's real numbers.
+
+    A pod that registered nothing while the build ships two readers is exactly
+    the state a render check cannot see: the chart's constant matches, the
+    deployment goes green, and every ticket reports no as-of forever.
     """
     _loaded(monkeypatch)
 
     body = _health()["ticket_identity"]
 
-    assert body["as_of_readers_available"] == []
+    assert body["as_of_readers_available"] == ["postgres", "s3_parquet"]
     assert body["as_of_readers_registered"] == []
 
 
