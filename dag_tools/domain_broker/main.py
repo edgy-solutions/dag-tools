@@ -41,6 +41,31 @@ CENTRAL_GATEWAY_URL = os.getenv("CENTRAL_GATEWAY_URL", "http://central-gateway.d
 BROKER_URL = os.getenv("BROKER_URL", "http://domain-broker.team-a.svc.cluster.local")
 DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
 
+# invincible-agent #529 item 1 -- which as-of readers this deployment wants,
+# validated HERE, at module scope, and nowhere else.
+#
+# AT MODULE SCOPE DELIBERATELY. ``lifespan`` below does
+# ``asyncio.create_task(_startup_load_and_register())`` and yields immediately,
+# so the pod is Ready before anything has loaded -- which is correct for an
+# import that takes 90-180s, and fatal for a refusal: one raised inside that
+# task is swallowed into the task object while the pod is already serving. The
+# log line would appear, the rollout would go green, and the readers would be
+# absent, which is the one failure the chart's render check exists to prevent,
+# reproduced one layer down. Here the module simply never finishes importing.
+#
+# It does not interact with the timeout that fire-and-forget design exists to
+# dodge: one ``os.getenv`` and a set difference, no IO and no Dagster.
+#
+# The competing precedent in this file does NOT transfer. A failed Dagster load
+# deliberately does not kill the broker -- it degrades, so a broken rollout does
+# not erase the routing table and a healthy replica stays authoritative. That
+# trade exists because an import failure has a competing cost. A reader name
+# nobody ships has none: it is a typo in configuration, and this repo's answer
+# to a typo is that it fails at load and not at 3am.
+AS_OF_READERS_SELECTED = ticket_identity.register_selected_as_of_readers(
+    os.getenv(ticket_identity.AS_OF_READERS_ENV)
+)
+
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
 
@@ -1171,6 +1196,25 @@ async def health():
         # Counted, not logged, for the same reason as the line above it.
         "ticket_identity": {
             "as_of_absent_by_source_type": dict(AS_OF_ABSENT),
+            # invincible-agent #529 item 3 -- the second of two exposures, and the one a
+            # render check CANNOT make: no pod exists at render time, and this
+            # is the only thing that knows what a pod actually registered. Read
+            # at call time, never snapshotted, because registration can happen
+            # late. `available` sits beside it so a pod that registered nothing
+            # says why in one look -- asked for nothing, or asked for something
+            # this pin does not ship -- rather than sending an operator to the
+            # package to find out.
+            #
+            # There is deliberately NO `as_of_readers_unknown` here. An unknown
+            # name refuses at import, so at runtime there can be no such state;
+            # a key reporting one would be a key that is always empty, which
+            # reads as reassurance rather than as nothing to say.
+            "as_of_readers_available": list(
+                ticket_identity.available_as_of_readers()
+            ),
+            "as_of_readers_registered": list(
+                ticket_identity.registered_as_of_readers()
+            ),
         },
     }
 
