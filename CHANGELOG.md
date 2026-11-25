@@ -10,7 +10,102 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.19.0 — 2026-11-24
+
+Cut at `202987f`. The release that gives a caller a way to ask what it may read, and gives a
+deployment as-of readers to select (#153, #154, #156).
+
+### Added
+
+- A deployment names the as-of readers it wants, and a name nothing ships refuses at import
+  (`DAG_TOOLS_AS_OF_READERS`). Three things read one table, so there is one table:
+  `AVAILABLE_AS_OF_READERS` is what the **build** ships, static and known at import, which is what
+  lets the chart's render check answer with no pod; `AS_OF_READERS` is what this **process**
+  registered, which only `/health` can know; and the variable names a subset of the first. If any
+  of the three grew its own list the three would disagree silently and each one individually would
+  look correct.
+  - The check sits at **module scope**, beside the env reads, and that placement is the change
+    rather than an implementation detail. The broker's `lifespan` creates a background task and
+    yields immediately — deliberately, because the Dagster/dlt/datahub imports would blow past
+    hypercorn's 60s lifespan timeout — so the pod is Ready before anything has loaded, and a
+    refusal raised in that task is swallowed into the task object while the pod is already
+    serving. At module scope the module simply never finishes importing. A failed Dagster load
+    deliberately degrades instead, because an import failure has a competing cost; a reader name
+    nobody ships has none.
+  - `/health` reports both sets separately (`as_of_readers_available`, `as_of_readers_registered`)
+    and carries **no** `as_of_readers_unknown` key: an unknown name refuses at import, so at
+    runtime there is no such state, and a key that is always empty reads as reassurance rather
+    than as nothing to say.
+  - Every unknown name is reported at once, a refused selection registers nothing so no
+    half-applied state exists, and `UnknownAsOfReader` subclasses `ValueError` as
+    `MissingCredentials` does. An unset or empty value selects nothing, so the setting ships
+    inert. Additive: no existing signature, export or default changes.
+- Two as-of readers, one file-backed and one table-backed
+  (`dag_tools.domain_broker.as_of_readers`): `s3_parquet` and `postgres`. Neither is registered
+  until a deployment selects it through the variable above. Delta and Iceberg still wait, under
+  the gate this work was accepted with: no reader ships until it can be exercised against a real
+  store of that kind.
+  - `s3_parquet` answers a **content identity** — `listing-sha256:<hex>` over the dataset's
+    sorted `(key, ETag, size)` listing — and `postgres` answers `pg_current_wal_lsn()` carried
+    verbatim. Both are an identity, **not an order**: measured against a live server, `'0/9' <
+    '0/10'` is true as `pg_lsn` and false as text, which is why the digest carries a label that
+    cannot be parsed as a number.
+  - A reader may not **hang** the read either, the half the contract does not cover: a reader runs
+    inside the authorize call, so an unreachable store with no bound parks every authorize for
+    that backend. Bounds are read once at import (a malformed one warns and falls back rather
+    than refusing to import) and the S3 client sets `max_attempts=1`, because a retry inside an
+    authorize call multiplies the bound by the attempts.
+  - **No ClickHouse reader**, on two independent measurements: the minted user cannot read
+    `system.parts` at all (code 497), and a reader holds exactly the consumer's credential by
+    design; and `max_block_number` provably misses a mutation (`data_version` 1 → 3 while
+    `max_block_number` stayed 2). An as-of that stays equal across a real change is the failure
+    that reads as correct.
+  - This repository's CI names no secret, so the gate has two halves:
+    `dag_tools_tests/test_as_of_readers.py` proves construction and semantics in CI, and
+    `scripts/verify_as_of_readers.py` runs the same functions — not a copy — against a real
+    postgres and a real S3 server behind an env gate, with every prediction pre-registered at a
+    confidence level and every refusal paired with a positive control. P7 was predicted wrong and
+    is recorded **wrong** in the file rather than quietly corrected.
+  - `test_no_as_of_reader_ships_by_default` is renamed
+    `test_no_as_of_reader_is_REGISTERED_until_a_deployment_selects_one`, because shipping a reader
+    and registering one are two different sets and the old name described the state this build
+    left behind. Test-only rename; additive otherwise.
+- `GET /api/v1/assets` lists the assets a caller may read (central gateway). A caller that wanted
+  to know has had one way to find out: try a read and see whether it is refused — fine for one
+  asset, and for a client building a picker a 403 storm that looks exactly like an attack.
+  - A listing may not read a **silence** as a refusal. On the read door an authorizer that refuses
+    and one that never answers both deny, correctly, because authz is a gate; here both produce
+    the identical empty list, and an empty list reads as a sentence about the caller — *you may
+    read nothing* — when the fact is that this gateway could not find out. So the gate body moves
+    to `topaz_decision`, returning an `AuthzOutcome` that carries `undecided` and a cause token.
+    **`check_topaz_authz` keeps its exact signature and three-tuple** because other repositories
+    import it, and the allow computation is byte-identical.
+  - `assets.list` is its own route id. The audit line names the route, so sharing
+    `assets.authorize` would record a listing as a read authorization, and the delegate seam is
+    keyed per route, so sharing would widen every existing delegate row to a route nobody
+    granted. The consequence is stated rather than smoothed over: **under `enforce`, a service
+    delegated only for `assets.authorize` is refused `not_a_delegate` here until the policy rail
+    carries a row for `assets.list`** — a policy fact to flag to governance, never a grant to
+    infer in code. `_principal` now takes its route as a required parameter, so the next door
+    added here cannot silently record its decisions as the read door's.
+  - The body carries no counts and no masking rules: with the authorizer down the undecided count
+    equals the size of the routing table, so publishing it would tell every authenticated caller
+    how much the mesh holds. The counts go in the `ASSET_LIST` log line. The authorizer also
+    volunteers `allowed_columns` and `row_filters`, which are the shape of a read, and their
+    absence from the body is measured rather than assumed.
+  - Candidates come from the routing table by `SCAN`, never `KEYS`, which makes the answer *what
+    may you read right now* and agrees with the read door's 404 on the same absence. The candidate
+    set counts **distinct** assets: `SCAN` misses nothing present throughout the iteration but
+    does not promise each key once, and a keyspace resize during the walk is exactly when it
+    repeats — under the load the cost bounds exist for. The repeat check runs before the cap
+    check, so `candidate_limit_reached` still means what it says; measured against the pre-fix
+    route, a repeat at a full cap returned **only** the repeated urn and never asked about the
+    second, readable asset at all.
+  - An unreadable routing table is a 503, because an unreadable table is not an empty one. Three
+    cost bounds warn and default rather than refuse to boot, since every value still produces a
+    correct listing and crash-looping over a typo trades a slow listing for no gateway. A
+    deny-listed caller gets the read door's 403 through a now-shared `_denied_sub`, not an empty
+    list.
 
 ### Documentation
 
