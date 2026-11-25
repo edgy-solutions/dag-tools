@@ -637,8 +637,21 @@ def _unadvertisable_reason(record, io_manager=None) -> str:
     having no readable location, and the causes want different fixes —
     installing a dependency is not the same job as binding an IO manager.
 
-    Returned strings are stable keys for ``/health.adr0044.unadvertised``, so
-    an operator can act on a count rather than reading the whole log.
+    Returned strings are stable grouping keys, so an operator can act on a
+    tally rather than reading every line. They reach a LOG, not an endpoint:
+    one INFO line per withheld asset ("Not advertising ..."), then a single
+    WARNING carrying ``dict(UNADVERTISED_ASSETS)`` once the pass is done.
+
+    ``/health`` does NOT serve this tally, and this docstring said for several
+    releases that it did -- naming a key under ``adr0044`` that has never
+    existed. That is the worst shape such a claim can take: an operator
+    diagnosing a deployment which advertises nothing goes to the payload,
+    finds no such field, and cannot tell "nothing was withheld" from "I am
+    looking in the wrong place" -- the exact confusion this function exists to
+    end. Whether the tally SHOULD be served beside the other posture numbers
+    is a live question and a separate one; it is not answered by describing it
+    as though it already were. ``test_broker_unadvertised_tally.py`` holds the
+    code and this paragraph to each other in both directions.
     """
     if io_manager is None:
         return (
