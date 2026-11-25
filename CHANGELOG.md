@@ -12,6 +12,49 @@ it back are named.
 
 ## Unreleased
 
+### Changed
+
+- **`DltAssetGroupConfig` now refuses an unknown key (`extra="forbid"`).** This model is built
+  from an operator's YAML with `**pipeline_attrs`, so until now a misspelt setting was dropped
+  on the floor and the pipeline loaded with that setting simply absent — no error, no warning,
+  and a code-location load that reads as a success. The failures that shape takes are not
+  cosmetic: a mistyped `cursor` is a full reload every run, a mistyped `row_filters` extracts
+  every row of every table while the YAML reads as filtered, and a mistyped `primary_key`
+  changes what a merge writes. Each one looks exactly like a correct extraction until someone
+  reads the destination. Refusing at the load is the only moment the operator still has the YAML
+  in front of them.
+
+  **This is a behaviour change and it can fail a load that used to succeed.** Every shipped
+  example was swept and none of them carries a key the model would refuse (the sweep is a test,
+  `test_no_shipped_example_carries_a_key_this_model_would_refuse`). Who breaks, and the fix:
+
+  - **A `pipelines:` block with a typo in any setting** — on `DltPipelineComponent`,
+    `RestateDltSyncComponent` or `RestateApiSyncComponent`, or in `dagtools dlt dev`. The load
+    now fails naming the key. **Fix: correct the spelling.** The failure is the feature; the key
+    was doing nothing before.
+  - **`RestateApiSyncComponent` YAML carrying `table_config`, `row_filters`, `schedule` or
+    `hints`.** That component pops only `primary_key`, `api_path`, `sources` and `name`, so
+    those four keys now reach a strict model and are refused. They have never done anything on
+    that component, so the previous behaviour was a block of YAML that read as configuration and
+    was not. **Fix: delete them.** If you need table-level configuration on an API sync, say so
+    — that is a feature request, not a regression.
+  - **Anyone constructing `DltAssetGroupConfig` directly in Python with a keyword it does not
+    declare.** The field set is unchanged, so only a keyword that was already being ignored can
+    break. **Fix: drop the keyword, or check `DltAssetGroupConfig.model_fields` for the real
+    name.**
+
+  No field was added, removed or renamed, no signature changed, and no default changed. The
+  `*_dev` loader is unaffected: it already filtered an operator's attrs by
+  `set(DltAssetGroupConfig.model_fields)`.
+
+  One consequence worth stating for anyone extending a component: the "pop the component-only
+  keys" step in each component's `build_defs` is now **load-bearing** rather than defensive. A
+  component that grows a new YAML key must pop it in the same commit, or the load fails — which
+  is the point, since the omission used to ship as a feature that silently did nothing.
+  `test_dlt_config_forbids_unknown_keys.py` reads each component's pop list out of its own
+  source and holds it to an independently written one, in both directions, so that list cannot
+  go stale behind the compatibility sweep that depends on it.
+
 ### Fixed
 
 - `_unadvertisable_reason` no longer promises a `/health` field that has never existed. Its

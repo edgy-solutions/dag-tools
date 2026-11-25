@@ -52,15 +52,17 @@ class DltPipelineComponent(Component, Resolvable, Model):
             
             pipeline_attrs = dict(pipeline_attrs)
             sources = pipeline_attrs.pop("sources", [])
-            # Popped before DltAssetGroupConfig: it ignores unknown keys, so a
-            # schedule left in would vanish without an error.
+            # These four are component-only keys and MUST be popped before
+            # DltAssetGroupConfig, which now refuses unknown keys: an unpopped
+            # one fails the load rather than silently disabling its feature.
+            # That is the trade this pop exists for -- before extra="forbid" a
+            # schedule left in here vanished without an error, a table_config
+            # left in loaded the pipeline with no cursor at all (a full reload
+            # every run, reported as success), and a row_filters left in
+            # extracted every row of every table while the YAML read as
+            # filtered. A new YAML key gets its pop in the same commit.
             schedule = pipeline_attrs.pop("schedule", None)
-            # Popped for the same reason: with no extra="forbid" a table_config
-            # left in would vanish, and the pipeline would load with no cursor
-            # at all -- a full reload every run, reported as success.
             raw_table_config = pipeline_attrs.pop("table_config", None) or {}
-            # Likewise row_filters: unpopped, the pipeline would extract every
-            # row of every table while the YAML read as filtered.
             raw_row_filters = pipeline_attrs.pop("row_filters", None) or {}
 
             table_config: Dict[str, TableSpec] = {

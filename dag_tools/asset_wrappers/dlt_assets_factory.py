@@ -139,11 +139,35 @@ def build_table_hints(
 
 class DltAssetGroupConfig(BaseModel):
     """Configuration class for generating a DLT Asset group pipeline cleanly.
-    
-    This replaces the massive kwargs dictionary/arguments historically passed 
-    to create_dlt_assets, natively aligning with Dagster's new custom/declarative 
+
+    This replaces the massive kwargs dictionary/arguments historically passed
+    to create_dlt_assets, natively aligning with Dagster's new custom/declarative
     component structures.
+
+    **An unknown key is refused, because being ignored is worse than failing.**
+    This model is built from an operator's YAML with ``**pipeline_attrs``, so
+    before ``extra="forbid"`` a misspelt setting was dropped on the floor and
+    the pipeline loaded with that setting simply absent -- no error, no warning,
+    and a load that reads as a success. The failures that shape takes are not
+    cosmetic: a mistyped ``cursor`` is a full reload every run, a mistyped
+    ``row_filters`` extracts every row of every table while the YAML reads as
+    filtered, and a mistyped ``primary_key`` changes what a merge writes. Each
+    one looks exactly like a correct extraction until someone reads the
+    destination. Refusing at the load is the only place the operator still has
+    the YAML in front of them.
+
+    The three components that build this model from YAML
+    (:class:`~dag_tools.components.dlt_pipeline.component.DltPipelineComponent`,
+    ``RestateDltSyncComponent``, ``RestateApiSyncComponent``) each pop their
+    own component-only keys first; ``dag_tools.dlt_dev.loader`` filters by
+    :attr:`model_fields`. Those pops were defensive before and are
+    **load-bearing** now, so a component that grows a new YAML key must pop it
+    in the same commit -- which is the point: the omission fails a test instead
+    of silently disabling a feature.
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = PydanticField(
         default=None, description="The custom name for the DLT pipeline/asset group."
     )
