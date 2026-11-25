@@ -61,7 +61,10 @@ location another process can use. Return `None` and it is not advertised.
 **An advertised-but-unreadable location is worse than an unadvertised asset**,
 because the gateway routes consumers to it with full confidence. The broker
 enforces the same rule from its end: an asset with no physical identity is not
-registered, and the reason is counted in `/health.adr0044.unadvertised`.
+registered, and the reason is counted in the broker's log -- one INFO line
+per withheld asset and a WARNING tallying the reasons at the end of the
+pass. It is not served on `/health`; grep the broker's log for `Not
+advertising`.
 
 ## Diagnosing a deployment that publishes nothing
 

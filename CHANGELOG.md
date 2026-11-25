@@ -10,6 +10,25 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Fixed
+
+- `_unadvertisable_reason` no longer promises a `/health` field that has never existed. Its
+  docstring said its return values were "stable keys for `/health.adr0044.unadvertised`", and
+  `docs/publishing-io-managers-to-the-mesh.md` repeated it. The broker's `/health` has never
+  carried that key: the withheld-asset reasons go to a log — one INFO line per asset, then one
+  WARNING carrying the whole tally once the registration pass finishes. An operator diagnosing a
+  deployment that advertises nothing was sent to the payload, found no such field, and could not
+  tell "nothing was withheld" from "I am looking in the wrong place", which is the exact
+  confusion that function exists to end. Both texts now say where the tally really goes, and
+  `test_broker_unadvertised_tally.py` holds them to the code in both directions: the payload may
+  not grow the key behind the prose's back (asserted with the tally non-empty, so it cannot pass
+  vacuously), and no prose may claim it again. Whether `/health` *should* serve the tally beside
+  the other posture numbers is a live question and deliberately left open — the block's
+  membership is not pinned, so a new posture number does not fail this module. Documentation and
+  tests only; no signature, export or default changes.
+
 ## 0.19.0 — 2026-11-24
 
 Cut at `202987f`. The release that gives a caller a way to ask what it may read, and gives a
