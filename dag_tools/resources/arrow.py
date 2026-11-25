@@ -1,10 +1,12 @@
 import pathlib
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import pyarrow as pa
 from pyarrow import csv
 import pyarrow.dataset as ds
 from dagster import ConfigurableResource
+
+from dag_tools.utils.helper import ConfigureFromDict
 
 
 class ArrowClient:
@@ -61,7 +63,7 @@ class ArrowClient:
         return pa.dataset.dataset(f"{filename}", filesystem=self.s3fs)
 
 
-class ArrowResource(ConfigurableResource):
+class ArrowResource(ConfigurableResource, ConfigureFromDict):
     """Dagster resource providing a PyArrow client with S3 access configurations."""
     uri_base: str
     access_key_id: str
@@ -69,6 +71,15 @@ class ArrowResource(ConfigurableResource):
     end_point: str
     region: Optional[str] = "us-east-1"
     allow_http: Optional[bool] = False
+
+    @classmethod
+    def configure(cls, config: Dict[str, Any]) -> "ArrowResource":
+        """Construct from a plain dict -- the ``ConfigureFromDict`` seam.
+
+        Flat fields, so the dict is the INNER block. See
+        ``ConfigurableArrowIOManager.configure``.
+        """
+        return cls.model_validate(config)
 
     def get_client(self) -> ArrowClient:
         return ArrowClient(

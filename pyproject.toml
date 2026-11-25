@@ -110,6 +110,26 @@ orchestrator = [
     # release anyway; the CI job that pins Dagster to 1.10.19 resolves
     # under enough pressure to reach back to 0.4.x, and broke there.
     "s3fs>=2023.1.0",
+    # UNDECLARED UNTIL 2026-11-25, and both are MODULE-LEVEL imports in
+    # dag_tools/io_managers/arrow.py, delta.py and s3.py -- the s3fs and
+    # redis/PyJWT story a third time. Neither was ever named here; both
+    # arrived on another package's dependency list, which is the
+    # dependency equivalent of a test passing for the wrong reason:
+    #   * fsspec came in because s3fs requires it (and pins it tightly),
+    #     so the import stood on a package that happens to need it too.
+    #   * universal-pathlib (`from upath import UPath`) came in ONLY
+    #     because dagster requires it. Nothing in this file asked for it,
+    #     so an upstream that stopped requiring it would break three IO
+    #     managers for a reason no requirement here names.
+    # Declaring them is what puts them where the lock and the test suite
+    # can see them. See test_io_manager_declared_imports.py for the guard.
+    # NO floor on either, deliberately: the gap is DECLARATION, and no
+    # release of either has been measured broken here. The s3fs floor
+    # above exists because 0.4.2 was measured failing; inventing a bound
+    # nothing measured is how a resolve fails against a number this
+    # library made up.
+    "fsspec",
+    "universal-pathlib",
     # dag_tools.resources.duckdb / dag_tools.io_managers.duckdb — DuckDB's
     # httpfs extension reads and writes s3:// directly, so a query-shaped
     # asset streams to parquet without the rows passing through Python.
@@ -208,6 +228,24 @@ broker = [
     # own, so this is the single source. See the note on `orchestrator`
     # for the full history, and test_image_s3fs_floor.py for the guard.
     "s3fs>=2023.1.0",
+    # Same two names, same reason, and here the transitive route is even
+    # thinner: this extra declares no dagster at all, so universal-pathlib
+    # reaches the user-deployment image only via the bare `dagster` on that
+    # Dockerfile's own install line. See the `orchestrator` note.
+    #
+    # LIMIT, stated rather than left to read as closed: this does NOT make
+    # `.[broker]` alone sufficient to import those three IO managers. They
+    # also import dagster and pandas at module level, and neither is
+    # declared on this extra -- the image supplies both itself. Whether
+    # this extra should become self-sufficient for them, or stop naming
+    # them as consumers, is a question about what `broker` is for.
+    # NO floor on either, deliberately: the gap is DECLARATION, and no
+    # release of either has been measured broken here. The s3fs floor
+    # above exists because 0.4.2 was measured failing; inventing a bound
+    # nothing measured is how a resolve fails against a number this
+    # library made up.
+    "fsspec",
+    "universal-pathlib",
     # UNDECLARED UNTIL 2026-08-11, and both are MODULE-LEVEL imports in
     # dag_tools/central_gateway/main.py — so `pip install "dag-tools[broker]"`
     # produced a gateway that could not import at all. It worked only where

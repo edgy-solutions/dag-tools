@@ -22,6 +22,7 @@ from dagster import (
 
 from dag_tools.io_managers.column_schema import add_column_schema
 from dag_tools.io_managers.mesh_publishing import MeshPublishable
+from dag_tools.utils.helper import ConfigureFromDict
 
 
 formats = ['parquet', 'csv']
@@ -285,11 +286,42 @@ class ArrowIOManager(UPathIOManager):
         return str(path).replace('s3://', '')
 
 
-class ConfigurableArrowIOManager(MeshPublishable, ConfigurableIOManagerFactory):
+class ConfigurableArrowIOManager(
+    MeshPublishable, ConfigurableIOManagerFactory, ConfigureFromDict
+):
     fs: Union[S3FSConfig, LocalFSConfig, FsspecS3FSConfig] = Field(discriminator="type_")
     uri_base: str
     load_csv_columns_as_strings: Optional[bool] = False
     load_csv_skip_rows: Optional[int] = 0
+
+    @classmethod
+    def configure(cls, config: Dict[str, Any]) -> "ConfigurableArrowIOManager":
+        """Construct from a plain dict -- the ``ConfigureFromDict`` seam.
+
+        Two things about the dict, both measured rather than assumed.
+
+        Its fields are FLAT, so what is handed over is the INNER block
+        (what a config file nests under ``config:``), not the outer one
+        ``ConfigurableSQLIOManager.configure`` takes -- that model has a
+        single ``config:`` wrapper field and this one does not. Passing
+        the wrong level fails loudly on a missing field.
+
+        And ``fs`` is a DISCRIMINATED UNION, which Dagster's pythonic
+        config spells its own way: exactly ONE key, the discriminator's
+        VALUE, holding the rest of the variant::
+
+            {"fs": {"s3": {"common": {...}}}, "uri_base": "s3://..."}
+
+        Pydantic's own tag-field spelling -- ``{"type_": "s3", ...}`` --
+        is REFUSED, by ``dagster._config.pythonic_config`` and not by
+        this method, with ``CheckError: Discriminated union must have
+        exactly one key``. A pre-built ``S3FSConfig`` instance is
+        accepted too. Nothing is rewritten here: translating one
+        spelling into the other would make this method the only place
+        in the repo where a Dagster config dict means something
+        different, and the refusal is Dagster's to give.
+        """
+        return cls.model_validate(config)
 
     def create_io_manager(self, context) -> ArrowIOManager:
         return ArrowIOManager(

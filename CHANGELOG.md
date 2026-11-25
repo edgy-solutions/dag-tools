@@ -14,6 +14,32 @@ it back are named.
 
 ### Changed
 
+- **`get_destination` now raises when a destination it recognises cannot be constructed, and
+  warns when it falls back.** The old body printed the error and fell through to
+  `return "filesystem"`, so a snowflake, postgres, clickhouse or databricks destination that
+  failed to build **became a filesystem destination**: the pipeline ran, wrote somewhere nobody
+  had configured, and reported success. dlt mentions the swap in one line of a log of thousands
+  — *"The destination dlt.destinations.snowflake:None in state differs from destination
+  dlt.destinations.filesystem:filesystem in pipeline and will be ignored"* — and that line says
+  "will be ignored" about the destination the operator actually asked for.
+
+  **This is a behaviour change: a call that used to return a destination can now raise
+  `RuntimeError`.** It can only do so where the destination was already wrong, and the exception
+  names the drivername and chains the original as `__cause__`. No signature, export or default
+  changed.
+
+  **There is no flag to restore the old behaviour, deliberately.** Restoring it means writing a
+  load to a destination nobody configured and calling the run green, so a caller that really
+  wants that has to say so at its own call site by catching the `RuntimeError` — where the
+  decision is visible to whoever reads that code, rather than being this library's default.
+
+  The fallback itself is **kept** for an *unrecognised* drivername — that is documented
+  behaviour (duckdb reaches it, which is why six test modules monkeypatch this function) — but
+  it now logs a WARNING naming the drivername. Until now a load sent somewhere the
+  configuration never named announced itself only by the data's absence from the destination the
+  operator had written down. Whether an unrecognised drivername should be refused outright is a
+  separate question and is not answered here.
+
 - **`DltAssetGroupConfig` now refuses an unknown key (`extra="forbid"`).** This model is built
   from an operator's YAML with `**pipeline_attrs`, so until now a misspelt setting was dropped
   on the floor and the pipeline loaded with that setting simply absent — no error, no warning,
@@ -56,6 +82,41 @@ it back are named.
   go stale behind the compatibility sweep that depends on it.
 
 ### Fixed
+
+- **`config_to_credentials` no longer raises `NameError` on a snowflake destination.**
+  `SnowflakeCredentials` was the one class in that function's seven-way dispatch that was never
+  imported, so the snowflake arm raised `NameError: name 'SnowflakeCredentials' is not defined`
+  at its first line, before any of the operator's config was read. Nothing in the suite drove a
+  snowflake config through this function, which is why a missing import survived every release.
+  The fix is one eager import matching the other five. Additive. The new
+  `test_every_credentials_class_the_dispatch_names_is_actually_imported` walks the function's own
+  AST, so the same gap in a future arm fails here rather than in somebody's deployment.
+
+- **`ConfigurableArrowIOManager` and `ArrowResource` now implement `configure`.** Neither mixed
+  in `ConfigureFromDict` and neither defined the method, so a deployment configuring its IO
+  managers from a config file — the way every other manager in this package is configured — got
+  `AttributeError: type object 'ConfigurableArrowIOManager' has no attribute 'configure'` at the
+  first line of its code location. Both now accept the inner config block
+  (`ConfigurableArrowIOManager.configure({"fs": {"s3": {"common": {...}}}, "uri_base": ...})`);
+  the fields are flat, unlike `ConfigurableSQLIOManager`'s single `config:` wrapper, so the two
+  take different levels of the same document. Purely additive: a new classmethod and a new base
+  class, no existing field, signature or default touched. **`ConfigurableDuckDBIOManager` has
+  the same gap and is not fixed here** — it is reported rather than swept up, because a blanket
+  "every `Configurable*` is configurable from a dict" rule would also catch
+  `TaggedWarehouseResource`, which legitimately has no such seam.
+
+- **`fsspec` and `universal-pathlib` are now declared on the `orchestrator` and `broker`
+  extras.** `io_managers/arrow.py`, `delta.py` and `s3.py` import them at module level and
+  `pyproject.toml` named neither: `fsspec` arrived because `s3fs` requires it, and
+  `universal-pathlib` (`from upath import UPath`) arrived **only** because `dagster` does. Both
+  worked, which is the dependency equivalent of a test passing for the wrong reason — an
+  upstream that stopped requiring either would break three IO managers for a reason no
+  requirement here names. Additive; no floor is declared on either, deliberately, because no
+  release of either has been measured broken here (the `s3fs` floor beside them exists because
+  0.4.2 *was*). `test_io_manager_declared_imports.py` reads the module-level imports out of
+  those three files, so a new undeclared one fails there instead. Note this does **not** make
+  `.[broker]` alone sufficient for those modules: `dagster` and `pandas` are undeclared on that
+  extra too, and the user-deployment image supplies them on its own install line.
 
 - `_unadvertisable_reason` no longer promises a `/health` field that has never existed. Its
   docstring said its return values were "stable keys for `/health.adr0044.unadvertised`", and
