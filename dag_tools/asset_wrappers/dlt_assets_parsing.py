@@ -535,7 +535,7 @@ def _prepare_units(
         }
 
     kinds: List[str] = []
-    credentials = config_to_credentials(dest_config, kinds)
+    config_to_credentials(dest_config, kinds)
 
     if staging and staging_config:
         staging = get_destination(
@@ -546,6 +546,15 @@ def _prepare_units(
     units = []
     for database, schema_tables in mapping.items():
         for schema, base in schema_tables.items():
+            # A FRESH credentials object per unit. It used to be built once,
+            # above the loop, and the line below then MUTATED it: the first
+            # unit filled an empty `database` with its own, the second found it
+            # already filled and kept it -- so every later unit landed in the
+            # first unit's database, named its pipeline after it and reported
+            # it as `dest_database`, with no error. `config_to_credentials` is
+            # pure, so building one per unit costs nothing; `kinds` is computed
+            # once above because it describes the destination, not a unit.
+            credentials = config_to_credentials(dest_config)
             if hasattr(credentials, "database") and (
                 not credentials.database or credentials.database == "default"
             ):

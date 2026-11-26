@@ -83,6 +83,21 @@ it back are named.
 
 ### Fixed
 
+- **Each dlt unit now gets its own destination credentials, so a second source database no
+  longer lands in the first one's.** `_prepare_units` built one destination credentials object
+  for the whole call and then mutated it per unit: when the destination named no `database`, the
+  first unit filled it with its own and every later unit found it filled and kept it. A call
+  carrying two units from two source databases (AssetKey sources resolved through credential
+  providers) therefore sent both to the first database, named both pipelines after it and
+  reported it as both units' `dest_database` -- no error, no warning, and a run that read as a
+  success. Credentials are now built per unit. A destination that names its `database` keeps it
+  for every unit, as before, and a single-unit call is unchanged. No signature, export or default
+  changed. Regressions: `test_dlt_per_unit_credentials.py` --
+  `test_two_units_with_different_databases_each_write_to_their_own` (rows read back out of each
+  unit's own destination), `test_each_unit_names_its_own_destination_database_and_pipeline`, the
+  planted-defect control `test_control_one_shared_credentials_object_sends_the_second_unit_to_the_first`,
+  and `test_a_destination_that_names_its_database_keeps_it_for_every_unit`.
+
 - **A release's assets are attached in a fixed order, and PyPI waits for all of them.** One job
   creates the release -- `build-package.yml`'s `build`, which generates the notes -- and the chart
   and image-record workflows are no longer started by the tag: each is called from a tag-gated job
