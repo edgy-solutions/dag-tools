@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
@@ -37,6 +38,8 @@ from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
 from dag_tools.utils.credentials import get_credentials
 from dag_tools.utils.env import update_from_env
+
+logger = logging.getLogger(__name__)
 
 
 def add_element(
@@ -101,11 +104,32 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
                 os.environ[f"{database.upper()}_PIPELINE__NORMALIZE__{section.upper()}__{key.upper()}"] = value
         del config["normalize"]
 
+    # `staging_dataset_name_layout` is a DESTINATION parameter, so it arrives in
+    # `config` with every other one. It used to be read off the credentials
+    # object as `credentials.staging`, and no credentials object this library can
+    # build has ever carried that attribute: `config_to_credentials` setattrs
+    # only the names in its own STANDARD_ATTRS and routes everything else into
+    # `creds.query`, and dlt's own SnowflakeCredentials declares no such field
+    # (measured at 1.30.0; `staging_dataset_name_layout` is a field of the
+    # CLIENT configuration, which is what `**config` feeds). So the snowflake arm
+    # raised AttributeError on every call it ever received -- which the `except`
+    # below then swallowed, handing back a FILESYSTEM destination. Nothing could
+    # reach it until 0.19.x anyway, because the name `SnowflakeCredentials` was
+    # not imported and `config_to_credentials` raised NameError first.
+    #
+    # The attribute is still honoured if something outside this library sets it,
+    # so a caller that does keeps working unchanged; an explicit key in `config`
+    # wins, because that is the operator's own spelling of the same setting.
+    if credentials.drivername == "snowflake":
+        _legacy_layout = getattr(credentials, "staging", None)
+        if _legacy_layout is not None:
+            config.setdefault("staging_dataset_name_layout", _legacy_layout)
+
     try:
         if credentials.drivername == "postgresql":
             return dlt.destinations.postgres(credentials=credentials, **config)
         elif credentials.drivername == "snowflake":
-            return dlt.destinations.snowflake(staging_dataset_name_layout=credentials.staging, credentials=credentials, **config)
+            return dlt.destinations.snowflake(credentials=credentials, **config)
         elif credentials.drivername == "filesystem":
             if database and "bucket_url" in config:
                 config["bucket_url"] = f"{config['bucket_url']}/{database}"
@@ -119,8 +143,37 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             return dlt.destinations.databricks(credentials=credentials, **config)
             
     except Exception as e:
-        print(f"Warning instantiating destination: {e}")
+        # RAISE. This used to print the error and fall through to the
+        # `return "filesystem"` below, so a destination that failed to construct
+        # BECAME a filesystem destination: the pipeline ran, wrote somewhere
+        # nobody had configured, and reported success. dlt mentions the swap in
+        # passing and carries on --
+        #   "The destination dlt.destinations.snowflake:None in state differs
+        #    from destination dlt.destinations.filesystem:filesystem in pipeline
+        #    and will be ignored"
+        # -- which is one line in a log of thousands, and it says "will be
+        # ignored" about the destination the operator actually asked for. A
+        # recognised destination that cannot be built is the one thing in a load
+        # that must not be guessed at.
+        raise RuntimeError(
+            f"could not instantiate the {credentials.drivername!r} destination: {e}"
+        ) from e
 
+    # An UNRECOGNISED drivername still returns the bare string "filesystem", as
+    # it always has: AGENTS.md 4q records the behaviour, and the SystemLink and
+    # pipeline tests monkeypatch this function precisely because duckdb is not in
+    # the list above. Widening the recognised set is a separate change.
+    #
+    # What changes here is that it is no longer SILENT. The fallback sends a load
+    # somewhere the configuration never named, and until now the only clue was
+    # the data's absence from the destination the operator had written down.
+    logger.warning(
+        "drivername %r is not one of the destinations this function builds "
+        "(postgresql, snowflake, filesystem, clickhouse, databricks), so the "
+        "bare 'filesystem' destination is being used instead -- which is almost "
+        "certainly not where this load is meant to land.",
+        credentials.drivername,
+    )
     return "filesystem"
 
 

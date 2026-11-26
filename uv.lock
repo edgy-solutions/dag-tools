@@ -1755,6 +1755,7 @@ all = [
     { name = "dlt", extra = ["clickhouse", "databricks", "filesystem", "postgres", "snowflake"] },
     { name = "duckdb" },
     { name = "fastapi" },
+    { name = "fsspec" },
     { name = "httpx" },
     { name = "hypercorn" },
     { name = "jmespath" },
@@ -1776,10 +1777,12 @@ all = [
     { name = "sqlalchemy" },
     { name = "typer" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "universal-pathlib" },
 ]
 broker = [
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "fsspec" },
     { name = "httpx" },
     { name = "hypercorn" },
     { name = "psycopg2-binary" },
@@ -1787,6 +1790,7 @@ broker = [
     { name = "pyjwt", extra = ["crypto"] },
     { name = "redis" },
     { name = "s3fs" },
+    { name = "universal-pathlib" },
 ]
 datahub = [
     { name = "acryl-datahub" },
@@ -1819,9 +1823,11 @@ orchestrator = [
     { name = "dbt-postgres" },
     { name = "dlt", extra = ["clickhouse", "databricks", "filesystem", "postgres", "snowflake"] },
     { name = "duckdb" },
+    { name = "fsspec" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "s3fs" },
+    { name = "universal-pathlib" },
 ]
 qual = [
     { name = "boto3" },
@@ -1860,6 +1866,8 @@ requires-dist = [
     { name = "duckdb", marker = "extra == 'orchestrator'", specifier = ">=1.1,<3" },
     { name = "edgy-dag-tools", extras = ["orchestrator", "datahub", "worker", "qual", "broker", "documents", "dev"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'broker'", specifier = ">=0.110" },
+    { name = "fsspec", marker = "extra == 'broker'" },
+    { name = "fsspec", marker = "extra == 'orchestrator'" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'broker'", specifier = ">=0.28.1" },
     { name = "hypercorn", marker = "extra == 'broker'", specifier = ">=0.16" },
@@ -1897,6 +1905,8 @@ requires-dist = [
     { name = "typer", marker = "extra == 'documents'", specifier = ">=0.12" },
     { name = "typer", marker = "extra == 'qual'", specifier = ">=0.12" },
     { name = "tzdata", marker = "sys_platform == 'win32' and extra == 'documents'" },
+    { name = "universal-pathlib", marker = "extra == 'broker'" },
+    { name = "universal-pathlib", marker = "extra == 'orchestrator'" },
 ]
 provides-extras = ["orchestrator", "datahub", "worker", "qual", "broker", "documents", "dev", "all"]
 

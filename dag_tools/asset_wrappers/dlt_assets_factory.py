@@ -9,6 +9,7 @@ from dlt.common.configuration.specs.azure_credentials import AzureCredentials
 from dlt.common.storages.configuration import AwsCredentials, FileSystemCredentials
 from dlt.destinations.impl.clickhouse.configuration import ClickHouseCredentials
 from dlt.destinations.impl.databricks.configuration import DatabricksCredentials
+from dlt.destinations.impl.snowflake.configuration import SnowflakeCredentials
 from dlt.sources.credentials import ConnectionStringCredentials
 from pydantic import ConfigDict, Field as PydanticField, BaseModel
 
