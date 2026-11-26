@@ -13,8 +13,12 @@ published one. A release's body is the one thing on a release that cannot be
 reconstructed afterwards from its assets.
 
 So: one creator, and it is the workflow that generates the notes. Every other
-writer waits for that release and uploads into it, which is what
-`build-containers.yml`'s image record already does and says.
+writer uploads into that release, and is ORDERED after it: its workflow is not
+started by the tag at all, but called from a job in the creator's workflow that
+`needs` the creating job. The writers used to be started by the tag alongside
+the creator and poll for its release, which made the order an accident again --
+and nothing downstream, PyPI included, waited for them, so a release could be
+published to PyPI while still missing an asset.
 
 Two properties of this module are deliberate. The assertions are over EVERY
 workflow in the repository rather than over the two that exist today, because
@@ -98,30 +102,106 @@ def test_no_other_writer_generates_release_notes():
 
 
 def test_every_other_writer_adds_rather_than_creates():
-    """`gh release upload` writes to the release `gh release view` resolves.
-
-    It cannot mint a second one however the race goes, which is the property
-    that makes an unordered second writer safe at all.
-    """
+    """`gh release upload` writes into an existing release and cannot mint one."""
     adders = _adders(_shipped())
     assert adders, "nothing adds to a release; the chart and the image record both do"
     for name, job, step in adders:
         assert "gh release create" not in step["run"], "%s / %s" % (name, job)
 
 
-def test_every_other_writer_waits_for_the_release_to_exist():
-    """The workflows are not ordered, so an adder may run before the creator.
+def _triggers(document):
+    # PyYAML reads the bare key `on:` as the boolean True.
+    on = document.get(True, document.get("on")) or {}
+    return on if isinstance(on, dict) else {name: None for name in on}
 
-    Waiting and then failing is the contract: a chart or a record silently
-    absent from a release is what a downstream consumer discovers later.
+
+def _needs(job):
+    needs = job.get("needs") or []
+    return [needs] if isinstance(needs, str) else list(needs)
+
+
+def _callers_of(document, workflow_name):
+    """Jobs in `document` that call `workflow_name` as a reusable workflow."""
+    return {
+        job_name: job
+        for job_name, job in (document.get("jobs") or {}).items()
+        if (job.get("uses") or "").rsplit("/", 1)[-1] == workflow_name
+    }
+
+
+def _ordering_problems(fleet):
+    """Every way an adder can run before the release it uploads into exists.
+
+    An empty list is the contract: each adder is the creator's own job, or a
+    job that `needs` it, or sits in a workflow the tag does not start and that
+    is called only from tag-gated jobs needing the creator. It does not wait,
+    because there is nothing to wait for, and a failed upload fails loudly.
+    The publish needs the creator and every caller, so nothing is published
+    for a release missing an asset.
     """
-    for name, job, step in _adders(_shipped()):
+    documents = dict(fleet)
+    ((cfile, cjob, _),) = _creators(fleet)
+    creator_doc = documents[cfile]
+    problems = []
+    callers = {}
+    for afile, ajob, step in _adders(fleet):
+        where = "%s / %s" % (afile, ajob)
         run = step["run"]
-        where = "%s / %s" % (name, job)
-        assert "gh release view" in run, where
-        assert "sleep" in run, where
-        assert "::error::" in run, where
-        assert re.search(r"exit\s+1", run), where
+        if "sleep" in run or "gh release view" in run:
+            problems.append("%s polls for the release instead of being ordered after it" % where)
+        if "::error::" not in run or not re.search(r"exit\s+1", run):
+            problems.append("%s does not fail loudly when the upload fails" % where)
+        if afile == cfile:
+            if ajob != cjob and cjob not in _needs(creator_doc["jobs"][ajob]):
+                problems.append("%s does not need the creating job %s" % (where, cjob))
+            continue
+        push = _triggers(documents[afile]).get("push") or {}
+        if "tags" in push:
+            problems.append("%s is started by the tag itself, unordered with the creator" % afile)
+        found = _callers_of(creator_doc, afile)
+        if not found:
+            problems.append("%s is not called from %s, so nothing orders it" % (afile, cfile))
+        for job_name, job in found.items():
+            if cjob not in _needs(job):
+                problems.append("%s / %s calls %s without needing %s" % (cfile, job_name, afile, cjob))
+            if "refs/tags/" not in str(job.get("if") or ""):
+                problems.append(
+                    "%s / %s is not tag-gated, so %s runs twice on a branch" % (cfile, job_name, afile)
+                )
+            callers[job_name] = job
+    for job_name, job in (creator_doc.get("jobs") or {}).items():
+        if not any("gh-action-pypi-publish" in (s.get("uses") or "") for s in job.get("steps") or []):
+            continue
+        for required in [cjob, *callers]:
+            if required not in _needs(job):
+                problems.append("%s / %s publishes without needing %s" % (cfile, job_name, required))
+    return problems
+
+
+def test_every_other_writer_is_ordered_after_the_creator():
+    assert _ordering_problems(_shipped()) == []
+
+
+def test_the_ordering_rule_had_adders_in_other_workflows_to_check():
+    """Anti-vacuity: the cross-workflow arm is the one the defect lived in."""
+    ((cfile, _, _),) = _creators(_shipped())
+    assert {f for f, _, _ in _adders(_shipped())} - {cfile}
+
+
+def test_the_job_order_is_the_one_the_release_is_described_by():
+    """build creates; chart and images upload; publish-pypi waits for all three."""
+    jobs = dict(_shipped())["build-package.yml"]["jobs"]
+    assert jobs["chart"]["uses"] == "./.github/workflows/publish-helm-chart.yml"
+    assert jobs["images"]["uses"] == "./.github/workflows/build-containers.yml"
+    assert _needs(jobs["chart"]) == ["build"] and _needs(jobs["images"]) == ["build"]
+    assert set(_needs(jobs["publish-pypi"])) == {"build", "chart", "images"}
+
+
+def test_a_called_writer_is_granted_what_it_writes():
+    """A called workflow's permissions are bounded by its caller job's."""
+    jobs = dict(_shipped())["build-package.yml"]["jobs"]
+    for name in ("chart", "images"):
+        assert jobs[name]["permissions"] == {"contents": "write", "packages": "write"}, name
 
 
 def test_an_adder_uploading_a_GLOB_checks_that_it_matched_something():
@@ -207,14 +287,99 @@ def test_control_an_adder_that_also_creates_is_seen():
     assert "gh release create" in seen["run"]
 
 
-def test_control_an_adder_that_does_not_wait_is_seen():
-    """An upload with no wait: green when it runs first, and the asset is absent."""
-    step = {
-        "name": "Attach chart",
-        "run": 'set -euo pipefail\ngh release upload "${GITHUB_REF_NAME}" dist-chart/*.tgz\n',
+_ORDERED_UPLOAD = (
+    "set -euo pipefail\n"
+    'if ! gh release upload "${GITHUB_REF_NAME}" chart.tgz --clobber; then\n'
+    '  echo "::error::could not attach"\n  exit 1\nfi\n'
+)
+
+
+def _ordered_fleet(
+    *,
+    adder_tags=False,
+    caller_needs=("build",),
+    caller_if=True,
+    publish_needs=("build", "chart"),
+    run=_ORDERED_UPLOAD,
+):
+    """A creator workflow calling one adder workflow, correct unless told not to be."""
+    caller = {"needs": list(caller_needs), "uses": "./.github/workflows/chart.yml"}
+    if caller_if:
+        caller["if"] = "startsWith(github.ref, 'refs/tags/v')"
+    creator = {
+        True: {"push": {"tags": ["v*"]}},
+        "jobs": {
+            "build": {"steps": [_A_CREATOR]},
+            "chart": caller,
+            "publish-pypi": {
+                "needs": list(publish_needs),
+                "steps": [{"uses": "pypa/gh-action-pypi-publish@release/v1"}],
+            },
+        },
     }
-    (_, _, seen), = _adders(_fleet(step))
-    assert "gh release view" not in seen["run"]
+    push = {"branches": ["master"]}
+    if adder_tags:
+        push["tags"] = ["v*"]
+    adder = {
+        True: {"push": push, "workflow_call": None},
+        "jobs": {"publish": {"steps": [{"name": "Attach chart", "run": run}]}},
+    }
+    return [("package.yml", creator), ("chart.yml", adder)]
+
+
+def test_control_the_planted_fleet_is_clean_when_ordered():
+    """Without this, every control below could pass on a rule that flags anything."""
+    assert _ordering_problems(_ordered_fleet()) == []
+
+
+def test_control_an_adder_started_by_the_tag_is_seen():
+    """The shape that shipped: the chart workflow on `tags: ['v*']`, racing the creator."""
+    problems = _ordering_problems(_ordered_fleet(adder_tags=True))
+    assert any("started by the tag" in p for p in problems), problems
+
+
+def test_control_a_caller_that_does_not_need_the_creator_is_seen():
+    problems = _ordering_problems(_ordered_fleet(caller_needs=()))
+    assert any("without needing build" in p for p in problems), problems
+
+
+def test_control_a_caller_that_is_not_tag_gated_is_seen():
+    """Called on a branch push too, the adder would run twice: once on its own trigger."""
+    problems = _ordering_problems(_ordered_fleet(caller_if=False))
+    assert any("not tag-gated" in p for p in problems), problems
+
+
+def test_control_an_adder_nothing_calls_is_seen():
+    fleet = _ordered_fleet()
+    del fleet[0][1]["jobs"]["chart"]
+    fleet[0][1]["jobs"]["publish-pypi"]["needs"] = ["build"]
+    problems = _ordering_problems(fleet)
+    assert any("not called from" in p for p in problems), problems
+
+
+def test_control_a_publish_that_does_not_wait_for_an_asset_is_seen():
+    """PyPI going out for a release that is missing its chart."""
+    problems = _ordering_problems(_ordered_fleet(publish_needs=("build",)))
+    assert any("publishes without needing chart" in p for p in problems), problems
+
+
+def test_control_an_adder_that_still_polls_is_seen():
+    """The old poll loop, kept after the ordering made it pointless."""
+    poll = (
+        "set -euo pipefail\nfor _ in $(seq 1 30); do\n"
+        '  if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then\n'
+        '    gh release upload "${GITHUB_REF_NAME}" chart.tgz --clobber\n'
+        "    exit 0\n  fi\n  sleep 10\ndone\n"
+        'echo "::error::no release"\nexit 1\n'
+    )
+    problems = _ordering_problems(_ordered_fleet(run=poll))
+    assert any("polls" in p for p in problems), problems
+
+
+def test_control_an_adder_that_fails_quietly_is_seen():
+    quiet = 'set -euo pipefail\ngh release upload "${GITHUB_REF_NAME}" chart.tgz --clobber || true\n'
+    problems = _ordering_problems(_ordered_fleet(run=quiet))
+    assert any("fail loudly" in p for p in problems), problems
 
 
 def test_control_an_adder_with_an_unchecked_glob_is_seen():
@@ -222,13 +387,11 @@ def test_control_an_adder_with_an_unchecked_glob_is_seen():
     step = {
         "name": "Attach chart",
         "run": (
-            'set -euo pipefail\nfor _ in $(seq 1 30); do\n'
-            '  if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then\n'
-            '    gh release upload "${GITHUB_REF_NAME}" dist-chart/*.tgz --clobber\n'
-            '    exit 0\n  fi\n  sleep 10\ndone\n'
-            'echo "::error::no release"\nexit 1\n'
+            "set -euo pipefail\n"
+            'if ! gh release upload "${GITHUB_REF_NAME}" dist-chart/*.tgz --clobber; then\n'
+            '  echo "::error::could not attach"\n  exit 1\nfi\n'
         ),
     }
-    (_, _, seen), = _adders(_fleet(step))
+    ((_, _, seen),) = _adders(_fleet(step))
     assert "*" in seen["run"]
     assert "[ ! -e " not in seen["run"] and "[ ! -f " not in seen["run"]
