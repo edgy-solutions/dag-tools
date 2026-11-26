@@ -3,6 +3,14 @@ name: Build Python Package
 # Builds the edgy-dag-tools sdist+wheel on every push and PR so consumers can
 # grab the latest from a workflow artifact. On tag pushes (vX.Y.Z) the artifacts
 # are attached to a GitHub Release AND published to PyPI (trusted publishing).
+#
+# On a tag, the job order is the release's whole contract:
+#
+#   build            creates the release (the ONE creator) and attaches the wheel
+#     |-- chart      calls publish-helm-chart.yml; uploads the chart tarball
+#     '-- images     calls build-containers.yml; renames the images, uploads image.json
+#   publish-pypi     needs all three, so nothing reaches PyPI for a release that
+#                    is missing an asset
 # Distribution name is `edgy-dag-tools`; the import package is `dag_tools`.
 #
 #   pip install edgy-dag-tools
@@ -47,9 +55,10 @@ jobs:
           retention-days: 30
 
       # THE ONE CREATOR of a release in this repository. Every other workflow that
-      # puts a file on a release waits for this one and uploads into it with
-      # `gh release upload` -- the chart tarball and the image record both do --
-      # because a second creator does not collide, it makes a second release, and
+      # puts a file on a release is called from a job below that `needs: build`,
+      # and uploads into it with `gh release upload` -- the chart tarball and the
+      # image record both do -- because a second creator does not collide, it
+      # makes a second release, and
       # which of the two a tag's generated notes land on is then an accident of
       # ordering (measured on v0.16.0, whose published release has no body at all).
       # This job creates it because it is the one that generates those notes.
@@ -68,9 +77,35 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+  # The two other writers, called rather than started by the tag themselves, so
+  # `needs` can order them after the creator. The callee's permissions are bounded
+  # by the caller job's, so each grants what its workflow writes. No secret is
+  # passed: `GITHUB_TOKEN` is available to a called workflow as it is.
+  chart:
+    name: Chart onto the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/publish-helm-chart.yml
+
+  images:
+    name: Images and image record onto the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/build-containers.yml
+
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    # Every asset is on the release before anything is published: a failed chart
+    # or image-record attach fails its caller job, and this one does not run.
+    # The trusted publisher is bound to THIS file's name, which is why the
+    # publish stays here and the other writers are called from here.
+    needs: [build, chart, images]
     # Only publish on a version tag push (e.g. v0.1.1), never on branch/PR builds.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest

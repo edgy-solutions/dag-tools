@@ -600,13 +600,21 @@ def test_the_release_job_builds_no_document_of_its_own(workflow):
 
 
 def test_the_release_record_is_attached_not_created(workflow):
-    """Two workflows already create a release for each tag. A third creator
-    makes another rather than waiting for the first."""
+    """A second creator makes a second release rather than colliding.
+
+    The record is uploaded into the release `build-package.yml` creates, and
+    this workflow is called from a job there that `needs` the creator, so the
+    release exists already: the attach does not poll, and a failed upload fails.
+    """
     job = workflow["jobs"]["release-record"]
     assert not any("action-gh-release" in str(s.get("uses", "")) for s in job["steps"])
     bodies = "\n".join(s.get("run", "") for s in job["steps"])
-    assert "gh release view" in bodies
     assert "gh release upload" in bodies
+    # Only the ATTACH is asserted not to wait. Fetching the record still retries,
+    # because a record can land on the records branch minutes after its build.
+    (attach,) = [s for s in job["steps"] if "gh release upload" in s.get("run", "")]
+    assert "gh release view" not in attach["run"] and "sleep" not in attach["run"]
+    assert "::error::" in attach["run"]
 
 
 def test_no_credential_is_added_to_this_workflow(workflow):

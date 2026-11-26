@@ -1,12 +1,19 @@
 name: Build & Push Container Images
 
+# A tag push does NOT start this workflow. The tag's release is created by
+# `build-package.yml`, and that workflow calls this one as a job that `needs`
+# the creator -- so the retag and the release record run only once the release
+# they attach to exists. Started on the tag directly, this workflow raced the
+# creator and had to poll for a release it could not see. Under `workflow_call`
+# every `github.*` value is the caller's, so `github.ref_type == 'tag'` still
+# selects the retag path below.
 on:
   push:
     branches: [master, main]
-    tags: ['v*']
   pull_request:
     branches: [master, main]
   workflow_dispatch:
+  workflow_call:
 
 env:
   REGISTRY: ghcr.io
@@ -38,7 +45,7 @@ permissions:
 # A commit is built ONCE and a release renames that build.
 #
 #   branch push / PR / dispatch on a branch  →  `build`  (pushes :sha-<short> + :latest)
-#   tag push / dispatch on a tag             →  `retag`  (no build; renames :sha-<short>)
+#   tag push (called by build-package.yml)   →  `retag`  (no build; renames :sha-<short>)
 #
 # Before this, a `v*` tag ran the same build a second time, so one commit had
 # two digests and a deployment pinning the release pinned bytes that no commit
@@ -511,10 +518,10 @@ jobs:
   # claim that a release's digests equal its commit's becomes a thing this job
   # checks against the registry rather than a sentence.
   #
-  # Attached with `gh release upload`, not a third `softprops/action-gh-release`
-  # writer: two workflows already create a release for each tag, and adding a
-  # third creator is how a tag ends up with more than one release. `gh release
-  # upload` writes to the PUBLISHED release that `gh release view` resolves.
+  # Attached with `gh release upload`, never a `softprops/action-gh-release` of
+  # its own: a second creator does not collide, it makes a second release.
+  # `build-package.yml` is the one creator, and it calls this workflow from a
+  # job that `needs` the creating job, so the release exists before this runs.
   #
   # No credential is added here. `GITHUB_TOKEN` with job-scoped
   # `contents: write` is what reads the branch and attaches the asset; nothing
@@ -587,22 +594,17 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # The release may not exist yet: another workflow creates it from the
-      # same tag push. Waiting is why this is not a `softprops` step of its
-      # own -- a second creator would make a second release rather than wait
-      # for the first.
+      # The release exists by the time this runs: the job calling this
+      # workflow `needs` the one that creates it. So there is nothing to wait
+      # for, and a failed upload is a failure -- it fails this job, the caller
+      # job, and with it the PyPI publish that `needs` the caller.
       - name: Attach the record to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          for _ in $(seq 1 30); do
-            if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
-              gh release upload "${GITHUB_REF_NAME}" image.json --clobber
-              echo "attached image.json to ${GITHUB_REF_NAME}"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::error::no release named ${GITHUB_REF_NAME} to attach the image record to"
-          exit 1
+          if ! gh release upload "${GITHUB_REF_NAME}" image.json --clobber; then
+            echo "::error::could not attach the image record to ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "attached image.json to ${GITHUB_REF_NAME}"
