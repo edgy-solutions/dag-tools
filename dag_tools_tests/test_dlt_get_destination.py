@@ -164,3 +164,88 @@ def test_the_callers_config_dict_is_not_mutated():
     config = {}
     dlt_assets_parsing.get_destination(config_to_credentials(dict(SNOWFLAKE)), config)
     assert config == {}
+
+
+# --- `staging_use_https` is ClickHouse's setting, and only ClickHouse is sent it.
+#
+# Measured at dlt 1.30.0: of the destinations built above, only ClickHouse's
+# client configuration has the field. The others construct fine and drop it,
+# and filesystem and databricks log a WARNING naming a setting the operator
+# never wrote -- which is what this library's old global default produced.
+
+CLICKHOUSE = {
+    "drivername": "clickhouse",
+    "host": "h", "username": "u", "password": "p",
+    "database": "analytics",
+}
+POSTGRES = {
+    "drivername": "postgresql",
+    "host": "h", "username": "u", "password": "p",
+    "database": "analytics",
+}
+
+
+class _Creds:
+    """Enough of a credentials object for the arms that only read drivername."""
+
+    def __init__(self, drivername):
+        self.drivername = drivername
+
+
+def _record(monkeypatch, name):
+    seen = {}
+
+    def _capture(credentials=None, **config):
+        seen["config"] = config
+        return "DESTINATION"
+
+    monkeypatch.setattr(dlt_assets_parsing.dlt.destinations, name, _capture)
+    return seen
+
+
+def test_clickhouse_gets_the_librarys_https_default():
+    """The real construct, so the value is read off dlt's own configuration."""
+    destination = dlt_assets_parsing.get_destination(
+        config_to_credentials(dict(CLICKHOUSE)), {}
+    )
+    assert "clickhouse" in type(destination).__module__
+    assert destination.config_params["staging_use_https"] is False
+
+
+def test_an_explicit_clickhouse_value_wins_over_the_default(monkeypatch):
+    seen = _record(monkeypatch, "clickhouse")
+    dlt_assets_parsing.get_destination(
+        config_to_credentials(dict(CLICKHOUSE)), {"staging_use_https": True}
+    )
+    assert seen["config"]["staging_use_https"] is True
+
+
+@pytest.mark.parametrize(
+    "name, credentials",
+    [
+        ("snowflake", lambda: config_to_credentials(dict(SNOWFLAKE))),
+        ("postgres", lambda: config_to_credentials(dict(POSTGRES))),
+        ("filesystem", lambda: _Creds("filesystem")),
+    ],
+)
+def test_no_other_destination_is_sent_the_https_key(monkeypatch, name, credentials):
+    seen = _record(monkeypatch, name)
+    dlt_assets_parsing.get_destination(credentials(), {})
+    assert "staging_use_https" not in seen["config"]
+
+
+def test_control_the_recorder_does_see_keys_this_function_adds(monkeypatch):
+    """Without this, the test above passes on a recorder that records nothing."""
+    seen = _record(monkeypatch, "postgres")
+    dlt_assets_parsing.get_destination(config_to_credentials(dict(POSTGRES)), {})
+    assert seen["config"]["enable_dataset_name_normalization"] is False
+
+
+def test_an_operators_own_https_key_is_still_passed_through(monkeypatch):
+    """Their spelling, on whatever destination they wrote it; dlt's answer is dlt's."""
+    seen = _record(monkeypatch, "postgres")
+    dlt_assets_parsing.get_destination(
+        config_to_credentials(dict(POSTGRES)), {"staging_use_https": True}
+    )
+    assert seen["config"]["staging_use_https"] is True
+

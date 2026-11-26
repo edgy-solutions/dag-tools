@@ -55,6 +55,7 @@ from pydantic import Field
 from dag_tools.io_managers.column_schema import add_column_schema
 from dag_tools.io_managers.mesh_publishing import MeshPublishable
 from dag_tools.resources.duckdb import DuckDBResource, duckdb_path
+from dag_tools.utils.helper import ConfigureFromDict
 
 DEFAULT_FORMAT = "parquet"
 
@@ -393,7 +394,9 @@ class DuckDBIOManager(IOManager):
         return metadata
 
 
-class ConfigurableDuckDBIOManager(MeshPublishable, ConfigurableIOManagerFactory):
+class ConfigurableDuckDBIOManager(
+    MeshPublishable, ConfigurableIOManagerFactory, ConfigureFromDict
+):
     """Config surface for :class:`DuckDBIOManager`."""
 
     duckdb: DuckDBResource
@@ -426,6 +429,24 @@ class ConfigurableDuckDBIOManager(MeshPublishable, ConfigurableIOManagerFactory)
         default=None,
         description="Hive-partition the output by these columns.",
     )
+
+    @classmethod
+    def configure(cls, config: Dict[str, Any]) -> "ConfigurableDuckDBIOManager":
+        """Construct from a plain dict -- the ``ConfigureFromDict`` seam.
+
+        The fields are FLAT, so what is handed over is the INNER block (what
+        a config file nests under ``config:``), exactly as for
+        :meth:`ConfigurableArrowIOManager.configure` and unlike
+        ``ConfigurableSQLIOManager.configure``, whose model has a single
+        ``config:`` wrapper field. Passing the wrong level fails loudly on a
+        missing field.
+
+        ``duckdb`` is a nested resource and takes either a dict of
+        :class:`DuckDBResource`'s fields or a pre-built instance. Nothing is
+        rewritten here: the dict means what Dagster's config system says it
+        means, and a refusal is Dagster's to give.
+        """
+        return cls.model_validate(config)
 
     def create_io_manager(self, context) -> DuckDBIOManager:
         return DuckDBIOManager(
