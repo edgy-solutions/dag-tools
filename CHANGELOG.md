@@ -83,6 +83,33 @@ it back are named.
 
 ### Fixed
 
+- **A `DltAssetGroupConfig` with no `name` no longer builds a colliding Dagster op name.**
+  `name` is `Optional[str]` with a `None` default, so leaving it unset is inside the contract --
+  but it was interpolated raw into the op name, which rendered the literal text `"None"` there.
+  Two pipelines over one source schema then built the **same** op name and Dagster failed the
+  whole code location with `DagsterInvalidDefinitionError: Detected conflicting node definitions
+  with the same name "dlt_None_<schema>_asset"`. The fallback is now the **source database**,
+  because `(database, schema)` is the unit mapping's own key and so is unique per unit by
+  construction. When `name` is set the expression is byte-identical to before, so every shipped
+  component is unaffected -- all three set a name -- and no asset key moves: the string is the
+  **op** name, not a key. No signature, export or default changed.
+
+- **`get_destination_distinctions` no longer raises on an absent optional credential field, so
+  an asset group no longer vanishes for a correctly configured destination.** It read four
+  `Optional[str]` fields unguarded. `AwsCredentials.endpoint_url` is `None` for plain AWS S3 --
+  the *ordinary* case; it is set only for an S3-compatible store -- so the ordinary case raised
+  `TypeError: expected string or bytes-like object, got 'NoneType'`, and the caller's `except`
+  swallowed it into a `print`: the whole group disappeared from the code location, reported only
+  as `DLT <name> assets could not be instantiated for <db>.<schema>: expected string or
+  bytes-like object, got 'NoneType'`. The AWS arm now **recovers** to `[bucket]`, which is what
+  that arm already returns when the endpoint pattern does not match, so nothing that resolves
+  today moves. The azure, databricks and connection-string arms **refuse by name** instead:
+  what this function returns is spliced into asset keys, `AssetKey` rejects a `None` element
+  with a `CheckError` raised far from the field that was empty (measured), and a stand-in would
+  name something the destination does not have. The message names the field. No signature,
+  export or default changed.
+
+
 - **`config_to_credentials` no longer raises `NameError` on a snowflake destination.**
   `SnowflakeCredentials` was the one class in that function's seven-way dispatch that was never
   imported, so the snowflake arm raised `NameError: name 'SnowflakeCredentials' is not defined`

@@ -400,10 +400,30 @@ def instantiate_assets(
         source_creds=base["creds"],
     )
 
+    # The op name is DERIVED, not copied. ``DltAssetGroupConfig.name`` is
+    # Optional with a None default, so a caller that leaves it unset is inside
+    # the contract -- and interpolating it raw rendered the literal text "None"
+    # into the name. Two pipelines over one schema then built the SAME op name
+    # and Dagster failed the WHOLE code location with
+    # DagsterInvalidDefinitionError: conflicting node definitions with the same
+    # name "dlt_None_<schema>_asset". A legal default must not be able to do
+    # that.
+    #
+    # The fallback is the SOURCE database, because (database, schema) is
+    # ``mapping``'s own key and is therefore unique per unit by construction.
+    # ``_prepare_units``' ``effective_name`` was the tempting choice and is the
+    # wrong one: it is derived from the DESTINATION, so two sources landing in
+    # one dest schema share it and the collision survives. Dots are normalised
+    # the way every other name this module builds normalises them.
+    #
+    # When ``config.name`` is set this expression is exactly what it was, which
+    # is what confines the change to the None case (AGENTS.md §6).
+    op_name = config.name or database.replace(".", "_")
+
     @dlt_assets_with_io_managers(
         dlt_source=source.parallelize(),
         dlt_pipeline=dlt_pipeline,
-        name=f"dlt_{config.name}_{schema}_asset",
+        name=f"dlt_{op_name}_{schema}_asset",
         io_manager_key=config.io_manager_key,
         dagster_dlt_translator=translator,
         op_tags=config.effective_op_tags() or None,
