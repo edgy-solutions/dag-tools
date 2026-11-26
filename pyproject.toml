@@ -32,6 +32,11 @@ dependencies = [
     "oracledb>=3.4.2",
     "polars>=0.20.10",
     "PyYAML>=6.0.1",
+    # Imported at module level by the pure engines (contract_mapping, audit,
+    # documents.mapping) and every IO manager, so it is core rather than an
+    # extra. It used to arrive only because dagster requires it. No floor:
+    # the gap is declaration, and no release has been measured broken here.
+    "pydantic",
     # dag_tools.otel_api_sync renders mapping YAML into API payloads. The
     # environment combines SandboxedEnvironment (mapping files are
     # executable config, so attribute escapes must be blocked) with

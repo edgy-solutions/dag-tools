@@ -96,7 +96,13 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             vars[f"DESTINATION__{credentials.drivername.upper()}__CREDENTIALS__{key.upper()}"] = value
 
     config.setdefault("enable_dataset_name_normalization", False)
-    config.setdefault("staging_use_https", False)
+    # `staging_use_https` is a field of dlt's ClickHouse client configuration and
+    # of no other destination built below (measured at dlt 1.30.0), so this
+    # library's default for it is set in the clickhouse arm alone. It used to be
+    # set here for every destination, where dlt dropped it -- with a WARNING on
+    # filesystem and databricks that names a setting the operator never wrote.
+    # An operator who writes the key on another destination still has it passed
+    # through: that is their spelling, and dlt's answer to it is dlt's.
 
     if database and "normalize" in config and database in config["normalize"]:
         for section, cfg in config["normalize"][database].items():
@@ -138,6 +144,7 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             return dlt.destinations.filesystem(credentials=credentials, **config)
             
         elif credentials.drivername == "clickhouse":
+            config.setdefault("staging_use_https", False)
             return dlt.destinations.clickhouse(credentials=credentials, **config)
         elif credentials.drivername == "databricks":
             return dlt.destinations.databricks(credentials=credentials, **config)
