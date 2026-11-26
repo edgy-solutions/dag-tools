@@ -51,15 +51,10 @@ IMPORT_TO_DIST = {
     "pydantic": "pydantic",
 }
 
-# Reported, not fixed. ``pydantic`` is a module-level import of all three of
-# these files and is declared on NEITHER the core dependencies nor this
-# extra -- it arrives via dagster, the same way universal-pathlib did. That
-# is a repo-wide question (``worker``, ``qual`` and ``broker`` each declare
-# it; core does not) and widening this PR to answer it would mean deciding
-# whether it belongs on core, which is a different change. Naming it here
-# keeps the gap visible and keeps this test honest about what it does not
-# cover.
-EXEMPT = {"pydantic"}
+# Nothing is exempt. ``pydantic`` was, while it arrived only via dagster;
+# it is a core dependency now (see the test below), so it is checked like
+# any other name.
+EXEMPT = set()
 
 
 def _declared():
@@ -111,6 +106,23 @@ def test_every_module_level_import_is_declared_or_named_as_a_known_gap():
                     f"neither the core dependencies nor the {EXTRA!r} extra"
                 )
     assert not problems, "\n".join(problems)
+
+
+def test_pydantic_is_a_CORE_dependency_not_an_extras():
+    """The pure engines import it with no extra installed.
+
+    ``contract_mapping``, ``audit`` and ``documents.mapping`` import pydantic
+    at module level and import no dagster, so an extra declaring it would
+    still leave a base install unable to import them. Three extras declaring
+    it and core not was the gap: it arrived only because dagster requires it.
+    """
+    with PYPROJECT.open("rb") as handle:
+        project = tomllib.load(handle)["project"]
+    core = {Requirement(entry).name.lower() for entry in project["dependencies"]}
+    assert "pydantic" in core
+    for engine in ("contract_mapping/mapping.py", "audit/history.py", "documents/mapping.py"):
+        imports = _top_level_third_party_imports(ROOT / "dag_tools" / engine)
+        assert "pydantic" in imports and "dagster" not in imports, engine
 
 
 def test_the_two_names_that_were_missing_are_named_on_both_extras():

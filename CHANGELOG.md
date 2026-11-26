@@ -107,6 +107,38 @@ it back are named.
   PyPI trusted publisher is unchanged (it is bound to `build-package.yml`, where the publish stays)
   and no credential is added.
 
+- **`ConfigurableDuckDBIOManager.configure` exists.** It mixed in nothing and defined no
+  `configure`, so a deployment that configures its IO managers from a config file -- the way the
+  Arrow, Delta, S3 file and SQL managers and `DuckDBResource` itself are configured -- failed at
+  the first line of its code location with `AttributeError: ... has no attribute 'configure'`. It
+  now mixes in `ConfigureFromDict` and takes the INNER block (its fields are flat, as on the Arrow
+  manager); `duckdb` takes a dict of `DuckDBResource` fields or a pre-built resource, and handing
+  it the outer `config:` level fails on the missing fields rather than building from defaults.
+  Regressions: `test_duckdb_configure.py` -- `test_the_inner_block_configures_the_manager_and_its_nested_resource`,
+  `test_the_outer_block_is_refused_rather_than_read`, the control
+  `test_the_method_is_the_classs_own_not_the_mixins_stub` (the mixin's own `configure` raises, so a
+  class that mixed it in and stopped would pass a `hasattr` check), and
+  `test_a_configured_manager_writes_and_reads_back`.
+
+- **`pydantic` is declared as a core dependency.** The pure engines (`contract_mapping`, `audit`,
+  `documents.mapping`, `otel_api_sync.spec`, `row_filters`) and every IO manager import it at module
+  level, and core did not declare it: it arrived only because dagster requires it, and three extras
+  declared it on their own. No floor is set, because none was measured. The exemption
+  `test_io_manager_declared_imports.py` carried for it is closed, and
+  `test_pydantic_is_a_CORE_dependency_not_an_extras` asserts it is core specifically, since an
+  extra would still leave a base install unable to import the engines.
+
+- **`staging_use_https` is sent to ClickHouse only.** `get_destination` set it for every destination,
+  and it is a field of dlt's ClickHouse configuration alone, so dlt dropped it everywhere else --
+  with a WARNING on filesystem and databricks naming a setting the operator never wrote. The
+  default `False` is now set in the clickhouse arm; an explicit value still wins there, and an
+  operator who writes the key for another destination still has it passed through. Regressions:
+  `test_dlt_get_destination.py` -- `test_clickhouse_gets_the_librarys_https_default`,
+  `test_an_explicit_clickhouse_value_wins_over_the_default`,
+  `test_no_other_destination_is_sent_the_https_key` with its control
+  `test_control_the_recorder_does_see_keys_this_function_adds`, and
+  `test_an_operators_own_https_key_is_still_passed_through`.
+
 - **A `DltAssetGroupConfig` with no `name` no longer builds a colliding Dagster op name.**
   `name` is `Optional[str]` with a `None` default, so leaving it unset is inside the contract --
   but it was interpolated raw into the op name, which rendered the literal text `"None"` there.
