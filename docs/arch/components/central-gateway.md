@@ -95,7 +95,7 @@ All dag-tools paths are at `503607dd321cd6627509bfc93955357b8566597f`. Gateway s
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
-| Built as one fleet service; chart deploys it with two replicas and both probes | `.github/workflows/build-containers.yml:20`; `helm/dag-tools/values.yaml:173-215`; `helm/dag-tools/templates/central-gateway.yaml:65-73` | dag-tools AGENTS.md §8 | `test_image_release_retag.py`: `test_every_built_service_is_retagged` | `built` |
+| Built as one fleet service; chart deploys it with two replicas and both probes | `.github/workflows/build-containers.yml:27`; `helm/dag-tools/values.yaml:173-215`; `helm/dag-tools/templates/central-gateway.yaml:65-73` | dag-tools AGENTS.md §8 | `test_image_release_retag.py`: `test_every_built_service_is_retagged` | `built` |
 | Identity settings read per call; four others read at import | `identity.py:1-60`; `main.py:63`, `:72-73`, `:78-81` | not stated | — | `built` |
 | Posture default `observe`; unknown is `enforce` at ERROR | `identity.py:179-196` | not stated | `test_gateway_verified_identity.py`: `test_posture_parse`, `test_an_unknown_posture_is_enforce_and_logged_at_error` | `built` |
 | No default issuer, audience or key; empty refuses; RS256 default | `identity.py:208-236`, `:239`, `:264`; the message `:134-137`, sent at `main.py:144`; the variables logged at `identity.py:335` | not stated | `test_gateway_accepted_issuers_and_audiences.py`: `test_the_empty_list_is_checked_before_the_signature_so_the_reason_is_actionable` | `built` |

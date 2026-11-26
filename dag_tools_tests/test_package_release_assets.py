@@ -46,7 +46,8 @@ def workflow():
 
 @pytest.fixture(scope="module")
 def steps(workflow):
-    return [step for job in workflow["jobs"].values() for step in job["steps"]]
+    # A job that calls another workflow (`uses:`) has no steps of its own.
+    return [step for job in workflow["jobs"].values() for step in job.get("steps") or []]
 
 
 def _patterns(value):

@@ -98,6 +98,15 @@ it back are named.
   planted-defect control `test_control_one_shared_credentials_object_sends_the_second_unit_to_the_first`,
   and `test_a_destination_that_names_its_database_keeps_it_for_every_unit`.
 
+- **A release's assets are attached in a fixed order, and PyPI waits for all of them.** One job
+  creates the release -- `build-package.yml`'s `build`, which generates the notes -- and the chart
+  and image-record workflows are no longer started by the tag: each is called from a tag-gated job
+  that `needs` the creator, so it uploads into a release that already exists instead of polling
+  for one, and a failed upload fails visibly. `publish-pypi` now needs the creator and both
+  callers, so a release missing its chart or its image record is never published to PyPI. The
+  PyPI trusted publisher is unchanged (it is bound to `build-package.yml`, where the publish stays)
+  and no credential is added.
+
 - **A `DltAssetGroupConfig` with no `name` no longer builds a colliding Dagster op name.**
   `name` is `Optional[str]` with a `None` default, so leaving it unset is inside the contract --
   but it was interpolated raw into the op name, which rendered the literal text `"None"` there.
