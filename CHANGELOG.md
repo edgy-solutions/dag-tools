@@ -10,7 +10,15 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
-## Unreleased
+## 0.20.0 — 2026-11-25
+
+Cut at `f7ac596`. The release that makes the dlt component refuse what it used to get silently
+wrong: a misspelt YAML key (#161), a destination that was never built (#162), two unnamed
+pipelines sharing one op name (#163), and two source databases landing in one destination
+database (#165). Alongside them: the release assets in a fixed order (#164), DuckDB
+`configure`, `pydantic` declared and `staging_use_https` sent to ClickHouse only (#166), and
+a docstring (#160). Both entries under Changed refuse something that used to be accepted, and
+each says what was wrong with it and what to do.
 
 ### Changed
 
