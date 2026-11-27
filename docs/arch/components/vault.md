@@ -1,10 +1,10 @@
 # Vault (CO-VAULT)
 
-Vault is named in the census as a tool the mesh may use for secrets. At the component-records pin, nothing in this repo reads from a Vault, and neither chart deploys one. This record says how secrets reach dag-tools workloads instead, so that a deployment that fills them from a Vault knows where they land.
+Vault is named in the census as a tool the mesh may use for secrets. At the dag-tools pin, nothing in this repo reads from a Vault, and neither chart deploys one. This record says how secrets reach dag-tools workloads instead, so that a deployment that fills them from a Vault knows where they land.
 
 This record covers what the chart and code provide by default, and what a deployment may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`). The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -56,12 +56,12 @@ No connection is built at this pin: nothing in the code or the chart refers to t
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | No Vault in dag-tools | no match for the word under `dag_tools/` or `helm/` | not stated | — | `built` |
-| No Vault in the invincible-agent chart | invincible-agent `helm/invincible-agent/templates/frontend.yaml:152-155`; `helm/invincible-agent/values.yaml:1890-1904` | not stated | — | `built` |
+| No Vault in the invincible-agent chart | invincible-agent `helm/invincible-agent/templates/frontend.yaml:152-155`; `helm/invincible-agent/values.yaml:1908-1922` | not stated | — | `built` |
 | Secrets through `envFrom` | `helm/dag-tools/templates/central-gateway.yaml:57-58`; `helm/dag-tools/templates/restate-worker.yaml:72-73`; `helm/dag-tools/values.yaml:111-113`, `:181`, `:225` | not stated | — | `built` |
 | Certificates: exactly one source, merged | `helm/dag-tools/templates/_helpers.tpl:125-153`; `helm/dag-tools/values.yaml:142-155` | AGENTS.md §4 | `test_chart_ca_certs.py`: `test_enabling_sets_both_env_vars`, `test_the_env_vars_name_the_MERGED_bundle_not_the_mounted_secret`, `test_the_merge_keeps_the_public_roots` | `built` |
 | Variable secrets change on restart; absent is terminal | `dag_tools/restate_handlers/db_retry.py` (`MissingCredentials`) | AGENTS.md §4 | `test_restate_db_retry.py` | `built` |

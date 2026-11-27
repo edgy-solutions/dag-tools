@@ -5,13 +5,13 @@ import httpx
 import boto3
 
 from dag_tools.central_gateway import internal_door
-from dag_tools.domain_broker import ticket_identity
+from dag_tools.domain_broker import ticket_identity, unminted_posture
 from dag_tools.domain_broker.sql_minting import (
     mint_clickhouse as _mint_clickhouse,
     mint_postgres as _mint_postgres,
     sql_scope_from_uri,
 )
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, NamedTuple, Optional
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -40,6 +40,31 @@ logging.basicConfig(level=logging.INFO)
 CENTRAL_GATEWAY_URL = os.getenv("CENTRAL_GATEWAY_URL", "http://central-gateway.default.svc.cluster.local")
 BROKER_URL = os.getenv("BROKER_URL", "http://domain-broker.team-a.svc.cluster.local")
 DAGSTER_DEFS_MODULE = os.getenv("DAGSTER_DEFS_MODULE", "")
+
+# invincible-agent #529 item 1 -- which as-of readers this deployment wants,
+# validated HERE, at module scope, and nowhere else.
+#
+# AT MODULE SCOPE DELIBERATELY. ``lifespan`` below does
+# ``asyncio.create_task(_startup_load_and_register())`` and yields immediately,
+# so the pod is Ready before anything has loaded -- which is correct for an
+# import that takes 90-180s, and fatal for a refusal: one raised inside that
+# task is swallowed into the task object while the pod is already serving. The
+# log line would appear, the rollout would go green, and the readers would be
+# absent, which is the one failure the chart's render check exists to prevent,
+# reproduced one layer down. Here the module simply never finishes importing.
+#
+# It does not interact with the timeout that fire-and-forget design exists to
+# dodge: one ``os.getenv`` and a set difference, no IO and no Dagster.
+#
+# The competing precedent in this file does NOT transfer. A failed Dagster load
+# deliberately does not kill the broker -- it degrades, so a broken rollout does
+# not erase the routing table and a healthy replica stays authoritative. That
+# trade exists because an import failure has a competing cost. A reader name
+# nobody ships has none: it is a typo in configuration, and this repo's answer
+# to a typo is that it fails at load and not at 3am.
+AS_OF_READERS_SELECTED = ticket_identity.register_selected_as_of_readers(
+    os.getenv(ticket_identity.AS_OF_READERS_ENV)
+)
 
 # In-memory registry of assets
 LOCAL_ASSETS: Dict[str, Any] = {}
@@ -305,6 +330,26 @@ _MINTERS = {
     "clickhouse": (_mint_clickhouse, sql_scope_from_uri),
     "postgres": (_mint_postgres, sql_scope_from_uri),
 }
+
+
+class Resolved(NamedTuple):
+    """A ticket, and WHETHER THIS BROKER MINTED THE CREDENTIAL ON IT.
+
+    The seam cannot work this out by looking, and the two things it might try
+    are each wrong in a way that reads as protection -- see
+    ``unminted_posture``: ``source_type`` says which backend the ticket names
+    rather than where its credential came from (the legacy coordinate path
+    below returns a ``postgres`` ticket carrying a placeholder token, and
+    ``postgres`` is in ``_MINTERS``), and ``mode`` survives from the producer.
+
+    So every return path says, and ``resolve_asset`` decides once. A path
+    added later that returns a bare dict raises on ``.ticket`` rather than
+    being taken for a minted one.
+    """
+
+    ticket: Dict[str, Any]
+    minted: bool
+
 
 # Keys inside a legacy ticket's ``credentials`` that are COORDINATES, not
 # secrets. They must survive the strip: dropping the whole dict would take the
@@ -592,8 +637,21 @@ def _unadvertisable_reason(record, io_manager=None) -> str:
     having no readable location, and the causes want different fixes —
     installing a dependency is not the same job as binding an IO manager.
 
-    Returned strings are stable keys for ``/health.adr0044.unadvertised``, so
-    an operator can act on a count rather than reading the whole log.
+    Returned strings are stable grouping keys, so an operator can act on a
+    tally rather than reading every line. They reach a LOG, not an endpoint:
+    one INFO line per withheld asset ("Not advertising ..."), then a single
+    WARNING carrying ``dict(UNADVERTISED_ASSETS)`` once the pass is done.
+
+    ``/health`` does NOT serve this tally, and this docstring said for several
+    releases that it did -- naming a key under ``adr0044`` that has never
+    existed. That is the worst shape such a claim can take: an operator
+    diagnosing a deployment which advertises nothing goes to the payload,
+    finds no such field, and cannot tell "nothing was withheld" from "I am
+    looking in the wrong place" -- the exact confusion this function exists to
+    end. Whether the tally SHOULD be served beside the other posture numbers
+    is a live question and a separate one; it is not answered by describing it
+    as though it already were. ``test_broker_unadvertised_tally.py`` holds the
+    code and this paragraph to each other in both directions.
     """
     if io_manager is None:
         return (
@@ -1077,6 +1135,13 @@ async def _startup_load_and_register() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
+    # Say what the resolve door would do BEFORE anything can fail. Nothing else in this
+    # pod announces a posture, so without these two lines `BROKER_RESOLVE_CALLERS` being
+    # empty -- a door that under `enforce` admits nobody -- is invisible until a caller
+    # is refused, and the caller-side settings are invisible until a call is attempted.
+    internal_door.announce(internal_door.ROUTE_RESOLVE,
+                           internal_door.BROKER_RESOLVE_CALLERS)
+    internal_door.announce_caller(internal_door.ROUTE_REGISTER)
     # Kick off the load + register loop as a fire-and-forget
     # background task so lifespan startup completes immediately.
     # Hypercorn's lifespan startup timeout (60s, not CLI-configurable)
@@ -1133,11 +1198,36 @@ async def health():
             "echoed_credentials_dropped": dict(ECHOED_CREDENTIALS_DROPPED),
             "unprotected_source_types": dict(UNPROTECTED_SOURCE_TYPES),
             "non_fqdn_hosts": dict(NON_FQDN_HOSTS),
+            # Reads carrying a credential this broker did not mint: what
+            # would be refused if the posture flipped, and what was. Two
+            # numbers, never summed -- under `observe` a would-refusal is
+            # SERVED anyway, so one number would report refusals for reads
+            # that were served.
+            "unminted_credentials": unminted_posture.health(),
         },
         # Which backends issue tickets a consumer cannot pin to a version.
         # Counted, not logged, for the same reason as the line above it.
         "ticket_identity": {
             "as_of_absent_by_source_type": dict(AS_OF_ABSENT),
+            # invincible-agent #529 item 3 -- the second of two exposures, and the one a
+            # render check CANNOT make: no pod exists at render time, and this
+            # is the only thing that knows what a pod actually registered. Read
+            # at call time, never snapshotted, because registration can happen
+            # late. `available` sits beside it so a pod that registered nothing
+            # says why in one look -- asked for nothing, or asked for something
+            # this pin does not ship -- rather than sending an operator to the
+            # package to find out.
+            #
+            # There is deliberately NO `as_of_readers_unknown` here. An unknown
+            # name refuses at import, so at runtime there can be no such state;
+            # a key reporting one would be a key that is always empty, which
+            # reads as reassurance rather than as nothing to say.
+            "as_of_readers_available": list(
+                ticket_identity.available_as_of_readers()
+            ),
+            "as_of_readers_registered": list(
+                ticket_identity.registered_as_of_readers()
+            ),
         },
     }
 
@@ -1180,20 +1270,33 @@ async def resolve_asset(request: ResolveRequest):
     here rather than on each of them, because the paths that matter most are
     the ones nobody remembers to update. invincible-agent ADR-0044 was exactly that shape: the
     minting was present and one newer path returned in front of it.
+
+    THE UNMINTED GUARD IS HERE FOR THE SAME REASON, and before the stamp: a
+    read that is refused never issues a ticket, so it must not be counted in
+    ``AS_OF_ABSENT`` as one that was.
     """
-    ticket = await _resolve_ticket(request)
-    stamped = ticket_identity.stamp(ticket)
+    resolved = await _resolve_ticket(request)
+
+    refusal = unminted_posture.decide(resolved.ticket, resolved.minted)
+    if refusal:
+        # The reason and nothing else. Which env var, and that the real fix is
+        # a minter for that backend, goes to the broker's log where no reader
+        # sees it; no credential is named in either place.
+        raise HTTPException(status_code=403, detail={"error": refusal})
+
+    stamped = ticket_identity.stamp(resolved.ticket)
     if stamped.get("as_of") is None:
         source_type = str(stamped.get("source_type") or "unknown")
         AS_OF_ABSENT[source_type] = AS_OF_ABSENT.get(source_type, 0) + 1
     return stamped
 
 
-async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
+async def _resolve_ticket(request: ResolveRequest) -> Resolved:
     """Coordinates and, where a minter exists for the backend, a credential.
 
-    Returns the ticket WITHOUT its identity; ``resolve_asset`` stamps it. Kept
-    separate so no future path can return around the stamp.
+    Returns the ticket WITHOUT its identity, and with a flag saying whether
+    this broker minted what is on it; ``resolve_asset`` stamps and decides.
+    Kept separate so no future path can return around either.
     """
     urn = request.urn
 
@@ -1217,10 +1320,13 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
         minter_entry = _MINTERS.get(source_type)
 
         if not minter_entry:
-            # No minting implementation for this backend yet — it is still on
-            # the producer's credential. Advertised as such rather than
-            # dressed up as protected.
-            return ticket
+            # No minting implementation for this backend yet, so whatever
+            # credential is on this ticket is the producer's -- a write
+            # credential, unscoped, not expiring with the access window.
+            # Declared unminted and handed to the guard at the seam, which
+            # serves it under ``observe`` (today's behaviour) and refuses it
+            # under ``enforce``. See ``unminted_posture``.
+            return Resolved(ticket, minted=False)
 
         minter, scope_from = minter_entry
         scope = ticket.get("scope") or scope_from(ticket.get("physical_uri", ""))
@@ -1267,8 +1373,11 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
                 detail="Could not mint a scoped credential for this asset." + hint,
             )
 
-        return {**{k: v for k, v in ticket.items() if k != "scope"},
-                "credentials": credentials}
+        return Resolved(
+            {**{k: v for k, v in ticket.items() if k != "scope"},
+             "credentials": credentials},
+            minted=True,
+        )
 
     io_type = asset_info.get("io_manager_type", "s3_parquet")
 
@@ -1278,13 +1387,21 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
         schema = asset_info.get("schema", "public")
         table = asset_info.get("table", urn.split(",")[-2] if "urn:li:dataset" in urn else urn)
         
-        return {
-            "source_type": io_type,
-            "physical_uri": f"{io_type}://{host}:{port}/{schema}/{table}",
-            "credentials": {
-                "token": "read-only-db-token-123"
-            }
-        }
+        # NOT MINTED, and not a producer credential either: that token is a
+        # placeholder this path has always returned. It is declared unminted
+        # because it is -- reading it as minted on the strength of
+        # ``source_type`` being in ``_MINTERS`` would report a fake credential
+        # as a protected one, which is the reading the guard exists to refuse.
+        return Resolved(
+            {
+                "source_type": io_type,
+                "physical_uri": f"{io_type}://{host}:{port}/{schema}/{table}",
+                "credentials": {
+                    "token": "read-only-db-token-123"
+                }
+            },
+            minted=False,
+        )
         
     elif io_type in ["s3_parquet", "s3_iceberg", "s3_delta"]:
         bucket = asset_info.get("bucket", "default-bucket")
@@ -1327,15 +1444,18 @@ async def _resolve_ticket(request: ResolveRequest) -> Dict[str, Any]:
             )
             credentials = response['Credentials']
             
-            return {
-                "source_type": io_type,
-                "physical_uri": f"s3://{bucket}/{prefix}",
-                "credentials": {
-                    "aws_access_key_id": credentials['AccessKeyId'],
-                    "aws_secret_access_key": credentials['SecretAccessKey'],
-                    "aws_session_token": credentials['SessionToken']
-                }
-            }
+            return Resolved(
+                {
+                    "source_type": io_type,
+                    "physical_uri": f"s3://{bucket}/{prefix}",
+                    "credentials": {
+                        "aws_access_key_id": credentials['AccessKeyId'],
+                        "aws_secret_access_key": credentials['SecretAccessKey'],
+                        "aws_session_token": credentials['SessionToken']
+                    }
+                },
+                minted=True,
+            )
         except Exception as e:
             # NO MOCK CREDENTIALS. This used to return aws_access_key_id
             # "mock_access_key" and friends "for environments without AWS

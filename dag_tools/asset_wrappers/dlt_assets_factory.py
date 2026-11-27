@@ -9,6 +9,7 @@ from dlt.common.configuration.specs.azure_credentials import AzureCredentials
 from dlt.common.storages.configuration import AwsCredentials, FileSystemCredentials
 from dlt.destinations.impl.clickhouse.configuration import ClickHouseCredentials
 from dlt.destinations.impl.databricks.configuration import DatabricksCredentials
+from dlt.destinations.impl.snowflake.configuration import SnowflakeCredentials
 from dlt.sources.credentials import ConnectionStringCredentials
 from pydantic import ConfigDict, Field as PydanticField, BaseModel
 
@@ -139,11 +140,35 @@ def build_table_hints(
 
 class DltAssetGroupConfig(BaseModel):
     """Configuration class for generating a DLT Asset group pipeline cleanly.
-    
-    This replaces the massive kwargs dictionary/arguments historically passed 
-    to create_dlt_assets, natively aligning with Dagster's new custom/declarative 
+
+    This replaces the massive kwargs dictionary/arguments historically passed
+    to create_dlt_assets, natively aligning with Dagster's new custom/declarative
     component structures.
+
+    **An unknown key is refused, because being ignored is worse than failing.**
+    This model is built from an operator's YAML with ``**pipeline_attrs``, so
+    before ``extra="forbid"`` a misspelt setting was dropped on the floor and
+    the pipeline loaded with that setting simply absent -- no error, no warning,
+    and a load that reads as a success. The failures that shape takes are not
+    cosmetic: a mistyped ``cursor`` is a full reload every run, a mistyped
+    ``row_filters`` extracts every row of every table while the YAML reads as
+    filtered, and a mistyped ``primary_key`` changes what a merge writes. Each
+    one looks exactly like a correct extraction until someone reads the
+    destination. Refusing at the load is the only place the operator still has
+    the YAML in front of them.
+
+    The three components that build this model from YAML
+    (:class:`~dag_tools.components.dlt_pipeline.component.DltPipelineComponent`,
+    ``RestateDltSyncComponent``, ``RestateApiSyncComponent``) each pop their
+    own component-only keys first; ``dag_tools.dlt_dev.loader`` filters by
+    :attr:`model_fields`. Those pops were defensive before and are
+    **load-bearing** now, so a component that grows a new YAML key must pop it
+    in the same commit -- which is the point: the omission fails a test instead
+    of silently disabling a feature.
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = PydanticField(
         default=None, description="The custom name for the DLT pipeline/asset group."
     )
@@ -511,6 +536,31 @@ def db_supports_schema(platform: str) -> bool:
     return platform != "clickhouse"
 
 
+def _distinction_part(value: Any, field: str) -> str:
+    """Refuse by NAME rather than by ``AttributeError``.
+
+    What comes back from ``get_destination_distinctions`` is spliced into asset
+    keys (``base_distinction``), so there is no value to invent for an absent
+    field: ``AssetKey`` refuses a ``None`` element with a ``CheckError`` raised
+    far from the field that was empty (measured), and a stand-in would name
+    something the destination does not have.
+
+    Every field read there is ``Optional[str]`` with a ``None`` default on dlt's
+    own credential classes (measured on dlt 1.30.0: ``endpoint_url``,
+    ``azure_account_host``, ``server_hostname``, ``host``), so an absent one is
+    reachable from configuration that is entirely legal. The caller swallows
+    whatever is raised here into a ``print``, and that print is the only thing an
+    operator sees -- so what it says has to name the field.
+    """
+    if not value:
+        raise ValueError(
+            f"destination credential field {field!r} is empty, and this "
+            f"destination's asset keys are prefixed with it. Set it, or use a "
+            f"destination that does not need it."
+        )
+    return value
+
+
 class CustomDagsterDltTranslator(DagsterDltTranslator):
     """Custom translator for mapping DLT resources to normalized Dagster AssetKeys."""
     REMAP = {"postgresql": "postgres"}
@@ -560,19 +610,45 @@ class CustomDagsterDltTranslator(DagsterDltTranslator):
         creds = params.get("credentials")
 
         if isinstance(creds, AwsCredentials) and "bucket_url" in params:
-            bucket = params["bucket_url"].split(":")[1].split("/")[2]
-            match = re.search(r"[^:]*://([^\.]*)\..*", creds.endpoint_url)
+            bucket_url = _distinction_part(params.get("bucket_url"), "bucket_url")
+            bucket = bucket_url.split(":")[1].split("/")[2]
+            # ``endpoint_url`` is Optional on AwsCredentials and is None for plain
+            # AWS S3 -- the ORDINARY case; it is set only for an S3-compatible
+            # store. Reading it unguarded raised
+            #     TypeError: expected string or bytes-like object, got 'NoneType'
+            # and the caller's ``except`` swallowed that into a print, so a whole
+            # asset group disappeared from the code location for a destination
+            # that was configured correctly. An absent endpoint means no endpoint
+            # component, which is exactly the ``[bucket]`` this arm already
+            # returns when the pattern does not match -- so nothing new is
+            # invented here and no asset key that resolves today moves.
+            match = (
+                re.search(r"[^:]*://([^\.]*)\..*", creds.endpoint_url)
+                if creds.endpoint_url
+                else None
+            )
             return [match.group(1), bucket] if match else [bucket]
 
         elif isinstance(creds, AzureCredentials) and "bucket_url" in params:
-            match = re.search(r"[^:]*://([^@]*)@([^/]*)/([^/]*)/.*", params["bucket_url"])
-            return [match.group(2), match.group(1), match.group(3)] if match else [creds.azure_account_host]
+            # A bucket_url that is absent carries no more information than one
+            # that does not match, so it takes the same path: the arm's own
+            # account-host fallback, which is refused by name when IT is absent
+            # too (it is Optional, and ``[None]`` reaches AssetKey as a CheckError).
+            bucket_url = params.get("bucket_url")
+            match = (
+                re.search(r"[^:]*://([^@]*)@([^/]*)/([^/]*)/.*", bucket_url)
+                if bucket_url
+                else None
+            )
+            if match:
+                return [match.group(2), match.group(1), match.group(3)]
+            return [_distinction_part(creds.azure_account_host, "azure_account_host")]
 
         elif isinstance(creds, DatabricksCredentials):
-            return [creds.server_hostname.split(".")[0]]
+            return [_distinction_part(creds.server_hostname, "server_hostname").split(".")[0]]
 
         elif isinstance(creds, ConnectionStringCredentials):
-            return [creds.host.split(".")[0]]
+            return [_distinction_part(creds.host, "host").split(".")[0]]
 
         return ["filesystem"]
 

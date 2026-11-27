@@ -46,7 +46,8 @@ Each element names the mesh component that plays it and the code that shows it.
 6. **Policy is administered as reviewed files.**
    - Grants are YAML in the policy directory, and every grant names who granted it and why.
    - A scheduled job validates the files, then syncs them into the Topaz directory.
-   - Git history is the stated audit trail. No separate grant ledger was found.
+   - Access approved at run time is appended to a grant ledger table naming the requester, the approver, the time and the reason. A row is never edited; a revocation is a later row.
+   - The scheduled job reads committed policy together with the ledger and is the only caller that removes a `reader` grant. A ledger it cannot read leaves every grant in place and fails the job.
 
    `built`
 
@@ -68,18 +69,18 @@ Each actor and target cell holds one id. An `RL-` id names a role, and an `XE-` 
 
 | # | Actor | Action | Target | What passes | Decision or check | Protected by | Evidence | Status |
 |---|---|---|---|---|---|---|---|---|
-| 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2199` | `built` |
+| 1 | RL-PERSON | signs in and is issued a token whose authorization id is a single claim, `email` by default | CO-KEYCLOAK | sign-in; a token back | — | — | invincible-agent `helm/invincible-agent/templates/keycloak.yaml:38`, `keycloak-configmap.yaml:2`, `values.yaml:2217` | `built` |
 | 2 | CO-CLIENT | asks for a dataset | CO-GATEWAY | the bearer token and the principal it acts for | — | — | dag-tools `dag_tools/cortex_data/client.py:161-205` | `built` |
-| 3 | CO-GATEWAY | verifies the token, then resolves the principal | CO-GATEWAY | — | signature, `exp`, `iss`, `aud`; the configured posture | — | `dag_tools/central_gateway/identity.py:178-201`, `:270`, `:398` | `built` |
-| 4 | CO-GATEWAY | checks the request against the deny list | CO-GATEWAY | — | the configured deny list | — | `dag_tools/central_gateway/main.py:78-82`, `:438-465` | `built` |
-| 5 | CO-GATEWAY | asks for one decision, `allowed` | CO-TOPAZ | the dataset URN and the subject, in the resource context | — | — | `main.py:208-335`, `:468` | `built` |
+| 3 | CO-GATEWAY | verifies the token, then resolves the principal | CO-GATEWAY | — | signature, `exp`, `iss`, `aud`; the configured posture | — | `dag_tools/central_gateway/identity.py:179-202`, `:271`, `:399` | `built` |
+| 4 | CO-GATEWAY | checks the request against the deny list | CO-GATEWAY | — | the configured deny list | — | `dag_tools/central_gateway/main.py:78-82`, `:468-495` | `built` |
+| 5 | CO-GATEWAY | asks for one decision, `allowed` | CO-TOPAZ | the dataset URN and the subject, in the resource context | — | — | `main.py:238-365`, `:498` | `built` |
 | 6 | CO-TOPAZ | evaluates the request against its directory | CO-TOPAZ | — | `ds.check(dataset, can_read, user)` under the `data_mesh…authorize` policy | — | invincible-agent `topaz-configmap.yaml:159-165` (model), `:352-392` (policy) | `built` |
-| 7 | CO-GATEWAY | looks up the producer's broker and asks it for a ticket | CO-BROKER | the dataset | proceeds only when step 6 allowed | — | `main.py:476-544` | `built` |
+| 7 | CO-GATEWAY | looks up the producer's broker and asks it for a ticket | CO-BROKER | the dataset | proceeds only when step 6 allowed | — | `main.py:506-574` | `built` |
 | 8 | CO-BROKER | mints a credential for that dataset | XE-DATASET-BACKEND | — | the minter for the backend type | — | `dag_tools/domain_broker/main.py:226-308`, `dag_tools/domain_broker/sql_minting.py:164-221`, `:264-344` | `built` |
-| 9 | CO-GATEWAY | logs `TICKET_ISSUED` and returns the ticket; the client reads with it | CO-CLIENT | the ticket | — | — | `main.py:549-571`; `client.py` read paths | `built` |
+| 9 | CO-GATEWAY | logs `TICKET_ISSUED` and returns the ticket; the client reads with it | CO-CLIENT | the ticket | — | — | `main.py:579-601`; `client.py` read paths | `built` |
 | 10 | XE-AGENT-ENGINE | answers from a dataset read through the data client | CO-CLIENT | the URN and the person read for; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: invincible-agent `agent_fleet/data_analyst/main.py:505-519` | `built` |
 | 11 | CO-JUPYTERHUB | reads a dataset from a notebook through the data client | CO-CLIENT | the URN and the token the notebook's environment carries; the frame back | the access decision, steps 2 to 9 | `CO-GATEWAY` `built` | `CO-GATEWAY`: dag-tools `docs/cortex-data-client.md:26-27`; [JupyterHub, finding 5](../components/jupyterhub.md) | `built` |
-| 12 | XE-AGENT-ENGINE | asks a dashboard tool's API for data | CO-SUPERSET | the chart's bearer token, empty by default | none in the mesh | `CO-SUPERSET` `built`; `none: the gateway is not on this path` `built` | `CO-SUPERSET`: [Superset, finding 6](../components/superset.md); `none:` invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` (the caller's side only) | `built` |
+| 12 | XE-AGENT-ENGINE | asks a dashboard tool's API for data | CO-SUPERSET | the chart's bearer token, empty by default | none in the mesh | `CO-SUPERSET` `built`; `none: the gateway is not on this path` `built` | `CO-SUPERSET`: [Superset, finding 6](../components/superset.md); `none:` invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` (the caller's side only) | `built` |
 | 13 | XE-AGENT-READER | reads graph or vector objects for an answer | XE-KNOWLEDGE-STORE | the person's query; objects back | the engine's own per-object check, off by default | `none: the gateway is not on this path` `built` | `none:` [agent capabilities, findings 6 and 7](agent-capabilities.md) | `built` |
 
 No step is drawn for an API layer, because nothing at either pin wires one (finding 7).
@@ -88,18 +89,18 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 
 | Element (Appendix 9) | Mesh component | What it does here | Status | Evidence | Gap |
 |---|---|---|---|---|---|
-| Policy enforcement point (¶3) | Central gateway | Refuses before any data path is resolved: identity, then the deny list, then Topaz. A refusal returns 401, 403 or 503; a Topaz deny returns 403. | `built` | `identity.py:107-120`; `main.py:438-470` | Defaults to `observe` (finding 4). |
+| Policy enforcement point (¶3) | Central gateway | Refuses before any data path is resolved: identity, then the deny list, then Topaz. A refusal returns 401, 403 or 503; a Topaz deny returns 403. | `built` | `identity.py:108-121`; `main.py:468-500` | Defaults to `observe` (finding 4). |
 | Policy enforcement point (¶3), data plane | Domain broker and the backend | Mints an expiring credential scoped to one dataset. A minting failure fails the ticket (503). | `built` | `domain_broker/main.py:226-308`, `:1219-1223`, `:1242-1268` | The object store narrows by prefix only. Backends with no minter get the producer's credential (finding 5). |
 | Policy enforcement point (¶3), client | `cortex_data` client | Applies column and row narrowing to the frame for non-Postgres backends. For Postgres it skips this and relies on the minted role. | `built` | `client.py:318-366` | Advisory only. Today nothing arrives to apply (finding 2). |
 | Policy enforcement point (¶3), outside the data read | Agent backend and agent services | Make their own Topaz checks for persona and domain cells, documents, ontology, capabilities and tasks. A person refused a cell never reaches the dataset gate. | `built` | invincible-agent `_seal_asset_read_denied_at_the_gate.py:1-13` | Out of scope for this flow; listed so no one reads the gateway as the only enforcement point. |
 | Policy decision point (¶3) | Topaz authorizer, `data_mesh.GET.api.v1.assets.__asset_key.authorize` | Deny by default. Allows only on an explicit `reader` or `owner` relation. | `built` | `topaz-configmap.yaml:352-392` | No narrowing policy (finding 2). No label policy (finding 3). |
-| Policy information point (¶3) | Topaz directory | Holds `dataset` objects and `owner` relations synced from the catalog, `reader` relations synced from grants, and users and groups synced from policy files. | `built` | invincible-agent `policy/sync/datahub_topaz_sync.py:53-57`, `policy/sync/grant_sync.py`, `topaz-seed-cronjob.yaml:255-293` | Catalog tags and domains are parsed but not written to the directory. Token claims do not reach it; the subject is passed in by the gateway. |
-| Policy information point (¶3), request | Token claims, deny list | The verified subject, plus the configured deny list. | `built` | `identity.py:398`; `main.py:78-82` | No directory, catalog or label lookup at decision time. |
-| Policy administration point (¶3) | Policy YAML plus the seed CronJob | Grants are reviewed files carrying `granted_by` and `reason`. The CronJob validates them, then syncs. Removing a row revokes the grant. | `built` | invincible-agent `policy/asset_grants.yaml:1-26`; `topaz-seed-cronjob.yaml:255-293` | No grant ledger beyond git history. |
-| ICAM: authentication services (¶8) | Keycloak; gateway token verification | Tokens are issued by the realm and verified at the gateway against JWKS or a static key, with the issuer and audience checked. | `built` | `keycloak.yaml:38`; `identity.py:398-444` | — |
+| Policy information point (¶3) | Topaz directory | Holds `dataset` objects and `owner` relations synced from the catalog, `reader` relations synced from grants, and users and groups synced from policy files. | `built` | invincible-agent `policy/sync/datahub_topaz_sync.py:53-57`, `policy/sync/grant_sync.py`, `topaz-seed-cronjob.yaml:277-324` | Catalog tags and domains are parsed but not written to the directory. Token claims do not reach it; the subject is passed in by the gateway. |
+| Policy information point (¶3), request | Token claims, deny list | The verified subject, plus the configured deny list. | `built` | `identity.py:399`; `main.py:78-82` | No directory, catalog or label lookup at decision time. |
+| Policy administration point (¶3) | Policy YAML plus the seed CronJob | Grants are reviewed files carrying `granted_by` and `reason`, plus approved-access rows in an append-only grant ledger table. The CronJob validates the files, then syncs them together with the ledger. Removing a committed row revokes a grant the ledger does not also hold; a revocation row revokes either. | `built` | invincible-agent `policy/asset_grants.yaml:1-26`; `topaz-seed-cronjob.yaml:277-324`; `policy/sync/grant_sync.py:20-28`, `:368-387`; `src/iagent/human_tasks.py:1008-1019` | — |
+| ICAM: authentication services (¶8) | Keycloak; gateway token verification | Tokens are issued by the realm and verified at the gateway against JWKS or a static key, with the issuer and audience checked. | `built` | `keycloak.yaml:38`; `identity.py:399-445` | — |
 | ICAM: digital identity services (¶10) | Keycloak realm | One authorization-id claim. Realm roles are `user` and `admin`. Service clients carry a hardcoded authorization id. | `built` | `keycloak-configmap.yaml:2`, `:240-255`, `:279-286` | No group, persona or domain claim; those come from the directory. |
 | ICAM: authorization and access control services (¶7) | Topaz directory and policy | The decision and information points above. | `built` | as above | Access control is relationship-based on explicit grants. It is not attribute-based over security labels. |
-| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `built` | invincible-agent `values.yaml:2268-2283` | Recorded as a gap. |
+| ICAM: digital certificate services (¶9) | — | No certificate service was found in the chart. Trust in the realm comes from a mounted truststore. | `built` | invincible-agent `values.yaml:2286-2301` | Recorded as a gap. |
 
 ## Gaps
 
@@ -110,7 +111,7 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 - **Backends with no minter:** they return the producer's credential. Remedy: [roadmap row 3](../ROADMAP.md). Status: `built`.
 - **Default posture `observe`:** trusts the named principal without checking it against the token. Remedy: [roadmap row 1](../ROADMAP.md). Status: `built`.
 - **Delegation:** a service may not act for a person; the seam always answers no. Roadmap row 1 depends on it. Status: `built`.
-- **Gateway code hygiene:** A second, relation-style request is built and never sent (`main.py:295-307`). If Topaz returns an empty `decisions` list, the allow flag is read before it is assigned. The resulting exception is caught and the result is a deny, so it fails closed. Status: `built`.
+- **Gateway code hygiene:** A second, relation-style request is built and never sent (`main.py:325-337`). If Topaz returns an empty `decisions` list, the allow flag is read before it is assigned. The resulting exception is caught and the result is a deny, so it fails closed. Status: `built`.
 - **No test pins the decision request:** neither the policy path nor `can_read` is asserted by a dag-tools test. Status: `built`.
 - **Three points of use pass no gateway, and one of them passes no check at all by default** (finding 7). A dashboard tool's reads and an API layer's reads are protected only by the tool's own roles and leave no gateway receipt. An agent answer built from a graph or vector read is protected by the engine's own check, which is off by default. Remedy: [roadmap rows 21, 22 and 24](../ROADMAP.md); graph and vector reads are in [agent capabilities](agent-capabilities.md). Status: `built`.
 
@@ -127,25 +128,26 @@ No step is drawn for an API layer, because nothing at either pin wires one (find
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | Decision is `can_read` on one dataset | invincible-agent `helm/invincible-agent/templates/topaz-configmap.yaml:159-165`, `:352-392` | cited in code: invincible-agent ADR-0025 (not read) | invincible-agent `_seal_asset_read_denied_at_the_gate.py:1-13` | `built` |
-| Gateway asks for `allowed` only, with subject in resource context | dag-tools `dag_tools/central_gateway/main.py:278-292`, `:309-335` | not stated | no test pins the request | `built` |
+| Gateway asks for `allowed` only, with subject in resource context | dag-tools `dag_tools/central_gateway/main.py:308-322`, `:339-365` | not stated | no test pins the request | `built` |
 | Narrowing rules are mocks on an empty input | invincible-agent `topaz-configmap.yaml:359-403` | not stated | — | `built` (mocks) |
 | SQL minters grant the whole table when nothing narrows | dag-tools `dag_tools/domain_broker/sql_minting.py:204-209`, `:331-336` | cited in code: invincible-agent ADR-0044 (not read) | `test_pg_columns_narrow_when_topaz_narrows`, `test_ch_row_policy_is_created_server_side` | `built` |
 | Object-store minter ignores narrowing | dag-tools `dag_tools/domain_broker/main.py:226-256` | cited in code: invincible-agent ADR-0044 (not read) | `test_minting_failure_fails_closed` | `built` |
 | No-minter backends get the producer credential | dag-tools `dag_tools/domain_broker/main.py:1219-1223` | not stated | — | `built` |
 | Postgres client skips client-side narrowing | dag-tools `dag_tools/cortex_data/client.py:318-325` | not stated | `test_the_frame_is_still_narrowed_when_the_receipt_is_asked_for` | `built` |
-| Posture default `observe`; unknown value → `enforce` | dag-tools `dag_tools/central_gateway/identity.py:178-197` | not stated | `test_posture_parse` | `built` |
-| Observe trusts the named principal | dag-tools `identity.py:588-608` | not stated | `test_observe_logs_what_enforce_would_do_and_a_forged_token_WITH_A_HEADER_still_passes` | `built` |
-| Delegation seam answers no | dag-tools `identity.py:270-285` | not stated | `test_the_default_seam_is_false_and_says_once_that_the_rail_is_not_wired` | `built` |
+| Posture default `observe`; unknown value → `enforce` | dag-tools `dag_tools/central_gateway/identity.py:179-198` | not stated | `test_posture_parse` | `built` |
+| Observe trusts the named principal | dag-tools `identity.py:589-609` | not stated | `test_observe_logs_what_enforce_would_do_and_a_forged_token_WITH_A_HEADER_still_passes` | `built` |
+| Delegation seam answers no | dag-tools `identity.py:271-286` | not stated | `test_the_default_seam_is_false_and_says_once_that_the_rail_is_not_wired` | `built` |
 | Labels published as catalog metadata | dag-tools `dag_tools/warehouse_source/`, `dag_tools/components/classification_propagation/` | cited in code: invincible-agent ADR-0064 (not read) | `test_the_physical_dataset_is_the_entity_every_label_is_attached_to`, `test_the_shipped_example_propagates_from_a_source_it_only_OBSERVED` | `built` |
 | Labels as a decision input: rails written, empty, unread | invincible-agent `policy/level_readers.yaml:17-20`, `policy/dimension_holders.yaml:23-26` | cited in code: invincible-agent ADR-0064 (not read) | `tests/security/test_level_readers_rail.py`, `tests/security/test_dimension_holders_rail.py` (validate the files; no reader) | `proposed` |
-| Posture is set per deployment | dag-tools `dag_tools/central_gateway/identity.py:197` | not stated | — | `built` |
+| Posture is set per deployment | dag-tools `dag_tools/central_gateway/identity.py:198` | not stated | — | `built` |
 | Grants are reviewed files with grantor and reason | invincible-agent `policy/asset_grants.yaml:1-26` | not stated | `tests/test_grant_sync.py` | `built` |
-| Validate, then sync, on a schedule | invincible-agent `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:109`, `:255-293` | not stated | `tests/test_topaz_manifest_load_job.py` | `built` |
+| Approved access is a ledger row; the seed reads the ledger and fails closed | invincible-agent `src/iagent/human_tasks.py:1008-1019`, `:1100-1104`; `policy/sync/grant_sync.py:234-236`, `:368-387`; `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:297-307`, `:326-329` | not stated | `tests/test_the_seed_reads_the_ledger_so_the_one_pruner_keeps_approved_grants.py`: `test_1_a_ledger_grant_survives_a_seed_tick`, `test_1_control_without_the_ledger_the_same_tick_revokes_it`, `test_2_an_unreadable_ledger_prunes_nothing_and_exits_5`; `tests/test_an_approved_access_grant_is_in_the_ledger_not_a_file.py`: `test_1_no_file_is_written_or_changed`, `test_2_a_restart_keeps_an_approved_grant` | `built` |
+| Validate, then sync, on a schedule | invincible-agent `helm/invincible-agent/templates/topaz-seed-cronjob.yaml:109`, `:277-324` | not stated | `tests/test_topaz_manifest_load_job.py` | `built` |
 | Catalog sync writes datasets and owners only | invincible-agent `policy/sync/datahub_topaz_sync.py:53-65` | not stated | `tests/test_datahub_topaz_sync.py` | `built` |
-| One authorization-id claim, default `email` | invincible-agent `keycloak-configmap.yaml:2`; `values.yaml:2199` | not stated | — | `built` |
-| Producer brokers run as a second pod from the producer's image | invincible-agent `helm/invincible-agent/values.yaml:1176-1186` | not stated | pub-tools tests, as reported by its owner | `built` |
+| One authorization-id claim, default `email` | invincible-agent `keycloak-configmap.yaml:2`; `values.yaml:2217` | not stated | — | `built` |
+| Producer brokers run as a second pod from the producer's image | invincible-agent `helm/invincible-agent/values.yaml:1194-1204` | not stated | pub-tools tests, as reported by its owner | `built` |
 | An agent answer reads through the data client | invincible-agent `agent_fleet/data_analyst/main.py:505-519` | not stated | — | `built` |
 | A notebook reads through the data client | dag-tools `docs/cortex-data-client.md:26-27` | not stated | — | `built` |
-| A dashboard tool is called directly, with no gateway | invincible-agent `agent_fleet/restate_analyst/main.py:1009-1075` | not stated | — | `built` |
+| A dashboard tool is called directly, with no gateway | invincible-agent `agent_fleet/restate_analyst/main.py:1056-1122` | not stated | — | `built` |
 | Nothing wires an API layer | [Hasura, finding 1](../components/hasura.md) | not stated | — | `built` |
 | Graph and vector reads pass no gateway | [agent capabilities, findings 6 and 7](agent-capabilities.md) | not stated | — | `built` |

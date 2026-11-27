@@ -4,7 +4,7 @@ Grist is a spreadsheet-database: people edit tables in a browser, and the tables
 
 This record covers what the chart and code provide by default, and what a deployment may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`). The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -57,12 +57,12 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179` unless an invincible-agent path is named, which is at `6b3e8efdd4a4d2a172fb394ca5338c23413e57bb`. Invincible-agent chart paths are under `helm/invincible-agent/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f` unless an invincible-agent path is named, which is at `950b3eb912e2cbede454eea31ceb23a317c13fcc`. Invincible-agent chart paths are under `helm/invincible-agent/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|
 | No Grist server in either chart | `helm/dag-tools/` (no match); invincible-agent `templates/` (only the ingest ConfigMap and the code-location wiring) | not stated | — | `built` |
-| Per-entry ConfigMap, mount, variable; off by default | invincible-agent `values.yaml:1324-1325`; `templates/user-deployment-grist.yaml:15-30`; `templates/user-deployments.yaml:149-154`, `:168-178` | not stated | — | `built` |
-| Secrets as named environment variables | invincible-agent `templates/user-deployments.yaml:155-164` | not stated | — | `built` |
+| Per-entry ConfigMap, mount, variable; off by default | invincible-agent `values.yaml:1342-1343`; `templates/user-deployment-grist.yaml:15-30`; `templates/user-deployments.yaml:153-158`, `:172-182` | not stated | — | `built` |
+| Secrets as named environment variables | invincible-agent `templates/user-deployments.yaml:159-168` | not stated | — | `built` |
 | Code-location gate | `dag_tools/user_deployment/definitions.py:126-151` | not stated | `test_user_deployment_grist.py`: `test_grist_disabled_by_default`, `test_grist_enabled_false_is_disabled`, `test_grist_merged_into_combined_defs` | `built` |
 | Static token; direct calls | see [the ingest record](grist-ingest.md), findings 8 and 9 | not stated | see that record | `built` |

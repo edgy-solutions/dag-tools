@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
@@ -37,6 +38,8 @@ from dlt.sources.sql_database import sql_database
 from dlt.sources.filesystem import filesystem, read_parquet
 from dag_tools.utils.credentials import get_credentials
 from dag_tools.utils.env import update_from_env
+
+logger = logging.getLogger(__name__)
 
 
 def add_element(
@@ -93,7 +96,13 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             vars[f"DESTINATION__{credentials.drivername.upper()}__CREDENTIALS__{key.upper()}"] = value
 
     config.setdefault("enable_dataset_name_normalization", False)
-    config.setdefault("staging_use_https", False)
+    # `staging_use_https` is a field of dlt's ClickHouse client configuration and
+    # of no other destination built below (measured at dlt 1.30.0), so this
+    # library's default for it is set in the clickhouse arm alone. It used to be
+    # set here for every destination, where dlt dropped it -- with a WARNING on
+    # filesystem and databricks that names a setting the operator never wrote.
+    # An operator who writes the key on another destination still has it passed
+    # through: that is their spelling, and dlt's answer to it is dlt's.
 
     if database and "normalize" in config and database in config["normalize"]:
         for section, cfg in config["normalize"][database].items():
@@ -101,11 +110,32 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
                 os.environ[f"{database.upper()}_PIPELINE__NORMALIZE__{section.upper()}__{key.upper()}"] = value
         del config["normalize"]
 
+    # `staging_dataset_name_layout` is a DESTINATION parameter, so it arrives in
+    # `config` with every other one. It used to be read off the credentials
+    # object as `credentials.staging`, and no credentials object this library can
+    # build has ever carried that attribute: `config_to_credentials` setattrs
+    # only the names in its own STANDARD_ATTRS and routes everything else into
+    # `creds.query`, and dlt's own SnowflakeCredentials declares no such field
+    # (measured at 1.30.0; `staging_dataset_name_layout` is a field of the
+    # CLIENT configuration, which is what `**config` feeds). So the snowflake arm
+    # raised AttributeError on every call it ever received -- which the `except`
+    # below then swallowed, handing back a FILESYSTEM destination. Nothing could
+    # reach it until 0.19.x anyway, because the name `SnowflakeCredentials` was
+    # not imported and `config_to_credentials` raised NameError first.
+    #
+    # The attribute is still honoured if something outside this library sets it,
+    # so a caller that does keeps working unchanged; an explicit key in `config`
+    # wins, because that is the operator's own spelling of the same setting.
+    if credentials.drivername == "snowflake":
+        _legacy_layout = getattr(credentials, "staging", None)
+        if _legacy_layout is not None:
+            config.setdefault("staging_dataset_name_layout", _legacy_layout)
+
     try:
         if credentials.drivername == "postgresql":
             return dlt.destinations.postgres(credentials=credentials, **config)
         elif credentials.drivername == "snowflake":
-            return dlt.destinations.snowflake(staging_dataset_name_layout=credentials.staging, credentials=credentials, **config)
+            return dlt.destinations.snowflake(credentials=credentials, **config)
         elif credentials.drivername == "filesystem":
             if database and "bucket_url" in config:
                 config["bucket_url"] = f"{config['bucket_url']}/{database}"
@@ -114,13 +144,43 @@ def get_destination(credentials: Any, config: Dict[str, Any] = None, vars: Dict[
             return dlt.destinations.filesystem(credentials=credentials, **config)
             
         elif credentials.drivername == "clickhouse":
+            config.setdefault("staging_use_https", False)
             return dlt.destinations.clickhouse(credentials=credentials, **config)
         elif credentials.drivername == "databricks":
             return dlt.destinations.databricks(credentials=credentials, **config)
             
     except Exception as e:
-        print(f"Warning instantiating destination: {e}")
+        # RAISE. This used to print the error and fall through to the
+        # `return "filesystem"` below, so a destination that failed to construct
+        # BECAME a filesystem destination: the pipeline ran, wrote somewhere
+        # nobody had configured, and reported success. dlt mentions the swap in
+        # passing and carries on --
+        #   "The destination dlt.destinations.snowflake:None in state differs
+        #    from destination dlt.destinations.filesystem:filesystem in pipeline
+        #    and will be ignored"
+        # -- which is one line in a log of thousands, and it says "will be
+        # ignored" about the destination the operator actually asked for. A
+        # recognised destination that cannot be built is the one thing in a load
+        # that must not be guessed at.
+        raise RuntimeError(
+            f"could not instantiate the {credentials.drivername!r} destination: {e}"
+        ) from e
 
+    # An UNRECOGNISED drivername still returns the bare string "filesystem", as
+    # it always has: AGENTS.md 4q records the behaviour, and the SystemLink and
+    # pipeline tests monkeypatch this function precisely because duckdb is not in
+    # the list above. Widening the recognised set is a separate change.
+    #
+    # What changes here is that it is no longer SILENT. The fallback sends a load
+    # somewhere the configuration never named, and until now the only clue was
+    # the data's absence from the destination the operator had written down.
+    logger.warning(
+        "drivername %r is not one of the destinations this function builds "
+        "(postgresql, snowflake, filesystem, clickhouse, databricks), so the "
+        "bare 'filesystem' destination is being used instead -- which is almost "
+        "certainly not where this load is meant to land.",
+        credentials.drivername,
+    )
     return "filesystem"
 
 
@@ -347,10 +407,30 @@ def instantiate_assets(
         source_creds=base["creds"],
     )
 
+    # The op name is DERIVED, not copied. ``DltAssetGroupConfig.name`` is
+    # Optional with a None default, so a caller that leaves it unset is inside
+    # the contract -- and interpolating it raw rendered the literal text "None"
+    # into the name. Two pipelines over one schema then built the SAME op name
+    # and Dagster failed the WHOLE code location with
+    # DagsterInvalidDefinitionError: conflicting node definitions with the same
+    # name "dlt_None_<schema>_asset". A legal default must not be able to do
+    # that.
+    #
+    # The fallback is the SOURCE database, because (database, schema) is
+    # ``mapping``'s own key and is therefore unique per unit by construction.
+    # ``_prepare_units``' ``effective_name`` was the tempting choice and is the
+    # wrong one: it is derived from the DESTINATION, so two sources landing in
+    # one dest schema share it and the collision survives. Dots are normalised
+    # the way every other name this module builds normalises them.
+    #
+    # When ``config.name`` is set this expression is exactly what it was, which
+    # is what confines the change to the None case (AGENTS.md §6).
+    op_name = config.name or database.replace(".", "_")
+
     @dlt_assets_with_io_managers(
         dlt_source=source.parallelize(),
         dlt_pipeline=dlt_pipeline,
-        name=f"dlt_{config.name}_{schema}_asset",
+        name=f"dlt_{op_name}_{schema}_asset",
         io_manager_key=config.io_manager_key,
         dagster_dlt_translator=translator,
         op_tags=config.effective_op_tags() or None,
@@ -455,7 +535,7 @@ def _prepare_units(
         }
 
     kinds: List[str] = []
-    credentials = config_to_credentials(dest_config, kinds)
+    config_to_credentials(dest_config, kinds)
 
     if staging and staging_config:
         staging = get_destination(
@@ -466,6 +546,15 @@ def _prepare_units(
     units = []
     for database, schema_tables in mapping.items():
         for schema, base in schema_tables.items():
+            # A FRESH credentials object per unit. It used to be built once,
+            # above the loop, and the line below then MUTATED it: the first
+            # unit filled an empty `database` with its own, the second found it
+            # already filled and kept it -- so every later unit landed in the
+            # first unit's database, named its pipeline after it and reported
+            # it as `dest_database`, with no error. `config_to_credentials` is
+            # pure, so building one per unit costs nothing; `kinds` is computed
+            # once above because it describes the destination, not a unit.
+            credentials = config_to_credentials(dest_config)
             if hasattr(credentials, "database") and (
                 not credentials.database or credentials.database == "default"
             ):

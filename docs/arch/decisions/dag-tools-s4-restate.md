@@ -1,6 +1,6 @@
 # dag-tools decisions: §4 Restate worker deployment
 
-This record covers the decisions in `AGENTS.md` section 4 at the component-records pin (`add5bc4`). Section 4 governs the shared Restate worker and the durable handlers it serves. [The decisions index](README.md) explains how each decision is addressed. The [Restate worker record](../components/restate-worker.md) describes the worker itself.
+This record covers the decisions in `AGENTS.md` section 4 at the dag-tools pin (`503607d`). Section 4 governs the shared Restate worker and the durable handlers it serves. [The decisions index](README.md) explains how each decision is addressed. The [Restate worker record](../components/restate-worker.md) describes the worker itself.
 
 **This record describes; it decides nothing.** Statuses are those of [the README](../README.md). Line numbers are at the pin. The record shape is provisional.
 
@@ -117,7 +117,7 @@ This record covers the decisions in `AGENTS.md` section 4 at the component-recor
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Handler paths are under `dag_tools/restate_handlers/`. Chart paths are under `helm/dag-tools/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Handler paths are under `dag_tools/restate_handlers/`. Chart paths are under `helm/dag-tools/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

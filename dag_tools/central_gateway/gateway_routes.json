@@ -14,7 +14,14 @@
       "constant": "dag_tools.central_gateway.identity.ROUTE_AUTHORIZE",
       "delegate_rows_may_name": true,
       "authorization": "delegate_table",
-      "note": "The delegate table is keyed on this route. It is the only route a delegate row may name."
+      "note": "The delegate table is keyed on this route. A delegate row naming it authorizes reads and says nothing about any other route."
+    },
+    {
+      "id": "assets.list",
+      "constant": "dag_tools.central_gateway.identity.ROUTE_LIST",
+      "delegate_rows_may_name": true,
+      "authorization": "delegate_table",
+      "note": "The listing of assets a caller may read. ITS OWN id, not a reuse of assets.authorize: the delegate table is keyed per route, so sharing an id would widen every row granted for reads to a route nobody granted. The consequence is a policy fact, not a code one -- a service listed as a delegate for assets.authorize alone is refused not_a_delegate here until a row names this id too. A listing is the weaker operation, which is what makes inferring the grant tempting; the table cannot express weaker, so inferring it would make its rows mean something other than what they say."
     },
     {
       "id": "broker.resolve",

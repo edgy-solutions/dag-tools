@@ -157,6 +157,24 @@ def test_every_built_service_is_retagged(workflow):
     assert built == retagged
 
 
-def test_the_workflow_still_triggers_on_tags(workflow):
-    """The retag job is unreachable without the tag trigger."""
-    assert "v*" in workflow[True]["push"]["tags"]
+def test_the_workflow_is_reached_on_a_tag_through_the_release_creator(workflow):
+    """The retag job is unreachable unless something runs this workflow on a tag.
+
+    The tag no longer starts it directly: `build-package.yml` calls it from a
+    tag-gated job that `needs` the job creating the release, so the image
+    record is uploaded into a release that already exists.
+    """
+    assert "workflow_call" in workflow[True]
+    assert "tags" not in (workflow[True].get("push") or {})
+    package = yaml.safe_load(
+        (WORKFLOW.parent / "build-package.yml").read_text(encoding="utf-8")
+    )
+    assert "v*" in package[True]["push"]["tags"]
+    callers = [
+        job
+        for job in package["jobs"].values()
+        if job.get("uses") == "./.github/workflows/build-containers.yml"
+    ]
+    assert len(callers) == 1
+    assert "build" in callers[0]["needs"]
+    assert "refs/tags/v" in callers[0]["if"]

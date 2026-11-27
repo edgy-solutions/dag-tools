@@ -484,9 +484,11 @@ def test_a_catalog_failure_FAILS_the_materialization(monkeypatch):
     """Deliberately the opposite of the dbt publisher, which swallows.
 
     There the build is the deliverable and the catalog is a bonus. Here the
-    published label set IS the deliverable: if it does not land, a broker
-    finds no labels on the dataset and denies every read of it, so a component
-    that reported success would turn an outage into a silent embargo.
+    published label set IS the deliverable: a component that reported success
+    without publishing it would leave the catalog describing a dataset it
+    never described. The denial a broker would make of an unlabelled dataset
+    is what the labels are FOR, and it is intended rather than built; this
+    test is about the failure stance, which does not depend on it.
     """
     pytest.importorskip("datahub", reason="dag-tools[datahub] extra not installed")
     from dag_tools.components.warehouse_source import component as module

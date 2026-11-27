@@ -3,8 +3,9 @@ import os
 import json
 import logging
 import httpx
+from dataclasses import dataclass
 from urllib.parse import unquote
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -81,6 +82,69 @@ DENIED_USER_SUBS = {
     if s.strip()
 }
 
+# ---------------------------------------------------------------------------
+# The listing's cost bounds
+# ---------------------------------------------------------------------------
+# A listing asks the authorizer ONCE PER CANDIDATE asset, so its cost grows with the mesh while
+# a read's does not. Unbounded, one listing is a request storm at the authorizer -- and the
+# requests it would starve are the live reads next to it, which is the gate being taken down by
+# a convenience built on top of it. Three bounds, each on a different axis: how many candidates
+# one listing may decide on, how many of those decisions may be in flight at once, and how long
+# the whole listing may take.
+#
+# These are bounds on THIS gateway's own behaviour, not readings of anything below it, which is
+# why they carry defaults at all. A malformed value WARNS and falls back rather than failing the
+# process: a typo in a cost bound must not crash-loop a pod whose reads are otherwise fine.
+def _positive_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        logger.warning(
+            "%s=%r is not a positive integer -- using the default of %d", name, raw, default
+        )
+        return default
+    return value
+
+
+def _positive_float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.0
+    if not (value > 0):
+        logger.warning(
+            "%s=%r is not a positive number -- using the default of %s", name, raw, default
+        )
+        return default
+    return value
+
+
+ASSET_LIST_MAX_CANDIDATES = _positive_int("ASSET_LIST_MAX_CANDIDATES", 500)
+ASSET_LIST_MAX_CONCURRENCY = _positive_int("ASSET_LIST_MAX_CONCURRENCY", 8)
+ASSET_LIST_DEADLINE_SECONDS = _positive_float("ASSET_LIST_DEADLINE_SECONDS", 10.0)
+
+#: Why a listing is not the whole answer. Reason TOKENS, not sentences: a caller branches on
+#: them. They say something about this gateway's own health and nothing about what exists -- no
+#: count of what was withheld travels with them, because the number of assets a caller may not
+#: read is itself information about what the mesh holds.
+LIST_TRUNCATED = "candidate_limit_reached"
+LIST_UNDECIDED = "authorizer_undecided"
+LIST_DEADLINE = "deadline_reached"
+
+#: The routing table's key prefix. The listing's candidate set is exactly the keys the brokers'
+#: heartbeats write, which is the same table a read is routed through -- so the listing answers
+#: "what may you read right now", not "what exists". An asset whose broker has stopped
+#: heartbeating is not listed and not readable either, and the two agreeing is the point.
+MESH_ROUTE_PREFIX = "mesh_route:"
+
 # We'll initialize redis client in lifespan
 redis_client: Optional[redis.Redis] = None
 
@@ -98,6 +162,12 @@ async def lifespan(app: FastAPI):
     principal_gauge.announce()
     refusal_gauge.announce()
     identity.announce()
+    # The two internal doors, one line each: the door this pod serves and the door it
+    # calls. `callers=0` is a door that under `enforce` admits nobody, which is the one
+    # state that otherwise looks exactly like a door nobody has called yet.
+    internal_door.announce(internal_door.ROUTE_REGISTER,
+                           internal_door.GATEWAY_REGISTER_CALLERS)
+    internal_door.announce_caller(internal_door.ROUTE_RESOLVE)
     # Ask this process whether it can verify a signed token, ONCE, here. The answer cannot
     # change while the process runs -- the library is baked into the image and the algorithm
     # list arrives as an environment variable, which is populated once, at startup -- so a
@@ -115,8 +185,14 @@ app = FastAPI(lifespan=lifespan, title="Central Gateway")
 security = HTTPBearer()
 
 
-async def _principal(token: str, on_behalf_of, legacy, urn: str) -> "identity.IdentityDecision":
+async def _principal(token: str, on_behalf_of, legacy, route: str, urn: str) -> "identity.IdentityDecision":
     """Resolve who this request reads as, ONCE, and refuse here if that is nobody.
+
+    `route` is passed in rather than defaulted because it is what the audit line names and what
+    the delegate table is keyed by. A default would make the next door added here record its
+    decisions as the read door's -- a log describing a decision that was not made -- and it
+    would do it silently, since the request would still be resolved and still be refused or
+    served correctly. There are two doors and each names itself.
 
     The gate and the record both read what this returns, so there is one resolution and nothing
     for a second one to disagree with. Called before any Topaz call and long before the broker:
@@ -130,7 +206,7 @@ async def _principal(token: str, on_behalf_of, legacy, urn: str) -> "identity.Id
     try:
         decision = await asyncio.to_thread(
             identity.resolve_principal,
-            token, on_behalf_of, legacy, identity.ROUTE_AUTHORIZE, urn,
+            token, on_behalf_of, legacy, route, urn,
         )
     except Exception as exc:  # noqa: BLE001 — fail CLOSED
         logger.error("identity resolution failed (%s) — refusing", type(exc).__name__)
@@ -235,7 +311,32 @@ async def register_broker(payload: RegisterPayload):
     logger.info(f"Registered {len(payload.asset_urns)} assets for broker {payload.broker_url}")
     return {"status": "success", "registered_assets": len(payload.asset_urns)}
 
-async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityDecision") -> tuple[bool, Optional[List[str]], Optional[str]]:
+@dataclass(frozen=True)
+class AuthzOutcome:
+    """What the authorizer said about ONE asset, with its SILENCE kept apart from its REFUSAL.
+
+    `check_topaz_authz` answers `False` for both "the authorizer refused" and "the authorizer
+    never answered". For a single read that collapse is correct and deliberate: both deny, the
+    caller gets the same 403, and ADR-0026's posture is that every non-answer is a hard deny.
+
+    A listing cannot collapse them. Both produce the same empty list, and an empty list says
+    "you may read nothing" -- so an authorizer that is down would tell every caller they have no
+    access, with nothing in the answer to show the question was never put. That is a wrong answer
+    wearing a right one's shape, which is the whole reason this type exists.
+
+    `allowed` is the decision and means nothing when `undecided` is True. `cause` is a token for
+    the LOG, never for a response body: it names what a dependency of this gateway did, and the
+    caller is told only that the listing is incomplete.
+    """
+
+    allowed: bool
+    allowed_columns: Optional[List[str]]
+    row_filters: Optional[str]
+    undecided: bool = False
+    cause: Optional[str] = None
+
+
+async def topaz_decision(token: str, urn: str, principal: "identity.IdentityDecision") -> AuthzOutcome:
     """
     Calls the Topaz REST API to check authorization.
     Subject = the resolved principal (`identity.resolve_principal`)
@@ -289,7 +390,7 @@ async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityD
                 "DA-read subject unresolvable — the resolved principal names nobody; "
                 "fail-CLOSED deny (token_sub=%s)", user_id or "-",
             )
-            return False, None, None
+            return AuthzOutcome(False, None, None, undecided=True, cause="subject_unresolvable")
 
         # Topaz API call (using standard Aserto/Topaz REST API format for Is)
         headers = {
@@ -360,7 +461,7 @@ async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityD
                 allowed_columns = result.get("allowed_columns") or result.get("fields")
                 row_filters = result.get("row_filters") or result.get("row_filter") or result.get("filters")
 
-                return is_authorized, allowed_columns, row_filters
+                return AuthzOutcome(bool(is_authorized), allowed_columns, row_filters)
             else:
                 # ADR-0026 posture: authz is a GATE, not a trailing step.
                 # Every non-200 from topaz is a hard DENY with a loud
@@ -381,7 +482,7 @@ async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityD
                     urn,
                     response.text[:500],
                 )
-                return False, None, None
+                return AuthzOutcome(False, None, None, undecided=True, cause="authorizer_status")
 
     except Exception as e:
         # Same posture: exception (topaz unreachable, timeout, DNS,
@@ -399,7 +500,62 @@ async def check_topaz_authz(token: str, urn: str, principal: "identity.IdentityD
             urn,
             e,
         )
-        return False, None, None
+        return AuthzOutcome(False, None, None, undecided=True, cause="authorizer_error")
+
+
+async def check_topaz_authz(
+    token: str, urn: str, principal: "identity.IdentityDecision"
+) -> Tuple[bool, Optional[List[str]], Optional[str]]:
+    """The read path's view of one decision: a refusal and a silence are both a deny.
+
+    Kept on its exact previous signature and return tuple so the read path is unchanged by the
+    listing (AGENTS.md section 6 -- other repositories call into this module). The listing reads
+    `topaz_decision` directly because it is the one caller for which the difference matters.
+    """
+    outcome = await topaz_decision(token, urn, principal)
+    return outcome.allowed, outcome.allowed_columns, outcome.row_filters
+
+
+def _denied_sub(
+    request: Request, token: str, decision: "identity.IdentityDecision", enforcing: bool
+) -> Tuple[str, str, str]:
+    """The explicit deny list, read ONCE for whichever door is asking.
+
+    Extracted so the listing cannot read it differently from the read. A deny list applied on
+    one door and not the other is the failure worth preventing structurally: a listed user would
+    be told they may read an asset and then refused when they tried, and the listing -- the
+    thing built to answer "what may I read" -- would be the component that lied.
+
+    Returns `(effective_sub, originator_sub, token_sub)`, where `effective_sub` is non-empty
+    only when it is actually on the list. The caller logs and refuses, because the two doors say
+    different things in their log lines: one names the urn it was asked about, the other the
+    route. Nothing here raises, so the reading cannot decide a request on its own.
+
+    Posture handling is unchanged from the read path it came from. Under enforce the verified
+    token's sub is ALWAYS checked, and `X-Originator-Sub` -- an unsigned header -- joins the
+    check only when a listed delegate is vouching for a user (`via` is set): there it can only
+    ADD a refusal, never remove one. On a user's own token it is ignored, so naming a denied sub
+    in it cannot deny or free anybody.
+    """
+    if not DENIED_USER_SUBS:
+        return "", "", ""
+    if enforcing:
+        token_sub = decision.token_sub or ""
+        originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if decision.via else ""
+    else:
+        originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
+        try:
+            claims = jwt.decode(token, options={"verify_signature": False})
+            token_sub = claims.get("sub") or ""
+        except Exception:
+            token_sub = ""
+    effective_sub = originator_sub or token_sub
+    if enforcing:
+        effective_sub = next((x for x in (token_sub, originator_sub) if x and x in DENIED_USER_SUBS), "")
+    if effective_sub not in DENIED_USER_SUBS:
+        effective_sub = ""
+    return effective_sub, originator_sub, token_sub
+
 
 @app.post("/api/v1/assets/{urn:path}/authorize")
 async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -434,7 +590,7 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     # The gate (1.) and the record (3.) both read this and nothing else, so there is nothing
     # for a second resolution to disagree with. It also emits the posture's evidence line, and
     # it REFUSES a request that names nobody -- here, before Topaz and before the broker.
-    decision = await _principal(token, on_behalf_of, legacy_header, urn)
+    decision = await _principal(token, on_behalf_of, legacy_header, identity.ROUTE_AUTHORIZE, urn)
 
     # ---- SUBJECT-SOURCE GAUGE — observe only, refuse nothing -------------------------------
     # Sited HERE, on the same two inputs the gate below actually uses, so it reports the subject
@@ -465,34 +621,16 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     # Topaz is mock-allowing for the happy path. Originator-Sub header
     # wins over the JWT sub so a service-account M2M token still gets
     # filtered by the END USER's identity.
-    if DENIED_USER_SUBS:
-        if enforcing:
-            # Under enforce the verified token's sub is ALWAYS checked. X-Originator-Sub is an
-            # unsigned header, so it is added to the check ONLY when a listed delegate is
-            # vouching for a user (via is set): there it can only ADD a refusal, never remove
-            # one. On a user's own token it is ignored, so naming a denied sub cannot deny or
-            # free anyone.
-            token_sub = decision.token_sub or ""
-            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip() if decision.via else ""
-        else:
-            originator_sub = (request.headers.get("X-Originator-Sub") or "").strip()
-            try:
-                claims = jwt.decode(token, options={"verify_signature": False})
-                token_sub = claims.get("sub") or ""
-            except Exception:
-                token_sub = ""
-        effective_sub = originator_sub or token_sub
-        if enforcing:
-            effective_sub = next((x for x in (token_sub, originator_sub) if x and x in DENIED_USER_SUBS), "")
-        if effective_sub and effective_sub in DENIED_USER_SUBS:
-            logger.warning(
-                "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) urn=%s reason=explicit_deny_list",
-                effective_sub, originator_sub or "-", token_sub or "-", urn,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: user is on explicit deny list",
-            )
+    effective_sub, originator_sub, token_sub = _denied_sub(request, token, decision, enforcing)
+    if effective_sub:
+        logger.warning(
+            "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) urn=%s reason=explicit_deny_list",
+            effective_sub, originator_sub or "-", token_sub or "-", urn,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: user is on explicit deny list",
+        )
 
     # 1. Topaz AuthZ
     is_authorized, allowed_columns, row_filters = await check_topaz_authz(token, urn, decision)
@@ -569,6 +707,35 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
             
             if response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Asset not found on broker")
+            elif response.status_code == 403:
+                # A REFUSAL IS FORWARDED AS A REFUSAL, never as a bad gateway.
+                # The broker refuses a read it cannot protect (its unminted
+                # posture); reported as 502 that arrives at the consumer as
+                # `MeshUnavailable` -- "the gateway could not serve the
+                # request" -- which tells the reader to retry and the operator
+                # to go and look at the broker's health. Both are the wrong
+                # place, and the consumer already has the right word for this
+                # one: 403 classifies as `NotEntitled`.
+                #
+                # Only the broker's reason travels, and only from a dict. Its
+                # body for this status carries a reason token and nothing else
+                # by construction; forwarding whatever a body happened to hold
+                # is how a detail written for an operator reaches a reader.
+                reason = None
+                try:
+                    body = response.json()
+                    if isinstance(body, dict):
+                        reason = body.get("error")
+                except Exception:  # noqa: BLE001
+                    reason = None
+                logger.warning(
+                    "broker refused the read (403) reason=%s urn=%s",
+                    reason or "-", urn,
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={"error": reason} if isinstance(reason, str) else "refused by domain broker",
+                )
             elif response.status_code != 200:
                 logger.error(f"Broker returned status {response.status_code}: {response.text}")
                 raise HTTPException(status_code=502, detail="Bad gateway: Domain broker error")
@@ -604,3 +771,169 @@ async def authorize_asset(urn: str, request: Request, credentials: HTTPAuthoriza
     except httpx.RequestError as e:
         logger.error(f"Error communicating with domain broker: {e}")
         raise HTTPException(status_code=502, detail="Bad gateway: Could not reach domain broker")
+
+
+@app.get("/api/v1/assets")
+async def list_readable_assets(
+    request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """The assets this caller may read, asked of the SAME authorizer the read door asks.
+
+    WHY IT IS A LISTING AND NOT A CATALOGUE. A caller that wants to know what it may read has
+    only ever had one way to find out: try to read something and see whether it is refused.
+    That is a fine answer for one asset and a bad one for a client building a picker, which
+    ends up either hard-coding urns or probing the read door asset by asset -- the second being
+    a 403 storm that looks exactly like an attack. So this door answers the question directly.
+
+    WHAT IT IS NOT. It mints no ticket, calls no broker and moves no data: the read door is the
+    only way to anything behind it, and this one only answers "would that door open". It
+    carries no column lists and no row filters either, although the authorizer answers with
+    them: those are the shape of a read, and a listing handing them out would publish the
+    MASKING RULES for every asset in the mesh to anyone who can authenticate.
+
+    THE CANDIDATE SET IS THE ROUTING TABLE, which makes the answer "what may you read right
+    now" rather than "what exists". An asset whose broker has stopped heartbeating has no route
+    key, so it is not listed -- and it is not readable either, because the read door 404s on
+    exactly the same absence. The two agreeing is the property worth having; a listing drawn
+    from the catalogue instead would name assets the read door cannot serve.
+
+    EVERY DECISION IS THE AUTHORIZER'S, ONE PER ASSET. There is no bulk-decision shortcut and
+    no cached answer: a listing that reasoned about permissions itself would be a second gate,
+    and the two would disagree the first time a policy changed under one of them.
+
+    AN INCOMPLETE ANSWER SAYS SO. `complete` is False with a reason token in
+    `incomplete_reasons` whenever some asset went undecided, the candidate cap was reached or
+    the deadline was. This is the one thing the route exists to get right: an empty list from a
+    down authorizer is indistinguishable from "you may read nothing", and a caller cannot tell
+    a true answer from an outage unless it is told. The reasons name this gateway's own health
+    and carry NO COUNTS -- with the authorizer down the number of undecided assets is the size
+    of the routing table, and that is a fact about the mesh, not about the caller.
+    """
+    if not redis_client:
+        raise HTTPException(status_code=500, detail="Redis client not initialized")
+
+    token = credentials.credentials
+    legacy_header = (request.headers.get("X-Originator-Email") or "").strip() or None
+    on_behalf_of = (request.headers.get("on_behalf_of") or "").strip() or None
+    enforcing = identity.posture() == identity.POSTURE_ENFORCE
+
+    # ---- THE ONE RESOLUTION, under THIS route's id -----------------------------------------
+    # ROUTE_LIST, not ROUTE_AUTHORIZE: the audit line names the route, and the delegate table is
+    # keyed by it. A listing is no asset's read, so the urn these lines carry is the same "-"
+    # they already print for an absent subject or via.
+    decision = await _principal(token, on_behalf_of, legacy_header, identity.ROUTE_LIST, "-")
+
+    # ---- the explicit deny list, read by the SAME function the read door reads -------------
+    # A listed user is refused outright rather than handed an empty list. The empty list would
+    # be a true sentence read as a different one -- "you may read nothing" reads as an answer
+    # about entitlements, when the fact is that this door is shut to them -- and the read door
+    # refuses them too, so saying the same thing here keeps the two doors in agreement.
+    effective_sub, originator_sub, token_sub = _denied_sub(request, token, decision, enforcing)
+    if effective_sub:
+        logger.warning(
+            "AUTHZ_DENIED effective_sub=%s (originator=%s, token=%s) route=%s "
+            "reason=explicit_deny_list",
+            effective_sub, originator_sub or "-", token_sub or "-", identity.ROUTE_LIST,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: user is on explicit deny list",
+        )
+
+    reasons: List[str] = []
+
+    # ---- the candidate set: SCAN, never KEYS, and DE-DUPLICATED ----------------------------
+    # KEYS is O(n) and blocks the whole Redis instance for its duration, which would make one
+    # listing a stall for every read and every heartbeat sharing that instance.
+    #
+    # SCAN is what makes the de-duplication necessary rather than tidy. Redis guarantees SCAN
+    # misses nothing that was present throughout the iteration; it explicitly does NOT promise
+    # to yield a key only once, and a keyspace resize during the walk is when it repeats one --
+    # which is to say, under exactly the load this bound exists for. Three consequences, none
+    # of them visible on an idle instance: the same urn is named twice in the response, the
+    # caller's picker shows it twice; a repeat spends a second authorizer request, doubling the
+    # cost the concurrency bound is there to hold down; and a repeat consumes the candidate cap,
+    # so a mesh well inside the cap can report `candidate_limit_reached` and a listing that was
+    # complete says it was truncated -- a false incompleteness, which is the one direction this
+    # route is built not to be wrong in.
+    #
+    # So the cap counts DISTINCT assets. The repeat check runs first, which is what keeps the
+    # cap exact: a duplicate arriving once the cap is full is dropped as a duplicate rather than
+    # read as the asset that would have overflowed.
+    candidates: List[str] = []
+    seen_urns: set = set()
+    try:
+        async for key in redis_client.scan_iter(match=MESH_ROUTE_PREFIX + "*", count=200):
+            if isinstance(key, (bytes, bytearray)):
+                key = key.decode("utf-8", "replace")
+            if not key.startswith(MESH_ROUTE_PREFIX):
+                continue
+            urn = key[len(MESH_ROUTE_PREFIX):]
+            if urn in seen_urns:
+                continue
+            if len(candidates) >= ASSET_LIST_MAX_CANDIDATES:
+                reasons.append(LIST_TRUNCATED)
+                break
+            seen_urns.add(urn)
+            candidates.append(urn)
+    except Exception as exc:  # noqa: BLE001
+        # A routing table that cannot be read is not an empty routing table. Refusing is the
+        # only honest answer available: an empty list here would tell the caller they may read
+        # nothing, which is a statement about their entitlements and not about this outage.
+        logger.error("asset listing could not read the routing table (%r)", exc)
+        raise HTTPException(status_code=503, detail="Routing table unavailable")
+
+    # ---- one authorizer decision per candidate, bounded three ways -------------------------
+    permitted: List[str] = []
+    undecided = 0
+    semaphore = asyncio.Semaphore(ASSET_LIST_MAX_CONCURRENCY)
+
+    async def _decide(candidate: str) -> AuthzOutcome:
+        async with semaphore:
+            return await topaz_decision(token, candidate, decision)
+
+    if candidates:
+        tasks = {asyncio.create_task(_decide(c)): c for c in candidates}
+        done, pending = await asyncio.wait(list(tasks), timeout=ASSET_LIST_DEADLINE_SECONDS)
+        for task in pending:
+            task.cancel()
+        if pending:
+            # A cancelled decision is neither permitted nor undecided in the authorizer's
+            # sense: it was never asked. It makes the answer incomplete under its own reason.
+            reasons.append(LIST_DEADLINE)
+            await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            try:
+                outcome = task.result()
+            except Exception as exc:  # noqa: BLE001
+                # `topaz_decision` does not raise, so this is a defect of ours rather than a
+                # refusal -- and a defect counts as undecided, never as a denial, because a
+                # listing that swallowed its own bugs would report them to the caller as
+                # having no access.
+                logger.warning("asset listing decision failed (%s)", type(exc).__name__)
+                undecided += 1
+                continue
+            if outcome.undecided:
+                undecided += 1
+            elif outcome.allowed:
+                permitted.append(tasks[task])
+
+    if undecided:
+        reasons.append(LIST_UNDECIDED)
+
+    # The counts go in the LOG, where an operator reads them, and not in the response. With the
+    # authorizer down, `undecided` equals the size of the routing table: publishing it would
+    # tell every authenticated caller how much the mesh holds.
+    logger.info(
+        "ASSET_LIST subject=%s via=%s candidates=%d permitted=%d undecided=%d complete=%s",
+        decision.subject or "-", decision.via or "-",
+        len(candidates), len(permitted), undecided, not reasons,
+    )
+
+    return {
+        "assets": sorted(permitted),
+        "complete": not reasons,
+        # Sorted and de-duplicated, so the field is a stable set of tokens rather than a trace
+        # of the order in which things went wrong.
+        "incomplete_reasons": sorted(set(reasons)),
+    }

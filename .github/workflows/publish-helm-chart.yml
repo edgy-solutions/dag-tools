@@ -1,7 +1,7 @@
 name: Publish Helm Chart
 
 # Lints and packages the helm/dag-tools chart on every push and PR.
-# On tag pushes (vX.Y.Z), pins the chart version to the tag, publishes
+# On a release tag (vX.Y.Z), pins the chart version to the tag, publishes
 # it to ghcr.io as an OCI artifact, and attaches the tarball to the
 # release so downstream charts can depend on it:
 #
@@ -11,13 +11,18 @@ name: Publish Helm Chart
 #       repository: oci://ghcr.io/edgy-solutions/charts
 #       condition: dag-tools.enabled
 
+# A tag push does NOT start this workflow. `build-package.yml` creates the
+# tag's release and calls this one from a job that `needs` the creator, so the
+# chart is attached to a release that already exists. Under `workflow_call`
+# every `github.*` value is the caller's, so the tag-gated steps below still
+# run on the tag and only on it.
 on:
   push:
     branches: [master, main]
-    tags: ['v*']
   pull_request:
     branches: [master, main]
   workflow_dispatch:
+  workflow_call:
 
 env:
   REGISTRY: ghcr.io
@@ -84,13 +89,14 @@ jobs:
       # accident of ordering: on v0.16.0 they went to the draft nobody sees and
       # the published release has an empty body; on v0.16.1 it came out the other
       # way round. So the creator is the workflow that generates the notes -- the
-      # wheel's -- and every other writer waits for that release and uploads into
-      # it, the way the image record already does.
+      # wheel's -- and it calls this workflow from a job that `needs` the creating
+      # job. The release therefore exists before this step runs: there is nothing
+      # to wait for, and a failed upload fails the job, the caller and the PyPI
+      # publish that `needs` the caller.
       #
-      # `gh release upload` writes to the PUBLISHED release `gh release view`
-      # resolves, so it cannot mint a second one however the race goes. No
-      # credential is added: `GITHUB_TOKEN` with this workflow's existing
-      # `contents: write` is what attaches the asset.
+      # `gh release upload` cannot mint a second release. No credential is
+      # added: `GITHUB_TOKEN` with `contents: write` (granted by the caller job)
+      # is what attaches the asset.
       - name: Attach chart tarball to the GitHub Release (on tag push)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -104,16 +110,10 @@ jobs:
             echo "::error::helm packaged no chart tarball to attach"
             exit 1
           fi
-          # The two workflows are not ordered, so the release may not exist yet.
-          # Waiting and then failing is deliberate: a chart silently absent from a
-          # release is what a downstream `oci://` dependency discovers later.
-          for _ in $(seq 1 30); do
-            if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
-              gh release upload "${GITHUB_REF_NAME}" "${charts[@]}" --clobber
-              echo "attached ${charts[*]} to ${GITHUB_REF_NAME}"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::error::no release named ${GITHUB_REF_NAME} to attach the chart to"
-          exit 1
+          # A chart silently absent from a release is what a downstream `oci://`
+          # dependency discovers later, so a failed upload says so and fails.
+          if ! gh release upload "${GITHUB_REF_NAME}" "${charts[@]}" --clobber; then
+            echo "::error::could not attach the chart to ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "attached ${charts[*]} to ${GITHUB_REF_NAME}"

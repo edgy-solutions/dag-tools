@@ -1,8 +1,11 @@
 """``ingest_runs`` on the dlt pipeline component: one row per run, failed or not.
 
-Everything goes through the real component YAML (``load_component``), because
-``DltAssetGroupConfig`` has no ``extra="forbid"``: a flag that never became a
-field would be silently ignored and these would read as configured.
+Everything goes through the real component YAML (``load_component``). That
+mattered most when ``DltAssetGroupConfig`` ignored unknown keys -- a flag that
+never became a field was silently dropped and these tests would have read as
+configured. The model now carries ``extra="forbid"``, so that particular
+vacuity is sealed at the model; going through the real YAML still earns its
+keep by exercising the component's own pops on the way in.
 """
 import hashlib
 

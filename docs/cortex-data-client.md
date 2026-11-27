@@ -197,6 +197,69 @@ missed enough pushes to fall out of the table — not that the asset does
 not exist. It is a liveness signal, not a catalog lookup. If you need to
 know whether an asset exists at all, ask DataHub, not the gateway.
 
+---
+
+## Asking what you may read: `GET {gateway}/api/v1/assets`
+
+Until this route there was one way to find out whether you could read an
+asset: read it and see. That is a fine answer for one URN and a bad one for
+a client building a picker, which ends up either hard-coding URNs or probing
+the read door asset by asset — a 403 storm that looks exactly like an attack.
+
+```
+GET {gateway}/api/v1/assets
+Authorization: Bearer <token>
+```
+
+```json
+{
+  "assets": ["urn:li:dataset:(urn:li:dataPlatform:s3,bucket/x,PROD)"],
+  "complete": true,
+  "incomplete_reasons": []
+}
+```
+
+Three things are worth knowing before you build on it.
+
+**It is a listing, not a catalog.** The candidate set is the routing table
+(`mesh_route:*`), so the answer is *what may you read right now* rather than
+*what exists*. An asset whose broker has stopped heartbeating is not listed —
+and is not readable either, because the read door 404s on exactly the same
+absence. If you want to know whether an asset exists at all, ask DataHub.
+
+**It mints no ticket and carries no masking rules.** The read door is still
+the only way to anything behind it; this one only answers whether that door
+would open. It deliberately omits the `allowed_columns` / `row_filters` the
+authorizer answers with, because those are the shape of a read and a listing
+handing them out would publish the mesh's masking rules to anyone who can
+authenticate.
+
+**`complete: false` is not an empty list.** This is the field to read, and
+the reason the route exists in this shape. If the authorizer cannot be
+reached, every asset goes undecided and the list comes back empty — which is
+indistinguishable from *you may read nothing* unless the response says so.
+So `complete` is `false` whenever the answer is partial, with a token in
+`incomplete_reasons` saying why:
+
+| reason | meaning | what to do |
+| --- | --- | --- |
+| `authorizer_undecided` | some asset got no decision | retry; treat the list as a floor, not an answer |
+| `candidate_limit_reached` | the routing table is larger than `ASSET_LIST_MAX_CANDIDATES` (500) | raise the bound, or narrow by asking the catalog |
+| `deadline_reached` | some decisions did not finish inside `ASSET_LIST_DEADLINE_SECONDS` (10) | retry; raise the bound or `ASSET_LIST_MAX_CONCURRENCY` (8) |
+
+A client that ignores `complete` will, on a bad day, tell its user they have
+access to nothing. Treat an incomplete listing as *at least these*, never as
+*exactly these*. The reasons name this gateway's own health and carry no
+counts: with the authorizer down the undecided count is the size of the
+routing table, which is a fact about the mesh rather than about the caller.
+
+Refusals are the read door's, by design: a caller on the deny list gets 403
+here too rather than an empty list, and an unreadable routing table is a 503.
+The route resolves identity under its own route id, `assets.list` — so under
+`enforce`, a *service* listing on a user's behalf needs a delegate row for
+that id, not only for `assets.authorize`. A row granting the right to
+authorize reads does not grant the right to enumerate them.
+
 The two internal doors this flow crosses, the broker's `/api/v1/internal/resolve`
 and the gateway's `/api/v1/internal/register`, require a service token.
 `INTERNAL_DOOR_POSTURE` is `observe` (default) or `enforce`; each door
@@ -208,6 +271,38 @@ their own token from `MESH_SERVICE_TOKEN_URL`, `MESH_SERVICE_CLIENT_ID` and
 audience and key settings as the user-facing route. To turn it on: set the
 callers' credentials, set both lists, read the `internal_door would_refuse` log lines
 until none are expected, then set `INTERNAL_DOOR_POSTURE=enforce`.
+
+Each pod says at startup what its doors would do, in counts and variable
+names and never values. Two lines per pod, because each one serves one door
+and calls the other: `internal_door: route=... posture=... callers=N
+enforce_ready=yes|no [unset=...]` for the door it serves, and
+`internal_door: calls=... token_ready=yes|no [unset=...]` for the door it
+calls. `callers=0` is the state worth grepping for -- a door that under
+`enforce` admits nobody looks exactly like a door nobody has called yet --
+and `enforce_ready=no` on a door with a full callers list means the pod
+cannot verify a token at all, so the `unset=` names there are the issuer,
+audience and key settings rather than the list.
+
+#### The broker's unminted posture
+
+invincible-agent ADR-0044 is rolled out per backend: the broker mints a
+read-only, asset-scoped, window-expiring credential for the backends it has a
+minter for. For a backend it does not, the ticket carries the **producer's own**
+credential -- the only thing that would let you read it, and a write credential,
+scoped to no asset, expiring with nothing.
+
+`BROKER_UNMINTED_POSTURE` is `observe` (the default) or `enforce`. Under
+`observe` nothing changes for readers; the broker counts what it *would* refuse,
+per backend, at `/health.adr0044.unminted_credentials.would_refuse`. Under
+`enforce` such a read is refused with 403 `unminted_credential`, which this
+client surfaces as `NotEntitled`, and the refusals are counted separately under
+`refused` -- a would-refusal is served and a refusal is not, so the two numbers
+are never one. A ticket carrying no credential at all is not refused: there is
+nothing exposed to refuse.
+
+To turn it on, read `would_refuse` until it lists only backends you are willing
+to lose reads of, then set `BROKER_UNMINTED_POSTURE=enforce`. The real fix for a
+backend that appears there is a minter for it, not the posture.
 
 Verifying a token means signature, then the issuer against the accepted list
 (`GATEWAY_JWT_ISSUERS`, comma-separated), then the audience against the

@@ -117,3 +117,35 @@ Routes carry a TTL (5 minutes) and the broker re-pushes every
 attempts per window. A gateway `404 No active domain broker found` is
 therefore a **liveness** signal about the owning deployment, not a
 statement that the asset does not exist.
+
+## `BROKER_UNMINTED_POSTURE`
+
+invincible-agent ADR-0044's minting is per backend. For a backend the broker
+has no minter for, a ticket carries the **producer's own** credential — a write
+credential, scoped to no asset, expiring with nothing — because without a
+minter that is the only thing that would let a reader read.
+
+`observe` (the default) is unchanged behaviour: every read that is served today
+is still served, and the broker additionally counts per backend what it would
+refuse:
+
+```bash
+kubectl exec deploy/<broker> -- curl -s localhost:8000/health \
+  | jq .adr0044.unminted_credentials
+```
+
+```json
+{"posture": "observe", "would_refuse": {"some_backend": 4}, "refused": {}}
+```
+
+`enforce` refuses those reads with `403 unminted_credential`, which arrives at
+a `cortex_data` reader as `NotEntitled`. The two numbers are never one: under
+`observe` a would-refusal is still served, so summing them would report
+refusals for reads that succeeded.
+
+Roll it out by reading `would_refuse` until it lists only backends you are
+willing to lose reads of. A backend that appears there wants a **minter**; the
+posture is how you stop serving its producer's credential in the meantime, not
+the fix. A ticket carrying no credential at all is never refused — there is
+nothing exposed to refuse. The reader's side of this is in
+[`docs/cortex-data-client.md`](cortex-data-client.md).

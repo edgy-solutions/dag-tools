@@ -420,7 +420,9 @@ class RestateDltSyncComponent(Component, Resolvable, Model):
             pipeline_attrs = dict(pipeline_attrs)
 
             sources = pipeline_attrs.pop("sources", [])
-            # Pop component-only keys so they aren't passed to DltAssetGroupConfig.
+            # Pop component-only keys: DltAssetGroupConfig refuses unknown
+            # keys, so an unpopped one fails the load. A new YAML key on this
+            # component gets its pop in the same commit.
             stats_table = pipeline_attrs.pop("stats_table", None)
             cycle_sensor_cfg = pipeline_attrs.pop("cycle_sensor", None)
             raw_table_config = pipeline_attrs.pop("table_config", None) or {}

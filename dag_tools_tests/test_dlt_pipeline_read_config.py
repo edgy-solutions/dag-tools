@@ -8,6 +8,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
+import pydantic
 import pytest
 
 pytest.importorskip("dlt")
@@ -135,8 +136,18 @@ def test_table_config_reaches_the_hints_the_source_is_built_with(tmp_path, monke
     assert hint["incremental"] == {"cursor_path": "id", "initial_value": 0}
 
 
-def test_an_unpopped_table_config_would_be_silently_ignored():
+def test_an_unpopped_table_config_now_fails_the_load():
+    """Renamed from ``..._would_be_silently_ignored``, which described
+    behaviour that no longer exists: ``DltAssetGroupConfig`` carries
+    ``extra="forbid"`` since the key became refusable, so an unpopped
+    ``table_config`` fails the code-location load instead of vanishing. The
+    field-set assertion is kept -- it is what makes the pop necessary --
+    and the refusal is now asserted rather than asserted *of*.
+    """
     assert "table_config" not in DltAssetGroupConfig.model_fields
+    with pytest.raises(pydantic.ValidationError) as excinfo:
+        DltAssetGroupConfig(name="p", **{"table_config": {}})
+    assert "table_config" in str(excinfo.value)
 
 
 def test_an_explicit_hint_still_wins_over_table_config(tmp_path, monkeypatch):
@@ -359,8 +370,18 @@ def test_a_malformed_filter_fails_the_load(tmp_path, monkeypatch):
     assert "like" in text
 
 
-def test_an_unpopped_row_filters_would_be_silently_ignored():
+def test_an_unpopped_row_filters_now_fails_the_load():
+    """Renamed from ``..._would_be_silently_ignored``, which described
+    behaviour that no longer exists: ``DltAssetGroupConfig`` carries
+    ``extra="forbid"`` since the key became refusable, so an unpopped
+    ``row_filters`` fails the code-location load instead of vanishing. The
+    field-set assertion is kept -- it is what makes the pop necessary --
+    and the refusal is now asserted rather than asserted *of*.
+    """
     assert "row_filters" not in DltAssetGroupConfig.model_fields
+    with pytest.raises(pydantic.ValidationError) as excinfo:
+        DltAssetGroupConfig(name="p", **{"row_filters": {}})
+    assert "row_filters" in str(excinfo.value)
 
 
 def test_a_pipeline_with_no_row_filters_passes_no_callback(tmp_path, monkeypatch):

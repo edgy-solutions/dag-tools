@@ -4,7 +4,7 @@ The warehouse source component describes one classified source dataset and obser
 
 This record covers what the chart and code provide by default, and what a deployment may set. It describes no particular deployment.
 
-**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the component-records pin listed there (`add5bc4`). The record shape is provisional.
+**This record describes; it proposes nothing.** The remedies for its gaps are in [the roadmap note](../ROADMAP.md), each marked `proposed`. Statuses are those of [the README](../README.md). Line numbers are at the dag-tools pin listed there (`503607d`). The record shape is provisional.
 
 ## Findings
 
@@ -30,7 +30,7 @@ Commits are named in full. A release is a version tag whose release page carries
 |---|---|---|---|
 | 1 | The component and its example were first committed at `50f11c86e93232f47500b21631873da23288b58a`. | the commit that adds `dag_tools/components/warehouse_source/` and `examples/warehouse_source/` | `built` |
 | 2 | Merged to master by PR #24, merge commit `dfc6b09ebb9965401a69ef184c930a20817f30a5`, on 2026-11-07 (UTC). | the pull request's merge commit; master contains it | `built` |
-| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the most recent release, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
+| 3 | First released in v0.12.0, tag at `1b149e2135aef9b8349d44c09442a6f734dd3873`, published 2026-11-09. Also in v0.17.0, tag at `a85c5f99233962a8c34e6eb0f399c23030865ee4`, the last release before the records pin, and at the records pin. | each tag contains the merge commit; the component's module is in each release's wheel | `built` |
 | 4 | A component file names it as `type: dag_tools.WarehouseSourceComponent`; the package root exports the class. | `dag_tools/__init__.py:13, :33` | `built` |
 
 ### What the example proves, and what it does not
@@ -117,7 +117,7 @@ One row per connection, read from this component's side. Evidence is at this rec
 
 ## Sources
 
-All paths are at `add5bc48021fe6d2c79c24c31072142fc93c8179`. Component paths are under `dag_tools/components/warehouse_source/`; engine paths under `dag_tools/warehouse_source/`.
+All paths are at `503607dd321cd6627509bfc93955357b8566597f`. Component paths are under `dag_tools/components/warehouse_source/`; engine paths under `dag_tools/warehouse_source/`.
 
 | Claim | Source | Decision | Evidence | Status |
 |---|---|---|---|---|

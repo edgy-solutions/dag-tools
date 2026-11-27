@@ -2,11 +2,14 @@ name: Lane trailers
 
 # Ruling: no local hook; the trailer is checked in CI on dag-tools PRs.
 # A PR whose head branch matches a row of .githooks/lanes must have `Lane: <id>/<branch>` on
-# every commit. A branch matching no row passes with a notice.
+# every commit. A branch matching no row passes with a notice, unless it is inside `lane/`.
+#
+# No `branches:` filter, deliberately: a PR based on ANOTHER branch is the properly-stacked
+# shape, where base..head is exactly that PR's own commits. With the filter it was the one
+# shape not checked at all. See the script's docstring.
 
 on:
   pull_request:
-    branches: [master, main]
 
 permissions:
   contents: read

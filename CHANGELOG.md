@@ -10,6 +10,368 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## 0.20.0 — 2026-11-25
+
+Cut at `f7ac596`. The release that makes the dlt component refuse what it used to get silently
+wrong: a misspelt YAML key (#161), a destination that was never built (#162), two unnamed
+pipelines sharing one op name (#163), and two source databases landing in one destination
+database (#165). Alongside them: the release assets in a fixed order (#164), DuckDB
+`configure`, `pydantic` declared and `staging_use_https` sent to ClickHouse only (#166), and
+a docstring (#160). Both entries under Changed refuse something that used to be accepted, and
+each says what was wrong with it and what to do.
+
+### Changed
+
+- **`get_destination` now raises when a destination it recognises cannot be constructed, and
+  warns when it falls back.** The old body printed the error and fell through to
+  `return "filesystem"`, so a snowflake, postgres, clickhouse or databricks destination that
+  failed to build **became a filesystem destination**: the pipeline ran, wrote somewhere nobody
+  had configured, and reported success. dlt mentions the swap in one line of a log of thousands
+  — *"The destination dlt.destinations.snowflake:None in state differs from destination
+  dlt.destinations.filesystem:filesystem in pipeline and will be ignored"* — and that line says
+  "will be ignored" about the destination the operator actually asked for.
+
+  **This is a behaviour change: a call that used to return a destination can now raise
+  `RuntimeError`.** It can only do so where the destination was already wrong, and the exception
+  names the drivername and chains the original as `__cause__`. No signature, export or default
+  changed.
+
+  **There is no flag to restore the old behaviour, deliberately.** Restoring it means writing a
+  load to a destination nobody configured and calling the run green, so a caller that really
+  wants that has to say so at its own call site by catching the `RuntimeError` — where the
+  decision is visible to whoever reads that code, rather than being this library's default.
+
+  The fallback itself is **kept** for an *unrecognised* drivername — that is documented
+  behaviour (duckdb reaches it, which is why six test modules monkeypatch this function) — but
+  it now logs a WARNING naming the drivername. Until now a load sent somewhere the
+  configuration never named announced itself only by the data's absence from the destination the
+  operator had written down. Whether an unrecognised drivername should be refused outright is a
+  separate question and is not answered here.
+
+- **`DltAssetGroupConfig` now refuses an unknown key (`extra="forbid"`).** This model is built
+  from an operator's YAML with `**pipeline_attrs`, so until now a misspelt setting was dropped
+  on the floor and the pipeline loaded with that setting simply absent — no error, no warning,
+  and a code-location load that reads as a success. The failures that shape takes are not
+  cosmetic: a mistyped `cursor` is a full reload every run, a mistyped `row_filters` extracts
+  every row of every table while the YAML reads as filtered, and a mistyped `primary_key`
+  changes what a merge writes. Each one looks exactly like a correct extraction until someone
+  reads the destination. Refusing at the load is the only moment the operator still has the YAML
+  in front of them.
+
+  **This is a behaviour change and it can fail a load that used to succeed.** Every shipped
+  example was swept and none of them carries a key the model would refuse (the sweep is a test,
+  `test_no_shipped_example_carries_a_key_this_model_would_refuse`). Who breaks, and the fix:
+
+  - **A `pipelines:` block with a typo in any setting** — on `DltPipelineComponent`,
+    `RestateDltSyncComponent` or `RestateApiSyncComponent`, or in `dagtools dlt dev`. The load
+    now fails naming the key. **Fix: correct the spelling.** The failure is the feature; the key
+    was doing nothing before.
+  - **`RestateApiSyncComponent` YAML carrying `table_config`, `row_filters`, `schedule` or
+    `hints`.** That component pops only `primary_key`, `api_path`, `sources` and `name`, so
+    those four keys now reach a strict model and are refused. They have never done anything on
+    that component, so the previous behaviour was a block of YAML that read as configuration and
+    was not. **Fix: delete them.** If you need table-level configuration on an API sync, say so
+    — that is a feature request, not a regression.
+  - **Anyone constructing `DltAssetGroupConfig` directly in Python with a keyword it does not
+    declare.** The field set is unchanged, so only a keyword that was already being ignored can
+    break. **Fix: drop the keyword, or check `DltAssetGroupConfig.model_fields` for the real
+    name.**
+
+  No field was added, removed or renamed, no signature changed, and no default changed. The
+  `*_dev` loader is unaffected: it already filtered an operator's attrs by
+  `set(DltAssetGroupConfig.model_fields)`.
+
+  One consequence worth stating for anyone extending a component: the "pop the component-only
+  keys" step in each component's `build_defs` is now **load-bearing** rather than defensive. A
+  component that grows a new YAML key must pop it in the same commit, or the load fails — which
+  is the point, since the omission used to ship as a feature that silently did nothing.
+  `test_dlt_config_forbids_unknown_keys.py` reads each component's pop list out of its own
+  source and holds it to an independently written one, in both directions, so that list cannot
+  go stale behind the compatibility sweep that depends on it.
+
+### Fixed
+
+- **Each dlt unit now gets its own destination credentials, so a second source database no
+  longer lands in the first one's.** `_prepare_units` built one destination credentials object
+  for the whole call and then mutated it per unit: when the destination named no `database`, the
+  first unit filled it with its own and every later unit found it filled and kept it. A call
+  carrying two units from two source databases (AssetKey sources resolved through credential
+  providers) therefore sent both to the first database, named both pipelines after it and
+  reported it as both units' `dest_database` -- no error, no warning, and a run that read as a
+  success. Credentials are now built per unit. A destination that names its `database` keeps it
+  for every unit, as before, and a single-unit call is unchanged. No signature, export or default
+  changed. Regressions: `test_dlt_per_unit_credentials.py` --
+  `test_two_units_with_different_databases_each_write_to_their_own` (rows read back out of each
+  unit's own destination), `test_each_unit_names_its_own_destination_database_and_pipeline`, the
+  planted-defect control `test_control_one_shared_credentials_object_sends_the_second_unit_to_the_first`,
+  and `test_a_destination_that_names_its_database_keeps_it_for_every_unit`.
+
+- **A release's assets are attached in a fixed order, and PyPI waits for all of them.** One job
+  creates the release -- `build-package.yml`'s `build`, which generates the notes -- and the chart
+  and image-record workflows are no longer started by the tag: each is called from a tag-gated job
+  that `needs` the creator, so it uploads into a release that already exists instead of polling
+  for one, and a failed upload fails visibly. `publish-pypi` now needs the creator and both
+  callers, so a release missing its chart or its image record is never published to PyPI. The
+  PyPI trusted publisher is unchanged (it is bound to `build-package.yml`, where the publish stays)
+  and no credential is added.
+
+- **`ConfigurableDuckDBIOManager.configure` exists.** It mixed in nothing and defined no
+  `configure`, so a deployment that configures its IO managers from a config file -- the way the
+  Arrow, Delta, S3 file and SQL managers and `DuckDBResource` itself are configured -- failed at
+  the first line of its code location with `AttributeError: ... has no attribute 'configure'`. It
+  now mixes in `ConfigureFromDict` and takes the INNER block (its fields are flat, as on the Arrow
+  manager); `duckdb` takes a dict of `DuckDBResource` fields or a pre-built resource, and handing
+  it the outer `config:` level fails on the missing fields rather than building from defaults.
+  Regressions: `test_duckdb_configure.py` -- `test_the_inner_block_configures_the_manager_and_its_nested_resource`,
+  `test_the_outer_block_is_refused_rather_than_read`, the control
+  `test_the_method_is_the_classs_own_not_the_mixins_stub` (the mixin's own `configure` raises, so a
+  class that mixed it in and stopped would pass a `hasattr` check), and
+  `test_a_configured_manager_writes_and_reads_back`.
+
+- **`pydantic` is declared as a core dependency.** The pure engines (`contract_mapping`, `audit`,
+  `documents.mapping`, `otel_api_sync.spec`, `row_filters`) and every IO manager import it at module
+  level, and core did not declare it: it arrived only because dagster requires it, and three extras
+  declared it on their own. No floor is set, because none was measured. The exemption
+  `test_io_manager_declared_imports.py` carried for it is closed, and
+  `test_pydantic_is_a_CORE_dependency_not_an_extras` asserts it is core specifically, since an
+  extra would still leave a base install unable to import the engines.
+
+- **`staging_use_https` is sent to ClickHouse only.** `get_destination` set it for every destination,
+  and it is a field of dlt's ClickHouse configuration alone, so dlt dropped it everywhere else --
+  with a WARNING on filesystem and databricks naming a setting the operator never wrote. The
+  default `False` is now set in the clickhouse arm; an explicit value still wins there, and an
+  operator who writes the key for another destination still has it passed through. Regressions:
+  `test_dlt_get_destination.py` -- `test_clickhouse_gets_the_librarys_https_default`,
+  `test_an_explicit_clickhouse_value_wins_over_the_default`,
+  `test_no_other_destination_is_sent_the_https_key` with its control
+  `test_control_the_recorder_does_see_keys_this_function_adds`, and
+  `test_an_operators_own_https_key_is_still_passed_through`.
+
+- **A `DltAssetGroupConfig` with no `name` no longer builds a colliding Dagster op name.**
+  `name` is `Optional[str]` with a `None` default, so leaving it unset is inside the contract --
+  but it was interpolated raw into the op name, which rendered the literal text `"None"` there.
+  Two pipelines over one source schema then built the **same** op name and Dagster failed the
+  whole code location with `DagsterInvalidDefinitionError: Detected conflicting node definitions
+  with the same name "dlt_None_<schema>_asset"`. The fallback is now the **source database**,
+  because `(database, schema)` is the unit mapping's own key and so is unique per unit by
+  construction. When `name` is set the expression is byte-identical to before, so every shipped
+  component is unaffected -- all three set a name -- and no asset key moves: the string is the
+  **op** name, not a key. No signature, export or default changed.
+
+- **`get_destination_distinctions` no longer raises on an absent optional credential field, so
+  an asset group no longer vanishes for a correctly configured destination.** It read four
+  `Optional[str]` fields unguarded. `AwsCredentials.endpoint_url` is `None` for plain AWS S3 --
+  the *ordinary* case; it is set only for an S3-compatible store -- so the ordinary case raised
+  `TypeError: expected string or bytes-like object, got 'NoneType'`, and the caller's `except`
+  swallowed it into a `print`: the whole group disappeared from the code location, reported only
+  as `DLT <name> assets could not be instantiated for <db>.<schema>: expected string or
+  bytes-like object, got 'NoneType'`. The AWS arm now **recovers** to `[bucket]`, which is what
+  that arm already returns when the endpoint pattern does not match, so nothing that resolves
+  today moves. The azure, databricks and connection-string arms **refuse by name** instead:
+  what this function returns is spliced into asset keys, `AssetKey` rejects a `None` element
+  with a `CheckError` raised far from the field that was empty (measured), and a stand-in would
+  name something the destination does not have. The message names the field. No signature,
+  export or default changed.
+
+
+- **`config_to_credentials` no longer raises `NameError` on a snowflake destination.**
+  `SnowflakeCredentials` was the one class in that function's seven-way dispatch that was never
+  imported, so the snowflake arm raised `NameError: name 'SnowflakeCredentials' is not defined`
+  at its first line, before any of the operator's config was read. Nothing in the suite drove a
+  snowflake config through this function, which is why a missing import survived every release.
+  The fix is one eager import matching the other five. Additive. The new
+  `test_every_credentials_class_the_dispatch_names_is_actually_imported` walks the function's own
+  AST, so the same gap in a future arm fails here rather than in somebody's deployment.
+
+- **`ConfigurableArrowIOManager` and `ArrowResource` now implement `configure`.** Neither mixed
+  in `ConfigureFromDict` and neither defined the method, so a deployment configuring its IO
+  managers from a config file — the way every other manager in this package is configured — got
+  `AttributeError: type object 'ConfigurableArrowIOManager' has no attribute 'configure'` at the
+  first line of its code location. Both now accept the inner config block
+  (`ConfigurableArrowIOManager.configure({"fs": {"s3": {"common": {...}}}, "uri_base": ...})`);
+  the fields are flat, unlike `ConfigurableSQLIOManager`'s single `config:` wrapper, so the two
+  take different levels of the same document. Purely additive: a new classmethod and a new base
+  class, no existing field, signature or default touched. **`ConfigurableDuckDBIOManager` has
+  the same gap and is not fixed here** — it is reported rather than swept up, because a blanket
+  "every `Configurable*` is configurable from a dict" rule would also catch
+  `TaggedWarehouseResource`, which legitimately has no such seam.
+
+- **`fsspec` and `universal-pathlib` are now declared on the `orchestrator` and `broker`
+  extras.** `io_managers/arrow.py`, `delta.py` and `s3.py` import them at module level and
+  `pyproject.toml` named neither: `fsspec` arrived because `s3fs` requires it, and
+  `universal-pathlib` (`from upath import UPath`) arrived **only** because `dagster` does. Both
+  worked, which is the dependency equivalent of a test passing for the wrong reason — an
+  upstream that stopped requiring either would break three IO managers for a reason no
+  requirement here names. Additive; no floor is declared on either, deliberately, because no
+  release of either has been measured broken here (the `s3fs` floor beside them exists because
+  0.4.2 *was*). `test_io_manager_declared_imports.py` reads the module-level imports out of
+  those three files, so a new undeclared one fails there instead. Note this does **not** make
+  `.[broker]` alone sufficient for those modules: `dagster` and `pandas` are undeclared on that
+  extra too, and the user-deployment image supplies them on its own install line.
+
+- `_unadvertisable_reason` no longer promises a `/health` field that has never existed. Its
+  docstring said its return values were "stable keys for `/health.adr0044.unadvertised`", and
+  `docs/publishing-io-managers-to-the-mesh.md` repeated it. The broker's `/health` has never
+  carried that key: the withheld-asset reasons go to a log — one INFO line per asset, then one
+  WARNING carrying the whole tally once the registration pass finishes. An operator diagnosing a
+  deployment that advertises nothing was sent to the payload, found no such field, and could not
+  tell "nothing was withheld" from "I am looking in the wrong place", which is the exact
+  confusion that function exists to end. Both texts now say where the tally really goes, and
+  `test_broker_unadvertised_tally.py` holds them to the code in both directions: the payload may
+  not grow the key behind the prose's back (asserted with the tally non-empty, so it cannot pass
+  vacuously), and no prose may claim it again. Whether `/health` *should* serve the tally beside
+  the other posture numbers is a live question and deliberately left open — the block's
+  membership is not pinned, so a new posture number does not fail this module. Documentation and
+  tests only; no signature, export or default changes.
+
+## 0.19.0 — 2026-11-24
+
+Cut at `202987f`. The release that gives a caller a way to ask what it may read, and gives a
+deployment as-of readers to select (#153, #154, #156).
+
+### Added
+
+- A deployment names the as-of readers it wants, and a name nothing ships refuses at import
+  (`DAG_TOOLS_AS_OF_READERS`). Three things read one table, so there is one table:
+  `AVAILABLE_AS_OF_READERS` is what the **build** ships, static and known at import, which is what
+  lets the chart's render check answer with no pod; `AS_OF_READERS` is what this **process**
+  registered, which only `/health` can know; and the variable names a subset of the first. If any
+  of the three grew its own list the three would disagree silently and each one individually would
+  look correct.
+  - The check sits at **module scope**, beside the env reads, and that placement is the change
+    rather than an implementation detail. The broker's `lifespan` creates a background task and
+    yields immediately — deliberately, because the Dagster/dlt/datahub imports would blow past
+    hypercorn's 60s lifespan timeout — so the pod is Ready before anything has loaded, and a
+    refusal raised in that task is swallowed into the task object while the pod is already
+    serving. At module scope the module simply never finishes importing. A failed Dagster load
+    deliberately degrades instead, because an import failure has a competing cost; a reader name
+    nobody ships has none.
+  - `/health` reports both sets separately (`as_of_readers_available`, `as_of_readers_registered`)
+    and carries **no** `as_of_readers_unknown` key: an unknown name refuses at import, so at
+    runtime there is no such state, and a key that is always empty reads as reassurance rather
+    than as nothing to say.
+  - Every unknown name is reported at once, a refused selection registers nothing so no
+    half-applied state exists, and `UnknownAsOfReader` subclasses `ValueError` as
+    `MissingCredentials` does. An unset or empty value selects nothing, so the setting ships
+    inert. Additive: no existing signature, export or default changes.
+- Two as-of readers, one file-backed and one table-backed
+  (`dag_tools.domain_broker.as_of_readers`): `s3_parquet` and `postgres`. Neither is registered
+  until a deployment selects it through the variable above. Delta and Iceberg still wait, under
+  the gate this work was accepted with: no reader ships until it can be exercised against a real
+  store of that kind.
+  - `s3_parquet` answers a **content identity** — `listing-sha256:<hex>` over the dataset's
+    sorted `(key, ETag, size)` listing — and `postgres` answers `pg_current_wal_lsn()` carried
+    verbatim. Both are an identity, **not an order**: measured against a live server, `'0/9' <
+    '0/10'` is true as `pg_lsn` and false as text, which is why the digest carries a label that
+    cannot be parsed as a number.
+  - A reader may not **hang** the read either, the half the contract does not cover: a reader runs
+    inside the authorize call, so an unreachable store with no bound parks every authorize for
+    that backend. Bounds are read once at import (a malformed one warns and falls back rather
+    than refusing to import) and the S3 client sets `max_attempts=1`, because a retry inside an
+    authorize call multiplies the bound by the attempts.
+  - **No ClickHouse reader**, on two independent measurements: the minted user cannot read
+    `system.parts` at all (code 497), and a reader holds exactly the consumer's credential by
+    design; and `max_block_number` provably misses a mutation (`data_version` 1 → 3 while
+    `max_block_number` stayed 2). An as-of that stays equal across a real change is the failure
+    that reads as correct.
+  - This repository's CI names no secret, so the gate has two halves:
+    `dag_tools_tests/test_as_of_readers.py` proves construction and semantics in CI, and
+    `scripts/verify_as_of_readers.py` runs the same functions — not a copy — against a real
+    postgres and a real S3 server behind an env gate, with every prediction pre-registered at a
+    confidence level and every refusal paired with a positive control. P7 was predicted wrong and
+    is recorded **wrong** in the file rather than quietly corrected.
+  - `test_no_as_of_reader_ships_by_default` is renamed
+    `test_no_as_of_reader_is_REGISTERED_until_a_deployment_selects_one`, because shipping a reader
+    and registering one are two different sets and the old name described the state this build
+    left behind. Test-only rename; additive otherwise.
+- `GET /api/v1/assets` lists the assets a caller may read (central gateway). A caller that wanted
+  to know has had one way to find out: try a read and see whether it is refused — fine for one
+  asset, and for a client building a picker a 403 storm that looks exactly like an attack.
+  - A listing may not read a **silence** as a refusal. On the read door an authorizer that refuses
+    and one that never answers both deny, correctly, because authz is a gate; here both produce
+    the identical empty list, and an empty list reads as a sentence about the caller — *you may
+    read nothing* — when the fact is that this gateway could not find out. So the gate body moves
+    to `topaz_decision`, returning an `AuthzOutcome` that carries `undecided` and a cause token.
+    **`check_topaz_authz` keeps its exact signature and three-tuple** because other repositories
+    import it, and the allow computation is byte-identical.
+  - `assets.list` is its own route id. The audit line names the route, so sharing
+    `assets.authorize` would record a listing as a read authorization, and the delegate seam is
+    keyed per route, so sharing would widen every existing delegate row to a route nobody
+    granted. The consequence is stated rather than smoothed over: **under `enforce`, a service
+    delegated only for `assets.authorize` is refused `not_a_delegate` here until the policy rail
+    carries a row for `assets.list`** — a policy fact to flag to governance, never a grant to
+    infer in code. `_principal` now takes its route as a required parameter, so the next door
+    added here cannot silently record its decisions as the read door's.
+  - The body carries no counts and no masking rules: with the authorizer down the undecided count
+    equals the size of the routing table, so publishing it would tell every authenticated caller
+    how much the mesh holds. The counts go in the `ASSET_LIST` log line. The authorizer also
+    volunteers `allowed_columns` and `row_filters`, which are the shape of a read, and their
+    absence from the body is measured rather than assumed.
+  - Candidates come from the routing table by `SCAN`, never `KEYS`, which makes the answer *what
+    may you read right now* and agrees with the read door's 404 on the same absence. The candidate
+    set counts **distinct** assets: `SCAN` misses nothing present throughout the iteration but
+    does not promise each key once, and a keyspace resize during the walk is exactly when it
+    repeats — under the load the cost bounds exist for. The repeat check runs before the cap
+    check, so `candidate_limit_reached` still means what it says; measured against the pre-fix
+    route, a repeat at a full cap returned **only** the repeated urn and never asked about the
+    second, readable asset at all.
+  - An unreadable routing table is a 503, because an unreadable table is not an empty one. Three
+    cost bounds warn and default rather than refuse to boot, since every value still produces a
+    correct listing and crash-looping over a typo trades a slow listing for no gateway. A
+    deny-listed caller gets the read door's 403 through a now-shared `_denied_sub`, not an empty
+    list.
+
+### Documentation
+
+- `docs/file-backed-asset-to-published-dataset.md` walks the producer path for a **file-backed**
+  asset at `4fbd272` (v0.16.1), for the engineer whose deployment is pinned below 0.17: write the
+  bytes where another process can reach them, advertise the location from the IO manager, let the
+  broker register it, check what it actually advertised, read it back. It names the shipped files
+  rather than examples, because this path has no runnable example at either pin, and it says so.
+  Its version section states what 0.17 and 0.18 changed on the path, starting with the gateway
+  image that could not verify an RS256 token — the default — and reported that as
+  `token_invalid`, plus the two ways out of it that need no library upgrade.
+  - It also records that `_unadvertisable_reason`'s docstring names
+    `/health.adr0044.unadvertised`, a key the payload carries at **neither** pin: the per-reason
+    withholding counts are logged and summarised at WARNING, never served. The page tells an
+    operator to read the log; `test_file_backed_path_doc.py` fails if the key is ever added, so
+    the page is corrected rather than left behind.
+  - Linked from the README and held to the files it names, the hook a producer writes and the
+    `KNOWN_SOURCE_TYPES == set(_MINTERS)` identity its one reassurance rests on. Documentation
+    and tests only: no code, signature, export or default changes.
+
+## 0.18.0 — 2026-11-23
+
+Cut at `0ac0cc3`. The release the fleet pins to get the write-credential fix (#143).
+
+### Added
+
+- The broker refuses, or counts, a ticket it did not mint (`dag_tools.domain_broker.unminted_posture`). ADR-0044's minting is per backend, so a ticket for a backend with no minter was served carrying the **producer's own** credential — a write credential, unscoped to the asset, not expiring with the access window. It was counted and labelled, which is how it was found and also why it sat there.
+  - New environment variable `BROKER_UNMINTED_POSTURE`: `observe` (**the default — today's behaviour exactly, plus the numbers**) or `enforce`. Read through the shared `parse_posture`, so an unrecognised value fails closed and is logged carrying only the length of the value.
+  - The guard sits at the one seam every resolve path returns through, and **before** the ticket is stamped, so a refused read is not counted as a ticket that was issued. Each path declares whether the broker minted; nothing is inferred from `mode` (the producer's word) or from backend membership (the legacy coordinate path's placeholder token is for backends that *have* minters).
+  - An unminted ticket carrying **no** credential is not an exposure and is served unchanged. A minted ticket is never refused.
+  - `/health.adr0044.unminted_credentials` publishes the posture plus `would_refuse` and `refused` — two per-backend counts that are never summed, because under `observe` a would-refusal is served anyway. A ticket naming no backend counts under `(absent)`, which reads as a backend nobody can name rather than as a rendering artefact. The counts and the log line sit in separate `try` blocks and `/health` answers nulls rather than raising.
+  - **Changed default, consumer-visible:** the gateway turned every non-200, non-404 broker response into a 502, which reached a reader as `MeshUnavailable` — telling them to retry and an operator to look at broker health, both the wrong place. A 403 from the broker now forwards as a refusal and classifies as `NotEntitled`. Only the `error` key travels, and only from a dict. No existing signature or export changes.
+- Each pod announces at startup the internal door it serves and the one it calls (`dag_tools.central_gateway.internal_door`). `INTERNAL_DOOR_POSTURE=enforce` with an empty callers list refuses every internal call — `callers=0` is a door that admits **nobody**, and it otherwise looks exactly like a door nobody has called yet. The broker's lifespan announced nothing at all, so `BROKER_RESOLVE_CALLERS`, a list only the broker reads, was invisible on the one pod that reads it until a caller was refused.
+  - Two lines per pod, because both pods serve one door and call the other. The served side reports the posture, the caller count, `enforce_ready` and the names of the unset variables; the calling side reports `token_ready` and the unset `MESH_SERVICE_*` names. A pod with none of those set sends its own internal calls bare, which `observe` serves and `enforce` refuses as `no_token` — and the one-shot error in `service_headers` fires only once a call is attempted, which is after the thing it would have warned about.
+  - `enforce_blockers` extends `identity.enforce_blockers()`, because the door verifies through the identity module: a full callers list with no accepted issuer admits nobody either, and on the broker this line is the only place those names appear. Counts and variable names only, never values, since these lines go wherever logs go.
+  - `helm/dag-tools/values.yaml` carries the block **commented out**, so nothing renders by default. It documents that `BROKER_RESOLVE_CALLERS` belongs on the broker — which this chart does not deploy, so setting it on the gateway configures nothing — and that `MESH_SERVICE_CLIENT_SECRET` is delivered through `envFrom`, never `env:`, which would render its value into the Deployment.
+  - Additive: no signature, export or default changes, and `GATEWAY_GAUGE_LOG_AUTOCONFIG=0` still disables the log visibility the announcement establishes for itself.
+
+### Changed
+
+- Four statements in docstrings and comments now say which claims are **intended rather than built**: nothing in this library consults a classification to answer an access question. Comment-only — `components/classification_propagation/component.py`, `components/warehouse_source/component.py`, `io_managers/mesh_publishing.py`. No code, signature, export or default changes.
+
+### Documentation
+
+- `docs/warehouse-table-to-published-dataset.md` walks one warehouse table from an unmeasured read to a curated, contracted, classified, published dataset using only examples this repository ships, and states where those examples stop short. Linked from the README and held to the shipped example directories by `test_operator_path_doc.py`.
+- `docs/arch/` records are repinned to the then-current master and the roadmap's rows carry their line citations at that pin.
+- `docs/arch/ROADMAP.md` row 3 records the write-credential fix as built in code and names the commit and lines it is built at, and states separately what a `proposed` row means. That row says the fix is in no release, which is true of the tree it cites and goes false with this tag; repinning it is a follow-up, not part of this release.
+
+### Repository
+
+- The lane-trailer check no longer exempts a branch inside `lane/` that matches no row of `.githooks/lanes`, and reads a stacked branch's trailer against its lane. CI only; nothing shipped in the wheel changes.
+
 ## 0.17.0 — 2026-11-18
 
 
