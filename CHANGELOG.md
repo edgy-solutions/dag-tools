@@ -10,6 +10,25 @@ Downstream repositories depend on this library, so every entry says whether it c
 existing signature, export or default. Where a default changed, the old behaviour and how to get
 it back are named.
 
+## Unreleased
+
+### Added
+
+- **`examples/mfg_trace/fixture/`: a template fixture that stands in for both sources the
+  mfg_trace template needs (#148).** `python fixture/seed.py` builds one sqlite file with five
+  relations and no warehouse, no credentials and no committed binary. Three of them are the
+  as-designed / as-built half: structure with revisions and effectivity, built units, and
+  installations, including one replacement and one parent the part list cannot see. Two are
+  the test-data half, and their columns are **exactly** the two conform mappings'
+  `source.columns`. That makes the fixture real stage-1 input rather than a picture of it, and
+  a test holds the two equal. Each thing the curated layer has to get right is planted on its
+  own key, with one more key planted with nothing, so a fixture broken everywhere cannot pass
+  as one planted somewhere. It is a seeder rather than a `DltPipelineComponent` instance,
+  deliberately: the step-parameter relation already carries dlt's own `_dlt_*` columns, so
+  extracting it again would be dlt reading itself. The README section names every plant.
+  `test_mfg_trace_template_fixture.py` has 28 tests. Example and tests only; no signature,
+  export or default changes.
+
 ## 0.20.0 — 2026-11-25
 
 Cut at `f7ac596`. The release that makes the dlt component refuse what it used to get silently
