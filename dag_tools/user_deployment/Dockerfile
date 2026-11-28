@@ -106,7 +106,11 @@ COPY . /app
 #     duplicate.
 #   * ``.[broker]`` extras — fastapi, hypercorn, pydantic, httpx,
 #     boto3 for the broker pod (same image, helm picks the
-#     entrypoint).
+#     entrypoint). Since 2026-11-27 that extra also declares the IO
+#     managers' module-level dagster, dagster-aws and pandas, so the
+#     bare names on the line below duplicate it and change nothing
+#     the resolver picks. They are kept deliberately, because each is
+#     explained above.
 #
 # Future singleton modules added by the owner may need additional
 # bits (e.g. a Snowflake source-singleton would want
