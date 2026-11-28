@@ -29,6 +29,20 @@ it back are named.
   `test_mfg_trace_template_fixture.py` has 28 tests. Example and tests only; no signature,
   export or default changes.
 
+### Fixed
+
+- **`pip install "dag-tools[broker]"` alone can now import the Arrow, Delta and S3 IO
+  managers.** The `broker` extra already named those three modules as consumers and declared
+  `s3fs`, `fsspec` and `universal-pathlib` for them. But they also import `dagster`,
+  `dagster-aws` (in `s3.py`) and `pandas` at module level, and none of the three was on the
+  extra, so the import worked only in the user-deployment image, which installs all three on
+  its own line. They are declared now, bare. The `orchestrator` extra's floors are not copied
+  over, because no release of any of the three has been measured broken through this extra.
+  `test_io_manager_declared_imports.py` now sweeps the import surface against `broker` as well
+  as `orchestrator`. It failed on the old extra. `test_control_the_broker_sweep_sees_what_it_used_to_lack`
+  is there so that this sweep can still fail. The image resolves the same set it did before.
+  No signature, export or default changes.
+
 ## 0.20.0 — 2026-11-25
 
 Cut at `f7ac596`. The release that makes the dlt component refuse what it used to get silently

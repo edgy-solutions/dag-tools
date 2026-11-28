@@ -20,6 +20,7 @@ import ast
 import pathlib
 import tomllib
 
+import pytest
 from packaging.requirements import Requirement
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -31,9 +32,14 @@ MODULES = [
     ROOT / "dag_tools" / "io_managers" / "s3.py",
 ]
 
-# The extra a deployment installs to get these IO managers. Core dependencies
-# count too, because they are installed either way.
-EXTRA = "orchestrator"
+# The extras a deployment installs to get these IO managers. Core dependencies
+# count too, because they are installed either way. BOTH extras are checked,
+# each on its own: the user-deployment image installs `broker` and NOT
+# `orchestrator`, so a name declared on one extra only is a name the other
+# install does not have. Until 2026-11-27 only `orchestrator` was swept, and
+# `broker` was short dagster, dagster-aws and pandas -- invisible here because
+# the image supplied all three on its own install line.
+EXTRAS = ("orchestrator", "broker")
 
 # Import name -> distribution name, written out rather than looked up: the
 # installed environment is not the thing under test. ``upath`` is the one
@@ -57,11 +63,11 @@ IMPORT_TO_DIST = {
 EXEMPT = set()
 
 
-def _declared():
+def _declared(extra):
     with PYPROJECT.open("rb") as handle:
         project = tomllib.load(handle)["project"]
     entries = list(project["dependencies"])
-    entries += list(project["optional-dependencies"][EXTRA])
+    entries += list(project["optional-dependencies"][extra])
     return {Requirement(entry).name.lower().replace("_", "-") for entry in entries}
 
 
@@ -87,9 +93,10 @@ def _top_level_third_party_imports(path):
     }
 
 
-def test_every_module_level_import_is_declared_or_named_as_a_known_gap():
+@pytest.mark.parametrize("extra", EXTRAS)
+def test_every_module_level_import_is_declared_or_named_as_a_known_gap(extra):
     problems = []
-    declared = _declared()
+    declared = _declared(extra)
     for path in MODULES:
         for name in sorted(_top_level_third_party_imports(path)):
             if name in EXEMPT:
@@ -103,7 +110,7 @@ def test_every_module_level_import_is_declared_or_named_as_a_known_gap():
             elif dist.lower() not in declared:
                 problems.append(
                     f"{path.name}: imports {name!r} ({dist}), declared on "
-                    f"neither the core dependencies nor the {EXTRA!r} extra"
+                    f"neither the core dependencies nor the {extra!r} extra"
                 )
     assert not problems, "\n".join(problems)
 
@@ -157,7 +164,8 @@ def test_control_a_planted_import_is_caught():
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.add(node.module.split(".")[0])
     assert names == {"nosuchpackage", "alsonot"}
-    assert not (names & _declared())
+    for extra in EXTRAS:
+        assert not (names & _declared(extra)), extra
     assert not (names & set(IMPORT_TO_DIST))
 
 
@@ -169,3 +177,31 @@ def test_the_scan_actually_finds_the_two_names_on_the_real_modules():
         found |= _top_level_third_party_imports(path)
     assert "fsspec" in found
     assert "upath" in found
+
+
+def test_control_the_broker_sweep_sees_what_it_used_to_lack():
+    """The broker half of the sweep must be able to fail, or its pass above
+    says nothing.
+
+    The real modules must still import the three names the extra was short
+    of -- if a refactor moved them out, the broker sweep would pass on a
+    surface that no longer needs them -- and with those three removed from
+    what the extra declares, the same check the sweep runs must name each
+    of them.
+    """
+    found = set()
+    for path in MODULES:
+        found |= _top_level_third_party_imports(path)
+    lacked = {"dagster": "dagster", "dagster_aws": "dagster-aws", "pandas": "pandas"}
+    assert set(lacked) <= found
+
+    with PYPROJECT.open("rb") as handle:
+        project = tomllib.load(handle)["project"]
+    core = {Requirement(entry).name.lower() for entry in project["dependencies"]}
+    assert not (set(lacked.values()) & core), (
+        "a core dependency now carries one of these, so the broker extra "
+        "declaring it is no longer what the sweep proves"
+    )
+    without = _declared("broker") - set(lacked.values())
+    missing = {name for name in found if IMPORT_TO_DIST.get(name) not in without}
+    assert set(lacked) <= missing
