@@ -421,25 +421,11 @@ async def topaz_decision(token: str, urn: str, principal: "identity.IdentityDeci
                 "permission": "can_read"
             }
         }
-        
-        # Fallback/alternative Topaz payload using relations (if Topaz is configured for directory checks)
-        check_payload = {
-            "subject": {
-                "type": "user",
-                "key": user_id
-            },
-            "object": {
-                "type": "dataset",
-                "key": urn
-            },
-            "relation": {
-                "name": "can_read"
-            }
-        }
-        
+
         async with httpx.AsyncClient() as client:
-            # We assume a check API endpoint is available on Topaz
-            # Depending on exact Topaz setup, this could be /api/v2/authz/is or /api/v2/directory/check
+            # The one authorizer call in this repo. The decision is the
+            # policy's at the path above; nothing here queries the
+            # directory directly (test_gateway_single_authorizer_call.py).
             response = await client.post(
                 f"{TOPAZ_URL}/api/v2/authz/is",
                 json=authz_payload,

@@ -43,6 +43,18 @@ it back are named.
   is there so that this sweep can still fail. The image resolves the same set it did before.
   No signature, export or default changes.
 
+### Removed
+
+- **The central gateway's unused directory-check payload.** `topaz_decision` built a second,
+  directory-shaped request (`check_payload`) on every call and never sent it. It sat beside a
+  comment saying the endpoint might be a directory route, so a reader looking for whether the
+  gateway queries the directory had to notice that the payload was dead. It is removed, and
+  the comment now names the one call that is made. The request the gateway actually sends is
+  byte-for-byte unchanged. `test_gateway_single_authorizer_call.py` asserts that the package
+  names exactly one authorizer endpoint and no directory route, and that only the gateway names
+  it. A control plants a directory route so the scan is shown to find one. invincible-agent
+  #524 relies on this property. No signature, export or default changes.
+
 ## 0.20.0 — 2026-11-25
 
 Cut at `f7ac596`. The release that makes the dlt component refuse what it used to get silently
